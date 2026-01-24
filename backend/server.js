@@ -3,7 +3,6 @@ import { createRequire } from 'module';
 import pg from 'pg';
 const { Pool } = pg;
 import { createClient } from 'redis';
-const redis = require('redis');
 import express from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
