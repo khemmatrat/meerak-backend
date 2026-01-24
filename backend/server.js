@@ -2,7 +2,8 @@
 import { createRequire } from 'module';
 import pg from 'pg';
 const { Pool } = pg;
-
+import { createClient } from 'redis';
+const redis = require('redis');
 import express from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -312,18 +313,30 @@ const pool = new Pool({
   user: process.env.DB_USER || 'meera',
   password: process.env.DB_PASSWORD || 'meera123',
 });
+redisClient = createClient({
+  url: process.env.REDIS_URL,
+  socket: {
+    tls: true,
+    rejectUnauthorized: false
+  }
+});
 
 // Redis client สำหรับ cache
 let redisClient;
 try {
   if (process.env.REDIS_URL) {
-    redisClient = redis.createClient({
-      url: process.env.REDIS_URL
-    });
+    redisClient = createClient({
+  url: process.env.REDIS_URL,
+  socket: {
+    tls: true,
+    rejectUnauthorized: false
+  }
+});
+
     // แทนที่จะใช้ await ให้ใช้ .then()
-redisClient.connect()
-  .then(() => console.log('✅ Redis connected'))
-  .catch(err => console.log('⚠️ Redis warning:', err.message));
+ await redisClient.connect()
+  //.then(() => console.log('✅ Redis connected'))
+  //.catch(err => console.log('⚠️ Redis warning:', err.message));
     console.log('✅ Redis connected');
   } else {
     console.log('⚠️ Redis URL not set, skipping Redis connection');
@@ -334,8 +347,12 @@ redisClient.connect()
   redisClient = null;
 }
 
-redisClient.on('error', (err) => console.error('Redis Error:', err));
-redisClient.connect().then(() => console.log('✅ Redis connected'));
+if (redisClient) {
+  redisClient.on('error', (err) => {
+    console.error('Redis Error:', err);
+  });
+}
+//  redisClient.connect().then(() => console.log('✅ Redis connected'));
 // ============ DATABASE MODELS ============
 
 // User Model
