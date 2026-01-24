@@ -1,8 +1,8 @@
 // ES Module imports
+import { createClient } from 'redis';
 import { createRequire } from 'module';
 import pg from 'pg';
 const { Pool } = pg;
-import { createClient } from 'redis';
 import express from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -16,7 +16,7 @@ console.log("  Cloud Name:", process.env.CLOUDINARY_CLOUD_NAME ? "✅ Loaded" : 
 console.log("  API Key:", process.env.CLOUDINARY_API_KEY ? "✅ Loaded" : "❌ Missing");
 console.log("  API Secret:", process.env.CLOUDINARY_API_SECRET ? "✅ Loaded" : "❌ Missing");
 
-
+let redisClient = null;
 const app = express();
 const PORT = process.env.PORT || 3001; // ⬅️ ใช้จาก .env
 
@@ -312,44 +312,33 @@ const pool = new Pool({
   user: process.env.DB_USER || 'meera',
   password: process.env.DB_PASSWORD || 'meera123',
 });
-redisClient = createClient({
-  url: process.env.REDIS_URL,
-  socket: {
-    tls: true,
-    rejectUnauthorized: false
-  }
-});
+
 
 // Redis client สำหรับ cache
-let redisClient;
-try {
-  if (process.env.REDIS_URL) {
-    redisClient = createClient({
-  url: process.env.REDIS_URL,
-  socket: {
-    tls: true,
-    rejectUnauthorized: false
-  }
-});
 
-    // แทนที่จะใช้ await ให้ใช้ .then()
- await redisClient.connect()
-  //.then(() => console.log('✅ Redis connected'))
-  //.catch(err => console.log('⚠️ Redis warning:', err.message));
+
+if (process.env.REDIS_URL) {
+  try {
+    redisClient = createClient({
+      url: process.env.REDIS_URL,
+      socket: {
+        tls: true,
+        rejectUnauthorized: false,
+      },
+    });
+
+    redisClient.on('error', (err) => {
+      console.error('Redis Error:', err);
+    });
+
+    await redisClient.connect();
     console.log('✅ Redis connected');
-  } else {
-    console.log('⚠️ Redis URL not set, skipping Redis connection');
+  } catch (error) {
+    console.error('❌ Redis connection failed:', error.message);
     redisClient = null;
   }
-} catch (error) {
-  console.error('❌ Redis connection failed:', error.message);
-  redisClient = null;
-}
-
-if (redisClient) {
-  redisClient.on('error', (err) => {
-    console.error('Redis Error:', err);
-  });
+} else {
+  console.log('⚠️ Redis URL not set, skipping Redis connection');
 }
 //  redisClient.connect().then(() => console.log('✅ Redis connected'));
 // ============ DATABASE MODELS ============
