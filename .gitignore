@@ -1,0 +1,15 @@
+# Ignore everything
+*
+
+# Except backend folder
+!backend/
+
+# And .gitignore itself
+!.gitignore
+
+# Ignore these inside backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/*.log
+backend/package-lock.json
