@@ -1,0 +1,43 @@
+# Environment
+.env
+.env.local
+.env*.local
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+echo "node_modules/" > .gitignore
+echo "dist/" >> .gitignore
+echo ".env" >> .gitignore
+echo "*.log" >> .gitignore
+cat > ../.gitignore << 'EOF'
+# Ignore everything by default
+
+# But track the backend folder
+!/backend/
+
+# These are ignored even in backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/*.log
+
+# Specifically ignore these files at root
+/firebase-debug.log
+/functions/
+/services/
+/package.json
+/package-lock.json
+EOF
