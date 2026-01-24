@@ -1,0 +1,49 @@
+{
+  "type": "module",
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "ts-node-dev src/index.ts",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "docker:build": "docker build -t kyc-backend .",
+    "docker:run": "docker run -p 3001:3001 kyc-backend"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.8.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^4.22.1",
+    "express-rate-limit": "^6.11.2",
+    "helmet": "^7.2.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "pg": "^8.11.3",
+    "redis": "^4.7.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/node": "^20.5.0",
+    "@types/pg": "^8.10.2",
+    "@types/cors": "^2.8.13",
+    "typescript": "^5.1.6",
+    "ts-node-dev": "^2.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.0",
+    "@typescript-eslint/parser": "^6.4.0",
+    "eslint": "^8.47.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "description": "ระบบ backend สำหรับแพลตฟอร์มบริการ",
+  "keywords": [],
+  "author": "Khem",
+  "license": "ISC"
+}
