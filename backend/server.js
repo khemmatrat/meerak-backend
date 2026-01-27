@@ -2912,6 +2912,119 @@ app.get('/api/admin/test-db', async (req, res) => {
     });
   }
 });
+// ============ JOB CATEGORIES ROUTES (4 หมวด) ============
+// Dynamic Form Schemas
+app.get('/api/jobs/forms/:category', (req, res) => {
+  const category = req.params.category;
+  
+  const formSchemas = {
+    maid: {
+      category: 'maid',
+      name: 'แม่บ้าน',
+      fields: [
+        { name: 'frequency', type: 'select', label: 'ความถี่', options: ['hourly', 'daily'], required: true },
+        { name: 'hours', type: 'number', label: 'จำนวนชั่วโมง', required: true },
+        { name: 'rooms', type: 'object', label: 'จำนวนห้อง', required: true }
+      ]
+    },
+    detective: {
+      category: 'detective',
+      name: 'นักสืบ',
+      fields: [
+        { name: 'duration_days', type: 'number', label: 'ระยะเวลา (วัน)', required: true },
+        { name: 'confidentiality_level', type: 'select', label: 'ระดับความลับ', options: ['standard', 'high', 'maximum'], required: true }
+      ]
+    },
+    logistics: {
+      category: 'logistics',
+      name: 'ขนส่ง',
+      fields: [
+        { name: 'vehicle_type', type: 'select', label: 'ประเภทรถ', options: ['motorcycle', 'sedan', 'pickup', 'truck_6wheeler', 'truck_10wheeler', 'truck_18wheeler'], required: true },
+        { name: 'distance_km', type: 'number', label: 'ระยะทาง (กม.)', required: true },
+        { name: 'weight_kg', type: 'number', label: 'น้ำหนัก (กก.)', required: true }
+      ]
+    },
+    ac_cleaning: {
+      category: 'ac_cleaning',
+      name: 'ล้างแอร์',
+      fields: [
+        { name: 'unit_count', type: 'number', label: 'จำนวนเครื่อง', required: true },
+        { name: 'service_type', type: 'select', label: 'ประเภทงาน', options: ['regular_clean', 'deep_clean', 'refill_gas', 'repair'], required: true }
+      ]
+    }
+  };
+  
+  const schema = formSchemas[category];
+  if (!schema) {
+    return res.status(400).json({ error: `Invalid category: ${category}` });
+  }
+  
+  res.json(schema);
+});
+
+// Calculate Billing
+app.post('/api/jobs/categories/:category/calculate-billing', async (req, res) => {
+  try {
+    const category = req.params.category;
+    const { category_details } = req.body;
+    
+    if (!category_details) {
+      return res.status(400).json({ error: 'Missing category_details' });
+    }
+    
+    // Simple billing calculation (ใช้ logic เบื้องต้น)
+    let billing = {
+      base_amount: 0,
+      service_fee_percent: 5,
+      service_fee_amount: 0,
+      total_amount: 0
+    };
+    
+    // Calculate based on category
+    if (category === 'maid') {
+      const hours = category_details.hours || 4;
+      billing.base_amount = hours * 200; // 200 บาท/ชม.
+      billing.service_fee_percent = 5;
+    } else if (category === 'detective') {
+      const days = category_details.duration_days || 1;
+      billing.base_amount = days * 3000; // 3000 บาท/วัน
+      billing.service_fee_percent = 7;
+    } else if (category === 'logistics') {
+      const distance = category_details.distance_km || 100;
+      const rates = {
+        motorcycle: 5,
+        sedan: 8,
+        pickup: 12,
+        truck_6wheeler: 20,
+        truck_10wheeler: 35,
+        truck_18wheeler: 50
+      };
+      const rate = rates[category_details.vehicle_type] || 10;
+      billing.base_amount = distance * rate;
+      billing.service_fee_percent = billing.base_amount > 50000 ? 10 : 8;
+    } else if (category === 'ac_cleaning') {
+      const units = category_details.unit_count || 1;
+      billing.base_amount = units * 500;
+      billing.service_fee_percent = 6;
+    }
+    
+    billing.service_fee_amount = billing.base_amount * (billing.service_fee_percent / 100);
+    billing.total_amount = billing.base_amount + billing.service_fee_amount;
+    
+    res.json({
+      billing,
+      breakdown: {
+        base: billing.base_amount,
+        service_fee: billing.service_fee_amount,
+        total: billing.total_amount
+      }
+    });
+  } catch (error) {
+    console.error('Calculate billing error:', error);
+    res.status(500).json({ error: 'Failed to calculate billing' });
+  }
+});
+
 // ============ START SERVER ============
 app.listen(PORT, async () => {
   console.log("=".repeat(70));
@@ -2929,6 +3042,8 @@ app.listen(PORT, async () => {
   console.log("  GET  /api/kyc/status/:userId   - Check KYC status");
   console.log("  GET  /api/reports/earnings     - Earnings report");
   console.log("  GET  /api/reports/job-stats    - Job statistics");
+  console.log("  GET  /api/jobs/forms/:category - Get form schema (NEW)");
+  console.log("  POST /api/jobs/categories/:category/calculate-billing - Calculate (NEW)");
   console.log("=".repeat(70));
   
   // Test database connection
