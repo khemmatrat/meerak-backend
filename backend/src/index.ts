@@ -12,6 +12,8 @@ import http from 'http';
 import winston from 'winston';
 import 'express-async-errors';
 
+// Initialize Firebase Admin SDK (must be first)
+import './services/firebase.service';
 
 // Load environment variables
 dotenv.config();
@@ -43,8 +45,10 @@ const io = new Server(server, {
 
 // Security Middleware
 app.use(helmet());
-app.use(cors({  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true }));
+app.use(cors({  
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true 
+}));
 app.use(compression());
 app.use(express.json({ limit: '10mb' })); // สำหรับรูปภาพ base64
 app.use(express.urlencoded({ extended: true }));
@@ -61,21 +65,18 @@ app.use('/api/', limiter);
 const redisClient = createClient({
   url: process.env.REDIS_URL
 });
-await redisClient.connect();
 
 // Database Pool
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME,
+  database: process.env.DB_NAME || process.env.DB_DATABASE,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 });
-
-
 
 redisClient.on('error', (err) => logger.error('Redis Client Error', err));
 
@@ -101,6 +102,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
+
 // Health Check
 app.get('/health', async (req, res) => {
   try {
@@ -108,13 +110,17 @@ app.get('/health', async (req, res) => {
     await pool.query('SELECT 1');
     
     // Check Redis connection
-    await redisClient.ping();
+    try {
+      await redisClient.ping();
+    } catch (redisError) {
+      logger.warn('Redis not connected:', redisError);
+    }
     
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       database: 'connected',
-      redis: 'connected',
+      redis: redisClient.isOpen ? 'connected' : 'disconnected',
       uptime: process.uptime()
     });
   } catch (error) {
@@ -125,24 +131,67 @@ app.get('/health', async (req, res) => {
     });
   }
 });
-// API Routes (จะเพิ่มภายหลัง)
+
+// API Routes
 app.get('/api', (req, res) => {
   res.json({
-    message: 'Welcome to the API',
+    message: 'Welcome to the MEERAK API',
     version: '1.0.0',
-    endpoints: {
+      endpoints: {
       auth: '/api/auth',
       users: '/api/users',
+      payments: '/api/payments',
+      kyc: '/api/kyc',
       jobs: '/api/jobs',
-      admin: '/api/admin'
+      jobs_recommended: '/api/jobs/recommended',
+      jobs_all: '/api/jobs/all',
+      jobs_categories: '/api/jobs/categories',
+      jobs_forms: '/api/jobs/forms/:category',
+      billing: '/api/jobs/:jobId/billing',
+      admin: '/api/admin',
+      reports: '/api/reports',
+      integration: '/api/integration'
     }
   });
 });
+
+// Import and register routes
+import authRoutes from './routes/auth.routes';
+import userRoutes from './routes/user.routes';
+import paymentRoutes from './routes/payment.routes';
+import kycRoutes from './routes/kyc.routes';
+import adminRoutes from './routes/admin.routes';
+import reportRoutes from './routes/report.routes';
+import integrationRoutes from './routes/integration.routes';
+import jobRoutes from './routes/job.routes';
+import jobCategoriesRoutes from './routes/job-categories.routes';
+
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/kyc', kycRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/integration', integrationRoutes);
+app.use('/api/jobs', jobRoutes);
+app.use('/api/jobs/categories', jobCategoriesRoutes);
+
+// Request logging middleware
+app.use((req, _res, next) => {
+  console.log('➡️ HIT:', req.method, req.url);
+  next();
+});
+
 // Connect to databases
 async function initialize() {
   try {
-    await redisClient.connect();
-    logger.info('✅ Redis connected successfully');
+    // Connect Redis
+    if (process.env.REDIS_URL) {
+      await redisClient.connect();
+      logger.info('✅ Redis connected successfully');
+    } else {
+      logger.warn('⚠️ Redis URL not set, skipping Redis connection');
+    }
     
     // Test database connection
     await pool.query('SELECT 1');
@@ -153,6 +202,8 @@ async function initialize() {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
       logger.info(`🔗 API Base: http://localhost:${PORT}/api`);
+      logger.info(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth`);
+      logger.info(`👤 User endpoints: http://localhost:${PORT}/api/users`);
     });
   } catch (error) {
     logger.error('Failed to initialize server:', error);
@@ -164,7 +215,9 @@ async function initialize() {
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received. Starting graceful shutdown...');
   
-  await redisClient.quit();
+  if (redisClient.isOpen) {
+    await redisClient.quit();
+  }
   await pool.end();
   server.close(() => {
     logger.info('Server closed');
@@ -172,16 +225,8 @@ process.on('SIGTERM', async () => {
   });
 });
 
-// Export for testing
+// Initialize server
+initialize();
+
+// Export for testing and other modules
 export { app, pool, redisClient, io };
-
-// Start the server
-if (require.main === module) {
-  initialize();
-}
-
-// เริ่มต้น server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});

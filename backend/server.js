@@ -35,11 +35,15 @@ app.use((req, res, next) => {
 
 // แล้วตามด้วย CORS ปกติ
 app.use(cors({
-  origin: '*', // ⭐ ใช้ * ชั่วคราวเพื่อ debug
+  origin: [
+    'http://localhost:3000',
+    'https://meerak-backend.onrender.com'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 
 
 // ============ CLOUDINARY CONFIG ============
@@ -787,6 +791,20 @@ app.post('/api/jobs', async (req, res) => {
     // Generate job ID
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    // Try to find user ID from createdBy (could be firebase_uid, email, phone, or id)
+    let clientIdValue = null;
+    try {
+      const userCheck = await pool.query(
+        `SELECT id FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1 LIMIT 1`,
+        [createdBy]
+      );
+      if (userCheck.rows.length > 0) {
+        clientIdValue = userCheck.rows[0].id;
+      }
+    } catch (userError) {
+      console.warn('⚠️ Could not find user ID, using NULL for client_id:', userError.message);
+    }
+    
     // Prepare job data
     const jobData = {
       id: jobId,
@@ -800,20 +818,25 @@ app.post('/api/jobs', async (req, res) => {
       created_by: createdBy,
       created_by_name: clientName,
       created_by_avatar: clientAvatar,
-      client_id: createdBy,
+      client_id: clientIdValue, // Use UUID if found, otherwise NULL
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
     
     console.log('📝 [CREATE JOB] Inserting job:', jobId);
     
-    // Insert into database
+    // Parse location for lat/lng
+    const locationLat = jobData.location?.lat || 13.736717;
+    const locationLng = jobData.location?.lng || 100.523186;
+    
+    // Insert into database with location_lat and location_lng
     const result = await pool.query(
       `INSERT INTO jobs (
         id, title, description, category, price, status,
-        location, datetime, created_by, created_by_name,
-        created_by_avatar, client_id, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        location, location_lat, location_lng, datetime, 
+        created_by, created_by_name, created_by_avatar, 
+        client_id, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         jobData.id,
@@ -823,13 +846,15 @@ app.post('/api/jobs', async (req, res) => {
         jobData.price,
         jobData.status,
         JSON.stringify(jobData.location),
-        jobData.datetime,
+        locationLat,
+        locationLng,
+        jobData.datetime || new Date().toISOString(),
         jobData.created_by,
-        jobData.created_by_name,
-        jobData.created_by_avatar,
-        jobData.client_id,
-        jobData.created_at,
-        jobData.updated_at
+        jobData.created_by_name || 'Client',
+        jobData.created_by_avatar || '',
+        jobData.client_id, // Can be NULL if user not found
+        jobData.created_at || new Date().toISOString(),
+        jobData.updated_at || new Date().toISOString()
       ]
     );
     
@@ -841,12 +866,26 @@ app.post('/api/jobs', async (req, res) => {
     }
     
     console.log('✅ [CREATE JOB] Job created successfully:', jobId);
+    console.log('✅ [CREATE JOB] Job status:', createdJob.status);
+    console.log('✅ [CREATE JOB] Job created_at:', createdJob.created_at);
+    
+    // Parse location if needed
+    if (createdJob.location && typeof createdJob.location === 'string') {
+      try {
+        createdJob.location = JSON.parse(createdJob.location);
+      } catch (e) {
+        // Keep as string if parse fails
+      }
+    }
     
     res.json({
       success: true,
       message: 'Job created successfully',
       job: {
         ...createdJob,
+        location: createdJob.location && typeof createdJob.location === 'string' 
+          ? JSON.parse(createdJob.location) 
+          : createdJob.location,
         clientName: createdJob.created_by_name,
         clientId: createdJob.client_id
       }
@@ -854,6 +893,12 @@ app.post('/api/jobs', async (req, res) => {
     
   } catch (error) {
     console.error('❌ [CREATE JOB] Error:', error);
+    console.error('❌ [CREATE JOB] Error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack?.substring(0, 500)
+    });
     
     // Try to provide helpful error message
     let errorMessage = 'Failed to create job';
@@ -861,15 +906,180 @@ app.post('/api/jobs', async (req, res) => {
       errorMessage = 'Job with this ID already exists';
     } else if (error.code === '23503') {
       errorMessage = 'User not found';
+    } else {
+      errorMessage = error.message || 'Unknown error';
     }
     
     res.status(500).json({
       success: false,
       error: errorMessage,
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      details: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        code: error.code,
+        detail: error.detail
+      } : undefined
     });
   }
 });
+// ✅ Get Recommended Jobs (ต้องมาก่อน /api/jobs/:jobId)
+app.get('/api/jobs/recommended', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    console.log(`🎯 [RECOMMENDED JOBS] For user: ${userId}`);
+    
+    // ดึงข้อมูลผู้ใช้เพื่อแนะนำงานที่เหมาะสม
+    let userSkills = [];
+    if (userId && userId !== 'current') {
+      try {
+        const userResult = await pool.query(
+          `SELECT skills FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1`,
+          [userId]
+        );
+        
+        if (userResult.rows.length > 0) {
+          const skills = userResult.rows[0].skills;
+          userSkills = typeof skills === 'string' ? JSON.parse(skills) : skills || [];
+        }
+      } catch (userError) {
+        console.warn('⚠️ Could not fetch user skills:', userError.message);
+      }
+    }
+    
+    // ดึง open jobs - ใช้ ORDER BY created_at DESC เพื่อให้งานใหม่ขึ้นก่อน
+    // ใช้ COALESCE เพื่อ handle NULL values
+    const result = await pool.query(`
+      SELECT 
+        j.id,
+        j.title,
+        j.description,
+        j.category,
+        j.price,
+        j.budget_amount,
+        j.status,
+        j.location,
+        j.location_lat,
+        j.location_lng,
+        j.datetime,
+        j.created_at,
+        j.created_by,
+        j.created_by_name,
+        j.created_by_avatar,
+        j.client_id,
+        COALESCE(u.full_name, j.created_by_name) as client_name,
+        COALESCE(u.avatar_url, j.created_by_avatar) as client_avatar
+      FROM jobs j
+      LEFT JOIN users u ON (
+        j.client_id = u.id 
+        OR j.created_by::text = u.id::text 
+        OR j.created_by = u.firebase_uid
+      )
+      WHERE j.status = 'open'
+      ORDER BY j.created_at DESC NULLS LAST
+      LIMIT 50
+    `);
+    
+    console.log(`📊 [RECOMMENDED JOBS] Found ${result.rows.length} jobs from database`);
+    if (result.rows.length > 0) {
+      console.log(`📊 [RECOMMENDED JOBS] First job ID: ${result.rows[0].id}, Created: ${result.rows[0].created_at}`);
+    }
+    
+    const jobs = result.rows.map(job => {
+      // Calculate distance (mock for now)
+      const distance = Math.floor(Math.random() * 10) + 1;
+      
+      // Check if job matches user skills
+      const isRecommended = userSkills.length > 0 && 
+                           userSkills.some(skill => 
+                             job.category?.toLowerCase().includes(skill.toLowerCase()) ||
+                             skill.toLowerCase().includes(job.category?.toLowerCase() || '')
+                           );
+      
+      // Parse location
+      let location = { lat: 13.736717, lng: 100.523186 };
+      if (job.location) {
+        location = typeof job.location === 'string' 
+          ? JSON.parse(job.location) 
+          : job.location;
+      } else if (job.location_lat && job.location_lng) {
+        location = { lat: parseFloat(job.location_lat), lng: parseFloat(job.location_lng) };
+      }
+      
+      return {
+        id: job.id,
+        title: job.title,
+        description: job.description,
+        category: job.category,
+        price: parseFloat(job.price || job.budget_amount || 0),
+        status: job.status,
+        datetime: job.datetime || job.created_at,
+        created_at: job.created_at,
+        created_by: job.created_by,
+        created_by_name: job.client_name || job.created_by_name || 'Client',
+        created_by_avatar: job.client_avatar || job.created_by_avatar,
+        location: location,
+        distance: distance,
+        is_recommended: isRecommended,
+        clientName: job.client_name || job.created_by_name || 'Client'
+      };
+    });
+    
+    // Sort: recommended jobs first
+    if (userSkills.length > 0) {
+      jobs.sort((a, b) => {
+        if (a.is_recommended && !b.is_recommended) return -1;
+        if (!a.is_recommended && b.is_recommended) return 1;
+        return 0;
+      });
+    }
+    
+    // ถ้าไม่มี jobs ใน DB
+    if (jobs.length === 0) {
+      jobs.push(
+        {
+          id: "job-001",
+          title: "Delivery Service",
+          description: "Need to deliver documents",
+          category: "Delivery",
+          price: 500,
+          status: "open",
+          datetime: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          created_by: userId || "550e8400-e29b-41d4-a716-446655440000",
+          created_by_name: "Anna Employer",
+          created_by_avatar: "https://i.pravatar.cc/150?u=anna",
+          location: { lat: 13.736717, lng: 100.523186 },
+          distance: 3,
+          is_recommended: userSkills.some(s => s.toLowerCase().includes('delivery')),
+          clientName: "Anna Employer"
+        }
+      );
+    }
+    
+    console.log(`🎯 [RECOMMENDED JOBS] Returning ${jobs.length} jobs`);
+    console.log(`🎯 [RECOMMENDED JOBS] Job IDs:`, jobs.map(j => j.id).slice(0, 5));
+    res.json(jobs);
+    
+  } catch (error) {
+    console.error('❌ [RECOMMENDED JOBS] Error:', error);
+    res.json([{
+        id: "job-001",
+        title: "Delivery Service",
+        description: "Need to deliver documents",
+        category: "Delivery",
+        price: 500,
+        status: "open",
+        datetime: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        created_by_name: "Anna Employer",
+        created_by_avatar: "https://i.pravatar.cc/150?u=anna",
+        location: { lat: 13.736717, lng: 100.523186 },
+        distance: 3,
+        is_recommended: false,
+        isFallback: true
+      }]);
+  }
+});
+
 // ✅ Get All Jobs (สำหรับหน้า Jobs)
 app.get('/api/jobs/all', async (req, res) => {
   try {
@@ -1281,25 +1491,62 @@ app.get('/api/users/profile/:id', async (req, res) => {
          OR id::text = $1
     `;
     
-    const result = await pool.query(query, [userId]);
-    
-    if (result.rows.length === 0) {
-      // Fallback สำหรับ demo-anna-id
-      if (userId === 'demo-anna-id') {
+    let result;
+    try {
+      result = await pool.query(query, [userId]);
+    } catch (dbError) {
+      console.error('❌ Database query error:', dbError);
+      // Fallback สำหรับ demo-anna-id หรือเมื่อ database error
+      if (userId === 'demo-anna-id' || userId?.includes('demo')) {
         return res.json({
           id: '550e8400-e29b-41d4-a716-446655440000',
-          firebase_uid: 'demo-anna-id',
+          firebase_uid: userId,
           email: 'anna@meerak.app',
           phone: '0800000001',
           name: 'Anna Employer',
           role: 'user',
           kyc_level: 'level_2',
+          kyc_status: 'verified',
           wallet_balance: 50000,
+          wallet_pending: 0,
           avatar_url: 'https://i.pravatar.cc/150?u=anna',
           skills: [],
+          trainings: [],
           completed_jobs_count: 0,
           location: { lat: 13.7462, lng: 100.5347 },
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          source: 'fallback'
+        });
+      }
+      
+      return res.status(500).json({ 
+        error: 'Database error',
+        message: process.env.NODE_ENV === 'development' ? dbError.message : 'Internal server error'
+      });
+    }
+    
+    if (result.rows.length === 0) {
+      // Fallback สำหรับ demo-anna-id
+      if (userId === 'demo-anna-id' || userId?.includes('demo')) {
+        return res.json({
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          firebase_uid: userId,
+          email: 'anna@meerak.app',
+          phone: '0800000001',
+          name: 'Anna Employer',
+          role: 'user',
+          kyc_level: 'level_2',
+          kyc_status: 'verified',
+          wallet_balance: 50000,
+          wallet_pending: 0,
+          avatar_url: 'https://i.pravatar.cc/150?u=anna',
+          skills: [],
+          trainings: [],
+          completed_jobs_count: 0,
+          location: { lat: 13.7462, lng: 100.5347 },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           source: 'fallback'
         });
       }
@@ -1318,15 +1565,15 @@ app.get('/api/users/profile/:id', async (req, res) => {
       firebase_uid: user.firebase_uid,
       email: user.email,
       phone: user.phone,
-      name: user.full_name || user.display_name,
+      name: user.full_name || user.display_name || user.name,
       role: user.role,
-      kyc_level: user.kyc_level,
-      kyc_status: user.kyc_status,
-      wallet_balance: parseFloat(user.wallet_balance),
+      kyc_level: user.kyc_level || 'level_1',
+      kyc_status: user.kyc_status || 'not_submitted',
+      wallet_balance: parseFloat(user.wallet_balance || user.balance || 0),
       wallet_pending: parseFloat(user.wallet_pending || 0),
       avatar_url: user.avatar_url,
-      skills: user.skills || [],
-      trainings: user.trainings || [],
+      skills: typeof user.skills === 'string' ? JSON.parse(user.skills) : (user.skills || []),
+      trainings: typeof user.trainings === 'string' ? JSON.parse(user.trainings) : (user.trainings || []),
       location: typeof user.location === 'string' 
         ? JSON.parse(user.location) 
         : user.location || { lat: 13.736717, lng: 100.523186 },
@@ -1339,9 +1586,39 @@ app.get('/api/users/profile/:id', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Profile fetch error:', error);
+    console.error('❌ Profile fetch error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.substring(0, 300)
+    });
+    
+    // Fallback สำหรับ demo users หรือเมื่อมี error
+    if (req.params.id === 'demo-anna-id' || req.params.id?.includes('demo')) {
+      console.log('🔄 Using fallback profile for:', req.params.id);
+      return res.json({
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        firebase_uid: req.params.id,
+        email: 'anna@meerak.app',
+        phone: '0800000001',
+        name: 'Anna Employer',
+        role: 'user',
+        kyc_level: 'level_2',
+        kyc_status: 'verified',
+        wallet_balance: 50000,
+        wallet_pending: 0,
+        avatar_url: 'https://i.pravatar.cc/150?u=anna',
+        skills: [],
+        trainings: [],
+        location: { lat: 13.7462, lng: 100.5347 },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        source: 'fallback_error'
+      });
+    }
+    
     res.status(500).json({ 
       error: 'Failed to fetch user profile',
-      details: error.message
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -1482,7 +1759,9 @@ app.get('/api/payments/pending', async (req, res) => {
     });
   }
 });
-// ✅ Get job details by ID
+// ✅ Get Recommended Jobs (DUPLICATE - REMOVED, ใช้ตัวที่อยู่ก่อนหน้าแทน)
+
+// ✅ Get job details by ID (ต้องมาหลัง /api/jobs/recommended)
 app.get('/api/jobs/:jobId', async (req, res) => {
   try {
     const jobId = req.params.jobId;
@@ -1859,154 +2138,7 @@ app.post('/api/providers/batch', async (req, res) => {
   }
 });
 // ============ ADDITIONAL ENDPOINTS ============
-
-// ✅ Get Recommended Jobs
-app.get('/api/jobs/recommended', async (req, res) => {
-  try {
-    const userId = req.query.userId;
-    console.log(`🎯 [RECOMMENDED JOBS] For user: ${userId}`);
-     // ดึงข้อมูลผู้ใช้เพื่อแนะนำงานที่เหมาะสม
-    let userSkills = [];
-    if (userId && userId !== 'current') {
-      try {
-        const userResult = await pool.query(
-          `SELECT skills FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1`,
-          [userId]
-        );
-        
-        if (userResult.rows.length > 0) {
-          const skills = userResult.rows[0].skills;
-          userSkills = typeof skills === 'string' ? JSON.parse(skills) : skills || [];
-        }
-      } catch (userError) {
-        console.warn('⚠️ Could not fetch user skills:', userError.message);
-      }
-    }
-    
-    // ดึง open jobs โดยไม่เรียก JobModel.findById (ซึ่งต้องการ UUID)
-    let query = `
-      SELECT 
-        j.*,
-        u.full_name as client_name,
-        u.avatar_url as client_avatar
-      FROM jobs j
-      LEFT JOIN users u ON j.created_by::text = u.id::text
-      WHERE j.status = 'open'
-      ORDER BY j.created_at DESC
-      LIMIT 10
-    `;
-    
-    // ดึง open jobs
-    const result = await pool.query(`
-      SELECT * FROM jobs 
-      WHERE status = 'open'
-      ORDER BY created_at DESC
-      LIMIT 10
-    `);
-    
-    const jobs = result.rows.map(job => {
-      // Calculate distance (mock for now)
-      const distance = Math.floor(Math.random() * 10) + 1;
-      
-      // Check if job matches user skills
-      const isRecommended = userSkills.length > 0 && 
-                           userSkills.includes(job.category);
-      
-      return {
-        id: job.id,
-        title: job.title,
-        description: job.description,
-        category: job.category,
-        price: parseFloat(job.price) || 0,
-        status: job.status,
-        datetime: job.datetime || job.created_at,
-        created_at: job.created_at,
-        created_by: job.created_by,
-        created_by_name: job.client_name || job.created_by_name || 'Client',
-        created_by_avatar: job.client_avatar || job.created_by_avatar,
-        location: typeof job.location === 'string' 
-          ? JSON.parse(job.location) 
-          : job.location || { lat: 13.736717, lng: 100.523186 },
-        distance: distance,
-        is_recommended: isRecommended,
-        clientName: job.client_name || 'Client'
-      };
-    });
-    
-    // Sort: recommended jobs first
-    if (userSkills.length > 0) {
-      jobs.sort((a, b) => {
-        if (a.is_recommended && !b.is_recommended) return -1;
-        if (!a.is_recommended && b.is_recommended) return 1;
-        return 0;
-      });
-    }
-    
-    // ถ้าไม่มี jobs ใน DB
-    if (jobs.length === 0) {
-      jobs.push(
-        {
-          id: "job-001",
-          title: "Delivery Service",
-          description: "Need to deliver documents",
-          category: "Delivery",
-          price: 500,
-          status: "open",
-          datetime: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          created_by: "550e8400-e29b-41d4-a716-446655440000",
-          created_by_name: "Anna Employer",
-          created_by_avatar: "https://i.pravatar.cc/150?u=anna",
-          location: { lat: 13.736717, lng: 100.523186 },
-          distance: 3,
-          is_recommended: userSkills.includes("Delivery"),
-          clientName: "Anna Employer"
-        },
-        {
-          id: "job-002",
-          title: "Home Cleaning",
-          description: "Deep cleaning for apartment",
-          category: "Cleaning",
-          price: 1200,
-          status: "open",
-          datetime: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          created_by: "550e8400-e29b-41d4-a716-446655440000",
-          created_by_name: "Anna Employer",
-          created_by_avatar: "https://i.pravatar.cc/150?u=anna",
-          location: { lat: 13.75633, lng: 100.501762 },
-          distance: 5,
-          is_recommended: userSkills.includes("Cleaning"),
-          clientName: "Anna Employer",
-          is_recommended: userSkills.includes("Repair"),
-          clientName: "Robert Johnson"
-        }
-      );
-    }
-    
-    console.log(`🎯 [RECOMMENDED JOBS] Returning ${jobs.length} jobs`);
-    res.json(jobs);
-    
-  } catch (error) {
-    console.error('❌ [RECOMMENDED JOBS] Error:', error);
-    res.json([{
-        id: "job-001",
-        title: "Delivery Service",
-        description: "Need to deliver documents",
-        category: "Delivery",
-        price: 500,
-        status: "open",
-        datetime: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        created_by_name: "Anna Employer",
-        created_by_avatar: "https://i.pravatar.cc/150?u=anna",
-        location: { lat: 13.736717, lng: 100.523186 },
-        distance: 3,
-        is_recommended: false,
-        isFallback: true
-      }]); // Return empty array on error
-  }
-});
+// (Duplicate recommended jobs endpoint removed - using the one at line 897)
 // ✅ Get job statistics (ชื่อ endpoint เดิมคือ job-stats แต่ frontend เรียก job-statistics)
 app.get('/api/reports/job-statistics', async (req, res) => {
   try {
@@ -2219,104 +2351,7 @@ app.get('/api/health/detailed', async (req, res) => {
 // ============ USER PROFILE ENDPOINTS ============
 
 // ✅ 1. Get User Profile by ID
-app.get('/api/users/profile/:id', async (req, res) => {
-  try {
-    const userId = req.params.id;
-    
-    console.log(`📋 Fetching profile for user: ${userId}`);
-    
-    // 1. ดึงข้อมูลจาก PostgreSQL
-    const userResult = await pool.query(
-      `SELECT 
-        id,
-        email,
-        phone,
-        name,
-        role,
-        kyc_level,
-        kyc_status,
-        avatar_url,
-        wallet_balance,
-        wallet_pending,
-        skills,
-        trainings,
-        location,
-        created_at,
-        updated_at
-       FROM users 
-       WHERE id = $1 OR firebase_uid = $1 OR email = $1 OR phone = $1`,
-      [userId]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'User not found',
-        requestedId: userId
-      });
-    }
-    
-    const user = userResult.rows[0];
-    
-    // 2. ดึงข้อมูลเพิ่มเติม (ถ้ามี)
-    let statistics = {};
-    try {
-      // ดึงสถิติงาน
-      const jobStats = await pool.query(
-        `SELECT 
-          COUNT(*) FILTER (WHERE created_by = $1) as jobs_posted,
-          COUNT(*) FILTER (WHERE accepted_by = $1) as jobs_accepted,
-          COUNT(*) FILTER (WHERE accepted_by = $1 AND status = 'completed') as jobs_completed
-         FROM jobs`,
-        [user.id]
-      );
-      
-      statistics = jobStats.rows[0] || {};
-    } catch (statsError) {
-      console.warn('Could not fetch user statistics:', statsError.message);
-    }
-    
-    // 3. สร้าง response
-    const response = {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      name: user.name,
-      role: user.role,
-      kyc_level: user.kyc_level || 'level_1',
-      kyc_status: user.kyc_status || 'not_submitted',
-      avatar_url: user.avatar_url,
-      wallet_balance: parseFloat(user.wallet_balance) || 0,
-      wallet_pending: parseFloat(user.wallet_pending) || 0,
-      skills: user.skills || [],
-      trainings: user.trainings || [],
-      location: user.location || { lat: 13.736717, lng: 100.523186 },
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-      statistics: statistics,
-      source: 'postgresql_backend'
-    };
-    
-    // 4. Cache ใน Redis (optional)
-    try {
-      await redisClient.setEx(
-        `profile:${userId}`, 
-        300, // 5 นาที
-        JSON.stringify(response)
-      );
-    } catch (redisError) {
-      console.warn('Redis cache failed:', redisError.message);
-    }
-    
-    res.json(response);
-    
-  } catch (error) {
-    console.error('❌ Profile fetch error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch user profile',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
+// ✅ Duplicate endpoint removed - using the one at line 1426 instead
 
 // ✅ 2. Update User Profile
 app.patch('/api/users/profile/:id', async (req, res) => {
@@ -2711,45 +2746,7 @@ app.get('/api/jobs/:id', async (req, res) => {
 });
 
 // ✅ 3. Create Job
-app.post('/api/jobs', async (req, res) => {
-  try {
-    const { 
-      title, description, category, price, 
-      location, datetime, createdBy 
-    } = req.body;
-    
-    if (!title || !description || !category || !price || !createdBy) {
-      return res.status(400).json({ 
-        error: 'Missing required fields' 
-      });
-    }
-    
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const result = await pool.query(
-      `INSERT INTO jobs (
-        id, title, description, category, price,
-        location, datetime, created_by, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-      RETURNING *`,
-      [
-        jobId, title, description, category, price,
-        JSON.stringify(location || {}), datetime || new Date().toISOString(),
-        createdBy, 'open'
-      ]
-    );
-    
-    res.json({
-      success: true,
-      job: result.rows[0],
-      message: 'Job created successfully'
-    });
-    
-  } catch (error) {
-    console.error('Job creation error:', error);
-    res.status(500).json({ error: 'Failed to create job' });
-  }
-});
+// ✅ Duplicate POST /api/jobs endpoint removed - using the one at line 751 instead
 
 // ✅ 4. Accept Job
 app.post('/api/jobs/:id/accept', async (req, res) => {

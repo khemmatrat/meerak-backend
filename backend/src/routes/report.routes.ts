@@ -1,8 +1,8 @@
 // backend/src/routes/report.routes.ts
 import express from 'express';
 import { reportController } from '../controllers/report.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
-import { adminMiddleware } from '../middleware/admin.middleware';
+import { authMiddleware } from '../middleware/auth';
+import { adminMiddleware } from '../middleware/admin';
 
 const router = express.Router();
 

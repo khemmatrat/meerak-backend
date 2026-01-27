@@ -2,7 +2,7 @@
 import express from 'express';
 import multer from 'multer';
 import { kycController } from '../controllers/kyc.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/auth';
 
 const upload = multer({ dest: 'uploads/kyc/' });
 const router = express.Router();

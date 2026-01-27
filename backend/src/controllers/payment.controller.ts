@@ -7,7 +7,7 @@ export const paymentController = {
   processPayment: async (req: Request, res: Response) => {
     try {
       const { jobId, method, discount } = req.body;
-      const userId = req.user.id;
+      const userId = req.user!.id;
       
       const result = await PaymentService.processPayment(userId, jobId, method, discount);
       
@@ -18,7 +18,8 @@ export const paymentController = {
         message: 'Payment initiated successfully'
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
+      res.status(500).json({ error: err.message });
     }
   },
 
@@ -30,7 +31,7 @@ export const paymentController = {
       
       res.json({ success, message: 'Payment held successfully' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
     }
   },
 
@@ -42,7 +43,8 @@ export const paymentController = {
       
       res.json({ success, message: 'Payment released successfully' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
+      res.status(500).json({ error: err.message });
     }
   },
 
@@ -54,7 +56,8 @@ export const paymentController = {
       
       res.json(status);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
+      res.status(500).json({ error: err.message });
     }
   },
 
@@ -66,7 +69,7 @@ export const paymentController = {
       
       res.json({ receiptUrl: receipt });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
     }
   },
 
@@ -83,7 +86,33 @@ export const paymentController = {
       
       res.json(history);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const err = error as Error;
     }
+  },
+  refundPayment: async (req: Request, res: Response) => {
+  try {
+    const { jobId, reason } = req.body;
+    const userId = req.user!.id;
+
+    const success = await PaymentService.refundPayment(jobId, userId, reason);
+
+    res.json({
+      success,
+      message: 'Payment refunded successfully'
+    });
+  } catch (error) {
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
+}
+
 };
+// controllers/payment.controller.ts
+export const securePay = async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { jobId, method } = req.body;
+
+  const result = await securePayService({ userId, jobId, method });
+  res.json(result);
+};
+
