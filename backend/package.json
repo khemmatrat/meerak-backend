@@ -11,7 +11,9 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "docker:build": "docker build -t kyc-backend .",
-    "docker:run": "docker run -p 3001:3001 kyc-backend"
+    "docker:run": "docker run -p 3001:3001 kyc-backend",
+    "migrate": "psql $DATABASE_URL -f src/database/schema-categories-fixed.sql",
+    "postinstall": "npm run migrate || true"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
