@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: meerak-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node backend/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # ตั้งใน Render Dashboard: JWT_SECRET (สำหรับ admin login), CORS_ORIGIN (รวม http://localhost:3000 สำหรับ Nexus Admin)

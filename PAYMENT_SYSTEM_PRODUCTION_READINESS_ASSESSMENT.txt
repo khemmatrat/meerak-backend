@@ -1,0 +1,434 @@
+================================================================================
+PAYMENT SYSTEM — PRODUCTION READINESS ASSESSMENT (REAL MONEY)
+================================================================================
+Scope: PromptPay QR, Bank Transfer, TrueMoney Wallet. No Stripe/foreign rails.
+Basis: Code and data paths that actually execute today. Design docs and
+       migrations are noted but do not count as "implemented" unless used in code.
+Assessment date: As of current codebase review.
+
+================================================================================
+1. OVERALL READINESS SCORE
+================================================================================
+
+Readiness Score: 35–40%
+
+Why not 100%:
+- The design and migrations (006 payment_ledger_audit, 007 ledger/recon/audit) define
+  a production-grade target, but the live money path does not use them.
+- Source of truth for balances and ledger is Firebase, not PostgreSQL. All user
+  top-up and withdrawal flows go through mockApi → Firebase (users.wallet_balance,
+  transactions, payment_ledger). No code path calls POST /api/ledger/append for
+  user deposits/withdrawals; webhooks only update jobs, not ledger.
+- There is no double-entry in application logic (no debit/credit pairs, no
+  ledger_entries table usage). Balance is updated in place, not derived from ledger.
+- Withdrawals are not written to any ledger (only to Firebase transactions).
+- No idempotency on walletTopUp or walletWithdraw — double submit can double
+  credit or double debit.
+- Reconciliation UI reads from Firebase payment_ledger only; there is no
+  automated reconciliation against bank statements or TrueMoney settlement files,
+  and no code that writes to reconciliation_runs / reconciliation_lines.
+- Financial audit trail for money movement is Firebase audit_logs (mutable);
+  financial_audit_log (PostgreSQL, immutable) exists in 007 but is never written to.
+
+So: schema and design are partly production-ready; the implemented payment path
+is not. Score reflects “what would run with real money today.”
+
+================================================================================
+2. LEDGER INTEGRITY & MONEY SAFETY
+================================================================================
+
+2.1 Edge cases where money can be created, lost, or double-counted
+-----------------------------------------------------------------
+- Double credit (deposit): walletTopUp has no idempotency key. User or app retry
+  can call it twice with same amount → balance increased twice; two Firebase
+  transactions and, if ledgerContext present, two Firebase ledger entries.
+  Risk: HIGH.
+- Double debit (withdrawal): walletWithdraw has no idempotency key. Double submit
+  or retry can deduct twice for one withdrawal. Risk: HIGH.
+- Lost debit (withdrawal): If updateDoc(userRef, wallet_balance) succeeds but
+  addDoc(transactions) or fee transaction fails partway, balance is already
+  decreased; recovery is manual. No atomic “ledger then balance” in one store.
+  Risk: MEDIUM.
+- Ledger/balance split: Balance is not derived from ledger. If recordPaymentCompleted
+  fails (e.g. network) after balance is updated, ledger is missing the deposit but
+  user already has the balance. Recon cannot “prove” balance from ledger.
+  Risk: HIGH for audit and reconciliation.
+- Withdrawals not in ledger: walletWithdraw does not call any ledger append (Firebase
+  or PostgreSQL). Withdrawals and fees exist only in Firebase transactions, which
+  are mutable (fixNegativeIncomes updates, emergencyRemoveDuplicateTransactions
+  deletes). No immutable proof of outflow. Risk: CRITICAL for audit and regulator.
+
+2.2 Reversals, refunds, chargebacks, manual adjustments
+------------------------------------------------------
+- Reversals/refunds: No dedicated reversal flow in mockApi. Refunds (e.g. job
+  cancel) add a “refund” transaction and likely need manual balance update;
+  no paired ledger entries (credit then reversal debit), no use of
+  payment_ledger_audit or ledger_entries. Risk: MEDIUM.
+- Chargebacks: Not implemented. No handling for bank/PromptPay/TrueMoney
+  chargeback or recall. Risk: HIGH if chargebacks are possible.
+- Manual adjustments: No controlled “admin adjustment” flow that writes to an
+  immutable audit log (e.g. financial_audit_log) with reason. FinancialAuditView
+  is mock; real balance changes would be direct Firebase or DB updates without
+  guaranteed audit trail. Risk: HIGH.
+
+2.3 Append-only enforcement under all DB access paths
+-----------------------------------------------------
+- PostgreSQL payment_ledger_audit: Triggers in 006 correctly forbid UPDATE/DELETE.
+  But no application code writes to this table for user top-up/withdraw; only
+  backend POST /api/ledger/append can, and it is never called from the live
+  deposit/withdrawal path. So append-only is strong where it exists but unused
+  for the main money flow.
+- Firebase payment_ledger: No server-side rule or trigger. Firestore allows
+  update/delete. Immutability is by convention only. Risk: HIGH (admins or bugs
+  can alter history).
+- Firebase transactions: Explicitly mutable (code updates and deletes docs).
+  Not acceptable as sole audit record for money movement.
+
+Verdict: Ledger integrity is weak in the implemented path. Money can be
+double-credited or double-debited; withdrawals are not in an immutable ledger;
+balance is not derived from ledger; reversals/chargebacks/manual adjustments
+are not safely handled; append-only is strong only in PostgreSQL tables that
+the app does not use for the main flows.
+
+================================================================================
+3. RECONCILIATION ROBUSTNESS
+================================================================================
+
+3.1 Can every inbound/outbound transaction be proven against external sources?
+---------------------------------------------------------------------------
+- Inbound (deposits): Only when ledgerContext is passed, recordPaymentCompleted
+  writes to Firebase payment_ledger with payment_id, gateway, bill_no,
+  transaction_no. So some deposits have internal records that could be matched
+  to bank/PromptPay/TrueMoney. But: (1) ledger is Firebase (mutable); (2) no
+  automated job loads bank/TrueMoney files and matches; (3) reconciliation
+  page only reads Firebase and shows summary — no matching to external files.
+  Conclusion: Theoretically matchable if we had recon job and immutable ledger;
+  today we cannot “prove” every deposit against statements/reports.
+- Outbound (withdrawals): Not written to any ledger. Only Firebase transactions
+  (mutable). No payout_id or external ref in an append-only store. Conclusion:
+  Withdrawals cannot be proven against bank/TrueMoney outbound reports.
+
+3.2 Unhandled reconciliation failure modes
+------------------------------------------
+- Duplicate external ref: No code checks that the same bank/PromptPay/TrueMoney
+  transaction_no is not credited twice (idempotency would help; not present for
+  top-up).
+- Amount/date mismatch: No automated comparison of internal vs external amount
+  or date; no alerts.
+- Orphan internal: Entries in Firebase ledger with no external line (e.g.
+  test, manual) — not tagged; no process to justify.
+- Orphan external: Bank/TrueMoney line with no internal match — no process to
+  detect or escalate (e.g. missing credit or duplicate payout).
+- Delayed settlement (T+1/T+3): No handling; recon is “by date” only, no
+  settlement-date vs value-date logic.
+
+3.3 Delayed, partial, or missing reconciliation
+-------------------------------------------------
+- If recon is delayed: No impact on current code — recon is not automated; only
+  UI summary by date from Firebase.
+- If recon is partial: No concept of “partial” run or “pending match”; no
+  status per line (matched/mismatch/missing).
+- If recon is missing: No alerts; no blocking of payout or escalation. Tables
+  reconciliation_runs and reconciliation_lines exist (007) but are never
+  written to.
+
+Verdict: Reconciliation is not production-ready. No automated matching to
+bank/PromptPay/TrueMoney; withdrawals not in ledger; no failure modes or
+escalation implemented.
+
+================================================================================
+4. AUDIT & EVIDENCE QUALITY
+================================================================================
+
+4.1 Would this system pass a Big-4 or international audit?
+-----------------------------------------------------------
+No. Reasons:
+- No single, immutable ledger for all balance-affecting events (Firebase
+  ledger is mutable; PostgreSQL ledger is not used by the main flow).
+- Balance is not derived from ledger; auditors cannot recompute balance from
+  ledger and verify.
+- Withdrawals and fees are not in an append-only ledger.
+- No double-entry (debits = credits) in the implemented flow.
+- Idempotency is missing for top-up/withdraw, so duplicate processing cannot
+  be ruled out.
+- Reconciliation with external sources is not implemented; no evidence pack
+  (ledger + recon + audit) for a date range.
+
+4.2 Immutability, completeness, and attribution of audit logs
+-------------------------------------------------------------
+- Firebase audit_logs (utils/auditLog.ts): Used for general audit (who changed
+  what, diff). Stored in Firestore — mutable (update/delete allowed). Not
+  acceptable as sole financial audit trail.
+- PostgreSQL financial_audit_log (007): Append-only by trigger, but no
+  application code inserts into it for wallet or ledger actions.
+- Money movement: walletTopUp and walletWithdraw do not call any audit log
+  (Firebase or PostgreSQL) for balance changes. So “who changed what, when,
+  and why” for balance is not recorded in an immutable way.
+
+4.3 Can we answer “Who changed what, when, and why” for money movement?
+-----------------------------------------------------------------------
+Only partially and not in a tamper-evident way. Firebase transactions and
+payment_ledger give a trail, but they can be altered or deleted. No
+immutable, attributed log for each balance-affecting action.
+
+Verdict: Audit and evidence quality are insufficient for a strict financial
+audit. Immutable audit log exists in schema only; money flows are not logged
+there; Firebase trail is mutable.
+
+================================================================================
+5. OPERATIONAL & REAL-WORLD FAILURE SCENARIOS
+================================================================================
+
+5.1 Bank API / gateway downtime
+-------------------------------
+- Top-up: If gateway (PromptPay/TrueMoney/bank) is down, user cannot complete
+  payment; no specific “downtime” handling or retry/backoff policy in code.
+  Acceptable for “user retries later.” No automatic retry that could double-credit
+  without idempotency.
+- Withdrawal: Payout is assumed to succeed after balance deduction. If bank
+  or TrueMoney API fails after we debit, we have deducted but not paid; no
+  “pending payout” state or retry/compensation in code. Risk: MEDIUM.
+
+5.2 Duplicate webhook / callback events
+---------------------------------------
+- Backend webhooks (Omise, Stripe): Idempotency via Redis (checkWebhookProcessed,
+  markWebhookProcessed). Good. But user top-up in this app often does not go
+  through backend webhooks — it goes through mockApi.walletTopUp (e.g. after
+  QR or bank transfer confirmation in UI). So webhook idempotency does not
+  protect the main top-up path. Risk: HIGH for duplicate deposit if callback
+  or user double-submits.
+
+5.3 User double-pay, wrong amount, wrong account
+------------------------------------------------
+- Double-pay: No idempotency key on walletTopUp; duplicate requests can double-
+  credit. Risk: HIGH.
+- Wrong amount: No server-side validation against gateway or bank amount; app
+  trusts client/context. Risk: MEDIUM.
+- Wrong account: Withdrawal uses bankInfo string and selected account from
+  Settings; no verification that payout account belongs to the user (e.g. no
+  re-verification or OTP). Risk: MEDIUM (fraud or misconfiguration).
+
+5.4 Timezone & settlement date (Thailand banking)
+-------------------------------------------------
+- All dates in Firebase are client/server ISO strings; no explicit Thailand
+  timezone or “settlement date” vs “value date” in reconciliation. Recon
+  by date (getLedgerEntriesByDate) uses UTC-like range; bank statements may
+  use Thailand date. Risk: MEDIUM for recon mismatches when automated recon
+  is implemented.
+
+5.5 End-of-day vs real-time balance
+-----------------------------------
+- Balance is real-time (Firebase user doc). No “end-of-day” snapshot or
+  roll-forward report. If we need to prove balance at a past date, we cannot
+  recompute from ledger (balance is not derived). Risk: MEDIUM for audit and
+  dispute resolution.
+
+Verdict: Several operational scenarios are not handled: duplicate top-up,
+pending payout failure, wrong amount/account checks, timezone/settlement date,
+and historical balance proof.
+
+================================================================================
+6. FRAUD & ABUSE RESISTANCE
+================================================================================
+
+6.1 Gaps allowing internal or external fraud
+--------------------------------------------
+- Internal: Admin or someone with Firebase/DB write access can change
+  users.wallet_balance, delete or alter transactions and payment_ledger
+  (Firestore allows it). No immutable audit of who changed what. Risk: HIGH.
+- External: No idempotency on top-up → double credit. No strong verification
+  that withdrawal destination belongs to the user (only “registered account”).
+  Rate limits exist at API level but no per-user withdrawal throttle or
+  anomaly detection in the code reviewed.
+
+6.2 Can admins manipulate balances without detection?
+-----------------------------------------------------
+Yes. Balance and transactions are in Firebase; updates/deletes are possible.
+PostgreSQL financial_audit_log would require explicit writes from the app to
+record admin actions; no such flow exists. So admin balance changes need not
+appear in any immutable log.
+
+6.3 Limits, throttles, anomaly detection
+----------------------------------------
+- MIN/MAX withdrawal and fee logic exist (paymentFeeConfig.ts). Good.
+- No per-user daily withdrawal limit or velocity check in the code path
+  (schema.sql has daily_withdrawal_limit on wallets table but that table is
+  not used in the current Firebase-based flow).
+- No anomaly detection (e.g. sudden large deposit/withdrawal, many small
+  withdrawals) in the reviewed code.
+
+Verdict: Significant fraud risk: balance manipulation without immutable
+audit, no idempotency on deposits, no strong payout verification or
+anomaly detection.
+
+================================================================================
+7. REGULATORY & PLATFORM RISK (THAILAND)
+================================================================================
+
+7.1 Red flags for Thai regulators, banks, or app stores
+-------------------------------------------------------
+- No single, immutable ledger for user funds; cannot prove “user funds vs
+  platform revenue” from ledger (no double-entry in use). Regulators often
+  expect clear segregation and provability.
+- Withdrawals not recorded in an append-only ledger: outbound money flows
+  are not auditable in a tamper-evident way.
+- Reconciliation with bank/TrueMoney not implemented: cannot demonstrate
+  that every credit/debit matches bank and gateway reports. Banks and
+  app stores may require this.
+- Audit trail for money movement is mutable (Firebase). “Cannot be modified
+  even by admins” is a common requirement; current implementation does not
+  meet it.
+
+7.2 Missing controls that could cause forced shutdown or delisting
+------------------------------------------------------------------
+- Inability to prove user fund segregation and movement in an immutable
+  manner could justify regulatory or platform action.
+- Double credit/debit (no idempotency) can lead to real loss and complaints,
+  increasing regulatory and platform scrutiny.
+- If app store requires “financial controls and audit trail,” current
+  implementation (mutable Firebase, no recon against bank) is weak evidence.
+
+Verdict: There are regulatory and platform risks: lack of immutable proof
+of user funds, no reconciliation with bank/TrueMoney, and mutable audit
+trail. These could contribute to forced shutdown or delisting if scrutinized.
+
+================================================================================
+8. CONCRETE GAP LIST (NO THEORY)
+================================================================================
+
+Each item: Risk level | Why it matters | What must be implemented to close the gap.
+
+- User top-up and withdrawal do not write to PostgreSQL ledger (payment_ledger_audit
+  or ledger_entries).
+  Risk: CRITICAL. All money movement must be in a single, immutable ledger for
+  audit and recon.
+  Implement: Make the live money path call POST /api/ledger/append (or a backend
+  service that inserts into payment_ledger_audit / ledger_entries) for every
+  deposit and withdrawal (and fee). Prefer backend-only writes (e.g. API that
+  app calls after gateway confirmation).
+
+- No idempotency key on walletTopUp or walletWithdraw.
+  Risk: CRITICAL. Double submit or retry can double credit or double debit.
+  Implement: Add idempotency_key (e.g. from client or from gateway transaction_no)
+  to both APIs; store and check before applying balance change; return same result
+  for same key.
+
+- Withdrawals (and withdrawal fees) are not written to any ledger.
+  Risk: CRITICAL. Outbound money cannot be proven against bank/TrueMoney.
+  Implement: Every withdrawal and fee must create one or more append-only ledger
+  entries (e.g. debit user, credit payout, credit fee revenue) in PostgreSQL.
+
+- Balance is updated in place in Firebase and is not derived from ledger.
+  Risk: HIGH. Auditors cannot verify balance from ledger; recon cannot detect
+  drift.
+  Implement: Either (a) derive balance from PostgreSQL ledger (and optionally
+  cache in Firebase), or (b) keep Firebase balance but run a daily job that
+  recomputes from ledger and alerts on mismatch; fix drift via adjustments
+  with audit log.
+
+- Firebase payment_ledger is mutable (no DB-level append-only).
+  Risk: HIGH. History can be altered; not acceptable as sole proof for regulators.
+  Implement: Treat PostgreSQL as the single source of truth for ledger; stop
+  relying on Firebase payment_ledger for audit. Optionally mirror to Firebase
+  for read-only UI, but do not allow update/delete.
+
+- Reconciliation is only a UI over Firebase ledger; no matching to bank/TrueMoney.
+  Risk: HIGH. Cannot prove every transaction against external sources.
+  Implement: Automated job (daily or per settlement file) that loads bank/PromptPay/
+  TrueMoney files, matches by transaction_no + amount + date, writes to
+  reconciliation_runs and reconciliation_lines; alerts on mismatch/missing/duplicate;
+  support manual override with reason and write to financial_audit_log.
+
+- Financial audit log (PostgreSQL financial_audit_log) is never written to.
+  Risk: HIGH. No immutable “who did what, when, why” for money or admin actions.
+  Implement: Every balance-affecting action (top-up, withdraw, fee, reversal,
+  adjustment) and every admin override must insert into financial_audit_log with
+  actor, action, entity, state_before/after, reason, correlation_id.
+
+- Reversals, refunds, chargebacks not implemented with ledger and audit.
+  Risk: HIGH. Incorrect or disputed transactions cannot be handled in an auditable
+  way.
+  Implement: Define reversal/refund/chargeback flows that insert reversal entries
+  (or compensating entries) in the ledger and log in financial_audit_log; do not
+  update or delete existing ledger rows.
+
+- No double-entry in the live path (no debit/credit pairs in one transaction group).
+  Risk: MEDIUM (design); HIGH if regulator expects debits = credits. Currently
+  cannot prove “total debits = total credits” from data.
+  Implement: For each business transaction (deposit, withdrawal, fee, release,
+  refund), insert two or more ledger rows in one transaction (e.g. debit user
+  wallet, credit system liability; or debit system, credit user). Use
+  transaction_group_id to tie legs; enforce sum(debits)=sum(credits) per group
+  in application or DB constraint.
+
+- Webhook idempotency does not protect the main top-up path (mockApi.walletTopUp).
+  Risk: HIGH. Duplicate callback or UI double-submit can double-credit.
+  Implement: Same as idempotency above: top-up must be keyed by idempotency_key
+  or gateway transaction_no and checked before applying.
+
+- Admin or direct DB/Firebase access can change balance/transactions/ledger without
+  immutable audit.
+  Risk: HIGH. Internal fraud or mistake cannot be detected.
+  Implement: All balance and ledger changes must go through backend APIs that
+  write to PostgreSQL ledger and financial_audit_log; remove or restrict direct
+  Firebase/DB writes for money; enforce “no direct balance update without ledger
+  + audit” (e.g. trigger or app policy).
+
+- No per-user daily withdrawal limit or velocity check in the executed path.
+  Risk: MEDIUM. Abuse or stolen account can drain balance.
+  Implement: Enforce daily withdrawal limit and optionally velocity checks in
+  walletWithdraw (backend); store limit in DB or config.
+
+- No explicit handling of payout failure after balance debit (e.g. bank API down).
+  Risk: MEDIUM. User loses balance until manual fix.
+  Implement: Introduce “pending payout” state or queue; on failure, retry with
+  backoff or mark for manual resolution; do not leave balance debited with no
+  payout record.
+
+- Timezone / settlement date not aligned with Thailand banking for recon.
+  Risk: MEDIUM. When recon is implemented, date mismatches can cause false
+  mismatches or missed matches.
+  Implement: Use Thailand timezone (Asia/Bangkok) for settlement date and
+  reconciliation date ranges; document value date vs settlement date if needed.
+
+- Firebase transactions collection is mutable (update/delete used in code).
+  Risk: MEDIUM. Cannot rely on it as sole audit trail.
+  Implement: Treat PostgreSQL ledger as source of truth; use Firebase
+  transactions only for user-facing history, or make it append-only by policy
+  and remove update/delete from code.
+
+================================================================================
+9. FINAL VERDICT
+================================================================================
+
+Not safe for production yet.
+
+The design document and migrations (006, 007) define a path to a production-ready
+system: single immutable ledger, double-entry, reconciliation with bank/TrueMoney,
+and immutable audit log. However, the code that actually handles real money today
+does not use that path:
+
+- Balances and user-facing transactions live in Firebase and are updated directly.
+- Ledger writes for deposits go only to Firebase (and only when ledgerContext is
+  provided); withdrawals are not written to any ledger.
+- No idempotency on top-up or withdrawal; double credit/debit is possible.
+- Reconciliation is a summary over Firebase data only; no matching to external
+  files; reconciliation_runs and reconciliation_lines are unused.
+- Financial audit log (immutable) exists in schema but is never written to; money
+  movement is not recorded there.
+
+Until the live money path is moved to backend-only ledger writes (PostgreSQL),
+idempotency is enforced, withdrawals (and fees) are in the ledger, balance is
+derived or verified against the ledger, and reconciliation plus immutable audit
+are implemented and used, the system should not be used for real money in
+production.
+
+Safe only for limited pilot: Only if pilot is strictly controlled (e.g. small
+amounts, limited users, no regulatory requirement for full audit trail yet) and
+with the explicit understanding that double credit/debit and lack of immutable
+proof are accepted risks. Even then, idempotency and writing withdrawals to the
+ledger are strongly recommended before any real funds flow.
+
+================================================================================
+END OF ASSESSMENT
+================================================================================

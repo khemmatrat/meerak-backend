@@ -1,0 +1,5 @@
+{
+  "name": "Nexus Admin Core",
+  "description": "ระบบจัดการ Backend และ Admin Dashboard สำหรับควบคุม Mobile App พร้อมระบบวิเคราะห์ข้อมูลด้วย AI",
+  "requestFramePermissions": []
+}

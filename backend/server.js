@@ -1,4 +1,6 @@
 // ES Module imports
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { createClient } from 'redis';
 import { createRequire } from 'module';
 import pg from 'pg';
@@ -33,14 +35,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// แล้วตามด้วย CORS ปกติ
+// CORS: รองรับ Nexus Admin (localhost:3001 + LAN IP)
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3001')
+  .split(',')
+  .map((o) => o.trim());
+if (!corsOrigins.includes('https://meerak-backend.onrender.com')) corsOrigins.push('https://meerak-backend.onrender.com');
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://meerak-backend.onrender.com'
-  ],
+  origin: corsOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -115,12 +118,12 @@ app.post("/api/upload", async (req, res) => {
   try {
     console.log("📨 Received upload request");
     if (!req.body.file || !req.body.fileName) {
-      return res.status(400).json({ error: "Missing file data" });      
+      return res.status(400).json({ error: "Missing file data" });
     }
-     // ตรวจสอบขนาด (safety check)
+    // ตรวจสอบขนาด (safety check)
     if (req.body.file.length > 50 * 1024 * 1024) { // 50MB
-      return res.status(413).json({ 
-        error: "File too large", 
+      return res.status(413).json({
+        error: "File too large",
         max_size: "50MB",
         your_size: `${(req.body.file.length / 1024 / 1024).toFixed(2)}MB`
       });
@@ -136,7 +139,7 @@ app.post("/api/upload", async (req, res) => {
       public_id: `file_${Date.now()}`,
       resource_type: "auto"
     });
-     console.log("✅ Upload successful to Cloudinary");
+    console.log("✅ Upload successful to Cloudinary");
     res.json({
       success: true,
       message: "✅ อัปโหลดไป Cloudinary สำเร็จ",
@@ -151,9 +154,9 @@ app.post("/api/upload", async (req, res) => {
 
   } catch (error) {
     console.error("❌ Cloudinary upload error:", error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -164,7 +167,7 @@ app.post("/api/upload/image", async (req, res) => {
     if (!req.body.file) {
       return res.status(400).json({ error: "Missing image data" });
     }
-    
+
     // Limit 5MB
     if (req.body.file.length > 5 * 1024 * 1024) {
       return res.status(413).json({ error: "File too large for this endpoint" });
@@ -264,27 +267,27 @@ app.delete("/api/cloudinary/files/:public_id", async (req, res) => {
 app.post("/api/upload/form", uploadMulter.single("file"), async (req, res) => {
   try {
     console.log("📨 FormData upload received");
-    
+
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
-    
+
     console.log(`📊 File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
-    
+
     // ใช้ cloudinary.uploader.upload โดยตรง
     const base64Data = req.file.buffer.toString('base64');
     const dataUri = `data:${req.file.mimetype};base64,${base64Data}`;
-    
+
     console.log("📤 Uploading to Cloudinary...");
-    
+
     const result = await cloudinary.uploader.upload(dataUri, {
       folder: "kyc_uploads",
       resource_type: "auto", // ใช้ auto ให้ Cloudinary detect เอง
       public_id: `kyc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     });
-    
+
     console.log("✅ Cloudinary upload successful!");
-    
+
     res.json({
       success: true,
       message: "✅ อัปโหลดสำเร็จ",
@@ -294,13 +297,13 @@ app.post("/api/upload/form", uploadMulter.single("file"), async (req, res) => {
       format: result.format,
       resource_type: result.resource_type
     });
-    
+
   } catch (error) {
     console.error("❌ Upload error:", error.message);
     console.error("Error details:", error);
-    
-    res.status(500).json({ 
-      success: false, 
+
+    res.status(500).json({
+      success: false,
       error: error.message,
       code: error.http_code || 500
     });
@@ -401,16 +404,16 @@ const JobModel = {
   async updateStatus(jobId, status, updates = {}) {
     const fields = Object.keys(updates);
     const values = Object.values(updates);
-    
+
     const setClause = fields.map((field, i) => `${field} = $${i + 3}`).join(', ');
-    
+
     const query = `
       UPDATE jobs 
       SET status = $1, updated_at = NOW()${setClause ? ', ' + setClause : ''}
       WHERE id = $2
       RETURNING *
     `;
-    
+
     const result = await pool.query(
       query,
       [status, jobId, ...values]
@@ -471,7 +474,7 @@ const calculateCommission = (completedJobs) => {
 app.post('/api/payments/process', async (req, res) => {
   try {
     const { jobId, paymentMethod, discountAmount = 0, userId } = req.body;
-    
+
     console.log('🔒 Processing payment:', { jobId, paymentMethod, discountAmount });
 
     // ดึงข้อมูล job
@@ -482,9 +485,9 @@ app.post('/api/payments/process', async (req, res) => {
 
     // ตรวจสอบสถานะ
     if (job.status !== 'waiting_for_payment') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid job status for payment',
-        currentStatus: job.status 
+        currentStatus: job.status
       });
     }
 
@@ -498,7 +501,7 @@ app.post('/api/payments/process', async (req, res) => {
 
     // คำนวณยอดเงิน
     const finalPrice = Math.max(0, job.price - discountAmount);
-    
+
     // คำนวณค่าคอมมิชชั่น
     const commissionRate = calculateCommission(provider.completed_jobs_count || 0);
     const feeAmount = finalPrice * commissionRate;
@@ -506,7 +509,7 @@ app.post('/api/payments/process', async (req, res) => {
 
     // เริ่ม transaction - ใช้ชื่อตัวแปรใหม่
     const dbClient = await pool.connect();
-    
+
     try {
       await dbClient.query('BEGIN');
 
@@ -577,7 +580,7 @@ app.post('/api/payments/process', async (req, res) => {
           `Income from job: ${job.title}`,
           'pending_release',
           jobId,
-          JSON.stringify({ 
+          JSON.stringify({
             commission_rate: commissionRate,
             fee_amount: feeAmount,
             release_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000)
@@ -610,7 +613,7 @@ app.post('/api/payments/process', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Payment processing error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Payment processing failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -621,7 +624,7 @@ app.post('/api/payments/process', async (req, res) => {
 app.get('/api/payments/status/:jobId', async (req, res) => {
   try {
     const job = await JobModel.findById(req.params.jobId);
-    
+
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
@@ -644,7 +647,7 @@ app.get('/api/payments/status/:jobId', async (req, res) => {
 app.post('/api/payments/release', async (req, res) => {
   try {
     const { jobId } = req.body;
-    
+
     const job = await JobModel.findById(jobId);
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -660,7 +663,7 @@ app.post('/api/payments/release', async (req, res) => {
 
     // เริ่ม transaction - ใช้ชื่อตัวแปรใหม่
     const dbClient = await pool.connect();
-    
+
     try {
       await dbClient.query('BEGIN');
 
@@ -759,9 +762,9 @@ app.post('/api/jobs', async (req, res) => {
       datetime,
       createdBy
     } = req.body;
-    
+
     console.log('📝 [CREATE JOB] Request body:', req.body);
-    
+
     // Validate required fields
     if (!title || !description || !category || !price || !createdBy) {
       return res.status(400).json({
@@ -769,17 +772,17 @@ app.post('/api/jobs', async (req, res) => {
         error: 'Missing required fields: title, description, category, price, createdBy'
       });
     }
-    
+
     // ดึงข้อมูลผู้สร้างงาน
     let clientName = 'Client';
     let clientAvatar = '';
-    
+
     try {
       const userResult = await pool.query(
         `SELECT full_name, avatar_url FROM users WHERE id::text = $1 OR firebase_uid = $1 OR email = $1 OR phone = $1`,
         [createdBy]
       );
-      
+
       if (userResult.rows.length > 0) {
         clientName = userResult.rows[0].full_name || 'Client';
         clientAvatar = userResult.rows[0].avatar_url || '';
@@ -787,10 +790,10 @@ app.post('/api/jobs', async (req, res) => {
     } catch (userError) {
       console.warn('⚠️ Could not fetch user info:', userError.message);
     }
-    
+
     // Generate job ID
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Try to find user ID from createdBy (could be firebase_uid, email, phone, or id)
     let clientIdValue = null;
     try {
@@ -804,7 +807,7 @@ app.post('/api/jobs', async (req, res) => {
     } catch (userError) {
       console.warn('⚠️ Could not find user ID, using NULL for client_id:', userError.message);
     }
-    
+
     // Prepare job data
     const jobData = {
       id: jobId,
@@ -822,13 +825,13 @@ app.post('/api/jobs', async (req, res) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    
+
     console.log('📝 [CREATE JOB] Inserting job:', jobId);
-    
+
     // Parse location for lat/lng
     const locationLat = jobData.location?.lat || 13.736717;
     const locationLng = jobData.location?.lng || 100.523186;
-    
+
     // Insert into database with location_lat and location_lng
     const result = await pool.query(
       `INSERT INTO jobs (
@@ -857,18 +860,18 @@ app.post('/api/jobs', async (req, res) => {
         jobData.updated_at || new Date().toISOString()
       ]
     );
-    
+
     const createdJob = result.rows[0];
-    
+
     // Parse JSON fields
     if (createdJob.location && typeof createdJob.location === 'string') {
       createdJob.location = JSON.parse(createdJob.location);
     }
-    
+
     console.log('✅ [CREATE JOB] Job created successfully:', jobId);
     console.log('✅ [CREATE JOB] Job status:', createdJob.status);
     console.log('✅ [CREATE JOB] Job created_at:', createdJob.created_at);
-    
+
     // Parse location if needed
     if (createdJob.location && typeof createdJob.location === 'string') {
       try {
@@ -877,20 +880,20 @@ app.post('/api/jobs', async (req, res) => {
         // Keep as string if parse fails
       }
     }
-    
+
     res.json({
       success: true,
       message: 'Job created successfully',
       job: {
         ...createdJob,
-        location: createdJob.location && typeof createdJob.location === 'string' 
-          ? JSON.parse(createdJob.location) 
+        location: createdJob.location && typeof createdJob.location === 'string'
+          ? JSON.parse(createdJob.location)
           : createdJob.location,
         clientName: createdJob.created_by_name,
         clientId: createdJob.client_id
       }
     });
-    
+
   } catch (error) {
     console.error('❌ [CREATE JOB] Error:', error);
     console.error('❌ [CREATE JOB] Error details:', {
@@ -899,7 +902,7 @@ app.post('/api/jobs', async (req, res) => {
       detail: error.detail,
       stack: error.stack?.substring(0, 500)
     });
-    
+
     // Try to provide helpful error message
     let errorMessage = 'Failed to create job';
     if (error.code === '23505') {
@@ -909,7 +912,7 @@ app.post('/api/jobs', async (req, res) => {
     } else {
       errorMessage = error.message || 'Unknown error';
     }
-    
+
     res.status(500).json({
       success: false,
       error: errorMessage,
@@ -926,7 +929,7 @@ app.get('/api/jobs/recommended', async (req, res) => {
   try {
     const userId = req.query.userId;
     console.log(`🎯 [RECOMMENDED JOBS] For user: ${userId}`);
-    
+
     // ดึงข้อมูลผู้ใช้เพื่อแนะนำงานที่เหมาะสม
     let userSkills = [];
     if (userId && userId !== 'current') {
@@ -935,7 +938,7 @@ app.get('/api/jobs/recommended', async (req, res) => {
           `SELECT skills FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1`,
           [userId]
         );
-        
+
         if (userResult.rows.length > 0) {
           const skills = userResult.rows[0].skills;
           userSkills = typeof skills === 'string' ? JSON.parse(skills) : skills || [];
@@ -944,7 +947,7 @@ app.get('/api/jobs/recommended', async (req, res) => {
         console.warn('⚠️ Could not fetch user skills:', userError.message);
       }
     }
-    
+
     // ดึง open jobs - ใช้ ORDER BY created_at DESC เพื่อให้งานใหม่ขึ้นก่อน
     // ใช้ COALESCE เพื่อ handle NULL values
     const result = await pool.query(`
@@ -977,33 +980,33 @@ app.get('/api/jobs/recommended', async (req, res) => {
       ORDER BY j.created_at DESC NULLS LAST
       LIMIT 50
     `);
-    
+
     console.log(`📊 [RECOMMENDED JOBS] Found ${result.rows.length} jobs from database`);
     if (result.rows.length > 0) {
       console.log(`📊 [RECOMMENDED JOBS] First job ID: ${result.rows[0].id}, Created: ${result.rows[0].created_at}`);
     }
-    
+
     const jobs = result.rows.map(job => {
       // Calculate distance (mock for now)
       const distance = Math.floor(Math.random() * 10) + 1;
-      
+
       // Check if job matches user skills
-      const isRecommended = userSkills.length > 0 && 
-                           userSkills.some(skill => 
-                             job.category?.toLowerCase().includes(skill.toLowerCase()) ||
-                             skill.toLowerCase().includes(job.category?.toLowerCase() || '')
-                           );
-      
+      const isRecommended = userSkills.length > 0 &&
+        userSkills.some(skill =>
+          job.category?.toLowerCase().includes(skill.toLowerCase()) ||
+          skill.toLowerCase().includes(job.category?.toLowerCase() || '')
+        );
+
       // Parse location
       let location = { lat: 13.736717, lng: 100.523186 };
       if (job.location) {
-        location = typeof job.location === 'string' 
-          ? JSON.parse(job.location) 
+        location = typeof job.location === 'string'
+          ? JSON.parse(job.location)
           : job.location;
       } else if (job.location_lat && job.location_lng) {
         location = { lat: parseFloat(job.location_lat), lng: parseFloat(job.location_lng) };
       }
-      
+
       return {
         id: job.id,
         title: job.title,
@@ -1022,7 +1025,7 @@ app.get('/api/jobs/recommended', async (req, res) => {
         clientName: job.client_name || job.created_by_name || 'Client'
       };
     });
-    
+
     // Sort: recommended jobs first
     if (userSkills.length > 0) {
       jobs.sort((a, b) => {
@@ -1031,7 +1034,7 @@ app.get('/api/jobs/recommended', async (req, res) => {
         return 0;
       });
     }
-    
+
     // ถ้าไม่มี jobs ใน DB
     if (jobs.length === 0) {
       jobs.push(
@@ -1054,29 +1057,29 @@ app.get('/api/jobs/recommended', async (req, res) => {
         }
       );
     }
-    
+
     console.log(`🎯 [RECOMMENDED JOBS] Returning ${jobs.length} jobs`);
     console.log(`🎯 [RECOMMENDED JOBS] Job IDs:`, jobs.map(j => j.id).slice(0, 5));
     res.json(jobs);
-    
+
   } catch (error) {
     console.error('❌ [RECOMMENDED JOBS] Error:', error);
     res.json([{
-        id: "job-001",
-        title: "Delivery Service",
-        description: "Need to deliver documents",
-        category: "Delivery",
-        price: 500,
-        status: "open",
-        datetime: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        created_by_name: "Anna Employer",
-        created_by_avatar: "https://i.pravatar.cc/150?u=anna",
-        location: { lat: 13.736717, lng: 100.523186 },
-        distance: 3,
-        is_recommended: false,
-        isFallback: true
-      }]);
+      id: "job-001",
+      title: "Delivery Service",
+      description: "Need to deliver documents",
+      category: "Delivery",
+      price: 500,
+      status: "open",
+      datetime: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      created_by_name: "Anna Employer",
+      created_by_avatar: "https://i.pravatar.cc/150?u=anna",
+      location: { lat: 13.736717, lng: 100.523186 },
+      distance: 3,
+      is_recommended: false,
+      isFallback: true
+    }]);
   }
 });
 
@@ -1084,9 +1087,9 @@ app.get('/api/jobs/recommended', async (req, res) => {
 app.get('/api/jobs/all', async (req, res) => {
   try {
     const { category, search } = req.query;
-    
+
     console.log(`📋 [ALL JOBS] Category: ${category}, Search: ${search}`);
-    
+
     let query = `
       SELECT 
         j.*,
@@ -1096,35 +1099,35 @@ app.get('/api/jobs/all', async (req, res) => {
       LEFT JOIN users u ON j.created_by::text = u.id::text
       WHERE j.status = 'open'
     `;
-    
+
     const params = [];
     let paramCount = 1;
-    
+
     if (category && category !== 'All') {
       query += ` AND j.category = $${paramCount}`;
       params.push(category);
       paramCount++;
     }
-    
+
     if (search) {
       query += ` AND (j.title ILIKE $${paramCount} OR j.description ILIKE $${paramCount})`;
       params.push(`%${search}%`);
       paramCount++;
     }
-    
+
     query += ` ORDER BY j.created_at DESC LIMIT 50`;
-    
+
     const result = await pool.query(query, params);
-    
+
     const jobs = result.rows.map(job => {
       // Parse location
       let location = { lat: 13.736717, lng: 100.523186 };
       if (job.location) {
-        location = typeof job.location === 'string' 
-          ? JSON.parse(job.location) 
+        location = typeof job.location === 'string'
+          ? JSON.parse(job.location)
           : job.location;
       }
-      
+
       return {
         id: job.id,
         title: job.title,
@@ -1142,7 +1145,7 @@ app.get('/api/jobs/all', async (req, res) => {
         clientId: job.client_id
       };
     });
-    
+
     // ถ้าไม่มี jobs
     if (jobs.length === 0) {
       jobs.push(
@@ -1163,10 +1166,10 @@ app.get('/api/jobs/all', async (req, res) => {
         }
       );
     }
-    
+
     console.log(`📋 [ALL JOBS] Returning ${jobs.length} jobs`);
     res.json(jobs);
-    
+
   } catch (error) {
     console.error('❌ [ALL JOBS] Error:', error);
     res.json([]);
@@ -1185,7 +1188,7 @@ app.post('/api/kyc/submit', uploadMulter.fields([
 ]), async (req, res) => {
   try {
     const { userId, fullName, birthDate, idCardNumber } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
     }
@@ -1267,7 +1270,7 @@ app.post('/api/kyc/submit', uploadMulter.fields([
 app.get('/api/kyc/status/:userId', async (req, res) => {
   try {
     const user = await UserModel.findById(req.params.userId);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -1316,7 +1319,7 @@ app.post('/api/kyc/update-status', async (req, res) => {
 
     if (result.rows.length > 0) {
       const submission = result.rows[0];
-      
+
       // อัพเดท user
       await pool.query(
         `UPDATE users SET 
@@ -1347,14 +1350,14 @@ app.post('/api/kyc/update-status', async (req, res) => {
 app.get('/api/reports/earnings', async (req, res) => {
   try {
     const { userId, startDate, endDate, period = 'monthly' } = req.query;
-    
+
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
     }
 
     let dateRange = '';
     const params = [userId];
-    
+
     if (startDate && endDate) {
       dateRange = 'AND created_at BETWEEN $2 AND $3';
       params.push(startDate, endDate);
@@ -1383,9 +1386,9 @@ app.get('/api/reports/earnings', async (req, res) => {
       params
     );
 
-    const totalEarnings = earningsResult.rows.reduce((sum, row) => 
+    const totalEarnings = earningsResult.rows.reduce((sum, row) =>
       sum + parseFloat(row.earnings || 0), 0);
-    const totalFees = earningsResult.rows.reduce((sum, row) => 
+    const totalFees = earningsResult.rows.reduce((sum, row) =>
       sum + parseFloat(row.fees || 0), 0);
 
     res.json({
@@ -1407,10 +1410,10 @@ app.get('/api/reports/earnings', async (req, res) => {
 app.get('/api/reports/job-stats', async (req, res) => {
   try {
     const { userId, userRole, timeRange = 'month' } = req.query;
-    
+
     let whereClause = '';
     const params = [];
-    
+
     if (userId && userRole) {
       if (userRole === 'client') {
         whereClause = 'WHERE created_by = $1';
@@ -1453,7 +1456,7 @@ app.get('/api/reports/job-stats', async (req, res) => {
     );
 
     const totalJobs = statsResult.rows.reduce((sum, row) => sum + parseInt(row.count), 0);
-    const totalValue = statsResult.rows.reduce((sum, row) => 
+    const totalValue = statsResult.rows.reduce((sum, row) =>
       sum + parseFloat(row.total_amount || 0), 0);
 
     res.json({
@@ -1479,9 +1482,9 @@ app.get('/api/reports/job-stats', async (req, res) => {
 app.get('/api/users/profile/:id', async (req, res) => {
   try {
     const userId = req.params.id;
-    
+
     console.log(`📋 Fetching profile for: ${userId}`);
-    
+
     // ใช้ query ที่ถูกต้องตาม schema_simple.sql
     const query = `
       SELECT * FROM users 
@@ -1490,7 +1493,7 @@ app.get('/api/users/profile/:id', async (req, res) => {
          OR phone = $1 
          OR id::text = $1
     `;
-    
+
     let result;
     try {
       result = await pool.query(query, [userId]);
@@ -1519,13 +1522,13 @@ app.get('/api/users/profile/:id', async (req, res) => {
           source: 'fallback'
         });
       }
-      
-      return res.status(500).json({ 
+
+      return res.status(500).json({
         error: 'Database error',
         message: process.env.NODE_ENV === 'development' ? dbError.message : 'Internal server error'
       });
     }
-    
+
     if (result.rows.length === 0) {
       // Fallback สำหรับ demo-anna-id
       if (userId === 'demo-anna-id' || userId?.includes('demo')) {
@@ -1550,15 +1553,15 @@ app.get('/api/users/profile/:id', async (req, res) => {
           source: 'fallback'
         });
       }
-      
-      return res.status(404).json({ 
+
+      return res.status(404).json({
         error: 'User not found',
         requestedId: userId
       });
     }
-    
+
     const user = result.rows[0];
-    
+
     // Map ชื่อ fields ให้ตรงกับที่ frontend ต้องการ
     const response = {
       id: user.id,
@@ -1574,16 +1577,16 @@ app.get('/api/users/profile/:id', async (req, res) => {
       avatar_url: user.avatar_url,
       skills: typeof user.skills === 'string' ? JSON.parse(user.skills) : (user.skills || []),
       trainings: typeof user.trainings === 'string' ? JSON.parse(user.trainings) : (user.trainings || []),
-      location: typeof user.location === 'string' 
-        ? JSON.parse(user.location) 
+      location: typeof user.location === 'string'
+        ? JSON.parse(user.location)
         : user.location || { lat: 13.736717, lng: 100.523186 },
       created_at: user.created_at,
       updated_at: user.updated_at,
       source: 'postgresql'
     };
-    
+
     res.json(response);
-    
+
   } catch (error) {
     console.error('❌ Profile fetch error:', error);
     console.error('❌ Profile fetch error details:', {
@@ -1591,7 +1594,7 @@ app.get('/api/users/profile/:id', async (req, res) => {
       code: error.code,
       stack: error.stack?.substring(0, 300)
     });
-    
+
     // Fallback สำหรับ demo users หรือเมื่อมี error
     if (req.params.id === 'demo-anna-id' || req.params.id?.includes('demo')) {
       console.log('🔄 Using fallback profile for:', req.params.id);
@@ -1615,8 +1618,8 @@ app.get('/api/users/profile/:id', async (req, res) => {
         source: 'fallback_error'
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Failed to fetch user profile',
       details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
@@ -1628,16 +1631,16 @@ app.get('/api/debug/db-test', async (req, res) => {
   try {
     // Test 1: Basic connection
     const test1 = await pool.query('SELECT NOW() as time, version() as version');
-    
+
     // Test 2: Check users table
     const test2 = await pool.query('SELECT COUNT(*) as count FROM users');
-    
+
     // Test 3: Find specific user
     const test3 = await pool.query(
       `SELECT id, firebase_uid, email FROM users WHERE firebase_uid = $1`,
       ['RwCdeFaFMmtjP16BFuZy']
     );
-    
+
     res.json({
       status: 'success',
       connection: {
@@ -1667,21 +1670,21 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
     console.log(`📋 Fetching jobs for user: ${userId}`);
-    
+
     // 1. หา user ID จาก firebase_uid ก่อน
     const userResult = await pool.query(
       'SELECT id FROM users WHERE firebase_uid = $1',
       [userId]
     );
-    
+
     if (userResult.rows.length === 0) {
       console.log('User not found, returning empty array');
       return res.json([]);
     }
-    
+
     const actualUserId = userResult.rows[0].id;
     console.log(`Found user ID: ${actualUserId}`);
-    
+
     // 2. Query jobs ด้วย user ID (UUID)
     const jobsResult = await pool.query(
       `SELECT j.*, 
@@ -1694,14 +1697,14 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
        ORDER BY j.created_at DESC`,
       [actualUserId]  // ⬅️ ใช้ UUID ไม่ใช่ firebase_uid
     );
-    
+
     console.log(`Found ${jobsResult.rows.length} jobs`);
     res.json(jobsResult.rows);
-    
+
   } catch (error) {
     console.error('❌ Get user jobs error:', error.message);
     console.error('Error details:', error);
-    
+
     // ส่ง mock data ชั่วคราวถ้า error
     const mockJobs = [
       {
@@ -1713,7 +1716,7 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
         created_at: new Date().toISOString()
       }
     ];
-    
+
     res.json(mockJobs);
   }
 });
@@ -1722,32 +1725,32 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
 app.get('/api/payments/pending', async (req, res) => {
   try {
     console.log('🔍 Checking for pending payments...');
-    
+
     // ⭐ ใช้ query แบบง่ายๆ ก่อน
     const result = await pool.query(`
       SELECT COUNT(*) as pending_count 
       FROM transactions 
       WHERE status = 'pending_release'
     `);
-    
+
     const pendingCount = parseInt(result.rows[0].pending_count || 0);
-    
+
     console.log(`📊 Found ${pendingCount} pending payments`);
-    
+
     // ⭐ ส่ง response แบบง่ายก่อน
     res.json({
       success: true,
       pending_count: pendingCount,
       pending_payments: [], // ว่างก่อน
       timestamp: new Date().toISOString(),
-      message: pendingCount > 0 ? 
-        `มี ${pendingCount} การชำระเงินรอการโอน` : 
+      message: pendingCount > 0 ?
+        `มี ${pendingCount} การชำระเงินรอการโอน` :
         'ไม่มีรายการรอการโอน'
     });
-    
+
   } catch (error) {
     console.error('❌ Error in /api/payments/pending:', error.message);
-    
+
     // ⭐ ส่ง response สำรองแทนที่จะ error
     res.json({
       success: false,
@@ -1766,7 +1769,7 @@ app.get('/api/jobs/:jobId', async (req, res) => {
   try {
     const jobId = req.params.jobId;
     console.log(`📋 Fetching job details: ${jobId}`);
-    
+
     const jobResult = await pool.query(
       `SELECT j.*, 
          u1.full_name as client_name,
@@ -1779,10 +1782,10 @@ app.get('/api/jobs/:jobId', async (req, res) => {
        WHERE j.id = $1`,
       [jobId]
     );
-    
+
     if (jobResult.rows.length === 0) {
       console.log(`Job ${jobId} not found`);
-      
+
       // ส่ง mock data ถ้าไม่พบ
       const mockJob = {
         id: jobId,
@@ -1793,16 +1796,16 @@ app.get('/api/jobs/:jobId', async (req, res) => {
         created_at: new Date().toISOString(),
         error: "Job not found in DB, using mock data"
       };
-      
+
       return res.json(mockJob);
     }
-    
+
     console.log(`✅ Found job: ${jobResult.rows[0].title}`);
     res.json(jobResult.rows[0]);
-    
+
   } catch (error) {
     console.error('❌ Get job error:', error.message);
-    
+
     // Error fallback
     res.status(500).json({
       error: 'Failed to fetch job',
@@ -1816,21 +1819,21 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
     console.log(`💰 Fetching transactions for user: ${userId}`);
-    
+
     // 1. หา user ID จาก firebase_uid
     const userResult = await pool.query(
       'SELECT id FROM users WHERE firebase_uid = $1',
       [userId]
     );
-    
+
     if (userResult.rows.length === 0) {
       console.log('User not found, returning empty transactions');
       return res.json([]);
     }
-    
+
     const actualUserId = userResult.rows[0].id;
     console.log(`Found user ID for transactions: ${actualUserId}`);
-    
+
     // 2. Query transactions
     const transactionsResult = await pool.query(
       `SELECT t.*,
@@ -1843,13 +1846,13 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
        LIMIT 100`,
       [actualUserId]
     );
-    
+
     console.log(`Found ${transactionsResult.rows.length} transactions`);
     res.json(transactionsResult.rows);
-    
+
   } catch (error) {
     console.error('❌ Get transactions error:', error.message);
-    
+
     // Send empty array as fallback
     res.json([]);
   }
@@ -1861,12 +1864,12 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
 app.get('/api/reports/financial-summary', async (req, res) => {
   try {
     const userId = req.query.userId || 'current';
-    
+
     console.log(`📊 Fetching financial summary for user: ${userId}`);
-    
+
     // ในกรณีนี้เราจะ return mock data ก่อน
     // ใน production จะ query จาก database
-    
+
     res.json({
       success: true,
       summary: {
@@ -1885,7 +1888,7 @@ app.get('/api/reports/financial-summary', async (req, res) => {
         { name: "Jun", amount: 55000 },
       ]
     });
-    
+
   } catch (error) {
     console.error('Financial summary error:', error);
     res.status(500).json({ error: 'Failed to generate financial summary' });
@@ -1896,7 +1899,7 @@ app.get('/api/reports/financial-summary', async (req, res) => {
 app.get('/api/reports/earnings', async (req, res) => {
   try {
     const { period = 'monthly' } = req.query;
-    
+
     res.json({
       period: period,
       totalEarnings: 60000,
@@ -1907,7 +1910,7 @@ app.get('/api/reports/earnings', async (req, res) => {
         { date: '2026-01-19', earnings: 2000, fees: 40 }
       ]
     });
-    
+
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate earnings report' });
   }
@@ -1928,7 +1931,7 @@ app.get('/api/reports/job-stats', async (req, res) => {
         averageJobValue: 4666.67
       }
     });
-    
+
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate job statistics' });
   }
@@ -1939,7 +1942,7 @@ app.get('/api/reports/job-stats', async (req, res) => {
 app.get('/api/providers', async (req, res) => {
   try {
     console.log('👥 [PROVIDERS] Fetching all providers');
-    
+
     // 1. ตรวจสอบใน PostgreSQL
     const result = await pool.query(`
       SELECT 
@@ -1964,7 +1967,7 @@ app.get('/api/providers', async (req, res) => {
       ORDER BY rating DESC, completed_jobs_count DESC
       LIMIT 50
     `);
-    
+
     let providers = result.rows.map(user => ({
       id: user.id,
       firebase_uid: user.firebase_uid,
@@ -1982,7 +1985,7 @@ app.get('/api/providers', async (req, res) => {
       status: 'available',
       verificationStatus: user.kyc_level === 'level_2' ? 'verified' : 'basic'
     }));
-    
+
     // 2. ถ้าไม่มี provider ใน database ให้ใช้ mock data
     if (providers.length === 0) {
       console.log('👥 [PROVIDERS] No providers in DB, using mock data');
@@ -2041,13 +2044,13 @@ app.get('/api/providers', async (req, res) => {
         }
       ];
     }
-    
+
     console.log(`👥 [PROVIDERS] Returning ${providers.length} providers`);
     res.json(providers);
-    
+
   } catch (error) {
     console.error('❌ [PROVIDERS] Error:', error);
-    
+
     // Fallback to mock data
     res.json([
       {
@@ -2075,18 +2078,18 @@ app.post('/api/providers/batch', async (req, res) => {
   try {
     const { providerIds } = req.body;
     console.log(`👥 [PROVIDERS BATCH] Fetching ${providerIds?.length || 0} providers`);
-    
+
     if (!providerIds || !Array.isArray(providerIds) || providerIds.length === 0) {
       return res.json([]);
     }
-    
+
     // Convert UUID strings
     const validIds = providerIds.filter(id => id && id.length > 0);
-    
+
     if (validIds.length === 0) {
       return res.json([]);
     }
-    
+
     // Query providers
     const placeholders = validIds.map((_, i) => `$${i + 1}`).join(',');
     const query = `
@@ -2109,10 +2112,10 @@ app.post('/api/providers/batch', async (req, res) => {
          OR firebase_uid IN (${placeholders})
       LIMIT 100
     `;
-    
+
     const params = [...validIds, ...validIds];
     const result = await pool.query(query, params);
-    
+
     const providers = result.rows.map(user => ({
       id: user.id,
       name: user.name,
@@ -2128,10 +2131,10 @@ app.post('/api/providers/batch', async (req, res) => {
       joinedDate: user.joineddate,
       verificationStatus: user.kyc_level === 'level_2' ? 'verified' : 'basic'
     }));
-    
+
     console.log(`👥 [PROVIDERS BATCH] Found ${providers.length} providers`);
     res.json(providers);
-    
+
   } catch (error) {
     console.error('❌ [PROVIDERS BATCH] Error:', error);
     res.json([]); // Return empty array on error
@@ -2144,17 +2147,17 @@ app.get('/api/reports/job-statistics', async (req, res) => {
   try {
     const { userId } = req.query; // เปลี่ยนเป็น userId แทน userRole
     console.log(`📈 Fetching job statistics for user: ${userId}`);
-    
+
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
     }
-    
+
     // 1. หา user ID และ role
     const userResult = await pool.query(
       'SELECT id, role FROM users WHERE firebase_uid = $1',
       [userId]
     );
-    
+
     if (userResult.rows.length === 0) {
       console.log('User not found, returning empty statistics');
       return res.json({
@@ -2163,10 +2166,10 @@ app.get('/api/reports/job-statistics', async (req, res) => {
         summary: { totalJobs: 0, totalValue: 0, averageJobValue: 0 }
       });
     }
-    
+
     const actualUserId = userResult.rows[0].id;
     const userRole = userResult.rows[0].role;
-    
+
     // 2. Query jobs ตาม role
     let whereClause = '';
     if (userRole === 'client') {
@@ -2174,7 +2177,7 @@ app.get('/api/reports/job-statistics', async (req, res) => {
     } else if (userRole === 'provider') {
       whereClause = 'WHERE provider_id = $1';
     }
-    
+
     // ดึงสถิติ
     const statsResult = await pool.query(
       `SELECT 
@@ -2186,7 +2189,7 @@ app.get('/api/reports/job-statistics', async (req, res) => {
        GROUP BY status`,
       whereClause ? [actualUserId] : []
     );
-    
+
     // ดึง job ล่าสุด
     const recentJobsResult = await pool.query(
       `SELECT * FROM jobs
@@ -2195,11 +2198,11 @@ app.get('/api/reports/job-statistics', async (req, res) => {
        LIMIT 10`,
       whereClause ? [actualUserId] : []
     );
-    
+
     const totalJobs = statsResult.rows.reduce((sum, row) => sum + parseInt(row.count), 0);
-    const totalValue = statsResult.rows.reduce((sum, row) => 
+    const totalValue = statsResult.rows.reduce((sum, row) =>
       sum + parseFloat(row.total_amount || 0), 0);
-    
+
     const response = {
       statistics: statsResult.rows,
       recentJobs: recentJobsResult.rows,
@@ -2209,13 +2212,13 @@ app.get('/api/reports/job-statistics', async (req, res) => {
         averageJobValue: totalJobs > 0 ? totalValue / totalJobs : 0
       }
     };
-    
+
     console.log(`✅ Job statistics: ${totalJobs} jobs, ${totalValue} total value`);
     res.json(response);
-    
+
   } catch (error) {
     console.error('❌ Job statistics error:', error.message);
-    
+
     // Mock fallback
     res.json({
       statistics: [
@@ -2251,7 +2254,7 @@ app.get('/api/users', async (req, res) => {
     const usersResult = await pool.query(
       'SELECT id, email, full_name, kyc_status FROM users LIMIT 10'
     );
-    
+
     res.json({
       count: usersResult.rows.length,
       users: usersResult.rows
@@ -2265,9 +2268,9 @@ app.get('/api/users', async (req, res) => {
 // Commission calculation (copy from mockApi.ts)
 app.post('/api/utils/calculate-commission', (req, res) => {
   const { completedJobs } = req.body;
-  
+
   const commission = calculateCommission(completedJobs || 0);
-  
+
   res.json({
     completedJobs,
     feePercent: commission,
@@ -2278,23 +2281,23 @@ app.post('/api/utils/calculate-commission', (req, res) => {
 // Distance calculation
 app.post('/api/utils/calculate-distance', (req, res) => {
   const { lat1, lng1, lat2, lng2 } = req.body;
-  
+
   if (!lat1 || !lng1 || !lat2 || !lng2) {
     return res.status(400).json({ error: 'Missing coordinates' });
   }
 
   const deg2rad = (deg) => deg * (Math.PI / 180);
   const R = 6371; // Earth's radius in km
-  
+
   const dLat = deg2rad(lat2 - lat1);
   const dLon = deg2rad(lng2 - lng1);
-  
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c; // Distance in km
 
   res.json({
@@ -2311,7 +2314,7 @@ app.get('/api/health/detailed', async (req, res) => {
     // Check database
     const dbCheck = await pool.query('SELECT 1 as status');
     const dbStatus = dbCheck.rows[0]?.status === 1 ? 'healthy' : 'unhealthy';
-    
+
     // Check Redis
     let redisStatus = 'unhealthy';
     try {
@@ -2320,7 +2323,7 @@ app.get('/api/health/detailed', async (req, res) => {
     } catch (e) {
       redisStatus = 'unhealthy';
     }
-    
+
     // Check Cloudinary
     let cloudinaryStatus = 'unhealthy';
     try {
@@ -2342,9 +2345,9 @@ app.get('/api/health/detailed', async (req, res) => {
       memory: process.memoryUsage()
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       status: 'unhealthy',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -2358,59 +2361,59 @@ app.patch('/api/users/profile/:id', async (req, res) => {
   try {
     const userId = req.params.id;
     const updates = req.body;
-    
+
     console.log(`🔄 Updating profile for user: ${userId}`, updates);
-    
+
     // ตรวจสอบสิทธิ์ (simplified)
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     // สร้าง SQL update dynamically
     const updateFields = [];
     const values = [];
     let paramIndex = 1;
-    
+
     Object.entries(updates).forEach(([key, value]) => {
       // ไม่อนุญาตให้อัพเดท field บางอย่าง
       const forbiddenFields = ['id', 'created_at', 'firebase_uid'];
       if (forbiddenFields.includes(key)) return;
-      
+
       updateFields.push(`${key} = $${paramIndex}`);
       values.push(value);
       paramIndex++;
     });
-    
+
     if (updateFields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
-    
+
     updateFields.push('updated_at = NOW()');
     values.push(userId);
-    
+
     const query = `
       UPDATE users 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
       RETURNING *
     `;
-    
+
     const result = await pool.query(query, values);
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const updatedUser = result.rows[0];
-    
+
     // ลบ cache
     try {
       await redisClient.del(`profile:${userId}`);
     } catch (redisError) {
       console.warn('Failed to clear cache:', redisError.message);
     }
-    
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -2429,10 +2432,10 @@ app.patch('/api/users/profile/:id', async (req, res) => {
         updated_at: updatedUser.updated_at
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Profile update error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to update profile',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2443,7 +2446,7 @@ app.patch('/api/users/profile/:id', async (req, res) => {
 app.get('/api/users/jobs/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
-    
+
     const result = await pool.query(
       `SELECT * FROM jobs 
        WHERE created_by = $1 OR accepted_by = $1
@@ -2451,9 +2454,9 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
        LIMIT 50`,
       [userId]
     );
-    
+
     res.json(result.rows);
-    
+
   } catch (error) {
     console.error('Jobs fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -2464,7 +2467,7 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
 app.get('/api/users/transactions/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
-    
+
     const result = await pool.query(
       `SELECT * FROM transactions 
        WHERE user_id = $1
@@ -2472,9 +2475,9 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
        LIMIT 50`,
       [userId]
     );
-    
+
     res.json(result.rows);
-    
+
   } catch (error) {
     console.error('Transactions fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch transactions' });
@@ -2482,33 +2485,113 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
 });
 // ============ AUTHENTICATION ENDPOINTS ============
 
+// Nexus Admin Core: login with email + password (user_roles ADMIN/AUDITOR only)
+function hashPassword(plain) {
+  const salt = crypto.randomBytes(32);
+  const hash = crypto.pbkdf2Sync(plain, salt, 100000, 64, 'sha512');
+  return salt.toString('hex') + '$' + hash.toString('hex');
+}
+function verifyPassword(plain, storedHash) {
+  if (!storedHash || !storedHash.trim()) return false;
+  try {
+    const [saltHex, hashHex] = storedHash.split('$');
+    if (!saltHex || !hashHex) return false;
+    const salt = Buffer.from(saltHex, 'hex');
+    const hash = crypto.pbkdf2Sync(plain, salt, 100000, 64, 'sha512');
+    return crypto.timingSafeEqual(Buffer.from(hashHex, 'hex'), hash);
+  } catch {
+    return false;
+  }
+}
+
+app.post('/api/auth/admin-login', async (req, res) => {
+  try {
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) {
+      return res.status(503).json({ error: 'JWT not configured; set JWT_SECRET' });
+    }
+    const { email, password } = req.body || {};
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'email required' });
+    }
+    const userResult = await pool.query(
+      `SELECT id, email, full_name, password_hash FROM users WHERE LOWER(email) = LOWER($1)`,
+      [email.trim()]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const user = userResult.rows[0];
+    let roleResult;
+    try {
+      roleResult = await pool.query(`SELECT role FROM user_roles WHERE user_id = $1`, [String(user.id)]);
+    } catch (e) {
+      roleResult = { rows: [] };
+    }
+    const role = roleResult.rows.length > 0 ? roleResult.rows[0].role : 'USER';
+    if (role !== 'ADMIN' && role !== 'AUDITOR') {
+      return res.status(403).json({ error: 'Access denied; admin or auditor role required' });
+    }
+    const hasPassword = user.password_hash && String(user.password_hash).trim() !== '';
+    if (hasPassword) {
+      if (!password || typeof password !== 'string') {
+        return res.status(400).json({ error: 'password required' });
+      }
+      if (!verifyPassword(password, user.password_hash)) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'development') {
+        return res.status(401).json({ error: 'Admin account has no password set' });
+      }
+      if (!password || String(password).length < 4) {
+        return res.status(400).json({ error: 'password required (min 4 chars in dev)' });
+      }
+    }
+    const token = jwt.sign(
+      { sub: user.id, role, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    return res.json({
+      access_token: token,
+      token_type: 'Bearer',
+      expires_in: 8 * 60 * 60,
+      user: { id: user.id, email: user.email, name: user.full_name || user.email, role }
+    });
+  } catch (err) {
+    console.error('Admin login error:', err);
+    return res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 // ✅ 1. Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
-    
+
     if (!phone || !password) {
-      return res.status(400).json({ 
-        error: 'Phone and password required' 
+      return res.status(400).json({
+        error: 'Phone and password required'
       });
     }
-    
+
     console.log(`🔐 Login attempt: ${phone}`);
-    
+
     // ใน production ควรใช้ proper authentication
     // ตัวอย่างนี้ใช้วิธีง่ายๆ สำหรับ development
-    
+
     // 1. ตรวจสอบใน PostgreSQL
     const userResult = await pool.query(
       `SELECT * FROM users 
        WHERE phone = $1 AND password = $2`,
       [phone, password]
     );
-    
+
     if (userResult.rows.length === 0) {
       // ถ้าไม่มีใน PostgreSQL ให้ check Firebase หรือ create new
       console.log('User not found in PostgreSQL, checking Firebase...');
-      
+
       // Fallback: สร้าง mock user สำหรับ development
       const mockUser = {
         id: `user_${Date.now()}`,
@@ -2518,12 +2601,12 @@ app.post('/api/auth/login', async (req, res) => {
         email: `${phone}@meerak.app`,
         kyc_level: 'level_2',
         wallet_balance: phone === '0800000001' ? 50000 : 100,
-        avatar_url: phone === '0800000001' 
-          ? 'https://i.pravatar.cc/150?u=anna' 
+        avatar_url: phone === '0800000001'
+          ? 'https://i.pravatar.cc/150?u=anna'
           : 'https://i.pravatar.cc/150?u=bob',
         created_at: new Date().toISOString()
       };
-      
+
       // บันทึกลง PostgreSQL
       await pool.query(
         `INSERT INTO users (id, phone, name, role, email, kyc_level, wallet_balance, avatar_url, created_at)
@@ -2534,30 +2617,30 @@ app.post('/api/auth/login', async (req, res) => {
           mockUser.avatar_url, mockUser.created_at
         ]
       );
-      
+
       const token = `jwt_${mockUser.id}_${Date.now()}`;
-      
+
       res.json({
         success: true,
         token: token,
         user: mockUser,
         source: 'created_new'
       });
-      
+
       return;
     }
-    
+
     const user = userResult.rows[0];
-    
+
     // 2. Generate JWT token (simplified)
     const token = `jwt_${user.id}_${Date.now()}`;
-    
+
     // 3. อัพเดท last login
     await pool.query(
       `UPDATE users SET last_login = NOW() WHERE id = $1`,
       [user.id]
     );
-    
+
     res.json({
       success: true,
       token: token,
@@ -2574,10 +2657,10 @@ app.post('/api/auth/login', async (req, res) => {
       },
       source: 'postgresql'
     });
-    
+
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Login failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2588,30 +2671,30 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { phone, password, name, role = 'user' } = req.body;
-    
+
     if (!phone || !password || !name) {
-      return res.status(400).json({ 
-        error: 'Phone, password, and name required' 
+      return res.status(400).json({
+        error: 'Phone, password, and name required'
       });
     }
-    
+
     console.log(`📝 Registration: ${phone} (${name})`);
-    
+
     // ตรวจสอบว่ามีผู้ใช้แล้วหรือไม่
     const existingUser = await pool.query(
       `SELECT id FROM users WHERE phone = $1`,
       [phone]
     );
-    
+
     if (existingUser.rows.length > 0) {
-      return res.status(409).json({ 
-        error: 'Phone number already registered' 
+      return res.status(409).json({
+        error: 'Phone number already registered'
       });
     }
-    
+
     // สร้าง user ID
     const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // สร้างข้อมูลผู้ใช้ใหม่
     const newUser = {
       id: userId,
@@ -2624,7 +2707,7 @@ app.post('/api/auth/register', async (req, res) => {
       avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
       created_at: new Date().toISOString()
     };
-    
+
     // บันทึกลง PostgreSQL
     await pool.query(
       `INSERT INTO users (id, phone, email, name, role, kyc_level, wallet_balance, avatar_url, created_at)
@@ -2634,20 +2717,20 @@ app.post('/api/auth/register', async (req, res) => {
         newUser.kyc_level, newUser.wallet_balance, newUser.avatar_url, newUser.created_at
       ]
     );
-    
+
     // Generate token
     const token = `jwt_${newUser.id}_${Date.now()}`;
-    
+
     res.json({
       success: true,
       token: token,
       user: newUser,
       message: 'Registration successful'
     });
-    
+
   } catch (error) {
     console.error('❌ Registration error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Registration failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2659,28 +2742,28 @@ app.post('/api/auth/register', async (req, res) => {
 app.get('/api/jobs', async (req, res) => {
   try {
     const { category, search, limit = 50 } = req.query;
-    
+
     let query = `SELECT * FROM jobs WHERE status = 'open'`;
     const params = [];
     let paramIndex = 1;
-    
+
     if (category && category !== 'All') {
       query += ` AND category = $${paramIndex}`;
       params.push(category);
       paramIndex++;
     }
-    
+
     if (search) {
       query += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
       params.push(`%${search}%`);
       paramIndex++;
     }
-    
+
     query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
     params.push(parseInt(limit));
-    
+
     const result = await pool.query(query, params);
-    
+
     // Add mock data if no results (for development)
     if (result.rows.length === 0) {
       const mockJobs = [
@@ -2705,12 +2788,12 @@ app.get('/api/jobs', async (req, res) => {
           created_at: new Date().toISOString()
         }
       ];
-      
+
       return res.json(mockJobs);
     }
-    
+
     res.json(result.rows);
-    
+
   } catch (error) {
     console.error('Jobs fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -2721,7 +2804,7 @@ app.get('/api/jobs', async (req, res) => {
 app.get('/api/jobs/:id', async (req, res) => {
   try {
     const jobId = req.params.id;
-    
+
     const result = await pool.query(
       `SELECT j.*, 
          u1.name as client_name,
@@ -2732,13 +2815,13 @@ app.get('/api/jobs/:id', async (req, res) => {
        WHERE j.id = $1`,
       [jobId]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
-    
+
     res.json(result.rows[0]);
-    
+
   } catch (error) {
     console.error('Job fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch job' });
@@ -2753,32 +2836,32 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
   try {
     const jobId = req.params.id;
     const { userId } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
     }
-    
+
     // ดึงข้อมูล job และ user
     const [jobResult, userResult] = await Promise.all([
       pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]),
       pool.query('SELECT * FROM users WHERE id = $1', [userId])
     ]);
-    
+
     if (jobResult.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
-    
+
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const job = jobResult.rows[0];
     const user = userResult.rows[0];
-    
+
     if (job.status !== 'open') {
       return res.status(400).json({ error: 'Job is not available' });
     }
-    
+
     // อัพเดท job
     const updateResult = await pool.query(
       `UPDATE jobs SET 
@@ -2790,7 +2873,7 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
        RETURNING *`,
       [userId, jobId]
     );
-    
+
     res.json({
       success: true,
       job: updateResult.rows[0],
@@ -2801,7 +2884,7 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
       },
       message: 'Job accepted successfully'
     });
-    
+
   } catch (error) {
     console.error('Job accept error:', error);
     res.status(500).json({ error: 'Failed to accept job' });
@@ -2812,7 +2895,7 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
 app.post('/api/admin/setup-database', async (req, res) => {
   try {
     console.log('🚀 Starting database setup...');
-    
+
     const setupQueries = [
       // 1. Users table
       `CREATE TABLE IF NOT EXISTS users (
@@ -2832,12 +2915,12 @@ app.post('/api/admin/setup-database', async (req, res) => {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )`,
-      
+
       // 2. Add demo user (ถ้ายังไม่มี)
       `INSERT INTO users (firebase_uid, email, phone, full_name, role, kyc_level, wallet_balance) 
        VALUES ('demo-anna-id', 'anna@meerak.app', '0800000001', 'Anna Employer', 'user', 'level_2', 50000)
        ON CONFLICT DO NOTHING`,
-       
+
       // 3. Jobs table (แบบง่ายๆ ก่อน)
       `CREATE TABLE IF NOT EXISTS jobs (
         id VARCHAR(100) PRIMARY KEY,
@@ -2849,25 +2932,25 @@ app.post('/api/admin/setup-database', async (req, res) => {
         created_by VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW()
       )`,
-      
+
       // 4. Add sample job
       `INSERT INTO jobs (id, title, description, category, price, created_by)
        VALUES ('job-001', 'Delivery Service', 'Need to deliver documents', 'Delivery', 500, 'demo-anna-id')
        ON CONFLICT DO NOTHING`
     ];
-    
+
     // Execute queries
     for (const query of setupQueries) {
       await pool.query(query);
       console.log(`✅ Executed: ${query.substring(0, 60)}...`);
     }
-    
+
     res.json({
       success: true,
       message: 'Database setup completed!',
       timestamp: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Setup error:', error.message);
     res.status(500).json({
@@ -2883,17 +2966,17 @@ app.get('/api/admin/test-db', async (req, res) => {
   try {
     // Test 1: Basic connection
     const test1 = await pool.query('SELECT NOW() as time');
-    
+
     // Test 2: Check tables
     const test2 = await pool.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public'
     `);
-    
+
     // Test 3: Count users
     const test3 = await pool.query('SELECT COUNT(*) as user_count FROM users');
-    
+
     res.json({
       status: 'connected',
       time: test1.rows[0].time,
@@ -2916,7 +2999,7 @@ app.get('/api/admin/test-db', async (req, res) => {
 // Dynamic Form Schemas
 app.get('/api/jobs/forms/:category', (req, res) => {
   const category = req.params.category;
-  
+
   const formSchemas = {
     maid: {
       category: 'maid',
@@ -2953,12 +3036,12 @@ app.get('/api/jobs/forms/:category', (req, res) => {
       ]
     }
   };
-  
+
   const schema = formSchemas[category];
   if (!schema) {
     return res.status(400).json({ error: `Invalid category: ${category}` });
   }
-  
+
   res.json(schema);
 });
 
@@ -2967,11 +3050,11 @@ app.post('/api/jobs/categories/:category/calculate-billing', async (req, res) =>
   try {
     const category = req.params.category;
     const { category_details } = req.body;
-    
+
     if (!category_details) {
       return res.status(400).json({ error: 'Missing category_details' });
     }
-    
+
     // Simple billing calculation (ใช้ logic เบื้องต้น)
     let billing = {
       base_amount: 0,
@@ -2979,7 +3062,7 @@ app.post('/api/jobs/categories/:category/calculate-billing', async (req, res) =>
       service_fee_amount: 0,
       total_amount: 0
     };
-    
+
     // Calculate based on category
     if (category === 'maid') {
       const hours = category_details.hours || 4;
@@ -3007,10 +3090,10 @@ app.post('/api/jobs/categories/:category/calculate-billing', async (req, res) =>
       billing.base_amount = units * 500;
       billing.service_fee_percent = 6;
     }
-    
+
     billing.service_fee_amount = billing.base_amount * (billing.service_fee_percent / 100);
     billing.total_amount = billing.base_amount + billing.service_fee_amount;
-    
+
     res.json({
       billing,
       breakdown: {
@@ -3045,7 +3128,7 @@ app.listen(PORT, async () => {
   console.log("  GET  /api/jobs/forms/:category - Get form schema (NEW)");
   console.log("  POST /api/jobs/categories/:category/calculate-billing - Calculate (NEW)");
   console.log("=".repeat(70));
-  
+
   // Test database connection
   try {
     await pool.query('SELECT 1');
@@ -3053,7 +3136,7 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("❌ PostgreSQL: Connection failed -", error.message);
   }
-  
+
   // Test Redis connection
   try {
     await redisClient.ping();
@@ -3061,6 +3144,6 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("❌ Redis: Connection failed -", error.message);
   }
-  
+
   console.log("=".repeat(70));
 });

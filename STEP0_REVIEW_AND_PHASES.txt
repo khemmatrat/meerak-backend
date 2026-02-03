@@ -1,0 +1,128 @@
+================================================================================
+STEP 0 — MANDATORY REVIEW (WHAT EXISTS vs ASSUMPTIONS)
+================================================================================
+Basis: LEDGER_AUDIT_RECONCILIATION_DESIGN.txt, migrations 006/007, ledger/wallet/
+       payment/reconciliation/audit code as of current codebase.
+
+--------------------------------------------------------------------------------
+WHAT ALREADY EXISTS
+--------------------------------------------------------------------------------
+
+1. DESIGN & MIGRATIONS (production-grade in schema only)
+   - LEDGER_AUDIT_RECONCILIATION_DESIGN.txt: invariants (single source, double-entry,
+     immutability, idempotency, fee separation, reversal-only), reconciliation
+     design, audit log design, schema proposals.
+   - 006_payment_ledger_audit.sql: payment_ledger_audit table, append-only triggers
+     (reject_ledger_audit_update_delete), indexes. Event-style (payment_created,
+     payment_completed, etc.); single-legged (no direction/debit-credit).
+   - 007_ledger_recon_audit.sql: wallets, ledger_entries (double-entry: direction,
+     amount, wallet_id, system_account_code, idempotency_key UNIQUE), reconciliation_runs,
+     reconciliation_lines, financial_audit_log; all append-only triggers where applicable.
+
+2. BACKEND (partially used)
+   - POST /api/ledger/append: writes to payment_ledger_audit; validation of event_type,
+     gateway, status; duplicate id returns 409. No caller in the live deposit/withdraw path.
+   - Webhook idempotency: Redis check/mark for Omise/Stripe webhooks. Does not protect
+     in-app top-up (mockApi.walletTopUp).
+
+3. FEE LOGIC (correct and used)
+   - paymentFeeConfig.ts: PromptPay 25 THB, Bank 25 THB, TrueMoney 3.6%; MIN 100,
+     MAX 500k; getWithdrawalFeeForNet, getMaxNetWithdrawable, calculateWithdrawalFee.
+   - Used in Profile.tsx (withdraw channel selection, fee display) and mockApi.walletWithdraw.
+
+4. FRONTEND MONEY FLOW (current production path — not production-grade)
+   - mockApi.walletTopUp: updates Firebase users.wallet_balance, adds Firebase
+     transactions doc, calls recordPaymentCompleted (ledgerService) → Firebase
+     payment_ledger only when ledgerContext is provided. No idempotency; no PostgreSQL.
+   - mockApi.walletWithdraw: updates Firebase balance, adds two Firebase transactions
+     (withdrawal + fee). No ledger write (Firebase or PostgreSQL). No idempotency.
+   - ledgerService: all writes to Firebase collection "payment_ledger" via setDoc;
+     Firestore allows update/delete (no DB-level immutability).
+   - Reconciliation page: reads from ledgerService (Firebase payment_ledger) only;
+     no matching to bank/TrueMoney files; reconciliation_runs/lines never written.
+
+5. AUDIT
+   - utils/auditLog.ts: Firebase audit_logs (addDoc); mutable. No use in walletTopUp/
+     walletWithdraw for balance changes.
+   - financial_audit_log (007): immutable by trigger; no application code writes to it.
+
+--------------------------------------------------------------------------------
+ASSUMPTIONS THE SYSTEM MAKES (EXPLICIT)
+--------------------------------------------------------------------------------
+
+- User identity: Backend auth middleware mocks user id; frontend uses
+  localStorage "meerak_user_id" for wallet operations. Production must use
+  verified user_id (e.g. JWT) for all wallet APIs.
+- Single currency: THB only; no multi-currency in ledger or wallets.
+- Thailand rails only: PromptPay, Bank Transfer, TrueMoney; no Stripe/foreign
+  in the target design (Stripe exists in webhook code but design doc excludes it).
+- Balance display: Frontend assumes balance is available from profile/wallet
+  API; currently from Firebase user doc. Backend wallet will need to expose
+  balance (GET /api/wallet/balance or in topup/withdraw response) for
+  backend-as-source-of-truth path.
+- Reconciliation: Design assumes external files (bank statements, TrueMoney
+  reports) will be loaded and matched by transaction_no + amount + date; no
+  such loader or job exists in code yet.
+
+--------------------------------------------------------------------------------
+WHAT IS ALREADY PRODUCTION-GRADE
+--------------------------------------------------------------------------------
+
+- Schema: 006 and 007 migrations (append-only triggers, double-entry structure,
+  reconciliation and audit tables).
+- Fee constants and calculation (paymentFeeConfig.ts): correct for Thailand;
+  platform fee is explicit (25 / 25 / 3.6%).
+- Backend ledger append API: validation and duplicate handling; not yet used
+  by the live money path.
+- Webhook idempotency (Redis) for gateway webhooks.
+
+--------------------------------------------------------------------------------
+WHAT IS PARTIALLY DONE
+--------------------------------------------------------------------------------
+
+- Ledger: PostgreSQL ledger_entries and payment_ledger_audit exist and are
+  immutable by trigger, but no application code writes to them for user top-up
+  or withdrawal. Double-entry structure is in schema only.
+- Wallets: 007 wallets table exists but no code creates or updates it; balance
+  lives in Firebase.
+- Reconciliation: Tables and design exist; no job that loads external files or
+  writes reconciliation_runs/lines.
+- Audit: financial_audit_log exists and is immutable; no code writes to it for
+  money movement.
+
+--------------------------------------------------------------------------------
+WHAT IS MISSING OR DANGEROUS
+--------------------------------------------------------------------------------
+
+- Single source of truth: Live path uses Firebase for balance and ledger
+  (Firebase payment_ledger); PostgreSQL ledger is unused for that path.
+  → Risk: Recon and audit cannot rely on one store; double-spend and drift possible.
+- Double-entry in code: No debit/credit pairs written for any transaction.
+  → Risk: Cannot prove debits = credits; platform vs user funds not separable in ledger.
+- Idempotency for top-up/withdraw: None in mockApi. Double submit or retry can
+  double credit or double debit.
+  → Risk: CRITICAL for real money.
+- Withdrawals not in ledger: Only Firebase transactions (mutable). No append-only
+  record of outbound money.
+  → Risk: Cannot prove payouts to auditors or banks.
+- Balance not derived from ledger: Balance is updated in place in Firebase.
+  → Risk: No invariant "balance = sum(ledger)"; recon cannot verify.
+- Reconciliation not implemented: No matching to bank/TrueMoney; no writes to
+  reconciliation_runs/lines; no mismatch handling or escalation.
+- Financial audit log unused: No immutable "who did what, when, why" for
+  balance or ledger changes.
+- Firebase ledger and transactions mutable: Admins or bugs can alter or delete;
+  not acceptable as sole proof for regulators or app stores.
+
+================================================================================
+PHASE 1–3 AND FINAL OUTPUT WILL ADDRESS:
+================================================================================
+- PHASE 1: Backend wallet service (double-entry, idempotency, fee as separate leg),
+  wire frontend to backend wallet APIs, enforce invariants (debit=credit, no
+  negative balance, idempotency). Fix ledger drift, double-spend, replay.
+- PHASE 2: Reconciliation schema & logic (SQL + code), example run, auditor-ready
+  explanation.
+- PHASE 3: Audit hardening (append-only, actor/reason/before-after), separation
+  of duties, compliance checklist, risks + mitigation, production-ready YES/NO.
+- FINAL: Clear answer whether system is 100% usable in production now; if NO,
+  exact gaps and smallest next step per gap; if YES, operational discipline.

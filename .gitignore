@@ -1,16 +1,29 @@
-# Ignore everything
-*
+# Dependencies
+node_modules/
+*/node_modules/
 
-# Except backend folder
-!backend/
-!/backend/**
+# Build outputs
+dist/
+build/
+.next/
+out/
 
-# And .gitignore itself
-!.gitignore
-
-# Ignore these inside backend
-backend/node_modules/
-backend/dist/
+# Environment files
+.env.local
 backend/.env
-backend/*.log
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package locks (optional)
 backend/package-lock.json
