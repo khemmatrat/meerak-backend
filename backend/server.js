@@ -2514,25 +2514,34 @@ app.post('/api/auth/admin-login', async (req, res) => {
     if (!email || typeof email !== 'string') {
       return res.status(400).json({ error: 'email required' });
     }
-    const userResult = await pool.query(
-      `SELECT id, email, full_name, password_hash FROM users WHERE LOWER(email) = LOWER($1)`,
-      [email.trim()]
-    );
-    if (userResult.rows.length === 0) {
+    let userResult;
+    try {
+      userResult = await pool.query(
+        `SELECT id, email, password_hash FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1`,
+        [email]
+      );
+    } catch (dbErr) {
+      console.error('Admin login DB (users):', dbErr.message);
+      return res.status(503).json({
+        error: 'Database error. Ensure users table has email, password_hash (run: ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)); and user_roles table exists.',
+        detail: process.env.NODE_ENV === 'development' ? dbErr.message : undefined
+      });
+    }
+    if (!userResult || userResult.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const user = userResult.rows[0];
-    let roleResult;
+    let roleResult = { rows: [] };
     try {
       roleResult = await pool.query(`SELECT role FROM user_roles WHERE user_id = $1`, [String(user.id)]);
     } catch (e) {
-      roleResult = { rows: [] };
+      console.warn('Admin login user_roles:', e.message);
     }
     const role = roleResult.rows.length > 0 ? roleResult.rows[0].role : 'USER';
     if (role !== 'ADMIN' && role !== 'AUDITOR') {
       return res.status(403).json({ error: 'Access denied; admin or auditor role required' });
     }
-    const hasPassword = user.password_hash && String(user.password_hash).trim() !== '';
+    const hasPassword = user.password_hash != null && String(user.password_hash).trim() !== '';
     if (hasPassword) {
       if (!password || typeof password !== 'string') {
         return res.status(400).json({ error: 'password required' });
@@ -2557,11 +2566,14 @@ app.post('/api/auth/admin-login', async (req, res) => {
       access_token: token,
       token_type: 'Bearer',
       expires_in: 8 * 60 * 60,
-      user: { id: user.id, email: user.email, name: user.full_name || user.email, role }
+      user: { id: user.id, email: user.email, name: user.full_name || user.email || email, role }
     });
   } catch (err) {
-    console.error('Admin login error:', err);
-    return res.status(500).json({ error: 'Login failed' });
+    console.error('Admin login error:', err.message || err);
+    return res.status(500).json({
+      error: 'Login failed',
+      detail: process.env.NODE_ENV === 'development' ? (err.message || String(err)) : undefined
+    });
   }
 });
 
