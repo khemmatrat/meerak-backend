@@ -1,0 +1,17 @@
+# Training Center (sample)
+
+Quick start:
+
+1. Install
+   - npm install
+2. Environment
+   - Copy `.env.example` to `.env.local` and set values (optional)
+3. Run (dev)
+   - npm start
+4. Seed local sample data (optional)
+   - Open browser console and run `import('./src/seed-data')` or include seed-data in startup
+5. Flow
+   - Open `/training` → เลือกคอร์ส → เล่นวิดีโอ → เมื่อจบจะไปยังแบบทดสอบ → ถ้าผ่าน (>=85%) จะ mark เป็น completed
+6. Notes
+   - This is a mock/localStorage implementation. Replace trainingService with backend API for production.
+   - Ensure AuthContext exists and provides `{ user }` with `id` property.

@@ -1,0 +1,9 @@
+{
+  "name": "Meerak",
+  "description": "A People2People service platform connecting users with local providers for tasks, cleaning, repairs, and more.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
