@@ -13,6 +13,8 @@
     "docker:build": "docker build -t kyc-backend .",
     "docker:run": "docker run -p 3001:3001 kyc-backend",
     "migrate": "psql $DATABASE_URL -f src/database/schema-categories-fixed.sql",
+    "migrate:financial": "node scripts/run-migration.js 013",
+    "migrate:audit": "node scripts/run-migration.js 014",
     "postinstall": "npm run migrate || true"
   },
   "dependencies": {
@@ -29,7 +31,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "pg": "^8.11.3",
-    "redis": "^4.7.1"
+    "redis": "^4.7.1",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",

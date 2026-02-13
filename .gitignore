@@ -1,16 +1,33 @@
-# Ignore everything
-*
+# Dependencies
+node_modules/
+*/node_modules/
 
-# Except backend folder
-!backend/
-!/backend/**
+# Build outputs
+dist/
+build/
+.next/
+out/
 
-# And .gitignore itself
-!.gitignore
-
-# Ignore these inside backend
-backend/node_modules/
-backend/dist/
+# Environment files (ห้าม push ไฟล์ที่มีรหัสผ่าน/API key จริง)
+.env
+.env.local
+.env.*.local
 backend/.env
-backend/*.log
+nexus-admin-core/.env
+nexus-admin-core/.env.local
+functions/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package locks (optional)
 backend/package-lock.json
