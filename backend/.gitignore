@@ -1,18 +1,17 @@
-# Ignore everything by default
-*
-
-# Allow backend folder AND its contents
-!backend/
-!backend/**
-
-# Ignore inside backend (เฉพาะที่ไม่ควรขึ้น)
-backend/node_modules/
-backend/dist/
-backend/.env
-backend/*.log
-
-# OS / IDE
+# เฉพาะที่ไม่ควรขึ้น repo (ไฟล์ที่ต้องใช้รัน/deploy ไม่อาจ ignore)
+node_modules/
+dist/
+.env
+*.log
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+# ไฟล์ทดสอบ/ชั่วคราว (ไม่จำเป็นสำหรับ Render)
+*.ps1
+*.myversion
+test*.txt
+test*.html
+TEST.html
+*.jpg
+*.md
