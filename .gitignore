@@ -31,3 +31,60 @@ Thumbs.db
 
 # Package locks (optional)
 backend/package-lock.json
+
+# --- ไม่ push ขึ้น GitHub (เก็บเฉพาะในเครื่อง, deploy ใช้แค่ backend + render.yaml) ---
+# ไฟล์ทดสอบ / ชั่วคราว
+TEST.html
+test-video.html
+test.jpg
+test.txt
+test_base64.txt
+test_document.txt
+# เอกสาร/ดีไซน์ (ไม่เกี่ยวกับการ deploy)
+*.md
+!/README.md
+!backend/*.md
+docs/
+PAYMENT_*.txt
+PRODUCTION_READINESS_FINAL.txt
+STEP0_REVIEW_AND_PHASES.txt
+FINAL_VERDICT_REAL_MONEY.txt
+LEDGER_AUDIT_*.txt
+SECURITY_NOTES.txt
+ENV_PRODUCTION_REAL_MONEY.example
+README-training.md
+metadata.json
+seed-data.ts
+# Root server (Render ใช้ backend/server.js)
+/server.js
+# Frontend (ไม่เกี่ยวกับ backend deploy)
+App.tsx
+index.css
+index.html
+index.tsx
+vite.config.ts
+tailwind.config.js
+tsconfig.json
+vite-env.d.ts
+types.ts
+.vite/
+components/
+pages/
+context/
+services/
+utils/
+src/
+# Admin app + Firebase + Docker (ไม่ใช้กับ Render backend)
+nexus-admin-core/
+functions/
+.firebaserc
+firebase.json
+Dockerfile
+docker-compose.yml
+.dockerignore
+.cursorignore
+# Env ที่ไม่ควร push (มีแค่ใน Dashboard หรือ .env.local)
+.env.development
+.env.production
+# Root db (migration อยู่ที่ backend/db)
+/db/
