@@ -17,6 +17,9 @@ nexus-admin-core/.env
 nexus-admin-core/.env.local
 functions/.env
 
+# Generated PDFs (certified statements)
+backend/uploads/statements/
+
 # Logs
 *.log
 npm-debug.log*
@@ -69,13 +72,13 @@ vite-env.d.ts
 types.ts
 .vite/
 components/
-pages/
+# pages/  # เปิด track pages เพื่อ push Login.tsx และ frontend
 context/
 services/
 utils/
 src/
 # Admin app + Firebase + Docker (ไม่ใช้กับ Render backend)
-nexus-admin-core/
+
 functions/
 .firebaserc
 firebase.json
