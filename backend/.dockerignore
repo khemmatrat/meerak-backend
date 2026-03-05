@@ -1,0 +1,15 @@
+# ไฟล์/โฟลเดอร์ที่ Docker จะไม่คัดลอกเข้า image
+node_modules
+npm-debug.log
+Dockerfile*
+docker-compose*
+.env
+.git
+.gitignore
+README.md
+.vscode
+.idea
+dist
+build
+coverage
+*.md

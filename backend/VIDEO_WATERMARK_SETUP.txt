@@ -1,0 +1,38 @@
+================================================================================
+  VIDEO WATERMARK SETUP — Server-Side Watermark + End Card
+================================================================================
+
+Flow: อัปโหลด → Queue (Bull) → ffmpeg ติดลายน้ำ + ข้อความ AQOND + End Card → S3
+
+================================================================================
+ขั้นตอนที่ต้องทำ
+================================================================================
+
+1. รัน Migration 087:
+   node backend/scripts/run-migration.js 087
+   หรือ
+   psql -h $DB_HOST -U $DB_USER -d $DB_DATABASE -f backend/db/migrations/087_talent_video_upload_jobs.sql
+
+2. วาง logo.png ที่ backend/assets/logo.png
+   (คัดลอกจาก public/logo.png)
+
+3. Docker: Backend ใช้ Dockerfile ที่มี ffmpeg แล้ว
+   docker-compose -f docker-compose.golive.yml build backend
+   docker-compose -f docker-compose.golive.yml up -d
+
+4. ต้องมี Redis (สำหรับ Bull queue)
+   - docker-compose.golive.yml มี redis service อยู่แล้ว
+   - ตั้ง REDIS_URL=redis://redis:6379 ใน environment
+
+================================================================================
+API Endpoints
+================================================================================
+
+POST /api/videos/upload (authenticateToken)
+  - คืน: { job_id, status: 'processing' }
+  - Frontend poll GET /api/videos/upload-status/:jobId จน completed
+
+GET /api/videos/upload-status/:jobId (authenticateToken)
+  - คืน: { job_id, status, video_url?, video?, error_message? }
+
+================================================================================

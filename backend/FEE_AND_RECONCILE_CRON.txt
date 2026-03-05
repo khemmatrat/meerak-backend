@@ -1,0 +1,51 @@
+================================================================================
+  Fee Realization & Reconcile Cron — คำอธิบายและวิธีตั้ง Cron
+================================================================================
+
+1. Migration 081 (platform_revenues, reconcile_alerts, ledger fee columns)
+   - รัน: node backend/scripts/run-migration.js 081
+   - หรือ deploy.ps1 prod 081
+
+2. Reconcile Alert Notification (Line Notify / Email)
+   - เมื่อเกิด alert → ส่งแจ้งเจ้านาย/ทีมบัญชีอัตโนมัติ
+   - ENV: LINE_NOTIFY_TOKEN (จาก https://notify-bot.line.me/my/)
+   - ENV: ALERT_EMAIL_TO (หลายคนคั่นด้วย comma)
+   - ENV: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (ถ้าต้องการส่ง Email)
+   - ดู .env.payment.example
+
+3. Reconcile Cron — ตรวจจับเงินรั่ว (Omise vs platform_balance)
+   - รันทุกวัน 03:00 น.
+   - คำสั่ง: node backend/scripts/reconcile-cron.js
+   - ENV: OMISE_SECRET_KEY, DB_* (ใช้ .env เดิม)
+   - ถ้าต่างกันเกิน 1 บาท → สร้าง reconcile_alerts
+   - Admin ดูได้ที่ Security Center (Reconcile Alerts)
+
+   ตั้ง Cron (Linux):
+   --------
+   0 3 * * * cd /path/to/meerak && node backend/scripts/reconcile-cron.js >> /var/log/reconcile.log 2>&1
+
+   Windows Task Scheduler:
+   --------
+   Program: node
+   Arguments: backend/scripts/reconcile-cron.js
+   Start in: G:\meerak (หรือ path โปรเจค)
+   Trigger: Daily at 03:00
+
+   Manual check (รันเมื่อไหร่ก็ได้):
+   node backend/scripts/verify-last-24h.js
+
+4. Auto Payout Cron (มีอยู่แล้ว)
+   - รัน: node backend/scripts/auto-payout-cron.js
+   - ENV: AUTO_PAYOUT_OMISE_ENABLED=1, OMISE_SECRET_KEY
+   - หัก X+fee จาก wallet, โอน X ไปธนาคาร (ค่าธรรมเนียมถอนหักจากผู้ใช้แล้ว)
+
+5. สรุป Fee Logic (หลัง Migration 081)
+   - เติมเงิน: PromptPay ฟรี | TrueMoney 2.85% | บัตร 3.95%
+   - ถอนเงิน: 35 บาท (standard) / 50 บาท (instant) — หักจากผู้ใช้
+   - platform_revenues เก็บกำไร (withdrawal margin, deposit margin)
+   - Admin ดูได้ที่ Financial Dashboard → Revenue Insights
+
+6. E-Tax Receipt (Migration 082)
+   - ตาราง fee_receipts สำหรับใบเสร็จรับเงินค่าบริการ (ถอน, เติม TrueMoney/Card)
+   - รัน: node backend/scripts/run-migration.js 082
+   - Logic ออกใบกำกับ: ใช้โครง tax_ref_id เดียวกับระบบภาษีเดิม

@@ -1,0 +1,30 @@
+rules_version = '2';
+// Firebase Storage Rules — AQOND Admin Command Center
+// Paths: provider-videos/pending/ | provider-videos/verified/
+// Spec: allow read: if true; allow write: if request.auth != null;
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Pending: คลิปที่รอตรวจ (MVP: allow write for provider uploads without auth)
+    match /provider-videos/pending/{allPaths=**} {
+      allow read: if true;
+      allow write: if true;
+      // Production: allow write: if request.auth != null;
+    }
+    // Verified: คลิปที่ผ่านการตรวจแล้ว
+    match /provider-videos/verified/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Legacy / other provider-videos
+    match /provider-videos/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Default
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

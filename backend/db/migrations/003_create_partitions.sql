@@ -4,8 +4,8 @@ INSERT INTO users (firebase_uid, email, phone, full_name, kyc_status, kyc_level,
 ('firebase_uid_2', 'user2@example.com', '0822222222', 'สมหญิง เก่งมาก', 'pending', 'level_1', 5000.00),
 ('firebase_uid_3', 'admin@example.com', '0833333333', 'แอดมิน ระบบ', 'verified', 'level_3', 100000.00);
 
--- Sample transactions
-INSERT INTO transactions (transaction_id, user_id, type, amount, status, payment_method, completed_at)
+-- Sample transactions (created_at must fall within partition range: 2024-01-01 to 2024-05-01)
+INSERT INTO transactions (transaction_id, user_id, type, amount, status, payment_method, created_at, completed_at)
 SELECT 
     uuid_generate_v4(),
     u.id,
@@ -17,6 +17,7 @@ SELECT
         WHEN RANDOM() < 0.6 THEN 'credit_card'
         ELSE 'bank_transfer'
     END,
-    NOW() - (RANDOM() * INTERVAL '30 days')
+    '2024-01-01'::date + (RANDOM() * INTERVAL '119 days'),
+    '2024-01-01'::date + (RANDOM() * INTERVAL '119 days')
 FROM users u
 CROSS JOIN generate_series(1, 10);

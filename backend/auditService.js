@@ -64,11 +64,12 @@ function createAuditService(pool) {
         const actorRole = (context.actorRole || context.actor_role || 'User').replace(/^user$/i, 'User').replace(/^admin$/i, 'Admin');
         const status = (context.status === 'Failed' ? 'Failed' : 'Success');
         const ipAddress = context.ipAddress ?? context.ip_address ?? null;
+        const userAgent = context.userAgent ?? context.user_agent ?? null;
 
         pool.query(
-          `INSERT INTO audit_log (actor_id, actor_role, action, entity_name, entity_id, changes, status, ip_address)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
-          [String(actorId), actorRole, String(action), String(entityName), String(entityId), changes, status, ipAddress],
+          `INSERT INTO audit_log (actor_id, actor_role, action, entity_name, entity_id, changes, status, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)`,
+          [String(actorId), actorRole, String(action), String(entityName), String(entityId), changes, status, ipAddress, userAgent],
           (err) => {
             if (err) console.error('[AuditService] insert failed:', err.message);
           }

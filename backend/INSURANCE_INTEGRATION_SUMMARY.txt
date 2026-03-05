@@ -1,0 +1,28 @@
+# Insurance Integration Summary
+
+## สิ่งที่มีอยู่แล้ว (Backend)
+
+### Financial Flow
+- Payment split: job_fee + insurance_amount -> Net Worker Pay, Platform Fee, Insurance Premium
+- Ledger: insurance_liability_credit บันทึกเบี้ยประกัน
+- platform_revenues: source_type = 'insurance_premium' (Migration 083)
+- insurance_fund_movements: liability_credit/liability_debit
+
+### Job Lifecycle
+- Payment: ตั้ง policy_number (AQ-INS-YYYYMMDD-XXX), insurance_coverage_status = 'active'
+- Payment Released: ตั้ง insurance_coverage_status = 'terminated'
+
+### APIs
+- POST /api/insurance/claim - Client ยื่นเคลม (body: { job_id, evidence_text })
+- GET /api/insurance/claim/:jobId - ดูสถานะเคลม
+- GET /api/admin/insurance/claims - Admin รายการเคลม
+- PATCH /api/admin/insurance/claims/:id/approve
+- PATCH /api/admin/insurance/claims/:id/reject
+
+### Job Detail (GET /api/jobs/:jobId)
+- has_insurance, insurance_amount, insurance_coverage_status, policy_number
+
+## Frontend Tasks
+1. Insurance Shield Icon - แสดงเมื่อ has_insurance
+2. Report Issue / Claim Button - เรียก POST /api/insurance/claim
+3. Admin Insurance Claims - มีอยู่แล้ว

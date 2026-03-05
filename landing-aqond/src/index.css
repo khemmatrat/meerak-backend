@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss" source("../");
+@config "../tailwind.config.js";
+
+@layer base {
+  :root {
+    --font-sans: "Plus Jakarta Sans", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.animate-confetti-fall {
+  animation: confetti-fall 3s ease-out forwards;
+}
+

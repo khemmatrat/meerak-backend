@@ -1,0 +1,31 @@
+# Job Advance — Backend Design: Business Logic, Security & Escrow
+
+## 1. Database (migration 019)
+- advance_jobs: employer_id, title, description, scope, category, min_budget, max_budget, duration_days, status (draft|open|pending|in_progress|completed|disputed), applicant_count, is_platinum_priority, timestamps.
+- advance_job_applicants: job_id, user_id, status (interested|shortlisted|hired|rejected). ใช้อัปเดต applicant_count.
+
+## 2. Business Logic
+- Auth: ทุก request โพสต์/แก้/ลบ ต้องส่ง Authorization: Bearer <token>. ใช้ user_id จาก JWT เป็น employer_id.
+- ก่อนโพสต์: เช็กมีตัวตนจริง; แนะนำเช็ก phone_verified ก่อนถึงจะให้โพสต์ (403 ถ้ายังไม่ยืนยัน).
+- Tier Check: is_platinum_priority = true ได้เฉพาะ user ที่เป็น Platinum จริง (เช็กจากตาราง VIP). ไม่ใช่ Platinum → 403 หรือบันทึกเป็น false.
+- Filter: GET /api/advance-jobs รองรับ status, category, min_budget, max_budget, page, limit, sort (newest|budget_high|applicants).
+
+## 3. Security — Token
+- ระยะสั้น: JWT ใน localStorage, อายุสั้น + Refresh Token. ป้องกัน XSS (CSP, ไม่ eval/innerHTML จาก user).
+- ระยะยาว: Access token ใน memory; Refresh token ใน httpOnly, Secure, SameSite cookie. โพสต์งานใช้ user_id จาก JWT เท่านั้น ไม่เชื่อจาก body.
+
+## 4. Payment & Escrow
+- Escrow: เมื่อนายจ้างกดจ้าง → ตัดเงินไป Wallet กลาง Meerak; เมื่องานส่งมอบ → โอนจาก Wallet กลางไป Talent (หัก fee ก่อน).
+- Milestone: ตาราง advance_job_milestones (job_id, order, percent, amount, status); ปล่อยทีละงวดเมื่อนายจ้างอนุมัติ.
+- Fee: หัก commission อัตโนมัติก่อนโอนให้ Talent; บันทึก platform_fee / talent_payout ใน transaction.
+
+## 5. Frontend (ทำแล้ว)
+- jobService.ts: axios interceptor → JobServiceError; 401/403/network/server messages.
+- หน้า CreateJobAdvance, JobBoard, JobDetailAdvance ใช้ notify(message, 'error') สำหรับ Toast.
+
+## 6. Backend Checklist
+- POST /api/advance-jobs (เช็ก JWT, phone_verified, tier)
+- GET /api/advance-jobs (list + filter)
+- GET /api/advance-jobs/:id
+- POST /api/advance-jobs/:id/apply
+- Escrow + milestone + fee flow

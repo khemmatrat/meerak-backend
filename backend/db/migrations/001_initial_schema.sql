@@ -227,12 +227,12 @@ CREATE TABLE notifications (
     data JSONB DEFAULT '{}',
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    read_at TIMESTAMP,
-    
-    INDEX idx_notifications_user_id ON notifications(user_id),
-    INDEX idx_notifications_is_read ON notifications(is_read) WHERE is_read = FALSE,
-    INDEX idx_notifications_created_at ON notifications(created_at DESC)
+    read_at TIMESTAMP
 );
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(is_read) WHERE is_read = FALSE;
+CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);
 
 -- ============================================
 -- 7. ADMIN LOGS TABLE (Basic)
@@ -251,12 +251,12 @@ CREATE TABLE admin_logs (
     ip_address INET,
     user_agent TEXT,
     
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_admin_logs_admin_id ON admin_logs(admin_id),
-    INDEX idx_admin_logs_created_at ON admin_logs(created_at DESC),
-    INDEX idx_admin_logs_action ON admin_logs(action_type)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_admin_logs_admin_id ON admin_logs(admin_id);
+CREATE INDEX idx_admin_logs_created_at ON admin_logs(created_at DESC);
+CREATE INDEX idx_admin_logs_action ON admin_logs(action_type);
 
 -- ============================================
 -- 8. FUNCTION: Update updated_at timestamp
@@ -274,19 +274,19 @@ $$ language plpgsql;
 -- ============================================
 CREATE TRIGGER update_users_updated_at 
     BEFORE UPDATE ON users 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TRIGGER update_kyc_documents_updated_at 
     BEFORE UPDATE ON kyc_documents 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TRIGGER update_user_skills_updated_at 
     BEFORE UPDATE ON user_skills 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TRIGGER update_jobs_updated_at 
     BEFORE UPDATE ON jobs 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- ============================================
 -- 10. COMMENTS

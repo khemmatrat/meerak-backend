@@ -6,7 +6,13 @@
 
 -- Enable additional extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "pg_partman" SCHEMA public; -- สำหรับ automatic partitioning
+-- pg_partman is optional (not in standard postgres image); skip if unavailable
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pg_partman" SCHEMA public;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_partman not available, skipping (optional)';
+END $$;
 
 -- ============================================
 -- 1. ADD SOFT DELETE และ OPTIMISTIC LOCKING
@@ -59,7 +65,7 @@ DROP TABLE IF EXISTS transactions CASCADE;
 -- Create new partitioned transactions table
 CREATE TABLE transactions (
     id BIGSERIAL,
-    transaction_id UUID DEFAULT uuid_generate_v4() UNIQUE,
+    transaction_id UUID DEFAULT uuid_generate_v4(),
     
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     type VARCHAR(20) NOT NULL CHECK (type IN (
@@ -107,6 +113,7 @@ CREATE TABLE transactions (
     
     version INTEGER DEFAULT 0,
     
+    UNIQUE(transaction_id, created_at),
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
@@ -187,24 +194,7 @@ CREATE TABLE audit_logs (
     
     old_values JSONB,
     new_values JSONB,
-    diff JSONB GENERATED ALWAYS AS (
-        CASE 
-            WHEN old_values IS NULL THEN new_values
-            WHEN new_values IS NULL THEN old_values
-            ELSE (
-                SELECT jsonb_object_agg(
-                    key, 
-                    jsonb_build_object('old', old_values->key, 'new', new_values->key)
-                )
-                FROM (
-                    SELECT key FROM jsonb_object_keys(old_values)
-                    UNION
-                    SELECT key FROM jsonb_object_keys(new_values)
-                ) AS keys(key)
-                WHERE old_values->key IS DISTINCT FROM new_values->key
-            )
-        END
-    ) STORED,
+    diff JSONB,
     
     changed_by UUID REFERENCES users(id),
     changed_by_firebase_uid VARCHAR(255),
@@ -239,53 +229,52 @@ DROP TABLE IF EXISTS admin_logs_backup;
 -- ============================================
 
 -- Users table indexes
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) 
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) 
     WHERE deleted_at IS NULL;
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_wallet_balance ON users(wallet_balance DESC);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_kyc_level ON users(kyc_level);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_ai_score ON users(ai_verification_score DESC NULLS LAST);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_created_month ON users(DATE_TRUNC('month', created_at));
+CREATE INDEX IF NOT EXISTS idx_users_wallet_balance ON users(wallet_balance DESC);
+CREATE INDEX IF NOT EXISTS idx_users_kyc_level ON users(kyc_level);
+CREATE INDEX IF NOT EXISTS idx_users_ai_score ON users(ai_verification_score DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_users_created_month ON users(DATE_TRUNC('month', created_at));
 
 -- KYC documents indexes
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kyc_document_hash ON kyc_documents(document_hash)
+CREATE INDEX IF NOT EXISTS idx_kyc_document_hash ON kyc_documents(document_hash)
     WHERE document_hash IS NOT NULL;
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kyc_ai_overall_score ON kyc_documents(ai_overall_score DESC);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kyc_bg_check ON kyc_documents(bg_check_passed, bg_check_risk_level);
+CREATE INDEX IF NOT EXISTS idx_kyc_ai_overall_score ON kyc_documents(ai_overall_score DESC);
+CREATE INDEX IF NOT EXISTS idx_kyc_bg_check ON kyc_documents(bg_check_passed, bg_check_risk_level);
 
 -- Transactions indexes (optimized for 10M/day)
-CREATE INDEX CONCURRENTLY idx_transactions_user_id ON transactions(user_id);
-CREATE INDEX CONCURRENTLY idx_transactions_status ON transactions(status);
-CREATE INDEX CONCURRENTLY idx_transactions_type ON transactions(type);
-CREATE INDEX CONCURRENTLY idx_transactions_payment_ref ON transactions(payment_reference) 
+CREATE INDEX idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_transactions_type ON transactions(type);
+CREATE INDEX idx_transactions_payment_ref ON transactions(payment_reference) 
     WHERE payment_reference IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_transactions_gateway_id ON transactions(gateway_transaction_id) 
+CREATE INDEX idx_transactions_gateway_id ON transactions(gateway_transaction_id) 
     WHERE gateway_transaction_id IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_transactions_user_status ON transactions(user_id, status, created_at DESC);
-CREATE INDEX CONCURRENTLY idx_transactions_user_date ON transactions(user_id, created_at DESC);
-CREATE INDEX CONCURRENTLY idx_transactions_completed_date ON transactions(status, completed_at DESC) 
+CREATE INDEX idx_transactions_user_status ON transactions(user_id, status, created_at DESC);
+CREATE INDEX idx_transactions_user_date ON transactions(user_id, created_at DESC);
+CREATE INDEX idx_transactions_completed_date ON transactions(status, completed_at DESC) 
     WHERE status = 'completed';
-CREATE INDEX CONCURRENTLY idx_transactions_created_brin ON transactions USING BRIN (created_at);
-CREATE INDEX CONCURRENTLY idx_transactions_amount_range ON transactions(amount) WHERE amount > 10000;
+CREATE INDEX idx_transactions_created_brin ON transactions USING BRIN (created_at);
+CREATE INDEX idx_transactions_amount_range ON transactions(amount) WHERE amount > 10000;
 
 -- Jobs table additional indexes
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_deadline ON jobs(deadline) 
-    WHERE deadline > CURRENT_TIMESTAMP AND status = 'open';
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_budget_range ON jobs(budget_amount) 
+CREATE INDEX IF NOT EXISTS idx_jobs_deadline ON jobs(deadline) 
+    WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_jobs_budget_range ON jobs(budget_amount) 
     WHERE status = 'open' AND budget_amount BETWEEN 100 AND 10000;
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_location_radius ON jobs 
-    USING GIST (ll_to_earth(latitude, longitude));
+-- idx_jobs_location_radius (ll_to_earth) skipped - requires earthdistance extension
 
 -- Wallet snapshots indexes
-CREATE INDEX CONCURRENTLY idx_snapshots_user_date ON wallet_snapshots(user_id, snapshot_date DESC);
-CREATE INDEX CONCURRENTLY idx_snapshots_date ON wallet_snapshots(snapshot_date DESC);
-CREATE INDEX CONCURRENTLY idx_snapshots_type ON wallet_snapshots(snapshot_type);
+CREATE INDEX idx_snapshots_user_date ON wallet_snapshots(user_id, snapshot_date DESC);
+CREATE INDEX idx_snapshots_date ON wallet_snapshots(snapshot_date DESC);
+CREATE INDEX idx_snapshots_type ON wallet_snapshots(snapshot_type);
 
 -- Audit logs indexes
-CREATE INDEX CONCURRENTLY idx_audit_table_record ON audit_logs(table_name, record_id);
-CREATE INDEX CONCURRENTLY idx_audit_changed_at ON audit_logs(changed_at DESC);
-CREATE INDEX CONCURRENTLY idx_audit_changed_by ON audit_logs(changed_by);
-CREATE INDEX CONCURRENTLY idx_audit_operation ON audit_logs(operation);
-CREATE INDEX CONCURRENTLY idx_audit_brin ON audit_logs USING BRIN (changed_at);
+CREATE INDEX idx_audit_table_record ON audit_logs(table_name, record_id);
+CREATE INDEX idx_audit_changed_at ON audit_logs(changed_at DESC);
+CREATE INDEX idx_audit_changed_by ON audit_logs(changed_by);
+CREATE INDEX idx_audit_operation ON audit_logs(operation);
+CREATE INDEX idx_audit_brin ON audit_logs USING BRIN (changed_at);
 
 -- ============================================
 -- 6. CREATE PERFORMANCE FUNCTIONS

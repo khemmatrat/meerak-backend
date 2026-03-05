@@ -1,16 +1,22 @@
-// backend/db/migrate.js
-const { Client } = require('pg');
-const fs = require('fs').promises;
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// backend/db/migrate.js (ESM)
+import pg from 'pg';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
+
+const { Client } = pg;
 
 async function runMigrations() {
   const client = new Client({
-    host: process.env.DB_HOST || '127.0.0.1',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || process.env.DB_DATABASE || 'kyc_system',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',  // ⬅️ ใส่ default value!
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT, 10) || 5432,
+    database: process.env.DB_DATABASE || 'meera_db',
+    user: process.env.DB_USER || 'meera',
+    password: process.env.DB_PASSWORD || 'meera123',
   });
 
   try {
@@ -26,12 +32,17 @@ async function runMigrations() {
     await client.connect();
     console.log('✅ Connected to PostgreSQL');
 
-    // รันแค่ไฟล์แรกก่อน
-    const migrations = ['001_initial_schema.sql'];
-    
+    // อ่านโฟลเดอร์ migrations แล้วเรียงตามชื่อ (001, 002, ... 033)
+    const allFiles = await fs.readdir(__dirname);
+    const migrations = allFiles
+      .filter((f) => f.endsWith('.sql'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    console.log(`📋 Found ${migrations.length} migration(s): ${migrations.join(', ')}\n`);
+
     for (const migrationFile of migrations) {
       console.log(`📦 Running ${migrationFile}...`);
-      const filePath = path.join(__dirname, '..', 'migrations', migrationFile);
+      const filePath = path.join(__dirname, migrationFile);
       
       try {
         const sql = await fs.readFile(filePath, 'utf8');
@@ -80,8 +91,8 @@ async function runMigrations() {
     // แสดงวิธีแก้ไข
     console.log('\n🔧 Troubleshooting:');
     console.log('1. ตรวจสอบว่า PostgreSQL ทำงานอยู่: `pg_isready -h localhost -p 5432`');
-    console.log('2. ลองเชื่อมต่อด้วย psql: `psql -h localhost -p 5432 -U postgres`');
-    console.log('3. สร้าง database ก่อน: `CREATE DATABASE kyc_system;`');
+    console.log('2. ลองเชื่อมต่อด้วย psql: `psql -h localhost -p 5432 -U meera -d meera_db`');
+    console.log('3. สร้าง database ก่อน: `CREATE DATABASE meera_db;`');
     console.log('4. หรือใช้ mock data ใน server.js ชั่วคราว');
     
     process.exit(1);
