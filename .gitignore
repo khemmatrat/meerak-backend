@@ -8,14 +8,22 @@ build/
 .next/
 out/
 
-# Environment files (ห้าม push ไฟล์ที่มีรหัสผ่าน/API key จริง)
+# Environment files (ห้าม push — มีรหัสผ่าน/API key จริง)
 .env
+.env.*
+!.env.example
+!.env.golive.example
+!.env.payment.example
 .env.local
+.env.development
+.env.production
 .env.*.local
 backend/.env
 nexus-admin-core/.env
 nexus-admin-core/.env.local
+landing-aqond/.env
 functions/.env
+**/.env
 
 # Generated PDFs (certified statements)
 backend/uploads/statements/
