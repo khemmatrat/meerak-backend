@@ -23,14 +23,26 @@ import { DocumentationView } from "./components/DocumentationView";
 import { IntegrationHelpView } from "./components/IntegrationHelpView";
 import { LegalComplianceView } from "./components/LegalComplianceView";
 import { UserPayoutView } from "./components/UserPayoutView";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FinancialStrategyView } from "./components/FinancialStrategyView";
 import { StaffManagementView } from "./components/StaffManagementView";
 import { KycReviewView } from "./components/KycReviewView";
 import { FinancialDashboardView } from "./components/FinancialDashboardView";
 import { InsuranceManager } from "./components/InsuranceManager";
+import { InsuranceClaimsView } from "./components/InsuranceClaimsView";
+import { StabilityFundDashboardView } from "./components/StabilityFundDashboardView";
+import { IncidentCommandView } from "./components/IncidentCommandView";
+import { ReviewManagementView } from "./components/ReviewManagementView";
+import { RevenueDashboard } from "./components/RevenueDashboard";
 import { AuditLogsView } from "./components/AuditLogsView";
 import { TrainingCenterView } from "./components/TrainingCenterView";
+import { ReferralMonitorView } from "./components/ReferralMonitorView";
+import { RescueNetView } from "./components/RescueNetView";
+import { TestingCenterView } from "./components/TestingCenterView";
+import { PaymentProviderGateView } from "./components/PaymentProviderGateView";
+import { AqondGatewayConsoleView } from "./components/AqondGatewayConsoleView";
 import { LoginView } from "./components/LoginView";
+import { CrisisAlertBanner } from "./components/CrisisAlertBanner";
 import { Bell, Search, LogOut } from "lucide-react";
 import { AdminUser } from "./types";
 import { setAdminToken } from "./services/adminApi";
@@ -81,6 +93,8 @@ const App: React.FC = () => {
         return <MobileConfigView />;
       case "push-notifications":
         return <PushNotificationView />;
+      case "testing-center":
+        return <TestingCenterView currentUser={currentUser} />;
       case "content":
         return <ContentManagerView />;
       case "training-center":
@@ -104,12 +118,26 @@ const App: React.FC = () => {
         return <FinancialAuditView currentUserRole={currentUser.role} />;
       case "financial-dashboard":
         return <FinancialDashboardView />;
+      case "payment-provider-gate":
+        return <PaymentProviderGateView />;
+      case "aqond-gateway-console":
+        return <AqondGatewayConsoleView />;
       case "insurance-manager":
         return (
           <div className="p-6 overflow-auto">
             <InsuranceManager />
           </div>
         );
+      case "insurance-claims":
+        return <InsuranceClaimsView />;
+      case "stability-fund":
+        return <StabilityFundDashboardView />;
+      case "incident-command":
+        return <IncidentCommandView />;
+      case "review-management":
+        return <ReviewManagementView />;
+      case "revenue-dashboard":
+        return <RevenueDashboard />;
       case "api-gateway":
         return <ApiGatewayView />;
       case "background-workers":
@@ -127,7 +155,15 @@ const App: React.FC = () => {
       case "legal-compliance":
         return <LegalComplianceView />;
       case "user-payouts":
-        return <UserPayoutView />;
+        return (
+          <ErrorBoundary>
+            <UserPayoutView />
+          </ErrorBoundary>
+        );
+      case "referral-monitor":
+        return <ReferralMonitorView />;
+      case "rescue-net":
+        return <RescueNetView />;
       case "financial-strategy":
         return <FinancialStrategyView />;
       case "staff-management":
@@ -215,6 +251,8 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        <CrisisAlertBanner />
+
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-auto p-8">
           <div className="max-w-7xl mx-auto h-full flex flex-col">
@@ -230,12 +268,26 @@ const App: React.FC = () => {
                   ? "KYC Review"
                   : currentView === "financial-dashboard"
                   ? "Financial Dashboard"
+                  : currentView === "insurance-claims"
+                  ? "Insurance Claims"
+                  : currentView === "incident-command"
+                  ? "Incident Command"
+                  : currentView === "review-management"
+                  ? "Review & Rating"
+                  : currentView === "revenue-dashboard"
+                  ? "Revenue Dashboard"
                   : currentView === "audit-logs"
                   ? "Audit Logs"
+                  : currentView === "support-center"
+                  ? "Support Admin"
+                  : currentView === "rescue-net"
+                  ? "Rescue Net (eSIM)"
                   : currentView.replace(/-/g, " ")}
               </h1>
               <p className="text-slate-500">
-                Overview and management for {currentView}
+                {currentView === "rescue-net"
+                  ? "ยอดขายแพ็กเกจ eSIM / digital goods (GigaStore) และรายการล่าสุด"
+                  : `Overview and management for ${currentView}`}
               </p>
             </div>
 

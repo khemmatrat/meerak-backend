@@ -1,0 +1,22 @@
+/**
+ * @fileoverview AQOND Internal Gateway — shared constants (state machine + ledger accounts).
+ */
+
+export const GATEWAY_TX_STATUS = {
+  PENDING: 'PENDING',
+  AUTHORIZED: 'AUTHORIZED',
+  CAPTURED: 'CAPTURED',
+  SETTLED: 'SETTLED',
+  REFUNDED: 'REFUNDED',
+  FAILED: 'FAILED',
+  VOIDED: 'VOIDED',
+};
+
+/** Chart of accounts codes for double-entry (semantic labels; not bank GL) */
+export const LEDGER_ACCOUNTS = {
+  ASSET_CLEARING: 'ASSET_CLEARING',
+  LIABILITY_MERCHANT_PAYABLE: 'LIABILITY_MERCHANT_PAYABLE',
+  LIABILITY_CUSTOMER_FUNDS: 'LIABILITY_CUSTOMER_FUNDS',
+  REVENUE_GATEWAY_FEE: 'REVENUE_GATEWAY_FEE',
+  ASSET_SETTLEMENT_CASH: 'ASSET_SETTLEMENT_CASH',
+};

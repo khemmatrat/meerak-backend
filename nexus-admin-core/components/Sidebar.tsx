@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, Users, Server, Settings, Activity, Smartphone, Bell, Image, Briefcase, Network, Database, ShieldAlert, ShieldCheck, Router, Cpu, Lock, LifeBuoy, FileText, TrendingUp, BookOpen, Code, Scale, Banknote, Landmark, UserCog, FileCheck, Wallet, ScrollText, Shield, GraduationCap } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, Activity, Smartphone, Bell, Image, Briefcase, Network, Database, ShieldAlert, ShieldCheck, Router, Cpu, Lock, LifeBuoy, FileText, TrendingUp, BookOpen, Code, Scale, Banknote, Landmark, UserCog, FileCheck, Wallet, ScrollText, Shield, GraduationCap, Star, AlertTriangle, Gift, Radio, Volume2, CreditCard } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -17,22 +17,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
     { id: 'security-center', label: 'Security Center', icon: Lock }, 
     { id: 'financial-audit', label: 'Financial & Fraud', icon: ShieldCheck },
     { id: 'financial-dashboard', label: 'Financial Dashboard', icon: Wallet },
+    { id: 'payment-provider-gate', label: 'Payment Gateway (Payso/Ksher)', icon: CreditCard },
+    { id: 'aqond-gateway-console', label: 'AQOND Gateway Console', icon: Network },
     { id: 'insurance-manager', label: 'จัดการประกันงาน (Insurance)', icon: Shield },
+    { id: 'insurance-claims', label: 'Insurance Claims', icon: ShieldCheck },
+    { id: 'stability-fund', label: 'Stability Fund Dashboard', icon: Shield },
     { id: 'kyc-review', label: 'KYC Review', icon: FileCheck },
     { id: 'audit-logs', label: 'Audit Logs', icon: ScrollText },
     { id: 'legal-compliance', label: 'Legal & Compliance', icon: Scale },
     { id: 'api-gateway', label: 'API Gateway & WAF', icon: Router },
     { type: 'header', label: 'Operations' },
     { id: 'job-ops', label: 'Job Operations', icon: Briefcase },
+    { id: 'incident-command', label: 'Incident Command', icon: AlertTriangle },
     { id: 'user-payouts', label: 'User Payout Requests', icon: Banknote },
+    { id: 'referral-monitor', label: 'Referral Monitor', icon: Gift },
+    { id: 'rescue-net', label: 'Rescue Net (eSIM)', icon: Radio },
     { id: 'background-workers', label: 'Worker Queues', icon: Cpu },
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'staff-management', label: 'Staff & Access', icon: UserCog }, // NEW
     { type: 'header', label: 'Strategy & Growth' },
+    { id: 'revenue-dashboard', label: 'Revenue Dashboard', icon: TrendingUp },
     { id: 'financial-strategy', label: 'Financial Strategy', icon: Landmark },
     { id: 'reports', label: 'Reports & Export', icon: FileText }, 
     { type: 'header', label: 'Customer Service' },
-    { id: 'support-center', label: 'Support & Chat', icon: LifeBuoy }, 
+    { id: 'review-management', label: 'Review & Rating', icon: Star },
+    { id: 'support-center', label: 'Support Admin', icon: LifeBuoy }, 
     { type: 'header', label: 'Infrastructure' },
     { id: 'cluster', label: 'Cluster Health', icon: Network },
     { id: 'resource-scaling', label: 'Resource & Cost', icon: TrendingUp },
@@ -41,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
     { type: 'header', label: 'Training Center' },
     { id: 'training-center', label: 'ข้อสอบ & คะแนน', icon: GraduationCap },
     { type: 'header', label: 'App Management' },
+    { id: 'testing-center', label: 'Testing Center', icon: Volume2 },
     { id: 'push-notifications', label: 'Push Notifications', icon: Bell },
     { id: 'content', label: 'จัดการแบนเนอร์', icon: Image },
     { id: 'app-config', label: 'ตั้งค่า Mobile App', icon: Smartphone },
@@ -54,11 +64,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
   return (
     <aside className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-xl">
       <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-        <div className="bg-indigo-500 p-2 rounded-lg">
-          <Server size={24} className="text-white" />
-        </div>
+        <img src="/logo.png" alt="Aqond" className="w-10 h-10 object-contain" />
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Nexus Core</h1>
+          <h1 className="text-xl font-bold tracking-tight">Aqond Admin</h1>
           <p className="text-xs text-slate-400">Backend Control V2.4</p>
         </div>
       </div>

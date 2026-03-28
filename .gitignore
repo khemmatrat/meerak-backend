@@ -22,6 +22,7 @@ backend/.env
 nexus-admin-core/.env
 nexus-admin-core/.env.local
 landing-aqond/.env
+mobile/.env
 functions/.env
 **/.env
 
@@ -31,6 +32,9 @@ backend/uploads/statements/
 # Logs
 *.log
 npm-debug.log*
+# Internal Gateway — BOT compliance JSON/CSV (generated; not public)
+backend/logs/gateway-compliance/*
+!backend/logs/gateway-compliance/.gitkeep
 
 # IDE
 .vscode/

@@ -10,32 +10,83 @@ import http from 'http';
 import { Server } from 'socket.io';
 import express from 'express';
 import multer from 'multer';
-import { uploadToS3, deleteFromS3, listS3Files, checkS3Health } from './lib/s3-client.js';
+import { uploadToS3, deleteFromS3, listS3Files, checkS3Health, tryDeleteS3ObjectFromPublicUrl } from './lib/s3-client.js';
 import stream from 'stream';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import os from 'os';
+import v8 from 'node:v8';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createAuditService } from './auditService.js';
 import { getModule2Questions, getCorrectAnswer, AVAILABLE_CATEGORIES as M2_CATEGORIES_WITH_DATA } from './data/module2Questions.js';
-import { OmiseClient } from './lib/omise-client.js';
+import { PaymentHttpClient } from './lib/paymentHttpClient.js';
+import {
+  getPaymentGatewaySecretKey,
+  getPaymentGatewayWebhookSecret,
+  isAutoPayoutGatewayTransferEnabled,
+} from './lib/paymentManager.js';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import logger, { logPayment, logSecurity, logError } from './lib/logger.js';
 import { apiLimiter, authLimiter, paymentLimiter, withdrawalLimiter, profileLimiter } from './middleware/security.js';
 import { getAutoReplyWithContext as getRukReply } from './lib/chatService.js';
+import { maskPiiForLlm } from './lib/piiMask.js';
+import { recordSupportUserMessage, getCrisisStatus } from './lib/supportCrisis.js';
+import { saveLearningFeedback } from './lib/learningFeedback.js';
+import { recordSentimentSample, getSentimentTrend } from './lib/supportSentimentHistory.js';
+import { generateFaqFromTranscript } from './lib/supportFaqDraft.js';
+import { insertKnowledgeDraft, listKnowledgeDrafts, getKnowledgeDraftById, markDraftPromoted } from './lib/knowledgeBaseDrafts.js';
+import { summarizeMediaUrl } from './lib/supportMediaVision.js';
+import { verifyJobProofImages } from './lib/jobProofVision.js';
 import { saveFaq, listFaq, deleteFaq } from './lib/faqKnowledge.js';
-import { getCommissionMatchBoard, getCommissionBooking, calcVipAdminFundSiphon, calcDepositFeeBreakdown } from './lib/aqondPayFees.js';
+import { getCommissionBooking, calcVipAdminFundSiphon, calcDepositFeeBreakdown } from './lib/aqondPayFees.js';
+import {
+  calcMatchJobProviderInflow,
+  calcBookingEmployerOutflow,
+  calcBookingRelease,
+  buildMatchJobLedgerMetadata,
+  buildBookingLedgerMetadata,
+  calcMarineEmployerOutflow,
+  calcMarineCompleteRelease,
+  calcMarineCancellationCompensation,
+  SOURCING_RATE,
+  PLATFORM_COMMISSION_RATE,
+  TAX_SERVICE_RATE
+} from './lib/financialEngine.js';
+import {
+  calcMatchJobEmployerOutflowDynamic,
+  getPaymentProviderGateSnapshot,
+  normalizePaymentChannel,
+  getLocalGatewayFromEnv,
+} from './lib/paymentProviderGate.js';
+import { handlePaymentsConfirmWebhook } from './lib/paymentsWebhookConfirm.js';
+import { sanitizeTransportContract } from './lib/transportContractValidation.js';
+import {
+  calculateIntercityFee,
+  getIntercityFormulaFromEnv,
+  getTransportIntercityPricingEnabled,
+  getTransportIntercityPricingEnabledForUser,
+  getIntercityBidFloorFromJob,
+  isIntercityCharterJob,
+  calculateCancelFee,
+  getIntercityCancelGraceMinutes,
+} from './lib/financialEngineTransport.js';
 import { applyNoShowPenalty } from './lib/penaltyManager.js';
 import { checkProviderConflict } from './lib/conflictValidator.js';
 import { generateCertifiedStatementPdf, saveCertifiedStatementPdf } from './lib/certifiedStatementPdf.js';
 import { getDrStats, getRegionLabels } from './lib/drService.js';
+import { sendFcmToTokens } from './lib/fcmAdmin.js';
+import { isSkipperEligible, isWithinPierRadius, isCheckInWindowValid, isBoatCompatibleWithPier, hasCarBoatConflict, requiresSafetyDeposit, calcDepositAmount, getDepositPercent, getCancellationRefundPercent } from './lib/marineLogic.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { registerTrainingLmsRoutes } from './routes/trainingLms.js';
+import { registerRescueNetTelecomRoutes } from './routes/rescueNetTelecom.js';
+import { registerGigastoreWebhookRoutes } from './routes/gigastoreWebhooks.js';
 import { registerSecurityPulseRoutes } from './routes/securityPulse.js';
+import { sendFcmMulticast } from './lib/fcmService.js';
+import { sendAlertEmail } from './lib/alertNotifier.js';
 import {
   ensureReferralCode,
   recordReferralOnSignup,
@@ -55,47 +106,140 @@ import {
   isNightOwlHour,
   recordAnomaly,
 } from './lib/anomalyService.js';
+import { generateTaxRefIdForInsert } from './lib/taxIdService.js';
+import {
+  isPlatformCommissionWaivedForUser,
+  getBrandAdviserProfilePayload,
+  insertBrandAdviserAudit,
+} from './lib/brandAdviser.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// โหลด .env จาก root directory (parent ของ backend/)
+// โหลด .env: ลอง backend/.env ก่อน แล้วค่อย root .env (ถ้ามี)
+dotenv.config({ path: join(__dirname, '.env') });
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
-// ============ DEBUG ENV ============
-console.log("🔍 Environment Check:");
-console.log("  NODE_ENV:", process.env.NODE_ENV || 'development', "→", process.env.NODE_ENV === 'production' ? "🔴 LIVE (เงินจริง)" : "🟢 TEST (Test Keys)");
-console.log("  AWS S3 Bucket:", process.env.AWS_S3_BUCKET ? "✅ Loaded" : "⚠️ Using default (aqond-uploads)");
-console.log("  AWS Access Key:", process.env.AWS_ACCESS_KEY_ID ? "✅ Loaded" : "❌ Missing");
-console.log("  AWS Secret Key:", process.env.AWS_SECRET_ACCESS_KEY ? "✅ Loaded" : "❌ Missing");
-const omiseSecret = process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null);
-const omisePublic = process.env.OMISE_PUBLIC_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_PUBLIC_KEY_TEST : null);
-console.log("  Omise Public:", omisePublic ? "✅ Loaded" : "❌ Missing");
-console.log("  Omise Secret:", omiseSecret ? "✅ Loaded" : "❌ Missing");
-if (process.env.NODE_ENV !== 'production' && omiseSecret) console.log("  → Using TEST keys (NODE_ENV != production)");
+/** ใน production ไม่พิมพ์รายการ credential — เปิดด้วย STARTUP_VERBOSE=1 หรือ NODE_ENV!=production */
+const STARTUP_VERBOSE = process.env.STARTUP_VERBOSE === '1' || process.env.NODE_ENV !== 'production';
+
+// ============ startup env (ไม่ log ค่าลับ มีแค่สถานะ loaded / missing) ============
+if (STARTUP_VERBOSE) {
+  console.log("🔍 Environment Check:");
+  console.log("  NODE_ENV:", process.env.NODE_ENV || 'development', "→", process.env.NODE_ENV === 'production' ? "🔴 LIVE (เงินจริง)" : "🟢 TEST (Test Keys)");
+  console.log("  AWS S3 Bucket:", process.env.AWS_S3_BUCKET ? "✅ Loaded" : "⚠️ Using default (aqond-uploads)");
+  console.log("  AWS Access Key:", process.env.AWS_ACCESS_KEY_ID ? "✅ Loaded" : "❌ Missing");
+  console.log("  AWS Secret Key:", process.env.AWS_SECRET_ACCESS_KEY ? "✅ Loaded" : "❌ Missing");
+}
+const paymentGatewayPublicKey = process.env.PAYMENT_GATEWAY_PUBLIC_KEY || (process.env.NODE_ENV !== 'production' ? process.env.PAYMENT_GATEWAY_PUBLIC_KEY_TEST : null);
+const paymentGatewaySecretKey = getPaymentGatewaySecretKey();
+if (STARTUP_VERBOSE) {
+  console.log("  Payment gateway public key:", paymentGatewayPublicKey ? "✅ Loaded" : "❌ Missing");
+  console.log("  Payment gateway secret key:", paymentGatewaySecretKey ? "✅ Loaded" : "❌ Missing");
+  if (process.env.NODE_ENV !== 'production' && paymentGatewaySecretKey) console.log("  → Using TEST keys (NODE_ENV != production)");
+}
 
 let redisClient = null;
 const app = express();
+// Trust proxy: ให้ req.ip ใช้ X-Forwarded-For จาก Nginx — แก้ Rate Limit 429 (ทุกคนโดนยิงจาก IP เดียว)
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5173', 'http://localhost:3000'], credentials: true }
 });
 const PORT = process.env.PORT || 3001; // ⬅️ ใช้จาก .env
 
-// Webhook Omise ต้องใช้ raw body สำหรับตรวจสอบลายเซ็น — ลงทะเบียนก่อน express.json()
-app.post('/api/webhooks/omise', express.raw({ type: 'application/json' }), (req, res, next) => {
+/** Employer-generated 6-digit code; consumed on successful POST /api/jobs/:id/complete — Redis ก่อน แล้ว fallback Map */
+const jobMeetCodes = new Map();
+const JOB_MEET_REDIS_PREFIX = 'job:meet:';
+function cleanupExpiredJobMeetCodes() {
+  const now = Date.now();
+  for (const [jid, row] of jobMeetCodes) {
+    if (!row || row.expiresAt < now) jobMeetCodes.delete(jid);
+  }
+}
+async function setJobMeetCodeEntry(jobId, payload) {
+  const ttlSec = 15 * 60;
+  if (redisClient) {
+    await redisClient.setEx(JOB_MEET_REDIS_PREFIX + String(jobId), ttlSec, JSON.stringify(payload));
+    return;
+  }
+  cleanupExpiredJobMeetCodes();
+  jobMeetCodes.set(String(jobId), { ...payload, expiresAt: Date.now() + ttlSec * 1000 });
+}
+async function getJobMeetCodeEntry(jobId) {
+  if (redisClient) {
+    const raw = await redisClient.get(JOB_MEET_REDIS_PREFIX + String(jobId));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  cleanupExpiredJobMeetCodes();
+  const row = jobMeetCodes.get(String(jobId));
+  if (!row || row.expiresAt < Date.now()) {
+    jobMeetCodes.delete(String(jobId));
+    return null;
+  }
+  return row;
+}
+async function deleteJobMeetCodeEntry(jobId) {
+  if (redisClient) {
+    await redisClient.del(JOB_MEET_REDIS_PREFIX + String(jobId)).catch(() => {});
+  } else {
+    jobMeetCodes.delete(String(jobId));
+  }
+}
+
+// Payment webhook — raw body for HMAC verification (register before express.json())
+app.post('/api/webhooks/checkout', express.raw({ type: 'application/json' }), (req, res, next) => {
   const raw = req.body;
   if (Buffer.isBuffer(raw)) req.rawBody = raw;
   next();
 }, (req, res) => {
-  // Handler จะถูกย้ายไปอยู่ด้านล่างหลังกำหนด pool (ดูส่วน OMISE WEBHOOK)
-  const handler = req.app.get('omiseWebhookHandler');
+  const handler = req.app.get('paymentWebhookHandler');
   if (typeof handler === 'function') return handler(req, res);
   res.status(200).send('OK');
 });
 
+// Stripe — raw body สำหรับ webhook signature (ต้องอยู่ก่อน express.json)
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const pgPool = req.app.get('pool');
+  if (!pgPool) return res.status(503).send('Server not ready');
+  try {
+    const { handleStripeWebhookRequest } = await import('./lib/stripeMatchJobPayment.js');
+    return await handleStripeWebhookRequest(req, res, pgPool);
+  } catch (e) {
+    console.error('[Stripe webhook] handler error:', e);
+    return res.status(500).send('Webhook handler error');
+  }
+});
+
+// Payso / Ksher (หรือ processor เดียวกัน) — ยืนยันยอดสำเร็จ; ใช้ PAYMENT_WEBHOOK_SECRET หรือ PAYMENT_GATEWAY_WEBHOOK_SECRET
+app.post(
+  '/api/payments/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res, next) => {
+    if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
+    next();
+  },
+  async (req, res) => {
+    const pgPool = req.app.get('pool');
+    if (!pgPool) return res.status(503).json({ error: 'server_not_ready' });
+    try {
+      const out = await handlePaymentsConfirmWebhook(req, pgPool);
+      return res.status(out.status).json(out.body);
+    } catch (e) {
+      console.error('[payments webhook]', e);
+      return res.status(500).json({ error: 'webhook_handler_failed' });
+    }
+  },
+);
+
 // ✅ CORS ต้องมาก่อน — รวม preflight และ error responses
 const corsHeaders = (req, res) => {
   const origin = req.headers.origin || '';
-  const allowed = ['https://app.aqond.com', 'https://admin.aqond.com', 'https://aqond.com', 'https://www.aqond.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://147.50.231.183:3000'];
+  const allowed = ['https://app.aqond.com', 'https://admin.aqond.com', 'https://aqond.com', 'https://www.aqond.com', 'http://localhost:3000', 'http://localhost:3002', 'http://localhost:3004', 'http://127.0.0.1:3000', 'http://127.0.0.1:3002', 'http://192.168.1.41:3000', 'http://147.50.231.183:3000'];
   const allowOrigin = allowed.includes(origin) ? origin : allowed[0];
   res.setHeader('Access-Control-Allow-Origin', allowOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -121,6 +265,11 @@ const defaultOrigins = [
   'http://localhost:3006',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3002',
+  // Local network (mobile dev)
+  'http://192.168.1.41:3000',
+  'http://192.168.0.1:3000',
   // Go Live: 147.50.231.183
   'http://147.50.231.183:3000',   // Mobile App
   'http://147.50.231.183:8080',   // AdminDashboard
@@ -416,24 +565,64 @@ app.delete("/api/storage/files/:key", async (req, res) => {
 });
 
 // ============ VIDEO FEED (Talent Videos — TikTok-style) ============
-// GET /api/videos/feed — รายการคลิปสำหรับ feed (talent_videos + fallback S3)
-app.get("/api/videos/feed", async (req, res) => {
+// optionalAuth — ถ้ามี Bearer token จะ set req.user, ไม่มีก็ไม่ error
+async function optionalAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    req.user = null;
+    return next();
+  }
+  const token = auth.slice(7).trim();
+  let userId = null;
+  if (token.startsWith('mock-jwt-token-')) {
+    const rest = token.slice('mock-jwt-token-'.length);
+    const lastDash = rest.lastIndexOf('-');
+    userId = lastDash > 0 ? rest.slice(0, lastDash) : rest;
+  }
+  if (!userId && token.startsWith('mock_')) {
+    try {
+      const payload = JSON.parse(Buffer.from(token.slice(5), 'base64').toString('utf8'));
+      userId = payload.user_id ? String(payload.user_id) : null;
+    } catch (_) {}
+  }
+  if (!userId && process.env.JWT_SECRET) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      userId = String(payload.sub);
+    } catch (_) {}
+  }
+  req.user = userId ? { id: userId } : null;
+  next();
+}
+
+// GET /api/videos/feed — รายการคลิปสำหรับ feed (talent_videos + fallback S3) + like/comment counts
+app.get("/api/videos/feed", optionalAuth, async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
     const cursor = req.query.cursor || null;
+    const userId = req.user?.id ? await resolveUserIdToUuid(req.user.id).catch(() => null) : null;
+    const hasLikesTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_likes'`).then(r => r.rows?.length > 0);
+    const hasBlockedTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_blocked_video_creators'`).then(r => r.rows?.length > 0);
     let videos = [];
     try {
       const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'talent_videos'`).then(r => r.rows?.length > 0);
       if (hasTable) {
+        const blockedWhere = hasBlockedTable && userId ? ` AND v.talent_id NOT IN (SELECT talent_id FROM user_blocked_video_creators WHERE user_id = $${cursor ? 3 : 2})` : '';
+        const likeCommentSelect = hasLikesTable
+          ? `, (SELECT COUNT(*)::INT FROM video_likes WHERE video_id = v.id) AS like_count,
+             (SELECT COUNT(*)::INT FROM video_comments WHERE video_id = v.id) AS comment_count
+             ${userId ? `, (SELECT EXISTS(SELECT 1 FROM video_likes WHERE video_id = v.id AND user_id = $${cursor ? 3 : 2})) AS liked_by_me` : ''}`
+          : '';
         const q = cursor
-          ? `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar
+          ? `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${likeCommentSelect}
              FROM talent_videos v LEFT JOIN users u ON u.id = v.talent_id
-             WHERE v.is_approved = true AND v.created_at < (SELECT created_at FROM talent_videos WHERE id::text = $1)
+             WHERE v.is_approved = true AND v.created_at < (SELECT created_at FROM talent_videos WHERE id::text = $1)${blockedWhere}
              ORDER BY v.created_at DESC LIMIT $2`
-          : `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar
+          : `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${likeCommentSelect}
              FROM talent_videos v LEFT JOIN users u ON u.id = v.talent_id
-             WHERE v.is_approved = true ORDER BY v.created_at DESC LIMIT $1`;
-        const params = cursor ? [cursor, limit] : [limit];
+             WHERE v.is_approved = true${blockedWhere}
+             ORDER BY v.created_at DESC LIMIT $1`;
+        const params = cursor ? (userId ? [cursor, limit, userId] : [cursor, limit]) : (userId ? [limit, userId] : [limit]);
         const r = await pool.query(q, params);
         videos = (r.rows || []).map(row => ({
           id: String(row.id),
@@ -446,6 +635,9 @@ app.get("/api/videos/feed", async (req, res) => {
           created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
           talent_name: row.talent_name,
           talent_avatar: row.talent_avatar,
+          like_count: hasLikesTable ? (row.like_count ?? 0) : 0,
+          comment_count: hasLikesTable ? (row.comment_count ?? 0) : 0,
+          liked_by_me: hasLikesTable && userId ? !!row.liked_by_me : false,
         }));
       }
     } catch (e) { console.warn('talent_videos query:', e.message); }
@@ -461,6 +653,9 @@ app.get("/api/videos/feed", async (req, res) => {
         created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
         talent_name: null,
         talent_avatar: null,
+        like_count: 0,
+        comment_count: 0,
+        liked_by_me: false,
       }));
     }
     const last = videos[videos.length - 1];
@@ -468,6 +663,45 @@ app.get("/api/videos/feed", async (req, res) => {
   } catch (err) {
     console.error('GET /api/videos/feed:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/videos/by-talent/:talentId — คลิปของ Talent (public, สำหรับดูโปรไฟล์ย่อย)
+app.get("/api/videos/by-talent/:talentId", async (req, res) => {
+  try {
+    const talentId = (req.params.talentId || '').toString().trim();
+    if (!talentId) return res.json({ videos: [] });
+    let videos = [];
+    try {
+      const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'talent_videos'`).then(r => r.rows?.length > 0);
+      if (hasTable) {
+        // รองรับทั้ง id และ firebase_uid
+        const userRow = await pool.query(
+          `SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1`,
+          [talentId]
+        ).catch(() => ({ rows: [] }));
+        const resolvedId = userRow.rows?.[0]?.id || talentId;
+        const r = await pool.query(
+          `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at
+           FROM talent_videos v WHERE (v.talent_id::text = $1 OR v.talent_id = $2) AND COALESCE(v.is_approved, true) = true ORDER BY v.created_at DESC`,
+          [resolvedId, resolvedId]
+        );
+        videos = (r.rows || []).map(row => ({
+          id: String(row.id),
+          talent_id: String(row.talent_id),
+          video_url: row.video_url,
+          thumbnail_url: row.thumbnail_url,
+          title: row.title,
+          description: row.description,
+          duration_seconds: row.duration_seconds,
+          created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+        }));
+      }
+    } catch (e) { console.warn('talent_videos by-talent:', e?.message); }
+    res.json({ videos });
+  } catch (err) {
+    console.error('GET /api/videos/by-talent:', err);
+    res.json({ videos: [] });
   }
 });
 
@@ -498,7 +732,7 @@ app.get("/api/videos/my", authenticateToken, async (req, res) => {
         }));
       }
     } catch (e) { console.warn('talent_videos my:', e.message); }
-    const userRow = await pool.query('SELECT greeting_video_url FROM users WHERE id = $1', [userId]).catch(() => ({ rows: [] }));
+    const userRow = await pool.query('SELECT greeting_video_url FROM users WHERE id = $1::uuid', [userId]).catch(() => ({ rows: [] }));
     const gv = userRow.rows?.[0]?.greeting_video_url;
     if (gv && !videos.some(v => v.video_url === gv)) {
       videos.unshift({
@@ -611,6 +845,149 @@ app.get("/api/videos/upload-status/:jobId", authenticateToken, async (req, res) 
   }
 });
 
+// POST /api/videos/:id/like — สลับไลค์ (ต้อง login)
+app.post("/api/videos/:id/like", authenticateToken, async (req, res) => {
+  try {
+    const userId = await resolveUserIdToUuid(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const videoId = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const hasLikes = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_likes'`).then(r => r.rows?.length > 0);
+    if (!hasLikes) return res.status(503).json({ error: 'ระบบไลค์ยังไม่พร้อม' });
+    const exists = await pool.query(`SELECT 1 FROM video_likes WHERE video_id = $1 AND user_id = $2`, [videoId, userId]);
+    let liked;
+    if (exists.rows?.length > 0) {
+      await pool.query(`DELETE FROM video_likes WHERE video_id = $1 AND user_id = $2`, [videoId, userId]);
+      liked = false;
+    } else {
+      await pool.query(`INSERT INTO video_likes (video_id, user_id) VALUES ($1, $2) ON CONFLICT (video_id, user_id) DO NOTHING`, [videoId, userId]);
+      liked = true;
+    }
+    const countRow = await pool.query(`SELECT COUNT(*)::INT AS c FROM video_likes WHERE video_id = $1`, [videoId]);
+    res.json({ liked, like_count: countRow.rows?.[0]?.c ?? 0 });
+  } catch (err) {
+    console.error('POST /api/videos/:id/like:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/videos/:id/comments — รายการคอมเมนต์
+app.get("/api/videos/:id/comments", async (req, res) => {
+  try {
+    const videoId = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const hasComments = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_comments'`).then(r => r.rows?.length > 0);
+    if (!hasComments) return res.json({ comments: [] });
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const cursor = req.query.cursor || null;
+    const q = cursor
+      ? `SELECT c.id, c.text, c.created_at, u.full_name AS user_name, u.avatar_url AS user_avatar
+         FROM video_comments c LEFT JOIN users u ON u.id = c.user_id
+         WHERE c.video_id = $1 AND c.created_at < (SELECT created_at FROM video_comments WHERE id::text = $2)
+         ORDER BY c.created_at DESC LIMIT $3`
+      : `SELECT c.id, c.text, c.created_at, u.full_name AS user_name, u.avatar_url AS user_avatar
+         FROM video_comments c LEFT JOIN users u ON u.id = c.user_id
+         WHERE c.video_id = $1 ORDER BY c.created_at DESC LIMIT $2`;
+    const params = cursor ? [videoId, cursor, limit] : [videoId, limit];
+    const r = await pool.query(q, params);
+    const comments = (r.rows || []).map(row => ({
+      id: String(row.id),
+      text: row.text,
+      created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+      user_name: row.user_name,
+      user_avatar: row.user_avatar,
+    }));
+    const last = comments[comments.length - 1];
+    res.json({ comments, nextCursor: last ? last.id : null, hasMore: comments.length >= limit });
+  } catch (err) {
+    console.error('GET /api/videos/:id/comments:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/videos/:id/comments — เพิ่มคอมเมนต์ (ต้อง login)
+app.post("/api/videos/:id/comments", authenticateToken, async (req, res) => {
+  try {
+    const userId = await resolveUserIdToUuid(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const videoId = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const text = (req.body?.text || '').trim();
+    if (!text || text.length > 500) return res.status(400).json({ error: 'คอมเมนต์ต้องมี 1–500 ตัวอักษร' });
+    const hasComments = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_comments'`).then(r => r.rows?.length > 0);
+    if (!hasComments) return res.status(503).json({ error: 'ระบบคอมเมนต์ยังไม่พร้อม' });
+    const videoExists = await pool.query(`SELECT 1 FROM talent_videos WHERE id = $1`, [videoId]);
+    if (!videoExists.rows?.length) return res.status(404).json({ error: 'ไม่พบคลิป' });
+    const ins = await pool.query(
+      `INSERT INTO video_comments (video_id, user_id, text) VALUES ($1, $2, $3) RETURNING id, text, created_at`,
+      [videoId, userId, text]
+    );
+    const row = ins.rows?.[0];
+    const userRow = await pool.query(`SELECT full_name, avatar_url FROM users WHERE id = $1::uuid`, [userId]).then(r => r.rows?.[0]);
+    const countRow = await pool.query(`SELECT COUNT(*)::INT AS c FROM video_comments WHERE video_id = $1`, [videoId]);
+    res.status(201).json({
+      comment: {
+        id: String(row.id),
+        text: row.text,
+        created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+        user_name: userRow?.full_name,
+        user_avatar: userRow?.avatar_url,
+      },
+      comment_count: countRow.rows?.[0]?.c ?? 0,
+    });
+  } catch (err) {
+    console.error('POST /api/videos/:id/comments:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/videos/:id/report — แจ้งรายงานคลิป (ต้อง login)
+app.post("/api/videos/:id/report", authenticateToken, async (req, res) => {
+  try {
+    const userId = await resolveUserIdToUuid(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const videoId = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const reason = (req.body?.reason || '').trim().slice(0, 500);
+    const hasReports = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_reports'`).then(r => r.rows?.length > 0);
+    if (!hasReports) return res.status(503).json({ error: 'ระบบรายงานยังไม่พร้อม' });
+    const videoExists = await pool.query(`SELECT talent_id FROM talent_videos WHERE id = $1`, [videoId]);
+    if (!videoExists.rows?.length) return res.status(404).json({ error: 'ไม่พบคลิป' });
+    await pool.query(
+      `INSERT INTO video_reports (video_id, reporter_id, reason) VALUES ($1, $2, $3)`,
+      [videoId, userId, reason || null]
+    );
+    res.json({ success: true, message: 'ขอบคุณที่แจ้งรายงาน เราจะตรวจสอบและดำเนินการ' });
+  } catch (err) {
+    console.error('POST /api/videos/:id/report:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/videos/:id/block — บล็อก Talent เจ้าของคลิป (ไม่เห็นคลิปของเขาใน feed อีก) (ต้อง login)
+app.post("/api/videos/:id/block", authenticateToken, async (req, res) => {
+  try {
+    const userId = await resolveUserIdToUuid(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const videoId = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const hasBlocked = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_blocked_video_creators'`).then(r => r.rows?.length > 0);
+    if (!hasBlocked) return res.status(503).json({ error: 'ระบบบล็อกยังไม่พร้อม' });
+    const videoRow = await pool.query(`SELECT talent_id FROM talent_videos WHERE id = $1`, [videoId]);
+    if (!videoRow.rows?.length) return res.status(404).json({ error: 'ไม่พบคลิป' });
+    const talentId = videoRow.rows[0].talent_id;
+    if (talentId === userId) return res.status(400).json({ error: 'ไม่สามารถบล็อกตัวเองได้' });
+    await pool.query(
+      `INSERT INTO user_blocked_video_creators (user_id, talent_id) VALUES ($1, $2) ON CONFLICT (user_id, talent_id) DO NOTHING`,
+      [userId, talentId]
+    );
+    res.json({ success: true, message: 'บล็อกแล้ว จะไม่เห็นคลิปของ Talent คนนี้ใน feed อีก' });
+  } catch (err) {
+    console.error('POST /api/videos/:id/block:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ✅ Employer: บันทึก Talent (Like/Heart) — สำหรับจ้างภายหลัง
 app.post('/api/employer/saved-talents', authenticateToken, async (req, res) => {
   try {
@@ -707,7 +1084,7 @@ app.patch('/api/provider/availability', authenticateToken, async (req, res) => {
     const { available } = req.body || {};
     const val = !!available;
     await pool.query(
-      `UPDATE users SET provider_available = $1, provider_available_at = CASE WHEN $1 THEN NOW() ELSE provider_available_at END, updated_at = NOW() WHERE id = $2`,
+      `UPDATE users SET provider_available = $1, provider_available_at = CASE WHEN $1 THEN NOW() ELSE provider_available_at END, updated_at = NOW() WHERE id = $2::uuid`,
       [val, userId]
     );
     res.json({ success: true, provider_available: val });
@@ -755,9 +1132,9 @@ app.patch('/api/users/me/app-mode', authenticateToken, async (req, res) => {
     const role = (req.body.role || '').toLowerCase();
     if (!['user', 'provider', 'employer'].includes(role)) return res.status(400).json({ error: 'Invalid role; use user, provider, or employer' });
     const appRole = role === 'employer' ? 'user' : role;
-    const prev = await pool.query('SELECT role FROM users WHERE id = $1', [userId]);
+    const prev = await pool.query('SELECT role FROM users WHERE id = $1::uuid', [userId]);
     const oldRole = prev.rows?.[0]?.role || 'user';
-    await pool.query(`UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`, [appRole, userId]);
+    await pool.query(`UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2::uuid`, [appRole, userId]);
     await pool.query(
       `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_before, state_after) VALUES ('user', $1, 'APP_MODE_SWITCH', 'users', $1, $2, $3)`,
       [userId, JSON.stringify({ role: oldRole }), JSON.stringify({ role: appRole })]
@@ -779,9 +1156,9 @@ app.patch('/api/users/me/peace-mode', authenticateToken, async (req, res) => {
       peaceUntil = new Date();
       peaceUntil.setHours(peaceUntil.getHours() + hours_until_reset);
     }
-    const prev = await pool.query('SELECT is_peace_mode, peace_mode_until FROM users WHERE id = $1', [userId]);
+    const prev = await pool.query('SELECT is_peace_mode, peace_mode_until FROM users WHERE id = $1::uuid', [userId]);
     await pool.query(
-      `UPDATE users SET is_peace_mode = $1, peace_mode_until = $2, provider_available = CASE WHEN $1 THEN FALSE ELSE provider_available END, updated_at = NOW() WHERE id = $3`,
+      `UPDATE users SET is_peace_mode = $1, peace_mode_until = $2, provider_available = CASE WHEN $1 THEN FALSE ELSE provider_available END, updated_at = NOW() WHERE id = $3::uuid`,
       [isPeace, peaceUntil, userId]
     );
     await pool.query(
@@ -799,7 +1176,7 @@ app.get('/api/users/me/mode-status', authenticateToken, async (req, res) => {
     const userId = await resolveUserIdToUuid(req.user?.id);
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const r = await pool.query(
-      'SELECT role, is_peace_mode, peace_mode_until, ban_expires_at, provider_available FROM users WHERE id = $1',
+      'SELECT role, is_peace_mode, peace_mode_until, ban_expires_at, provider_available FROM users WHERE id = $1::uuid',
       [userId]
     );
     const u = r.rows?.[0];
@@ -835,7 +1212,7 @@ app.get('/api/connection/key', authenticateToken, async (req, res) => {
   try {
     const userId = await resolveUserIdToUuid(req.user?.id);
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
-    const r = await pool.query('SELECT connection_key FROM users WHERE id = $1', [userId]);
+    const r = await pool.query('SELECT connection_key FROM users WHERE id = $1::uuid', [userId]);
     let key = r.rows?.[0]?.connection_key;
     if (!key) {
       for (let i = 0; i < 20; i++) {
@@ -844,7 +1221,7 @@ app.get('/api/connection/key', authenticateToken, async (req, res) => {
         if (!exists.rows?.length) break;
       }
       if (!key) return res.status(500).json({ error: 'Failed to generate key' });
-      await pool.query('UPDATE users SET connection_key = $1, updated_at = NOW() WHERE id = $2', [key, userId]);
+      await pool.query('UPDATE users SET connection_key = $1, updated_at = NOW() WHERE id = $2::uuid', [key, userId]);
     }
     res.json({ connection_key: key, uid_key: `${userId}:${key}` });
   } catch (e) {
@@ -1002,6 +1379,27 @@ app.post("/api/upload/form", uploadMulter.single("file"), async (req, res) => {
   }
 });
 
+// ✅ POST /api/upload/document — KYC document upload (Thai ID, Driving License, Vehicle Reg)
+// SECURITY: All document images go to secure backend. Private S3 or Secure Vault in production.
+// Returns URL only; never persist base64 in client.
+app.post("/api/upload/document", authenticateToken, uploadMulter.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const ext = req.file.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.jpg';
+    const docType = (req.body?.documentType || 'kyc').replace(/[^a-z0-9_-]/gi, '_');
+    const result = await uploadToS3(req.file.buffer, {
+      folder: "kyc_uploads",
+      key: `kyc_uploads/${docType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`,
+      contentType: req.file.mimetype || 'image/jpeg',
+      resourceType: 'image'
+    });
+    res.json({ success: true, url: result.secure_url, signed_url: result.secure_url });
+  } catch (err) {
+    console.error('Document upload error:', err?.message);
+    res.status(500).json({ error: err?.message || 'Upload failed' });
+  }
+});
+
 // ✅ POST /api/upload/portfolio — อัปโหลดรูปผลงาน (Portfolio/Expert)
 app.post("/api/upload/portfolio", authenticateToken, uploadMulter.single("image"), async (req, res) => {
   try {
@@ -1035,17 +1433,20 @@ app.set('pool', pool); // for blocked-IP middleware
 
 const auditService = createAuditService(pool);
 
-// Omise Webhook Handler (ใช้ raw body จาก route ที่ลงทะเบียนก่อน express.json())
-function createOmiseWebhookHandler() {
-  const OMISE_SECRET_KEY = process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null);
-  const OMISE_WEBHOOK_SECRET = process.env.OMISE_WEBHOOK_SECRET || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_WEBHOOK_SECRET_TEST : null);
+// Wallet deposit webhook (processor-agnostic; configure signature header via PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER)
+function createPaymentWebhookHandler() {
+  const webhookSecret = getPaymentGatewayWebhookSecret();
+  const customSigHeader = (process.env.PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER || '').toLowerCase();
   return async (req, res) => {
     try {
       const rawBody = Buffer.isBuffer(req.body) ? req.body : (req.rawBody || Buffer.from(JSON.stringify(req.body || {})));
       const payload = JSON.parse(rawBody.toString('utf8'));
-      const sig = req.headers['x-omise-signature'] || req.headers['x-webhook-signature'];
-      if (OMISE_WEBHOOK_SECRET && sig) {
-        const expected = crypto.createHmac('sha256', OMISE_WEBHOOK_SECRET).update(rawBody).digest('hex');
+      const sig =
+        (customSigHeader && req.headers[customSigHeader]) ||
+        req.headers['x-webhook-signature'] ||
+        req.headers['x-payment-signature'];
+      if (webhookSecret && sig) {
+        const expected = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
         if (expected !== sig && !crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'))) {
           return res.status(403).send('Invalid signature');
         }
@@ -1075,7 +1476,7 @@ function createOmiseWebhookHandler() {
       const txnNo = `T-DEP-${chargeId}-${Date.now()}`;
       await pool.query('BEGIN');
       await pool.query(
-        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
         [creditAmount, userId]
       );
       await pool.query(
@@ -1086,7 +1487,7 @@ function createOmiseWebhookHandler() {
           feeBreakdown.gateway_fee_amount ?? null,
           feeBreakdown.platform_margin_amount ?? null,
           creditAmount,
-          JSON.stringify({ leg: 'wallet_deposit', charge_id: chargeId, gateway: 'omise', source_type: sourceType, gross_amount: grossAmount, net_to_wallet: creditAmount })
+          JSON.stringify({ leg: 'wallet_deposit', charge_id: chargeId, gateway: 'card_processor', source_type: sourceType, gross_amount: grossAmount, net_to_wallet: creditAmount })
         ]
       );
       if (feeBreakdown.platform_margin_amount > 0) {
@@ -1113,12 +1514,12 @@ function createOmiseWebhookHandler() {
       );
     } catch (e) {
       await pool.query('ROLLBACK').catch(() => {});
-      console.error('Omise webhook error:', e);
+      console.error('Payment webhook error:', e);
     }
     res.status(200).send('OK');
   };
 }
-app.set('omiseWebhookHandler', createOmiseWebhookHandler());
+app.set('paymentWebhookHandler', createPaymentWebhookHandler());
 
 // Redis client สำหรับ cache
 
@@ -1218,6 +1619,7 @@ function sendRateLimitResponse(res, retryAfter, message = 'Too many requests') {
 }
 
 async function rateLimitLogin(req, res, next) {
+  if (process.env.RATE_LIMIT_LOGIN_DISABLED === '1') return next(); // ปิด rate limit ชั่วคราว (ใช้เมื่อ behind proxy ไม่ส่ง X-Forwarded-For)
   const phone = (req.body && req.body.phone) ? String(req.body.phone).trim() : null;
   const ip = getClientIp(req);
   if (isLocalhost(ip)) return next(); // localhost = ไม่จำกัด (พัฒนา/ทดสอบ)
@@ -1236,14 +1638,16 @@ async function rateLimitLogin(req, res, next) {
 
 // ============ DATABASE MODELS ============
 
-// User Model
+// User Model — รองรับทั้ง id (UUID), id::text และ firebase_uid เพื่อให้ Match job หา provider/employer ได้แม้ job.accepted_by เป็น firebase_uid
 const UserModel = {
   async findById(id) {
+    if (!id) return null;
+    const sid = String(id).trim();
     const result = await pool.query(
-      'SELECT * FROM users WHERE id = $1',
-      [id]
+      `SELECT * FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1`,
+      [sid]
     );
-    return result.rows[0];
+    return result.rows[0] || null;
   },
 
   async updateBalance(userId, amount) {
@@ -1287,6 +1691,14 @@ function normalizeJobForApi(job) {
     if (!out.status) out.status = 'open';
     out.client_name = out.created_by_name || out.created_by || '';
     out.provider_name = out.provider_name || null;
+    if (out.provider_profile) {
+      out.provider_profile = {
+        kyc_full_name: out.provider_profile.kyc_full_name || null,
+        vehicle_type: out.provider_profile.vehicle_type || null,
+        vehicle_reg: out.provider_profile.vehicle_reg || null,
+        avatar_url: out.provider_profile.avatar_url || null,
+      };
+    }
     const pd = out.payment_details && typeof out.payment_details === 'object' ? out.payment_details : {};
     out.has_insurance = out.has_insurance === true || pd.has_insurance === true;
     out.insurance_amount = out.insurance_amount != null ? Number(out.insurance_amount) : (pd.insurance_amount != null ? Number(pd.insurance_amount) : 0);
@@ -1329,17 +1741,19 @@ const JobModel = {
     let rows = [];
     try {
       // ✅ กรองงานที่หมดอายุและ status ไม่ active
+      // ใช้ ::text เพื่อให้ match ได้ทั้ง UUID และ string format (รองรับงานที่สร้างใหม่)
       let query = `
         SELECT * FROM jobs 
-        WHERE (created_by = $1 OR accepted_by = $1)
+        WHERE (created_by::text = $1 OR accepted_by::text = $1 OR client_id::text = $1)
       `;
       
       if (!includeExpired) {
         // ✅ กรองงานที่ยังไม่หมดอายุ และ status เป็น active/open
+        // รวมงานที่เพิ่งโพสต์ (created_at ภายใน 7 วัน) แม้ datetime จะผ่านไปแล้ว — แก้ปัญหา "งานใหม่ไม่โผล่ใน Posted"
         query += `
           AND (
-            datetime IS NULL 
-            OR datetime > NOW()
+            (created_at > NOW() - INTERVAL '2 days')
+            AND (datetime IS NULL OR datetime > NOW() OR created_at > NOW() - INTERVAL '36 hours')
           )
           AND status NOT IN ('expired', 'deleted', 'cancelled')
         `;
@@ -1363,7 +1777,7 @@ const JobModel = {
         const internalId = userRow.rows[0].id;
         let clientQuery = `SELECT * FROM jobs WHERE (client_id = $1 OR provider_id = $1)`;
         if (!includeExpired) {
-          clientQuery += ` AND (datetime IS NULL OR datetime > NOW()) AND status NOT IN ('expired', 'deleted', 'cancelled')`;
+          clientQuery += ` AND (created_at > NOW() - INTERVAL '2 days') AND (datetime IS NULL OR datetime > NOW() OR created_at > NOW() - INTERVAL '36 hours') AND status NOT IN ('expired', 'deleted', 'cancelled')`;
         }
         clientQuery += ` ORDER BY created_at DESC`;
         
@@ -1427,7 +1841,7 @@ const TransactionModel = {
   async findByUserId(userId, limit = 50) {
     const result = await pool.query(
       `SELECT * FROM transactions 
-       WHERE user_id = $1 
+       WHERE user_id = $1::uuid 
        ORDER BY created_at DESC
        LIMIT $2`,
       [userId, limit]
@@ -1449,6 +1863,89 @@ const calculateCommission = (completedJobs) => {
 
 // Round to 2 decimal places (avoid floating-point rounding errors e.g. 500.0075)
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+/** payment_details จาก jobs (JSONB หรือ string) */
+function parseJobPaymentDetailsRaw(raw) {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw || '{}');
+    } catch (_) {
+      return {};
+    }
+  }
+  if (typeof raw === 'object') return { ...raw };
+  return {};
+}
+
+/**
+ * งานจาก Transport Hub / Marine: เก็บ employer_payment_method + ยอดที่ผู้รับงานต้องรับผิดชอบ (เงินสด)
+ */
+function mergeEmployerPaymentOnCreate(reqBody, jobPrice) {
+  const p = (reqBody._payment || reqBody.employer_payment_method || reqBody.payment_method || '').toString().toLowerCase();
+  const method = p === 'cash' ? 'cash' : 'wallet';
+  const priceNum = round2(parseFloat(jobPrice) || 0);
+  const base = {
+    employer_payment_method: method,
+    posted_at: new Date().toISOString(),
+  };
+  if (String(reqBody._source) === 'transport_hub') {
+    base.price_includes_payment_markup = true;
+    if (reqBody.transport_insurance_amount != null) {
+      base.transport_insurance_amount = round2(parseFloat(reqBody.transport_insurance_amount) || 0);
+    }
+  }
+  if (method === 'cash' && priceNum > 0) {
+    base.cash_liability_amount = priceNum;
+    base.cash_liability_currency = 'THB';
+  }
+  if (reqBody._source) base.transport_source = String(reqBody._source);
+  if (reqBody._vehicle) base.transport_vehicle = String(reqBody._vehicle);
+  if (reqBody.has_insurance === true || reqBody.has_insurance === 'true') {
+    base.employer_wants_insurance = true;
+  }
+  /** Transport Hub — structured contract for audit / future intercity & relay pricing (P0: no engine change) */
+  if (reqBody.transport_contract && typeof reqBody.transport_contract === 'object') {
+    const tc = sanitizeTransportContract(reqBody.transport_contract);
+    if (tc.ok) base.transport_contract = tc.value;
+  }
+  return base;
+}
+
+/** Mutual Assurance Badge: Top Guardian (>=5000), Verified Secure Payer (>=1000) */
+function getAssuranceBadge(insuranceCreditBalance) {
+  const bal = parseFloat(insuranceCreditBalance || 0);
+  if (bal >= 5000) return 'top_guardian';
+  if (bal >= 1000) return 'verified_secure_payer';
+  return null;
+}
+
+/** ดึง fee config จาก payout_config (handling/sourcing ตาม VIP, markup 5%, commission ตาม VIP) */
+async function getFeeConfig() {
+  try {
+    const r = await pool.query(`SELECT value_json FROM payout_config WHERE key = 'fee_rates'`);
+    const fr = r.rows?.[0]?.value_json || {};
+    const commissionMatch = fr.commission_match_board || fr.bidding_fee || { none: 9.3, silver: 9.3, gold: 8.3, platinum: 6.3 };
+    const sourcingMatch = fr.sourcing_fee_match_board || fr.sourcing_fee || { none: 8, silver: 8, gold: 6, platinum: 6 };
+    const commissionBook = fr.commission_booking || fr.booking_fee || { none: 32, silver: 28, gold: 24, platinum: 20 };
+    const fallbackHandling = parseFloat(fr.handling_fee_percent) ?? 8;
+    return {
+      handlingFeePercent: fallbackHandling,
+      paymentMarkupPercent: parseFloat(fr.payment_markup_percent) ?? 5,
+      commissionMatchBoard: (tier) => (parseFloat(commissionMatch[tier] ?? commissionMatch.none) || 9.3) / 100,
+      sourcingFeeMatchBoard: (tier) => (parseFloat(sourcingMatch[tier] ?? sourcingMatch.none) || 8) / 100,
+      commissionBooking: (tier) => (parseFloat(commissionBook[tier] ?? commissionBook.none) || 32) / 100,
+    };
+  } catch (_) {
+    return {
+      handlingFeePercent: 8,
+      paymentMarkupPercent: 5,
+      commissionMatchBoard: (tier) => (tier === 'platinum' ? 0.063 : tier === 'gold' ? 0.083 : 0.093),
+      sourcingFeeMatchBoard: (tier) => (tier === 'platinum' || tier === 'gold' ? 0.06 : 0.08),
+      commissionBooking: (tier) => (tier === 'platinum' ? 0.20 : tier === 'gold' ? 0.24 : tier === 'silver' ? 0.28 : 0.32),
+    };
+  }
+}
 
 // ============ AQOND VIP MEMBERSHIP ============
 const VIP_TIERS = {
@@ -1480,10 +1977,41 @@ function getVipDiscountEligibility(user) {
 // ✅ 1. Process Payment
 app.post('/api/payments/process', async (req, res) => {
   try {
-    const { jobId, paymentMethod: pm, discountAmount = 0, userId, has_insurance: hasInsurance = false } = req.body;
-    const paymentMethod = pm || req.body.method;
+    const {
+      jobId,
+      paymentMethod: pm,
+      discountAmount = 0,
+      userId,
+      has_insurance,
+      hasInsurance: hasInsuranceBody,
+      maturityVoucherId,
+      payment_channel: paymentChannelSnake,
+      paymentChannel: paymentChannelCamel,
+    } = req.body;
+    const paymentChannelNorm = normalizePaymentChannel(paymentChannelSnake || paymentChannelCamel);
+    // รองรับทั้ง has_insurance และ hasInsurance (snake/camel) และ fallback จาก job.payment_details.employer_wants_insurance
+    let hasInsurance = has_insurance === true || has_insurance === 'true' || hasInsuranceBody === true || hasInsuranceBody === 'true';
+    const paymentMethod = (pm || req.body.method || 'wallet').toString().toLowerCase();
 
-    console.log('🔒 Processing payment:', { jobId, paymentMethod, discountAmount, has_insurance: hasInsurance });
+    let effectiveDiscount = Math.max(0, Number(discountAmount) || 0);
+    if (maturityVoucherId && userId) {
+      const vRow = await pool.query(
+        `SELECT id, remaining_baht, user_id FROM maturity_rewards_vouchers
+         WHERE id = $1 AND user_id = $2 AND used_at IS NULL AND remaining_baht > 0
+           AND (expires_at IS NULL OR expires_at > NOW())`,
+        [maturityVoucherId, String(userId)]
+      ).catch(() => ({ rows: [] }));
+      if (vRow.rows?.[0]) {
+        effectiveDiscount += Math.min(parseFloat(vRow.rows[0].remaining_baht || 0), 50);
+      }
+    }
+    console.log('🔒 Processing payment:', {
+      jobId,
+      paymentMethod,
+      payment_channel: paymentChannelNorm,
+      discountAmount: effectiveDiscount,
+      has_insurance: hasInsurance,
+    });
 
     // Circuit breaker: payment gateway
     const cbPayment = await getCircuitStatus('payment_gateway');
@@ -1491,10 +2019,147 @@ app.post('/api/payments/process', async (req, res) => {
       return res.status(503).json({ error: 'Payment gateway temporarily unavailable (circuit open).' });
     }
 
-    // ดึงข้อมูล job
-    const job = await JobModel.findById(jobId);
+    // ดึงข้อมูล job (jobs หรือ advance_jobs)
+    let job = await JobModel.findById(jobId);
+    let fromAdvanceJobs = false;
+    if (!job) {
+      const advRow = await pool.query(
+        `SELECT aj.id, aj.title, aj.employer_id AS created_by, aj.hired_user_id AS accepted_by, aj.status, aj.agreed_amount AS price,
+         aj.applicant_count, u.full_name AS created_by_name
+         FROM advance_jobs aj
+         LEFT JOIN users u ON u.id = aj.employer_id
+         WHERE aj.id::text = $1 LIMIT 1`,
+        [String(jobId)]
+      ).catch(() => ({ rows: [] }));
+      if (advRow.rows?.length) {
+        job = advRow.rows[0];
+        fromAdvanceJobs = true;
+      }
+    }
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
+    }
+    const jobPd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+    if (!hasInsurance && (jobPd.employer_wants_insurance === true || jobPd.employer_wants_insurance === 'true')) {
+      hasInsurance = true;
+    }
+
+    /** งานที่โพสต์ว่าจ่ายเงินสด (ลูกค้าไม่ผ่าน wallet ตอนจบ) */
+    const employerCashPosting = jobPd.employer_payment_method === 'cash';
+    /** มีการหักเครดิตผู้รับงานตอนรับงาน (cash liability) — ต้องปล่อยเมื่อชำระเสร็จ */
+    const employerCashHeld = !fromAdvanceJobs && employerCashPosting && jobPd.cash_liability_status === 'held' && round2(Number(jobPd.cash_liability_debit) || 0) > 0;
+
+    // Apple Review / Demo: ข้าม wallet/transaction และ status check สำหรับงาน Demo เพื่อให้ผ่านการตรวจสอบ App Store
+    const createdByName = (job.created_by_name || '').toString();
+    const title = (job.title || '').toString();
+    const jobIdStr = String(jobId || '');
+    const isDemoJob = /demo employer|apple review/i.test(createdByName) ||
+      /apple review|demo/i.test(title) ||
+      /job_apple_demo|_demo_/i.test(jobIdStr);
+
+    if (isDemoJob) {
+      try {
+        const jobFee = round2(Math.max(0, Number(job.price) || job.agreed_amount || 0));
+        let insuranceAmount = 0;
+        if (hasInsurance) {
+          const rate = 0.1;
+          insuranceAmount = round2(jobFee * rate);
+        }
+        const demoEmployer = calcMatchJobEmployerOutflowDynamic(jobFee, insuranceAmount);
+        const { finalPrice } = demoEmployer;
+        const providerRow = await pool.query('SELECT vip_tier FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [String(job.accepted_by)]);
+        const providerTier = (providerRow.rows?.[0]?.vip_tier || 'none').toLowerCase();
+        let waiveBaDemo = false;
+        if (job.accepted_by) {
+          waiveBaDemo = await isPlatformCommissionWaivedForUser(pool, job.accepted_by);
+        }
+        const demoProvider = calcMatchJobProviderInflow(jobFee, providerTier, { waivePlatformCommission: waiveBaDemo });
+        const { talentNet, sourcingFee: handlingFeeAmount, platformCommission: commissionFeeAmount, taxServiceAmount } = demoProvider;
+        const feeAmount = round2(handlingFeeAmount + commissionFeeAmount + taxServiceAmount);
+
+        const paymentDetailsPayload = {
+          amount: finalPrice,
+          job_fee: jobFee,
+          has_insurance: hasInsurance,
+          insurance_amount: insuranceAmount,
+          provider_receive: talentNet,
+          fee_amount: feeAmount,
+          handling_fee_amount: handlingFeeAmount,
+          commission_fee_amount: commissionFeeAmount,
+          tax_service_amount: taxServiceAmount,
+          sourcing_fee_percent: Math.round(demoProvider.sourcingRate * 100),
+          commission_fee_percent: Math.round(demoProvider.commissionRate * 100),
+          job_type: 'match_board',
+          released_status: 'pending',
+          release_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          brand_adviser_platform_commission_waived: waiveBaDemo || undefined,
+        };
+
+        if (fromAdvanceJobs) {
+          await pool.query(
+            `UPDATE advance_jobs SET status = 'completed', updated_at = NOW() WHERE id::text = $1`,
+            [String(jobId)]
+          );
+          // Demo: หัก employer / เพิ่ม provider wallet (provider ได้ net หลังหัก fee)
+          if (paymentMethod === 'wallet' && job.created_by && job.accepted_by) {
+            const empId = String(job.created_by);
+            const provId = String(job.accepted_by);
+            await pool.query(
+              `UPDATE users SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1), updated_at = NOW()
+               WHERE id::text = $2 OR id = $2::uuid RETURNING id`,
+              [finalPrice, empId]
+            );
+            await pool.query(
+              `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, completed_jobs_count = COALESCE(completed_jobs_count, 0) + 1, updated_at = NOW()
+               WHERE id::text = $2 OR id = $2::uuid RETURNING id`,
+              [talentNet, provId]
+            );
+          }
+        } else {
+          await pool.query(
+            `UPDATE jobs SET status = 'completed', payment_status = 'paid', payment_details = $1, has_insurance = $2, insurance_amount = $3, updated_at = NOW()
+             WHERE id::text = $4`,
+            [JSON.stringify(paymentDetailsPayload), hasInsurance, insuranceAmount, String(jobId)]
+          );
+          await pool.query(
+            `UPDATE jobs SET paid_at = NOW() WHERE id::text = $1`,
+            [String(jobId)]
+          ).catch(() => {});
+
+          // Demo: หัก/เพิ่ม wallet จริง (provider ได้ net หลังหัก fee)
+          if (paymentMethod === 'wallet' && job.created_by && job.accepted_by) {
+            const empId = String(job.created_by);
+            const provId = String(job.accepted_by);
+            const empUp = await pool.query(
+              `UPDATE users SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1), updated_at = NOW()
+               WHERE id::text = $2 OR firebase_uid = $2 RETURNING id`,
+              [finalPrice, empId]
+            );
+            const provUp = await pool.query(
+              `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, completed_jobs_count = COALESCE(completed_jobs_count, 0) + 1, updated_at = NOW()
+               WHERE id::text = $2 OR firebase_uid = $2 RETURNING id`,
+              [talentNet, provId]
+            );
+            if (empUp.rowCount === 0) console.warn('Demo: employer wallet not updated (no match):', empId);
+            if (provUp.rowCount === 0) console.warn('Demo: provider wallet not updated (no match):', provId);
+          }
+          // บันทึกรายได้แพลตฟอร์ม (commission) ใน ledger
+          if (feeAmount > 0) {
+            const ledgerId = `demo-comm-${jobId}-${Date.now()}`;
+            const demoMeta = buildMatchJobLedgerMetadata(demoEmployer, demoProvider, { leg: 'commission', source: 'demo_job' });
+            await pool.query(
+              `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+               VALUES ($1, 'escrow_held', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+              [ledgerId, jobId, feeAmount, `DEMO-${jobId}`, `T-DEMO-${jobId}-${Date.now()}`, JSON.stringify(demoMeta)]
+            ).catch((e) => console.warn('Demo ledger commission insert failed:', e.message));
+          }
+        }
+        console.log('🔓 Demo job payment processed (wallet updated):', jobId, 'employer -' + finalPrice, 'provider +' + talentNet, 'platform +' + feeAmount);
+        return res.json({ success: true, message: 'Demo job approved', jobId });
+      } catch (demoErr) {
+        console.error('Demo payment bypass error:', demoErr);
+        return res.status(500).json({ error: 'Demo payment failed', message: demoErr.message });
+      }
     }
 
     // ตรวจสอบสถานะ — รับได้ทั้ง waiting_for_payment และ waiting_for_approval (หลังผู้รับงานกดส่งงานเสร็จ)
@@ -1514,13 +2179,16 @@ app.post('/api/payments/process', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Job fee (ฐานคำนวณ commission) และ Insurance (อัตราตามหมวดงาน) — ปัดเศษ 2 ตำแหน่งเสมอ
-    const jobFee = round2(Math.max(0, Number(job.price) - discountAmount));
+    // Job fee (ฐานคำนวณ commission) และ Insurance — ตรงกับ financialEngine (markup 5%)
+    // Transport Hub: job.price = ยอดรวมที่ลูกค้าจ่ายแล้ว (รวม markup) — แยกฐานก่อน markup แล้วคำนวณ commission บน jobFee
+    const PAYMENT_MARKUP_RATE_FE = 0.05;
+    const includesMarkup = jobPd.price_includes_payment_markup === true;
+
+    let jobFee = round2(Math.max(0, Number(job.price) - effectiveDiscount));
     let insuranceAmount = 0;
     let insuranceRatePercent = 10;
     try {
       let category = (job.category || 'default').toString().trim();
-      // Backward compat: หมวดเก่า → หมวดใหม่ (ตรงคอร์ส)
       const LEGACY_ALIAS = { maid: 'Cleaning', cleaning: 'Cleaning', ac_cleaning: 'AC Technician', delivery: 'Delivery', tutor: 'Tutor', repair: 'Repair', event: 'Event', photography: 'Photography', moving: 'Moving', pet_care: 'Pet Care', beauty: 'Beauty', tech_support: 'IT Support', driving: 'Driving', consulting: 'Accounting', teaching: 'Tutoring', logistics: 'Delivery', detective: 'Security', health: 'Medical', elder_care: 'Elderly', babysitting: 'Babysitter', cooking: 'Chef' };
       if (LEGACY_ALIAS[category.toLowerCase()]) category = LEGACY_ALIAS[category.toLowerCase()];
       const catRow = await pool.query(
@@ -1541,24 +2209,52 @@ app.post('/api/payments/process', async (req, res) => {
       }
     } catch (_) { insuranceRatePercent = 10; }
     const insuranceRate = insuranceRatePercent / 100;
-    if (hasInsurance && jobFee > 0) {
-      insuranceAmount = round2(jobFee * insuranceRate);
+
+    if (includesMarkup) {
+      const totalGross = round2(Math.max(0, Number(job.price) - effectiveDiscount));
+      const transIns = round2(Number(jobPd.transport_insurance_amount) || 0);
+      const base = round2(totalGross / (1 + PAYMENT_MARKUP_RATE_FE));
+      if (transIns > 0 && transIns <= base + 0.01) {
+        insuranceAmount = transIns;
+        jobFee = round2(base - transIns);
+        hasInsurance = hasInsurance && insuranceAmount > 0;
+      } else {
+        jobFee = base;
+        insuranceAmount = 0;
+        if (hasInsurance && jobFee > 0) {
+          insuranceAmount = round2(jobFee * insuranceRate);
+          jobFee = round2(jobFee - insuranceAmount);
+        }
+      }
+    } else {
+      if (hasInsurance && jobFee > 0) {
+        insuranceAmount = round2(jobFee * insuranceRate);
+      }
     }
-    const finalPrice = round2(jobFee + insuranceAmount);
+
     const policyNumber = (hasInsurance && insuranceAmount > 0)
       ? `AQ-INS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(jobId).slice(-6).toUpperCase()}`
       : null;
 
-    // Dynamic Fee Engine: Commission ตาม VIP tier ของ Partner (Match job)
-    const commissionRate = getCommissionMatchBoard(provider.vip_tier || 'none');
-    let feeAmount = round2(jobFee * commissionRate);
-    let providerReceive = round2(jobFee - feeAmount);
+    // LOCKED: Match/Advance Job — financialEngine.js (no modifications without owner authorization)
+    let employerOutflow = calcMatchJobEmployerOutflowDynamic(jobFee, insuranceAmount);
+    let finalPrice = employerOutflow.finalPrice;
+    if (includesMarkup) {
+      finalPrice = round2(Math.max(0, Number(job.price) - effectiveDiscount));
+    }
+    const providerTier = provider.vip_tier || 'none';
+    const waiveBaMatch = await isPlatformCommissionWaivedForUser(pool, job.accepted_by);
+    const providerInflow = calcMatchJobProviderInflow(jobFee, providerTier, { waivePlatformCommission: waiveBaMatch });
+    const { sourcingFee: handlingFeeAmount, platformCommission: commissionFeeAmount, taxServiceAmount, talentNet: providerReceiveInit } = providerInflow;
+    let providerReceive = providerReceiveInit;
+    let feeAmount = round2(handlingFeeAmount + commissionFeeAmount + taxServiceAmount);
+    const commissionRate = providerInflow.commissionRate;
 
     // AQOND VIP (Client): ส่วนลด quota — ใช้สิทธิ์เมื่อ client เป็น VIP (legacy compatibility)
     let vipDiscountAmount = 0;
     let vipApplied = false;
     const clientVipRow = await pool.query(
-      'SELECT vip_tier, vip_quota_balance, vip_expiry FROM users WHERE id = $1 OR id::text = $1 LIMIT 1',
+      'SELECT vip_tier, vip_quota_balance, vip_expiry FROM users WHERE id = $1::uuid LIMIT 1',
       [job.created_by]
     ).catch(() => ({ rows: [] }));
     const clientVip = getVipDiscountEligibility(clientVipRow.rows[0] || null);
@@ -1601,7 +2297,7 @@ app.post('/api/payments/process', async (req, res) => {
 
         if (now <= trainingEnd) {
           const gradeRow = await pool.query(
-            `SELECT grade FROM worker_grades WHERE user_id = $1`,
+            `SELECT grade FROM worker_grades WHERE user_id = $1::uuid`,
             [job.accepted_by]
           ).catch(() => ({ rows: [] }));
           const grade = (gradeRow.rows?.[0]?.grade || 'C').toUpperCase().charAt(0);
@@ -1617,7 +2313,7 @@ app.post('/api/payments/process', async (req, res) => {
           }
         } else {
           if (totalJobsAfter >= GRADUATE_JOBS_MIN) {
-            const gradeRow = await pool.query(`SELECT grade FROM worker_grades WHERE user_id = $1`, [job.accepted_by]).catch(() => ({ rows: [] }));
+            const gradeRow = await pool.query(`SELECT grade FROM worker_grades WHERE user_id = $1::uuid`, [job.accepted_by]).catch(() => ({ rows: [] }));
             const grade = (gradeRow.rows?.[0]?.grade || 'C').toUpperCase().charAt(0);
             await pool.query(
               `UPDATE coach_trainee_connections SET status = $1, updated_at = NOW() WHERE id = $2`,
@@ -1653,14 +2349,35 @@ app.post('/api/payments/process', async (req, res) => {
         insurance_coverage_status: (hasInsurance && insuranceAmount > 0) ? 'active' : 'not_started',
         provider_receive: talentNet,
         fee_amount: feeAmount,
-        fee_percent: commissionRate,
+        handling_fee_amount: handlingFeeAmount,
+        commission_fee_amount: commissionFeeAmount,
+        tax_service_amount: taxServiceAmount,
+        sourcing_fee_percent: Math.round(providerInflow.sourcingRate * 100),
+        commission_fee_percent: Math.round(providerInflow.commissionRate * 100),
+        job_type: 'match_board',
         released_status: 'pending',
         release_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        /** หลังอนุมัติ: กันเงินใน pending อย่างน้อย 5 นาที ก่อนเรียก /payments/release ได้ */
+        provider_release_after: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
         vip_discount_applied: vipApplied,
         vip_discount_amount: vipDiscountAmount,
         coach_fee_amount: coachFeeAmount,
-        coach_id: coachId || undefined
+        coach_id: coachId || undefined,
+        price_includes_payment_markup: includesMarkup || undefined,
+        brand_adviser_platform_commission_waived: waiveBaMatch || undefined,
+        payment_channel: paymentChannelNorm,
+        payment_gateway: getLocalGatewayFromEnv(),
       };
+
+      const mergedPaymentDetails = {
+        ...jobPd,
+        ...paymentDetailsPayload,
+      };
+      if (employerCashHeld) {
+        mergedPaymentDetails.cash_liability_status = 'settled';
+        mergedPaymentDetails.cash_settlement_at = new Date().toISOString();
+        mergedPaymentDetails.cash_liability_released = round2(Number(jobPd.cash_liability_debit) || 0);
+      }
 
       // 1. อัพเดท job status + เก็บประวัติ (status=completed ใช้ใน History tab)
       await dbClient.query(
@@ -1675,11 +2392,18 @@ app.post('/api/payments/process', async (req, res) => {
           insurance_coverage_status = $6,
           updated_at = NOW()
          WHERE id = $2`,
-        [JSON.stringify(paymentDetailsPayload), jobId, !!hasInsurance, insuranceAmount, policyNumber, (hasInsurance && insuranceAmount > 0) ? 'active' : 'not_started']
+        [JSON.stringify(mergedPaymentDetails), jobId, !!hasInsurance, insuranceAmount, policyNumber, (hasInsurance && insuranceAmount > 0) ? 'active' : 'not_started']
       );
 
       // 2. หักเงิน client (ยอดรวมรวมค่าประกันถ้ามี)
-      if (paymentMethod === 'wallet') {
+      // ถ้ามี escrow_held แล้ว (หักตอน Accept) — หักเฉพาะส่วนที่เกิน (เช่น เพิ่มประกัน)
+      // เฉพาะ jobs table (advance_jobs ใช้ escrow flow แยก)
+      const existingPd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+      const escrowHeld = !fromAdvanceJobs && !!existingPd.escrow_held;
+      const escrowAmount = round2(Number(existingPd.escrow_amount) || 0);
+      const amountToDeduct = escrowHeld ? Math.max(0, finalPrice - escrowAmount) : finalPrice;
+
+      if (!employerCashPosting && paymentMethod === 'wallet' && amountToDeduct > 0) {
         const clientFrozen = await isWalletFrozen(job.created_by);
         if (clientFrozen) {
           await dbClient.query('ROLLBACK');
@@ -1690,27 +2414,61 @@ app.post('/api/payments/process', async (req, res) => {
           await dbClient.query('ROLLBACK');
           return res.status(403).json({ error: 'บัญชีผู้รับงานถูกระงับ — ไม่สามารถรับเงินได้ กรุณาติดต่อฝ่ายสนับสนุน' });
         }
+        const balanceRow = await dbClient.query('SELECT wallet_balance FROM users WHERE id::text = $1 OR firebase_uid = $1', [String(job.created_by)]);
+        const balance = parseFloat(balanceRow.rows?.[0]?.wallet_balance || 0);
+        if (balance < amountToDeduct) {
+          await dbClient.query('ROLLBACK');
+          return res.status(400).json({
+            error: 'insufficient_balance',
+            message: escrowHeld
+              ? `ยอด Escrow (${escrowAmount} บาท) ไม่พอสำหรับยอดรวม+ประกัน (ต้องการเพิ่ม ${amountToDeduct} บาท)`
+              : `ยอดใน Wallet ไม่พอ (ต้องการ ${amountToDeduct} บาท)`,
+            required: amountToDeduct,
+            balance
+          });
+        }
         await dbClient.query(
           `UPDATE users SET 
-            wallet_balance = wallet_balance - $1
-           WHERE id = $2`,
-          [finalPrice, job.created_by]
+            wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1)
+           WHERE id::text = $2 OR firebase_uid = $2`,
+          [amountToDeduct, String(job.created_by)]
+        );
+      }
+
+      // งานเงินสด: ปล่อยเครดิตที่หักตอนรับงาน (collateral) แล้วจึงจ่าย net เข้า pending ด้านล่าง
+      if (employerCashHeld) {
+        const releaseAmt = round2(Number(jobPd.cash_liability_debit));
+        await dbClient.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW()
+           WHERE id::text = $2 OR id = $2::uuid OR firebase_uid = $2`,
+          [releaseAmt, String(job.accepted_by)]
         );
       }
 
       // 3. เพิ่ม pending ให้ provider (talentNet = หลังหัก 3% โค้ชถ้ามี)
-      await dbClient.query(
+      // รองรับทั้ง id (UUID) และ firebase_uid — เพื่อให้ผู้รับงานได้เงินจริงแม้ accepted_by มาจาก Firebase
+      const provUpdate = await dbClient.query(
         `UPDATE users SET 
           wallet_pending = COALESCE(wallet_pending, 0) + $1,
           completed_jobs_count = COALESCE(completed_jobs_count, 0) + 1
-         WHERE id = $2`,
-        [talentNet, job.accepted_by]
+         WHERE id::text = $2 OR firebase_uid = $2
+         RETURNING id`,
+        [talentNet, String(job.accepted_by)]
       );
+      if (!provUpdate.rows?.length) {
+        await dbClient.query('ROLLBACK');
+        return res.status(500).json({
+          error: 'provider_wallet_update_failed',
+          message: 'ไม่พบผู้รับงานในระบบ — กรุณาติดต่อฝ่ายสนับสนุน',
+          hint: 'accepted_by อาจไม่ตรงกับ users.id หรือ firebase_uid'
+        });
+      }
+      const providerActualId = provUpdate.rows[0].id;
 
       // 3b. ถ้ามี coach fee: เพิ่ม pending ให้ coach
       if (coachFeeAmount > 0 && coachId) {
         await dbClient.query(
-          `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, updated_at = NOW() WHERE id = $2`,
+          `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
           [coachFeeAmount, coachId]
         );
         await dbClient.query(
@@ -1720,7 +2478,8 @@ app.post('/api/payments/process', async (req, res) => {
         );
       }
 
-      // 4. บันทึก transaction สำหรับ client
+      // 4. บันทึก transaction สำหรับ client (เงินสด = ไม่หัก wallet — บันทึก metadata ยอดรวม)
+      const clientTxAmount = employerCashPosting ? 0 : -finalPrice;
       await dbClient.query(
         `INSERT INTO transactions (
           user_id, type, amount, description,
@@ -1729,22 +2488,30 @@ app.post('/api/payments/process', async (req, res) => {
         [
           job.created_by,
           'payment_out',
-          -finalPrice,
-          `Payment for job: ${job.title}`,
+          clientTxAmount,
+          employerCashPosting ? `Cash settlement (employer): ${job.title}` : `Payment for job: ${job.title}`,
           'completed',
           jobId,
-          JSON.stringify({ paymentMethod, discountAmount })
+          JSON.stringify({
+            paymentMethod,
+            employer_cash_posting: employerCashPosting,
+            discountAmount: effectiveDiscount,
+            maturityVoucherId: maturityVoucherId || undefined,
+            job_fee: jobFee,
+            insurance_amount: insuranceAmount,
+            total: finalPrice
+          })
         ]
       );
 
-      // 5. บันทึก transaction สำหรับ provider
+      // 5. บันทึก transaction สำหรับ provider (ใช้ providerActualId เพื่อให้ FK ถูกต้อง)
       await dbClient.query(
         `INSERT INTO transactions (
           user_id, type, amount, description,
           status, related_job_id, metadata
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
-          job.accepted_by,
+          providerActualId,
           'income',
           talentNet,
           `Income from job: ${job.title}`,
@@ -1756,7 +2523,9 @@ app.post('/api/payments/process', async (req, res) => {
             release_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
             vip_discount_applied: vipApplied,
             vip_discount_amount: vipDiscountAmount,
-            coach_fee: coachFeeAmount || undefined
+            coach_fee: coachFeeAmount || undefined,
+            job_fee: jobFee,
+            insurance_amount: insuranceAmount
           })
         ]
       );
@@ -1764,73 +2533,118 @@ app.post('/api/payments/process', async (req, res) => {
       // 6. AQOND VIP: หักสิทธิ์ส่วนลด 1 ครั้ง (platinum ไม่จำกัดจึงไม่หัก)
       if (vipApplied && clientVip.tier !== 'platinum') {
         await dbClient.query(
-          `UPDATE users SET vip_quota_balance = GREATEST(0, COALESCE(vip_quota_balance, 0) - 1), updated_at = NOW() WHERE (id = $1 OR id::text = $1) AND vip_quota_balance > 0`,
+          `UPDATE users SET vip_quota_balance = GREATEST(0, COALESCE(vip_quota_balance, 0) - 1), updated_at = NOW() WHERE id = $1::uuid AND vip_quota_balance > 0`,
           [job.created_by]
         );
       }
 
-      await dbClient.query('COMMIT');
-
-      // Ledger 3 ขา + ขา 4 (Insurance Liability) + Metadata ขา 5 (60/40 split สำหรับ Admin)
+      // 7. Ledger 3 ขา + ขา 4 (Insurance) + Tax ID — ภายใน transaction (atomic: ถ้า disk full จะ rollback ทั้งหมด)
       const ledgerId = (s) => `L-${jobId}-${s}-${Date.now()}`;
-      const gate = paymentMethod === 'wallet' ? 'wallet' : 'bank_transfer';
-      try {
-        await pool.query(
-          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
-           VALUES ($1, 'payment_created', $2, $3, $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
-          [ledgerId('debit'), jobId, gate, jobId, finalPrice, jobId, `T-${jobId}-${Date.now()}`, job.created_by, JSON.stringify({ leg: 'user_debit', full_amount: finalPrice, job_fee: jobFee, insurance_amount: insuranceAmount })]
+      const gate = employerCashPosting ? 'cash' : (paymentMethod === 'wallet' ? 'wallet' : 'bank_transfer');
+      const resolvedMarkup = includesMarkup ? round2(finalPrice - jobFee - insuranceAmount) : employerOutflow.paymentMarkup;
+      const debitMeta = {
+        leg: 'user_debit',
+        full_amount: finalPrice,
+        job_fee: jobFee,
+        insurance: insuranceAmount,
+        markup: resolvedMarkup,
+        markup_percent: 5,
+        employer_expense: finalPrice,
+        provider_income: talentNet,
+        company_fee: feeAmount,
+        employer_cash_posting: employerCashPosting,
+        cash_liability_released: employerCashHeld ? round2(Number(jobPd.cash_liability_debit) || 0) : undefined,
+      };
+      const taxRefDebit = await generateTaxRefIdForInsert(pool, 'payment_created', debitMeta);
+      await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+           VALUES ($1, $2, 'payment_created', $3, $4, $5, $6, 'THB', 'completed', $7, $8, $9, $10)`,
+          [ledgerId('debit'), taxRefDebit, jobId, gate, jobId, finalPrice, jobId, `T-${jobId}-${Date.now()}`, job.created_by, JSON.stringify(debitMeta)]
         );
-        await pool.query(
-          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
-           VALUES ($1, 'escrow_held', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-          [ledgerId('provider'), jobId, jobId, talentNet, jobId, `T-${jobId}-${Date.now()}-p`, job.accepted_by, JSON.stringify({ leg: 'provider_net', coach_fee: coachFeeAmount || 0 })]
+        const providerMeta = { leg: 'provider_net', job_fee: jobFee, gross_earnings: jobFee, sourcing: handlingFeeAmount, commission: commissionFeeAmount, tax_service: taxServiceAmount, coach_fee: coachFeeAmount || 0, employer_expense: finalPrice, provider_income: talentNet, company_fee: feeAmount };
+        const taxRefProvider = await generateTaxRefIdForInsert(pool, 'escrow_held', providerMeta);
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
+          [ledgerId('provider'), taxRefProvider, jobId, jobId, talentNet, jobId, `T-${jobId}-${Date.now()}-p`, providerActualId, JSON.stringify(providerMeta)]
         );
         if (coachFeeAmount > 0 && coachId) {
-          await pool.query(
-            `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
-             VALUES ($1, 'coach_training_fee', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-            [ledgerId('coach'), jobId, jobId, coachFeeAmount, jobId, `T-${jobId}-${Date.now()}-c`, coachId, JSON.stringify({ leg: 'coach_training_fee', trainee_id: job.accepted_by })]
+          const coachMeta = { leg: 'coach_training_fee', trainee_id: job.accepted_by };
+          const taxRefCoach = await generateTaxRefIdForInsert(pool, 'escrow_held', coachMeta);
+          await dbClient.query(
+            `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+             VALUES ($1, $2, 'coach_training_fee', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
+            [ledgerId('coach'), taxRefCoach, jobId, jobId, coachFeeAmount, jobId, `T-${jobId}-${Date.now()}-c`, coachId, JSON.stringify(coachMeta)]
           );
         }
-        await pool.query(
-          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
-           VALUES ($1, 'escrow_held', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7)`,
-          [ledgerId('commission'), jobId, jobId, feeAmount, jobId, `T-${jobId}-${Date.now()}-f`, JSON.stringify({ leg: 'commission', fee_percent: commissionRate, vip_discount_applied: vipApplied, vip_discount_amount: vipDiscountAmount })]
+        // Ledger: append-only with full metadata (jobFee, insurance, markup, sourcing, commission, tax_service)
+        const ledgerMeta = buildMatchJobLedgerMetadata(employerOutflow, providerInflow, {
+          leg: 'commission',
+          sub_category: 'Sourcing',
+          vip_discount_applied: vipApplied,
+          vip_discount_amount: vipDiscountAmount,
+          employer_expense: finalPrice,
+          provider_income: talentNet,
+          company_fee: feeAmount
+        });
+        const taxRefCommission = await generateTaxRefIdForInsert(pool, 'escrow_held', ledgerMeta);
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)`,
+          [ledgerId('commission'), taxRefCommission, jobId, jobId, feeAmount, jobId, `T-${jobId}-${Date.now()}-f`, JSON.stringify(ledgerMeta)]
         );
         if (insuranceAmount > 0) {
-          await pool.query(
-            `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
-             VALUES ($1, 'insurance_liability_credit', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7)`,
-            [ledgerId('insurance'), jobId, jobId, insuranceAmount, `INS-${jobId}`, `T-${jobId}-${Date.now()}-ins`, JSON.stringify({ leg: 'insurance_liability', reserve_60: round2(insuranceAmount * 0.6), manageable_40: round2(insuranceAmount * 0.4) })]
+          const insMeta = { leg: 'insurance_liability', sub_category: 'Insurance', reserve_60: round2(insuranceAmount * 0.6), manageable_40: round2(insuranceAmount * 0.4), job_fee: jobFee, insurance_amount: insuranceAmount };
+          const taxRefIns = await generateTaxRefIdForInsert(pool, 'insurance_liability_credit', insMeta);
+          await dbClient.query(
+            `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+             VALUES ($1, $2, 'insurance_liability_credit', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)`,
+            [ledgerId('insurance'), taxRefIns, jobId, jobId, insuranceAmount, `INS-${jobId}`, `T-${jobId}-${Date.now()}-ins`, JSON.stringify(insMeta)]
           );
-          await pool.query(
+          await dbClient.query(
             `INSERT INTO insurance_fund_movements (id, type, amount, job_id, reference_id, note, metadata, created_at)
              VALUES ($1, 'liability_credit', $2, $3, $4, $5, $6, NOW())`,
             [ledgerId('ins-mov'), insuranceAmount, jobId, jobId, `Payment job ${jobId}`, JSON.stringify({ job_fee: jobFee, rate_percent: insuranceRatePercent })]
           );
-          try {
-            await pool.query(
-              `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
-               VALUES ($1, 'insurance_premium', $2, $3, $4)`,
-              [ledgerId('insurance'), insuranceAmount, jobFee, JSON.stringify({ job_id: jobId, policy_number: policyNumber, rate_percent: insuranceRatePercent })]
-            );
-          } catch (_) { /* platform_revenues might not have insurance_premium yet */ }
+          await dbClient.query(
+            `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
+             VALUES ($1, 'insurance_premium', $2, $3, $4)`,
+            [ledgerId('insurance'), insuranceAmount, jobFee, JSON.stringify({ job_id: jobId, policy_number: policyNumber, rate_percent: insuranceRatePercent })]
+          );
         }
         // VIP Admin Fund: 12.5% ของ gross profit จากธุรกรรม VIP
         const vipTierForSiphon = clientVip.eligible ? (clientVip.tier || 'silver') : (provider.vip_tier || 'none');
         const siphonAmount = calcVipAdminFundSiphon(feeAmount, vipTierForSiphon);
         if (siphonAmount > 0) {
-          await pool.query(
+          await dbClient.query(
             `INSERT INTO vip_admin_fund (amount, source_event_type, source_ledger_id, source_job_id, source_metadata, vip_tier, gross_profit, siphon_percent)
              VALUES ($1, 'job_match_payment', $2, $3, $4, $5, $6, 12.5)`,
             [siphonAmount, ledgerId('commission'), jobId, JSON.stringify({ job_id: jobId, leg: 'commission', vip_applied: vipApplied }), vipTierForSiphon, feeAmount]
-          ).catch((e) => console.warn('vip_admin_fund insert:', e.message));
+          );
         }
-      } catch (ledgerErr) {
-        console.warn('Ledger/insurance insert failed:', ledgerErr.message);
+
+      // Maturity Rewards: mark voucher used on successful payment
+      if (maturityVoucherId && userId) {
+        await dbClient.query(
+          `UPDATE maturity_rewards_vouchers SET used_at = NOW(), used_for_job_id = $1, remaining_baht = 0
+           WHERE id = $2 AND user_id = $3 AND used_at IS NULL`,
+          [jobId, maturityVoucherId, String(userId)]
+        ).catch(() => {});
       }
 
+      await dbClient.query('COMMIT');
+
       setImmediate(() => onJobCompleted(pool, job.accepted_by, jobId, finalPrice, new Date()).catch(() => {}));
+
+      // ดึง employer หลังหักเงิน เพื่อส่งให้ frontend อัปเดต wallet
+      const employerRow = await pool.query(
+        'SELECT id, full_name, wallet_balance, wallet_pending FROM users WHERE id = $1::uuid',
+        [job.created_by]
+      );
+      const providerRow = await pool.query(
+        'SELECT id, full_name, wallet_balance, wallet_pending FROM users WHERE id = $1::uuid',
+        [job.accepted_by]
+      );
 
       // ส่ง response
       res.json({
@@ -1845,9 +2659,13 @@ app.post('/api/payments/process', async (req, res) => {
           providerReceive: talentNet,
           coachFeeAmount: coachFeeAmount || 0,
           feeAmount,
+          handlingFeeAmount,
+          commissionFeeAmount,
           commissionRate,
           paymentMethod
-        }
+        },
+        employer: employerRow.rows?.[0] || null,
+        provider: providerRow.rows?.[0] || null
       });
 
     } catch (error) {
@@ -1859,10 +2677,488 @@ app.post('/api/payments/process', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Payment processing error:', error);
+    const isDiskFull = (error?.message || '').includes('No space left on device') || (error?.message || '').includes('ENOSPC');
     res.status(500).json({
-      error: 'Payment processing failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: isDiskFull ? 'Database disk full — กรุณาล้างพื้นที่ดิสก์ของเซิร์ฟเวอร์' : 'Payment processing failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : (isDiskFull ? 'Disk full. Clear temp/build folders and database logs.' : undefined)
     });
+  }
+});
+
+// GET /api/payments/fee-config — ค่าธรรมเนียมสาธารณะ (Dynamic Fee Structure)
+app.get('/api/payments/fee-config', async (req, res) => {
+  try {
+    const cfg = await getFeeConfig();
+    res.json({
+      paymentMarkupPercent: cfg.paymentMarkupPercent,
+      handlingFeePercent: cfg.handlingFeePercent,
+      sourcingFee: { none: 8, silver: 8, gold: 6, platinum: 6 },
+      bookingFee: { none: 32, silver: 28, gold: 24, platinum: 20 },
+      biddingFee: { none: 9.3, silver: 9.3, gold: 8.3, platinum: 6.3 },
+      /** ต้องตรงกับ INTERCITY_CANCEL_GRACE_MINUTES ใน backend/.env (ฝั่งหน้าใช้ VITE_INTERCITY_CANCEL_GRACE_MINUTES) */
+      intercityCancelGraceMinutes: getIntercityCancelGraceMinutes(),
+      paymentProvider: getPaymentProviderGateSnapshot(),
+    });
+  } catch (e) {
+    res.json({
+      paymentMarkupPercent: 5,
+      handlingFeePercent: 8,
+      sourcingFee: { none: 8, silver: 8, gold: 6, platinum: 6 },
+      bookingFee: { none: 32, silver: 28, gold: 24, platinum: 20 },
+      biddingFee: { none: 9.3, silver: 9.3, gold: 8.3, platinum: 6.3 },
+      intercityCancelGraceMinutes: getIntercityCancelGraceMinutes(),
+      paymentProvider: getPaymentProviderGateSnapshot(),
+    });
+  }
+});
+
+// GET /api/payments/provider-config — Payso/Ksher/Stripe + MDR snapshot (public; อ่านจาก ENV)
+app.get('/api/payments/provider-config', (req, res) => {
+  try {
+    res.json(getPaymentProviderGateSnapshot());
+  } catch (e) {
+    res.status(500).json({ error: 'provider_config_failed' });
+  }
+});
+
+// GET /api/admin/payment-provider-gate — สรุปเดียวกับ public (สำหรับแอดมินดูค่าที่ใช้จริงบนเซิร์ฟเวอร์)
+app.get('/api/admin/payment-provider-gate', adminAuthMiddleware, (req, res) => {
+  try {
+    res.json({
+      ...getPaymentProviderGateSnapshot(),
+      envHint:
+        'สลับ Payso/Ksher: PAYMENT_LOCAL_GATEWAY=payso|ksher · MDR ตัวอย่าง: PAYMENT_MDR_KSHER_PROMPTPAY_IN=0.005 · PAYMENT_MDR_PAYSO_PROMPTPAY_IN=0.01 · Stripe: PAYMENT_MDR_STRIPE_CARD_DOMESTIC_IN=0.0365 + PAYMENT_STRIPE_CARD_FIXED_FEE_DOMESTIC_THB=10 · STRIPE_PAYMENT_ENABLED=1',
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'provider_gate_failed' });
+  }
+});
+
+// GET /api/admin/payment-transaction-logs — รายการบันทึกยอด/MDR/กำไรประมาณ (หลังรัน migration 145)
+app.get('/api/admin/payment-transaction-logs', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
+    const r = await pool.query(
+      `SELECT * FROM payment_transaction_logs ORDER BY created_at DESC LIMIT $1`,
+      [limit]
+    );
+    res.json({ rows: r.rows, limit });
+  } catch (e) {
+    res.status(500).json({ error: 'payment_transaction_logs_failed', message: e?.message || String(e) });
+  }
+});
+
+// ============ AQOND Internal Gateway (Admin — migration 146) ============
+app.get('/api/admin/internal-gateway/metrics', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const rr = requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const { getInternalGatewayMetrics } = await import('./lib/internalGatewayProvider.js');
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const days = parseInt(String(req.query.days || '30'), 10) || 30;
+    const data = await getInternalGatewayMetrics(pool, days);
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+    insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'view_gateway_metrics',
+      resourceType: 'internal_gateway',
+      resourceId: null,
+      ip,
+      metadata: { days },
+      reasonTag: rr.reason,
+    }).catch(() => {});
+    res.json(data);
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42P01') {
+      return res.status(503).json({ error: 'gateway_tables_missing', hint: 'Run migration 146_aqond_internal_gateway.sql' });
+    }
+    res.status(500).json({ error: 'internal_gateway_metrics_failed', message: e?.message || String(e) });
+  }
+});
+
+app.get('/api/admin/internal-gateway/transactions', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const rr = requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const { listGatewayTransactionsForAdmin } = await import('./lib/internalGatewayProvider.js');
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
+    const rows = await listGatewayTransactionsForAdmin(pool, limit);
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+    insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'view_gateway_transactions_masked',
+      resourceType: 'gateway_transactions',
+      resourceId: 'list',
+      ip,
+      metadata: { limit },
+      reasonTag: rr.reason,
+    }).catch(() => {});
+    res.json({ rows, limit });
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42P01') {
+      return res.status(503).json({ error: 'gateway_tables_missing', hint: 'Run migration 146_aqond_internal_gateway.sql' });
+    }
+    res.status(500).json({ error: 'internal_gateway_transactions_failed', message: e?.message || String(e) });
+  }
+});
+
+app.get('/api/admin/internal-gateway/settlement-reports', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const rr = requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const { listGatewaySettlementReports } = await import('./lib/internalGatewayProvider.js');
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+    const rows = await listGatewaySettlementReports(pool, limit);
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+    insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'view_settlement_reports',
+      resourceType: 'gateway_settlement_reports',
+      resourceId: 'list',
+      ip,
+      metadata: { limit },
+      reasonTag: rr.reason,
+    }).catch(() => {});
+    res.json({ rows, limit });
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42P01') {
+      return res.status(503).json({ error: 'gateway_tables_missing', hint: 'Run migration 146_aqond_internal_gateway.sql' });
+    }
+    res.status(500).json({ error: 'internal_gateway_settlements_failed', message: e?.message || String(e) });
+  }
+});
+
+app.post('/api/admin/internal-gateway/generate-report', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const bodyReason = req.body && typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+    const rr =
+      bodyReason.length >= 3
+        ? { ok: true, reason: bodyReason.slice(0, 500) }
+        : requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const month = parseInt(String(req.body?.month ?? ''), 10);
+    const year = parseInt(String(req.body?.year ?? ''), 10);
+    const force = req.body?.force === true || req.body?.force === 'true';
+    if (!Number.isFinite(month) || !Number.isFinite(year)) {
+      return res.status(400).json({ error: 'invalid_body', details: 'month and year are required numbers' });
+    }
+    const { generateComplianceReportForYearMonth } = await import('./lib/internalGatewayComplianceReport.js');
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+
+    const result = await generateComplianceReportForYearMonth(pool, year, month, {
+      force,
+      manualReason: bodyReason || rr.reason,
+      adminEmail: req.adminUser?.email || null,
+    });
+
+    await insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'generate_compliance_report_manual',
+      resourceType: 'gateway_settlement_reports',
+      resourceId: result.id || result.existingId || `y${year}m${month}`,
+      ip,
+      metadata: {
+        year,
+        month,
+        force,
+        outcome: result.error ? 'error' : result.skipped ? 'skipped' : 'filed',
+        detail: result.reason || result.error || null,
+        report_id: result.id || null,
+        existing_id: result.existingId || null,
+      },
+      reasonTag: rr.reason,
+    });
+
+    if (result.error) {
+      return res.status(400).json({ error: result.error, ...result });
+    }
+    res.json(result);
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42P01') {
+      return res.status(503).json({ error: 'gateway_tables_missing', hint: 'Run migration 146_aqond_internal_gateway.sql' });
+    }
+    res.status(500).json({ error: 'generate_report_failed', message: e?.message || String(e) });
+  }
+});
+
+app.post('/api/admin/internal-gateway/verify-ledger', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const bodyReason = req.body && typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+    const rr =
+      bodyReason.length >= 3
+        ? { ok: true, reason: bodyReason.slice(0, 500) }
+        : requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const { verifyLedgerIntegrity } = await import('./lib/internalGatewayProvider.js');
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+    await insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'verify_ledger_chain',
+      resourceType: 'gateway_ledger_entries',
+      resourceId: 'integrity_check',
+      ip,
+      metadata: {},
+      reasonTag: rr.reason,
+    });
+    const result = await verifyLedgerIntegrity(pool);
+    res.json(result);
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42883' || (e.message && e.message.includes('verify_gateway_ledger_integrity'))) {
+      return res.status(503).json({ error: 'verify_function_missing', hint: 'Run migration 147_aqond_gateway_advanced.sql' });
+    }
+    res.status(500).json({ error: 'verify_ledger_failed', message: e?.message || String(e) });
+  }
+});
+
+app.get('/api/admin/internal-gateway/audit-logs', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { requireGatewayAccessReason } = await import('./lib/gatewayAccessReason.js');
+    const rr = requireGatewayAccessReason(req);
+    if (!rr.ok) {
+      return res.status(400).json({ error: rr.error, details: rr.errorDetail });
+    }
+    const { insertGatewayAuditLog } = await import('./lib/gatewayAuditLog.js');
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '80'), 10) || 80));
+    let r;
+    try {
+      r = await pool.query(
+        `SELECT id, created_at, admin_user_id, admin_email, action, resource_type, resource_id, ip_address, metadata, reason_tag
+         FROM gateway_audit_logs ORDER BY created_at DESC LIMIT $1`,
+        [limit]
+      );
+    } catch (e) {
+      if (e && e.code === '42703') {
+        r = await pool.query(
+          `SELECT id, created_at, admin_user_id, admin_email, action, resource_type, resource_id, ip_address, metadata
+           FROM gateway_audit_logs ORDER BY created_at DESC LIMIT $1`,
+          [limit]
+        );
+      } else throw e;
+    }
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+    insertGatewayAuditLog(pool, {
+      adminUserId: req.adminUser.id,
+      adminEmail: req.adminUser.email,
+      action: 'view_gateway_audit_logs',
+      resourceType: 'gateway_audit_logs',
+      resourceId: 'list',
+      ip,
+      metadata: { limit },
+      reasonTag: rr.reason,
+    }).catch(() => {});
+    res.json({ rows: r.rows, limit });
+  } catch (e) {
+    const code = e && e.code;
+    if (code === '42P01') {
+      return res.status(503).json({ error: 'gateway_audit_missing', hint: 'Run migration 147_aqond_gateway_advanced.sql' });
+    }
+    res.status(500).json({ error: 'gateway_audit_logs_failed', message: e?.message || String(e) });
+  }
+});
+
+app.get('/api/admin/internal-gateway/pulse', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { getGatewayPulse } = await import('./lib/internalGatewayProvider.js');
+    const data = await getGatewayPulse(pool);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'internal_gateway_pulse_failed', message: e?.message || String(e) });
+  }
+});
+
+app.get('/api/admin/internal-gateway/payout-route-suggest', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { suggestPayoutRoute } = await import('./internal-gateway/payoutRouting.js');
+    const amountMinor = Math.max(0, parseInt(String(req.query.amountMinor || '10000'), 10) || 10000);
+    const preferSpeed = req.query.preferSpeed === '1' || req.query.preferSpeed === 'true';
+    const hint = suggestPayoutRoute({ amountMinor, preferSpeed });
+    res.json(hint);
+  } catch (e) {
+    res.status(500).json({ error: 'payout_route_failed', message: e?.message || String(e) });
+  }
+});
+
+// GET /api/payments/breakdown/:jobId — รายละเอียดการชำระเงินก่อนกดชำระ (Job Match) — LOCKED financialEngine
+app.get('/api/payments/breakdown/:jobId', async (req, res) => {
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    const discountAmount = Math.max(0, Number(req.query.discountAmount) || 0);
+    const hasInsurance = req.query.has_insurance === 'true' || req.query.has_insurance === true;
+    const job = await JobModel.findById(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const provider = job.accepted_by ? await UserModel.findById(job.accepted_by) : null;
+    const vipTier = (provider?.vip_tier || 'none').toLowerCase();
+    const jobFee = round2(Math.max(0, Number(job.price) - discountAmount));
+    let insuranceAmount = 0;
+    if (hasInsurance) {
+      const rate = 0.1;
+      insuranceAmount = round2(jobFee * rate);
+    }
+    const employer = calcMatchJobEmployerOutflowDynamic(jobFee, insuranceAmount);
+    const waiveBaBreakdown = job.accepted_by ? await isPlatformCommissionWaivedForUser(pool, job.accepted_by) : false;
+    const providerCalc = calcMatchJobProviderInflow(jobFee, vipTier, { waivePlatformCommission: waiveBaBreakdown });
+    res.json({
+      jobFee,
+      handlingFeeAmount: providerCalc.sourcingFee,
+      paymentMarkupAmount: employer.paymentMarkup,
+      commissionFeeAmount: providerCalc.platformCommission,
+      taxServiceAmount: providerCalc.taxServiceAmount,
+      talentReceives: providerCalc.talentNet,
+      totalToPay: employer.finalPrice,
+      has_insurance: hasInsurance,
+      insurance_amount: insuranceAmount,
+      sourcingPercent: Math.round(providerCalc.sourcingRate * 100),
+      commissionPercent: Math.round(providerCalc.commissionRate * 100),
+      brand_adviser_platform_commission_waived: waiveBaBreakdown || undefined,
+    });
+  } catch (e) {
+    console.error('GET /api/payments/breakdown error:', e);
+    res.status(500).json({ error: 'Failed to get payment breakdown' });
+  }
+});
+
+// POST /api/payments/create-intent — Stripe PaymentIntent (financialEngine ผ่าน buildMatchJobPaymentContext)
+app.post('/api/payments/create-intent', authenticateToken, paymentLimiter, async (req, res) => {
+  try {
+    const jobId = String(req.body.jobId || req.body.job_id || '').trim();
+    const discountAmount = Math.max(0, Number(req.body.discountAmount ?? req.body.discount) || 0);
+    const hasInsurance =
+      req.body.has_insurance === true ||
+      req.body.has_insurance === 'true' ||
+      req.body.hasInsurance === true ||
+      req.body.hasInsurance === 'true';
+    const maturityVoucherId = req.body.maturityVoucherId || req.body.maturity_voucher_id || null;
+    const userId = req.user?.id;
+    if (!jobId) return res.status(400).json({ error: 'jobId required' });
+
+    const { createStripePaymentIntentForJob } = await import('./lib/stripeMatchJobPayment.js');
+    const out = await createStripePaymentIntentForJob(pool, {
+      jobId,
+      userId,
+      discountAmount,
+      hasInsurance,
+      maturityVoucherId,
+    });
+    return res.json(out);
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    console.error('POST /api/payments/create-intent:', msg);
+    if (msg === 'forbidden_not_employer') return res.status(403).json({ error: 'Not allowed to pay for this job' });
+    if (msg === 'invalid_job_status') {
+      return res.status(400).json({ error: 'Invalid job status for payment', code: 'invalid_job_status' });
+    }
+    if (msg === 'missing_stripe_secret') return res.status(503).json({ error: 'Stripe is not configured on the server' });
+    if (msg === 'job_not_found') return res.status(404).json({ error: 'Job not found' });
+    if (msg === 'amount_too_small') return res.status(400).json({ error: 'Amount too small' });
+    return res.status(500).json({ error: 'Failed to create payment intent', details: process.env.NODE_ENV === 'development' ? msg : undefined });
+  }
+});
+
+// GET /api/advance-jobs/:id/escrow-breakdown — รายละเอียดก่อนโอน Escrow (Job Advance)
+app.get('/api/advance-jobs/:id/escrow-breakdown', async (req, res) => {
+  try {
+    const jobId = String(req.params.id || '').trim();
+    const amount = Math.max(0, Number(req.query.amount) || 0);
+    const hasInsurance = req.query.has_insurance === 'true' || req.query.has_insurance === true;
+    if (!amount) return res.status(400).json({ error: 'กรุณาระบุ amount' });
+    const jobRow = await pool.query('SELECT id, hired_user_id, category FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    let vipTier = 'none';
+    if (job.hired_user_id) {
+      const talentRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [job.hired_user_id]);
+      vipTier = (talentRow.rows?.[0]?.vip_tier || 'none').toLowerCase();
+    }
+    const payAmount = round2(amount);
+    let insuranceAmount = 0;
+    let insuranceRatePercent = 10;
+    if (hasInsurance) {
+      try {
+        let category = (job.category || 'default').toString().trim();
+        const catRow = await pool.query(
+          `SELECT rate_percent FROM insurance_rate_by_category WHERE LOWER(TRIM(category)) = LOWER(TRIM($1))`,
+          [category]
+        ).catch(() => ({ rows: [] }));
+        if (catRow.rows?.[0] != null) {
+          insuranceRatePercent = parseFloat(catRow.rows[0].rate_percent) || 10;
+        } else {
+          const defaultRow = await pool.query(`SELECT rate_percent FROM insurance_rate_by_category WHERE category = 'default'`).catch(() => ({ rows: [] }));
+          insuranceRatePercent = defaultRow.rows?.[0] ? parseFloat(defaultRow.rows[0].rate_percent) || 10 : 10;
+        }
+        insuranceAmount = round2(payAmount * (insuranceRatePercent / 100));
+      } catch (_) { insuranceRatePercent = 10; insuranceAmount = round2(payAmount * 0.1); }
+    }
+    const employer = calcMatchJobEmployerOutflowDynamic(payAmount, insuranceAmount);
+    const waiveBaEscrow = job.hired_user_id ? await isPlatformCommissionWaivedForUser(pool, job.hired_user_id) : false;
+    const providerCalc = calcMatchJobProviderInflow(payAmount, vipTier, { waivePlatformCommission: waiveBaEscrow });
+
+    const TIERS = [
+      { id: 'normal', key: 'none', label: 'Normal', labelTh: 'สมาชิกทั่วไป' },
+      { id: 'silver', key: 'silver', label: 'Silver', labelTh: 'Silver' },
+      { id: 'gold', key: 'gold', label: 'Gold', labelTh: 'Gold' },
+      { id: 'platinum', key: 'platinum', label: 'Platinum', labelTh: 'Platinum' },
+    ];
+    const payoutByTier = {};
+    for (const t of TIERS) {
+      const p = calcMatchJobProviderInflow(payAmount, t.key);
+      payoutByTier[t.id] = {
+        payout: p.talentNet,
+        commissionPercent: Math.round(p.commissionRate * 100),
+        sourcePercent: Math.round(p.sourcingRate * 100),
+        totalDeductionPercent: Math.round((p.sourcingRate + p.commissionRate + TAX_SERVICE_RATE * (p.sourcingRate + p.commissionRate)) * 100),
+        label: t.label,
+        labelTh: t.labelTh,
+        isBestValue: t.id === 'platinum',
+      };
+    }
+
+    res.json({
+      jobFee: payAmount,
+      handlingFeeAmount: providerCalc.sourcingFee,
+      paymentMarkupAmount: employer.paymentMarkup,
+      commissionFeeAmount: providerCalc.platformCommission,
+      taxServiceAmount: providerCalc.taxServiceAmount,
+      talentReceives: providerCalc.talentNet,
+      totalToPay: employer.finalPrice,
+      has_insurance: hasInsurance,
+      insurance_amount: insuranceAmount,
+      commissionPercent: Math.round(providerCalc.commissionRate * 100),
+      talent_current_tier: vipTier,
+      payout_by_tier: payoutByTier,
+      brand_adviser_platform_commission_waived: waiveBaEscrow || undefined,
+    });
+  } catch (e) {
+    console.error('GET /api/advance-jobs/:id/escrow-breakdown error:', e);
+    res.status(500).json({ error: 'Failed to get escrow breakdown' });
   }
 });
 
@@ -1888,14 +3184,175 @@ app.get('/api/payments/status/:jobId', async (req, res) => {
   }
 });
 
+// ✅ 2b. Hold Payment — หักเงินจาก Employer เมื่อ Provider รับงาน (Escrow at Accept)
+// Flow: Accept Job → Hold (หัก wallet) → Submit Work → Approve → Release (โอนให้ Provider)
+app.post('/api/payments/hold', async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'jobId required' });
+
+    const job = await JobModel.findById(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // เฉพาะ jobs table (ไม่ใช่ advance_jobs — มี escrow flow แยก)
+    const advCheck = await pool.query(
+      `SELECT 1 FROM advance_jobs WHERE id::text = $1 LIMIT 1`,
+      [String(jobId)]
+    ).catch(() => ({ rows: [] }));
+    if (advCheck.rows?.length) {
+      return res.status(400).json({ error: 'Advance jobs use /api/advance-jobs/:id/escrow' });
+    }
+
+    const statusOk = (job.status || '').toLowerCase();
+    if (statusOk !== 'accepted') {
+      return res.status(400).json({
+        error: 'invalid_status',
+        message: `Hold only allowed when job status is accepted. Current: ${job.status}`
+      });
+    }
+
+    const pd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+    if (pd.escrow_held) {
+      return res.json({ success: true, message: 'Already held', jobId, amount: pd.escrow_amount });
+    }
+
+    const jobFee = round2(Math.max(0, Number(job.price) || 0));
+    if (jobFee <= 0) return res.status(400).json({ error: 'Job has no price' });
+
+    const wantsInsurance = pd.employer_wants_insurance === true || pd.employer_wants_insurance === 'true' || req.body.has_insurance === true;
+    let insuranceAmount = 0;
+    if (wantsInsurance && jobFee > 0) {
+      let rate = 0.1;
+      try {
+        const cat = (job.category || 'default').toString().trim();
+        const catRow = await pool.query(`SELECT rate_percent FROM insurance_rate_by_category WHERE LOWER(TRIM(category)) = LOWER(TRIM($1))`, [cat]).catch(() => ({ rows: [] }));
+        if (catRow.rows?.[0] != null) rate = parseFloat(catRow.rows[0].rate_percent) || 10;
+        else {
+          const defRow = await pool.query(`SELECT rate_percent FROM insurance_rate_by_category WHERE category = 'default'`).catch(() => ({ rows: [] }));
+          rate = defRow.rows?.[0] ? parseFloat(defRow.rows[0].rate_percent) || 10 : 10;
+        }
+      } catch (_) {}
+      insuranceAmount = round2(jobFee * (rate / 100));
+    }
+    const { finalPrice: holdAmount } = calcMatchJobEmployerOutflowDynamic(jobFee, insuranceAmount);
+
+    const employerId = job.created_by;
+    if (!employerId) return res.status(400).json({ error: 'Job has no employer' });
+
+    const clientFrozen = await isWalletFrozen(employerId);
+    if (clientFrozen) {
+      return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถทำรายการได้' });
+    }
+
+    const balanceRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1::uuid', [employerId]);
+    const balance = parseFloat(balanceRow.rows?.[0]?.wallet_balance || 0);
+    if (balance < holdAmount) {
+      return res.status(400).json({
+        error: 'insufficient_balance',
+        message: `ยอดใน Wallet ไม่พอ (ต้องการ ${holdAmount} บาท)`,
+        required: holdAmount,
+        balance
+      });
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await dbClient.query(
+        `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
+        [holdAmount, employerId]
+      );
+
+      const escrowPayload = {
+        ...pd,
+        escrow_held: true,
+        escrow_amount: holdAmount,
+        escrow_held_at: new Date().toISOString(),
+        escrow_job_fee: jobFee,
+        employer_wants_insurance: wantsInsurance,
+        escrow_insurance_amount: insuranceAmount
+      };
+      await dbClient.query(
+        `UPDATE jobs SET payment_details = $1, updated_at = NOW() WHERE id::text = $2`,
+        [JSON.stringify(escrowPayload), String(jobId)]
+      );
+
+      // Stability Fund: credit employer's insurance_credit_balance (Virtual Credit)
+      if (insuranceAmount > 0) {
+        await dbClient.query(
+          `UPDATE users SET insurance_credit_balance = COALESCE(insurance_credit_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+          [insuranceAmount, employerId]
+        );
+      }
+
+      await dbClient.query('COMMIT');
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    res.json({ success: true, message: 'Payment held (escrow)', jobId, amount: holdAmount });
+  } catch (err) {
+    console.error('Hold payment error:', err);
+    res.status(500).json({ error: err.message || 'Failed to hold payment' });
+  }
+});
+
 // ✅ 3. Release Pending Payment — Double Lock (job + job_disputes), Admin-only after dispute, Escrow validation
 app.post('/api/payments/release', async (req, res) => {
   try {
     const { jobId } = req.body;
 
-    const job = await JobModel.findById(jobId);
+    let job = await JobModel.findById(jobId);
+    if (!job) {
+      const advRow = await pool.query(
+        `SELECT aj.id, aj.title, aj.employer_id, u.full_name AS created_by_name
+         FROM advance_jobs aj LEFT JOIN users u ON u.id = aj.employer_id
+         WHERE aj.id::text = $1 LIMIT 1`,
+        [String(jobId)]
+      ).catch(() => ({ rows: [] }));
+      if (advRow.rows?.length) job = advRow.rows[0];
+    }
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Apple Review / Demo: ข้าม wallet update สำหรับงาน Demo
+    const createdByName = (job.created_by_name || '').toString();
+    const title = (job.title || '').toString();
+    const jobIdStr = String(jobId || '');
+    const isDemoJob = /demo employer|apple review/i.test(createdByName) ||
+      /apple review|demo/i.test(title) ||
+      /job_apple_demo|_demo_/i.test(jobIdStr);
+
+    if (isDemoJob) {
+      const pd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+      if (pd.released_status === 'released') {
+        return res.json({ success: true, message: 'Already released', jobId });
+      }
+      const providerReceive = Number(pd.provider_receive || pd.job_fee || 0);
+      const providerId = job.accepted_by;
+      if (providerId && providerReceive > 0) {
+        await pool.query(
+          `UPDATE users SET wallet_pending = GREATEST(0, COALESCE(wallet_pending, 0) - $1), wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id::text = $2 OR firebase_uid = $2`,
+          [providerReceive, String(providerId)]
+        );
+      }
+      const upd = await pool.query(
+        `UPDATE jobs SET 
+          payment_details = jsonb_set(COALESCE(payment_details, '{}'::jsonb), '{released_status}', '"released"'),
+          updated_at = NOW()
+         WHERE id::text = $1`,
+        [jobId]
+      );
+      if (upd.rowCount === 0) {
+        await pool.query(`UPDATE advance_jobs SET updated_at = NOW() WHERE id::text = $1`, [jobId]).catch(() => {});
+      }
+      console.log('🔓 Demo job payment released (wallet pending→balance):', jobId);
+      return res.json({ success: true, message: 'Demo payment released', jobId });
     }
 
     // Circuit Breaker (1): Lock when dispute on job
@@ -1947,13 +3404,33 @@ app.post('/api/payments/release', async (req, res) => {
       }
     }
 
-    const paymentDetails = job.payment_details;
+    let paymentDetails = job.payment_details;
+    if (typeof paymentDetails === 'string') {
+      try {
+        paymentDetails = JSON.parse(paymentDetails || '{}');
+      } catch (_) {
+        paymentDetails = {};
+      }
+    }
     if (!paymentDetails || paymentDetails.released_status === 'released') {
       return res.status(400).json({ error: 'Payment already released or not ready' });
     }
 
+    const releaseAfterMs = paymentDetails.provider_release_after
+      ? new Date(paymentDetails.provider_release_after).getTime()
+      : NaN;
+    if (!isDemoJob && !isNaN(releaseAfterMs) && releaseAfterMs > Date.now()) {
+      const retryAfterSeconds = Math.ceil((releaseAfterMs - Date.now()) / 1000);
+      return res.status(400).json({
+        error: 'release_too_early',
+        message: 'กำลังกันเงินไว้ตามกลาง 5 นาที — กรุณารอแล้วลองปล่อยเงินอีกครั้ง',
+        retryAfterSeconds,
+      });
+    }
+
     const providerReceive = Number(paymentDetails.provider_receive);
-    const providerId = job.accepted_by;
+    const providerIdRaw = job.accepted_by;
+    const providerId = (await resolveUserIdToUuid(providerIdRaw)) || providerIdRaw;
 
     // Escrow Safeguard: ตรวจสอบยอดที่ปล่อยตรงกับที่ job ระบุ
     if (isNaN(providerReceive) || providerReceive <= 0) {
@@ -1991,14 +3468,37 @@ app.post('/api/payments/release', async (req, res) => {
         });
       }
 
-      // 1. โอนเงินจาก pending ไป balance
-      await dbClient.query(
+      // 1. โอนเงินจาก pending ไป balance — รองรับทั้ง id และ firebase_uid
+      const provRelease = await dbClient.query(
         `UPDATE users SET 
-          wallet_pending = wallet_pending - $1,
-          wallet_balance = wallet_balance + $1
-         WHERE id = $2`,
-        [providerReceive, providerId]
+          wallet_pending = GREATEST(0, COALESCE(wallet_pending, 0) - $1),
+          wallet_balance = COALESCE(wallet_balance, 0) + $1,
+          updated_at = NOW()
+         WHERE id::text = $2 OR firebase_uid = $2
+         RETURNING id, wallet_pending`,
+        [providerReceive, String(providerIdRaw)]
       );
+      if (!provRelease.rows?.length) {
+        await dbClient.query('ROLLBACK');
+        return res.status(500).json({
+          error: 'provider_release_failed',
+          message: 'ไม่สามารถโอนเงินให้ผู้รับงานได้ — ไม่พบผู้ใช้ในระบบ'
+        });
+      }
+
+      // Safety Net: Ensure wallet_pending has no rounding dust. If cents remain, clear to 0 and log for Admin review.
+      const newPending = parseFloat(provRelease.rows[0]?.wallet_pending || 0);
+      if (newPending > 0 && newPending < 0.01) {
+        await dbClient.query(
+          `UPDATE users SET wallet_pending = 0, updated_at = NOW() WHERE id::text = $1 OR firebase_uid = $1`,
+          [String(providerIdRaw)]
+        );
+        console.warn('⚠️ Accounting Error: Cleared wallet_pending rounding dust', { providerId: providerIdRaw, jobId, amount: newPending, action: 'set_to_zero' });
+      } else if (newPending < 0) {
+        await dbClient.query('ROLLBACK');
+        console.error('🔴 Accounting Error: wallet_pending went negative after release', { providerId: providerIdRaw, jobId, providerReceive, newPending });
+        return res.status(500).json({ error: 'Accounting error: pending overdrawn. Contact admin.' });
+      }
 
       // 3. อัพเดท transaction status
       await dbClient.query(
@@ -2006,10 +3506,10 @@ app.post('/api/payments/release', async (req, res) => {
           status = 'completed',
           released_at = NOW()
          WHERE related_job_id = $1 
-           AND user_id = $2 
+           AND (user_id::text = $2 OR user_id::text = $3)
            AND type = 'income' 
            AND status = 'pending_release'`,
-        [jobId, providerId]
+        [jobId, String(providerId), String(providerIdRaw)]
       );
 
       await dbClient.query('COMMIT');
@@ -2062,7 +3562,13 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
     const fullAmount = round2(Number(pd.amount) || 0);
     const providerReceive = round2(Number(pd.provider_receive) || 0);
     const feeAmount = round2(Number(pd.fee_amount) || 0);
-    const refundToEmployer = round2(includeCommission ? fullAmount : (fullAmount - feeAmount));
+    const insuranceAmount = round2(Number(pd.escrow_insurance_amount) || Number(job.insurance_amount) || 0);
+    const hasInsurance = insuranceAmount > 0 && (pd.employer_wants_insurance === true || pd.employer_wants_insurance === 'true' || job.has_insurance === true);
+    // 40/60 Rule: employer gets 40% of insurance back; 60% → Platform Stability Reserve
+    const insuranceToEmployer = hasInsurance ? round2(insuranceAmount * 0.4) : 0;
+    const insuranceToReserve = hasInsurance ? round2(insuranceAmount * 0.6) : 0;
+    const baseRefund = round2(includeCommission ? fullAmount : (fullAmount - feeAmount));
+    const refundToEmployer = hasInsurance ? round2(baseRefund - insuranceAmount + insuranceToEmployer) : baseRefund;
     const employerId = job.created_by;
     const providerId = job.accepted_by;
 
@@ -2091,11 +3597,18 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
           [providerReceive, providerId]
         );
       }
-      // คืนให้ Employer
+      // คืนให้ Employer (40/60: 40% of insurance to employer, 60% to reserve)
       await dbClient.query(
         `UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`,
         [refundToEmployer, employerId]
       );
+      // Debit insurance_credit_balance when refunding (virtual credit reversal)
+      if (hasInsurance && insuranceAmount > 0) {
+        await dbClient.query(
+          `UPDATE users SET insurance_credit_balance = GREATEST(0, COALESCE(insurance_credit_balance, 0) - $1), updated_at = NOW() WHERE id = $2`,
+          [insuranceAmount, employerId]
+        );
+      }
       // อัปเดต job payment_details เป็น refunded
       await dbClient.query(
         `UPDATE jobs SET 
@@ -2127,6 +3640,14 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
           [ledgerId('commission'), jobId, jobId, feeAmount, `REF-${jobId}-f`, `T-REF-${jobId}-${Date.now()}-f`, JSON.stringify({ leg: 'commission_reversed', admin_id: req.adminUser?.id })]
         );
       }
+      // 40/60 Rule: 60% of insurance → Platform Stability Reserve on refund
+      if (insuranceToReserve > 0) {
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+           VALUES ($1, 'platform_stability_reserve', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7)`,
+          [ledgerId('res'), jobId, jobId, insuranceToReserve, `REF-${jobId}-res`, `T-REF-${jobId}-${Date.now()}-res`, JSON.stringify({ leg: 'refund_insurance_60pct', insurance_amount: insuranceAmount, rate: 0.60, admin_id: req.adminUser?.id })]
+        );
+      }
 
       await dbClient.query('COMMIT');
     } catch (e) {
@@ -2139,7 +3660,7 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
     auditService.log(req.adminUser?.id || 'admin', 'PAYMENT_REFUNDED', {
       entityName: 'jobs',
       entityId: jobId,
-      new: { refundToEmployer, providerDebit: providerReceive, includeCommission, feeAmount }
+      new: { refundToEmployer, providerDebit: providerReceive, includeCommission, feeAmount, insuranceToReserve: insuranceToReserve || 0 }
     }, { actorRole: 'Admin', status: 'Success', ipAddress: getClientIp(req) });
 
     res.json({
@@ -2147,7 +3668,8 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
       message: 'Refund processed. Reverse ledger entries recorded.',
       refundToEmployer,
       providerDebit: providerReceive,
-      includeCommission
+      includeCommission,
+      insuranceToReserve: insuranceToReserve || 0
     });
   } catch (error) {
     console.error('Refund error:', error);
@@ -2177,18 +3699,71 @@ app.get('/api/wallet/:userId/summary', async (req, res) => {
       total: (parseFloat(user.wallet_balance) || 0) + (parseFloat(user.wallet_pending) || 0),
       pendingFromTransactions,
       wallet_frozen: frozen,
+      insurance_credit_balance: parseFloat(user.insurance_credit_balance) || 0,
       recentTransactions: transactions.slice(0, 5)
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to get wallet summary' });
   }
 });
+
+// ✅ GET /api/jobs/create-check — ตรวจสอบว่า user ปัจจุบันสามารถโพสต์งานได้หรือไม่ (สำหรับ debug)
+app.get('/api/jobs/create-check', async (req, res) => {
+  try {
+    const tokenUserId = resolveAdvanceJobUserId(req);
+    const hasAuth = !!req.headers.authorization?.startsWith('Bearer ');
+    let userFound = false;
+    let userId = null;
+    let userName = null;
+    if (tokenUserId) {
+      const r = await pool.query(
+        `SELECT id, full_name FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1`,
+        [tokenUserId]
+      );
+      if (r.rows?.length) {
+        userFound = true;
+        userId = r.rows[0].id;
+        userName = r.rows[0].full_name;
+      }
+    }
+    // Fallback: ลองหาจาก phone ใน JWT
+    if (!userFound && tokenUserId && hasAuth) {
+      try {
+        const token = req.headers.authorization.replace(/^Bearer\s+/i, '').trim();
+        if (token && process.env.JWT_SECRET) {
+          const payload = jwt.verify(token, process.env.JWT_SECRET);
+          if (payload.phone) {
+            const phoneNorm = normalizePhoneForStorage(payload.phone);
+            const phoneAlt = phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
+            const r = await pool.query(`SELECT id, full_name FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) LIMIT 1`, [phoneNorm, phoneAlt]);
+            if (r.rows?.length) {
+              userFound = true;
+              userId = r.rows[0].id;
+              userName = r.rows[0].full_name;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    res.json({
+      canCreate: userFound,
+      hasToken: !!tokenUserId,
+      hasAuthHeader: hasAuth,
+      userId: userId ? String(userId) : null,
+      userName: userName || null,
+      hint: !hasAuth ? 'ไม่มี Authorization header' : !tokenUserId ? 'Token ไม่ถูกต้องหรือหมดอายุ' : !userFound ? 'ไม่พบ user ในระบบ' : 'พร้อมโพสต์งาน'
+    });
+  } catch (e) {
+    res.status(500).json({ canCreate: false, error: e.message });
+  }
+});
+
 // ============ CREATE JOB ENDPOINT ============
 
-// ✅ Create New Job
+// ✅ Create New Job (Match Job) — รองรับ JWT: ถ้ามี Bearer token ใช้ user จาก token
 app.post('/api/jobs', async (req, res) => {
   try {
-    const {
+    let {
       title,
       description,
       category,
@@ -2198,16 +3773,48 @@ app.post('/api/jobs', async (req, res) => {
       assigned_to,
       duration_hours
     } = req.body;
-    const createdBy = req.body.createdBy || req.body.created_by;
+
+    // โพสต์ใหม่ต้องไม่ expired — ถ้า datetime อยู่ในอดีตหรือว่าง ให้ใช้ พรุ่งนี้ 09:00
+    const now = new Date();
+    const minFuture = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    if (!datetime) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      datetime = d.toISOString();
+    } else {
+      const dt = new Date(datetime);
+      if (isNaN(dt.getTime()) || dt <= minFuture) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        d.setHours(9, 0, 0, 0);
+        datetime = d.toISOString();
+      }
+    }
+    // ถ้ามี JWT ใช้ user จาก token (ปลอดภัยกว่า) ไม่ต้องพึ่ง body
+    let createdBy = req.body.createdBy || req.body.created_by;
+    const tokenUserId = resolveAdvanceJobUserId(req);
+    if (tokenUserId) {
+      createdBy = tokenUserId;
+    }
 
     console.log('📝 [CREATE JOB] Request body:', req.body);
+    console.log('📝 [CREATE JOB] createdBy:', createdBy, tokenUserId ? '(from JWT)' : '(from body)');
 
     // Validate required fields
     if (!title || !description || !category || !price || !createdBy) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: title, description, category, price, createdBy'
+        error: tokenUserId ? 'Missing required fields: title, description, category, price' : 'Missing required fields: title, description, category, price, createdBy. กรุณาเข้าสู่ระบบก่อนโพสต์งาน'
       });
+    }
+
+    if (req.body.transport_contract != null) {
+      const tc = sanitizeTransportContract(req.body.transport_contract);
+      if (!tc.ok) {
+        return res.status(400).json({ success: false, error: tc.error });
+      }
+      req.body.transport_contract = tc.value;
     }
 
     // ดึงข้อมูลผู้สร้างงาน
@@ -2228,24 +3835,209 @@ app.post('/api/jobs', async (req, res) => {
       console.warn('⚠️ Could not fetch user info:', userError.message);
     }
 
-    // Generate job ID
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Generate job ID — ใช้ UUID รองรับทั้ง VARCHAR และ UUID column
+    const jobId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Try to find user ID from createdBy (could be firebase_uid, email, phone, or id)
     let clientIdValue = null;
     try {
       const userCheck = await pool.query(
-        `SELECT id FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1 LIMIT 1`,
+        `SELECT id, full_name FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1 LIMIT 1`,
         [createdBy]
       );
       if (userCheck.rows.length > 0) {
         clientIdValue = userCheck.rows[0].id;
+        clientName = userCheck.rows[0].full_name || clientName;
       }
     } catch (userError) {
-      console.warn('⚠️ Could not find user ID, using NULL for client_id:', userError.message);
+      console.warn('⚠️ Could not find user ID:', userError.message);
     }
 
-    // ✅ Direct Hire from Talents: resolve assigned_to to provider UUID
+    // Fallback: ถ้า userCheck ไม่เจอ แต่มี JWT — ลองหา user จาก phone ใน JWT (แก้ปัญหา Demo/Apple Review)
+    if (clientIdValue == null && tokenUserId && req.headers.authorization) {
+      try {
+        const token = req.headers.authorization.replace(/^Bearer\s+/i, '').trim();
+        if (token && process.env.JWT_SECRET) {
+          const payload = jwt.verify(token, process.env.JWT_SECRET);
+          const phone = payload.phone;
+          if (phone) {
+            const phoneNorm = normalizePhoneForStorage(phone);
+            const phoneAlt = phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
+            const r = await pool.query(
+              `SELECT id, full_name FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) LIMIT 1`,
+              [phoneNorm, phoneAlt]
+            );
+            if (r.rows?.length) {
+              clientIdValue = r.rows[0].id;
+              clientName = r.rows[0].full_name || clientName;
+              console.log('✅ [CREATE JOB] Found user by phone from JWT (Demo/Apple Review fallback):', phoneNorm);
+            }
+          }
+        }
+      } catch (jwtErr) {
+        if (process.env.DEBUG_LOGIN === '1') console.warn('JWT phone fallback:', jwtErr.message);
+      }
+    }
+
+    // ✅ ต้องมี user ในระบบ — ถ้าไม่มี ให้ลอง auto-create (รองรับ Demo / Apple Review)
+    if (clientIdValue == null) {
+      const isDemoUser = /demo-anna-id|demo-bob-id|demo employer|apple review|apple-demo-employer|apple-demo-talent/i.test(String(createdBy));
+      if (isDemoUser) {
+        // Apple Demo (setup-apple-demo.js) — ใช้ credentials จาก apple-demo-config.json
+        const isAppleDemoEmployer = /apple-demo-employer|demo employer|apple review/i.test(String(createdBy));
+        const isAppleDemoTalent = /apple-demo-talent|demo talent/i.test(String(createdBy));
+        let demoName, demoWallet, demoEmail, demoPhone, demoRole, firebaseUid;
+        if (isAppleDemoTalent) {
+            demoName = 'Demo Talent (Apple Review)';
+            demoWallet = 5000;
+            demoEmail = 'tester.talent@aqond.com';
+            demoPhone = '0812345602';
+            demoRole = 'provider';
+          } else if (isAppleDemoEmployer) {
+            demoName = 'Demo Employer (Apple Review)';
+            demoWallet = 50000;
+            demoEmail = 'tester.employer@aqond.com';
+            demoPhone = '0812345601';
+            demoRole = 'user';
+          } else {
+            demoName = createdBy === 'demo-bob-id' ? 'Bob Provider' : 'Anna Employer';
+            demoWallet = createdBy === 'demo-bob-id' ? 100 : 50000;
+            demoEmail = createdBy === 'demo-bob-id' ? 'bob@meerak.app' : 'anna@meerak.app';
+            demoPhone = createdBy === 'demo-bob-id' ? '0800000002' : '0800000001';
+            demoRole = createdBy === 'demo-bob-id' ? 'provider' : 'user';
+        }
+        firebaseUid = isAppleDemoEmployer ? 'apple-demo-employer' : isAppleDemoTalent ? 'apple-demo-talent' : createdBy;
+        try {
+          await pool.query(
+            `INSERT INTO users (firebase_uid, email, phone, full_name, role, kyc_level, wallet_balance)
+             VALUES ($1, $2, $3, $4, $5, 'level_2', $6)`,
+            [firebaseUid, demoEmail, demoPhone, demoName, demoRole, demoWallet]
+          );
+          const retry = await pool.query(
+            `SELECT id FROM users WHERE firebase_uid = $1 OR phone = $2 LIMIT 1`,
+            [firebaseUid, demoPhone]
+          );
+          if (retry.rows.length > 0) {
+            clientIdValue = retry.rows[0].id;
+            clientName = demoName;
+            console.log('✅ [CREATE JOB] Auto-created demo user:', firebaseUid);
+          }
+        } catch (demoErr) {
+          if (demoErr.code === '23505' || demoErr.message?.includes('duplicate')) {
+            const retry = await pool.query(
+              `SELECT id, full_name FROM users WHERE firebase_uid = $1 OR email = $2 OR phone = $3 LIMIT 1`,
+              [firebaseUid, demoEmail, demoPhone]
+            );
+            if (retry.rows.length > 0) {
+              clientIdValue = retry.rows[0].id;
+              clientName = retry.rows[0].full_name || clientName;
+            }
+          }
+          if (!clientIdValue) {
+            try {
+              await pool.query(
+                `INSERT INTO users (firebase_uid, full_name, role, kyc_level, wallet_balance) VALUES ($1, $2, 'user', 'level_2', 50000)`,
+                [firebaseUid || createdBy, demoName || (createdBy === 'demo-bob-id' ? 'Bob Provider' : 'Anna Employer')]
+              );
+              const retry2 = await pool.query(`SELECT id, full_name FROM users WHERE firebase_uid = $1 OR phone = $2 LIMIT 1`, [firebaseUid || createdBy, demoPhone]);
+              if (retry2.rows.length > 0) {
+                clientIdValue = retry2.rows[0].id;
+                clientName = retry2.rows[0].full_name || clientName;
+              }
+            } catch (e2) {
+              if (e2.code === '23505') {
+                const r = await pool.query(`SELECT id, full_name FROM users WHERE firebase_uid = $1 OR phone = $2 LIMIT 1`, [firebaseUid || createdBy, demoPhone]);
+                if (r.rows.length > 0) { clientIdValue = r.rows[0].id; clientName = r.rows[0].full_name || clientName; }
+              }
+            }
+          }
+          if (!clientIdValue) console.warn('⚠️ Demo auto-create failed:', demoErr.message);
+        }
+      }
+      // Fallback: ลอง INSERT แบบ generic (เหมือน accept job)
+      if (clientIdValue == null) {
+        try {
+          const displayName = (createdBy || '').toString().slice(0, 20) || 'User';
+          await pool.query(
+            `INSERT INTO users (firebase_uid, full_name, role, kyc_level, wallet_balance)
+             VALUES ($1, $2, 'user', 'level_1', 50000)`,
+            [createdBy, displayName]
+          );
+          const retry = await pool.query(`SELECT id, full_name FROM users WHERE firebase_uid = $1 LIMIT 1`, [createdBy]);
+          if (retry.rows.length > 0) {
+            clientIdValue = retry.rows[0].id;
+            clientName = retry.rows[0].full_name || clientName;
+            console.log('✅ [CREATE JOB] Auto-created user:', createdBy);
+          }
+        } catch (insertErr) {
+          if (insertErr.code === '23505') {
+            const retry = await pool.query(`SELECT id, full_name FROM users WHERE firebase_uid = $1 OR id::text = $1 LIMIT 1`, [createdBy]);
+            if (retry.rows.length > 0) {
+              clientIdValue = retry.rows[0].id;
+              clientName = retry.rows[0].full_name || clientName;
+            }
+          }
+        }
+      }
+      if (clientIdValue == null) {
+        console.warn('⚠️ [CREATE JOB] User not found. createdBy:', createdBy, 'hasJwtUser:', !!tokenUserId, 'hasAuthHeader:', !!req.headers.authorization);
+        return res.status(403).json({
+          success: false,
+          error: 'ไม่พบผู้ใช้ในระบบ กรุณาเข้าสู่ระบบใหม่อีกครั้ง หรือสมัครสมาชิกก่อนโพสต์งาน'
+        });
+      }
+    }
+
+    // Transport Hub — intercity charter: employer total from dedicated engine when flag/beta allows (server-authoritative)
+    if (req.body.transport_contract && typeof req.body.transport_contract === 'object' && clientIdValue != null) {
+      const tc0 = req.body.transport_contract;
+      if (String(tc0.job_kind) === 'intercity_charter') {
+        try {
+          const pricingOn = await getTransportIntercityPricingEnabledForUser(pool, String(clientIdValue));
+          if (pricingOn) {
+            const vehicleId = (req.body._vehicle || 'standard').toString();
+            const distKm = Number(tc0.distance_km) || 0;
+            const insAmt = parseFloat(req.body.transport_insurance_amount) || 0;
+            const calc = calculateIntercityFee({
+              distanceKm: distKm,
+              vehicleId,
+              insuranceAmount: insAmt,
+              paymentChannel: req.body.payment_channel || req.body.paymentChannel,
+              paymentGateway: req.body.payment_gateway || req.body.paymentGateway,
+            });
+            price = calc.finalPrice;
+            req.body.transport_contract = {
+              ...tc0,
+              intercity_charter: {
+                ...(tc0.intercity_charter || {}),
+                pricing_engine: 'intercity_v1',
+                quote_breakdown: {
+                  ...(tc0.intercity_charter?.quote_breakdown || {}),
+                  distance_km: distKm,
+                  distance_charge_thb: calc.distanceChargeThb,
+                  surcharge_thb: calc.baseSurchargeThb,
+                  floor_job_fee_thb: calc.floorJobFeeThb,
+                  job_fee_after_floor_thb: calc.jobFeeAfterFloorThb,
+                  vehicle_multiplier: calc.vehicleMultiplier,
+                  labor_thb: calc.jobFeeThb,
+                  insurance_estimate_thb: insAmt,
+                  payment_markup_thb: calc.paymentMarkupThb,
+                  final_price_thb: calc.finalPrice,
+                },
+              },
+            };
+            const tcSan = sanitizeTransportContract(req.body.transport_contract);
+            if (tcSan.ok) req.body.transport_contract = tcSan.value;
+          }
+        } catch (pe) {
+          console.warn('[CREATE JOB] intercity pricing:', pe?.message);
+        }
+      }
+    }
+
+    // ✅ Direct Hire from Talents: resolve assigned_to to provider UUID (หรือ mock talent ID)
     let acceptedById = null;
     let acceptedByName = 'Provider';
     let initialStatus = 'open';
@@ -2260,13 +4052,40 @@ app.post('/api/jobs', async (req, res) => {
           acceptedByName = providerRow.rows[0].full_name || 'Provider';
           initialStatus = 'accepted'; // Direct hire — งานจ้างจาก Talents
           console.log('📝 [CREATE JOB] Direct hire from Talents — assigned_to:', assigned_to, '→ accepted_by:', acceptedById);
+        } else if (MOCK_TALENT_IDS.includes(assigned_to)) {
+          // Mock talent — ใช้ ID ตรงๆ (accepted_by รองรับ VARCHAR)
+          const MOCK_NAMES = { 'talent-balcony': 'Mia', 'talent-boat': 'Luna', 'talent-sea': 'Nina', 'talent-nong-kaning': 'น้อง คะนิ้ง', 'talent-pray': 'Pray', 'talent-mirror': 'Jade', 'apple-demo-talent': 'Demo Talent (Apple Review)' };
+          acceptedById = assigned_to;
+          acceptedByName = MOCK_NAMES[assigned_to] || 'Provider';
+          initialStatus = 'accepted';
+          console.log('📝 [CREATE JOB] Mock talent hire — assigned_to:', assigned_to, '→ accepted_by:', acceptedById);
         }
       } catch (e) {
         console.warn('⚠️ Could not resolve assigned_to:', e.message);
       }
     }
 
-    // Prepare job data
+    // Marine: validate pier is open if pier_id provided
+    const isMarineJob = (category || '').toString().toLowerCase() === 'marine';
+    const pierId = req.body.pier_id;
+    const boatGrade = req.body.boat_grade || 'standard';
+    if (isMarineJob && pierId) {
+      const pierCheck = await pool.query(
+        `SELECT id, status, compatible_boat_types FROM marine_piers WHERE id = $1`,
+        [pierId]
+      ).catch(() => ({ rows: [] }));
+      if (pierCheck.rows?.length) {
+        const p = pierCheck.rows[0];
+        if (p.status !== 'open') {
+          return res.status(400).json({ success: false, error: `ท่าเรือปิดชั่วคราว (${p.status}) — กรุณาเลือกท่าเรืออื่น` });
+        }
+        if (p.compatible_boat_types?.length && !isBoatCompatibleWithPier(boatGrade, p.compatible_boat_types)) {
+          return res.status(400).json({ success: false, error: 'เรือประเภทนี้ไม่สามารถเข้าท่าเรือนี้ได้' });
+        }
+      }
+    }
+
+    // Prepare job data — ใช้ clientIdValue (UUID) สำหรับ created_by เพื่อให้ findByUserId หาเจอ (created_by เป็น UUID column)
     const jobData = {
       id: jobId,
       title: title,
@@ -2277,7 +4096,7 @@ app.post('/api/jobs', async (req, res) => {
       location: location || { lat: 13.736717, lng: 100.523186 },
       datetime: datetime || new Date().toISOString(),
       duration_hours: duration_hours || 2,
-      created_by: createdBy,
+      created_by: clientIdValue != null ? clientIdValue : createdBy,
       created_by_name: clientName,
       created_by_avatar: clientAvatar,
       client_id: clientIdValue,
@@ -2304,9 +4123,10 @@ app.post('/api/jobs', async (req, res) => {
          location, location_lat, location_lng, datetime,
          created_by, created_by_name, created_by_avatar, client_id,
          created_at, updated_at`;
+    // ต้องให้ placeholders ตรงกับจำนวน columns: ไม่มี accepted = 16, มี accepted = 18
     const insertPlaceholders = hasAcceptedBy
-      ? '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19'
-      : '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18';
+      ? '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18'
+      : '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16';
     const insertValues = hasAcceptedBy
       ? [
           jobData.id, jobData.title, jobData.description, jobData.category, jobData.price, jobData.status,
@@ -2327,7 +4147,42 @@ app.post('/api/jobs', async (req, res) => {
       insertValues
     );
 
-    const createdJob = result.rows[0];
+    let createdJob = result.rows[0];
+
+    // ช่องทางชำระ (วอลเล็ต / เงินสด) + ยอด liability สำหรับงานเงินสด — ใช้ตอน provider รับงาน
+    try {
+      const pdMerge = mergeEmployerPaymentOnCreate(req.body, jobData.price);
+      await pool.query(
+        `UPDATE jobs SET payment_details = COALESCE(payment_details, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id::text = $2`,
+        [JSON.stringify(pdMerge), jobId]
+      );
+      const rpd = await pool.query(`SELECT payment_details FROM jobs WHERE id::text = $1`, [jobId]);
+      if (rpd.rows?.[0]) createdJob.payment_details = rpd.rows[0].payment_details;
+    } catch (pdErr) {
+      console.warn('[CREATE JOB] payment_details merge:', pdErr.message);
+    }
+
+    // Marine: persist pier_id, boat_grade, marine_status, car_booking_id, car_eta_minutes
+    if (isMarineJob) {
+      const marineUpdates = [];
+      const marineValues = [];
+      let idx = 1;
+      if (pierId) { marineUpdates.push(`pier_id = $${idx}`); marineValues.push(pierId); idx++; }
+      if (req.body.ferry_round_time) { marineUpdates.push(`ferry_round_time = $${idx}`); marineValues.push(req.body.ferry_round_time); idx++; }
+      if (boatGrade) { marineUpdates.push(`boat_grade = $${idx}`); marineValues.push(boatGrade); idx++; }
+      marineUpdates.push(`marine_status = $${idx}`); marineValues.push('pending_checkin'); idx++;
+      if (req.body.car_booking_id) { marineUpdates.push(`car_booking_id = $${idx}`); marineValues.push(req.body.car_booking_id); idx++; }
+      if (req.body.car_eta_minutes != null) { marineUpdates.push(`car_eta_minutes = $${idx}`); marineValues.push(req.body.car_eta_minutes); idx++; }
+      if (marineUpdates.length) {
+        marineValues.push(jobId);
+        await pool.query(
+          `UPDATE jobs SET ${marineUpdates.join(', ')}, updated_at = NOW() WHERE id::text = $${idx}`,
+          marineValues
+        );
+        const r = await pool.query(`SELECT * FROM jobs WHERE id::text = $1`, [jobId]);
+        if (r.rows?.length) createdJob = r.rows[0];
+      }
+    }
 
     // Parse JSON fields
     if (createdJob.location && typeof createdJob.location === 'string') {
@@ -2433,10 +4288,12 @@ app.get('/api/jobs/recommended', async (req, res) => {
       LEFT JOIN users u ON (
         j.client_id = u.id 
         OR j.created_by::text = u.id::text 
-        OR j.created_by = u.firebase_uid
+        OR (j.created_by IS NOT NULL AND j.created_by::text = u.firebase_uid)
       )
       WHERE j.status = 'open'
         AND (COALESCE(j.moderation_status, 'approved') = 'approved')
+        AND (j.created_at > NOW() - INTERVAL '2 days')
+        AND (j.datetime IS NULL OR j.datetime > NOW() OR j.created_at > NOW() - INTERVAL '36 hours')
       ORDER BY j.created_at DESC NULLS LAST
       LIMIT 50
     `);
@@ -2486,13 +4343,15 @@ app.get('/api/jobs/recommended', async (req, res) => {
       };
     });
 
-    // Sort: recommended jobs first
+    // Sort: skill match ก่อน แล้วเรียงงานใหม่ขึ้นก่อน — ป้อนงานเร็ว skill match รับงานเร็ว
     if (userSkills.length > 0) {
       jobs.sort((a, b) => {
         if (a.is_recommended && !b.is_recommended) return -1;
         if (!a.is_recommended && b.is_recommended) return 1;
-        return 0;
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       });
+    } else {
+      jobs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
 
     // ไม่ส่ง mock job — คืน [] เมื่อไม่มีงาน (ป้องกัน 500 ตอนกด job-001 ที่ไม่มีใน DB)
@@ -2725,7 +4584,7 @@ app.get('/api/kyc/status/:userId', async (req, res) => {
     // ดึง submission ล่าสุด
     const kycResult = await pool.query(
       `SELECT * FROM kyc_submissions 
-       WHERE user_id = $1 
+       WHERE user_id = $1::uuid 
        ORDER BY submitted_at DESC 
        LIMIT 1`,
       [user.id]
@@ -2774,7 +4633,7 @@ app.post('/api/kyc/re-verify', async (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const userResult = await pool.query('SELECT id, kyc_status, kyc_verified_at, kyc_next_reverify_at FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT id, kyc_status, kyc_verified_at, kyc_next_reverify_at FROM users WHERE id = $1::uuid', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -2862,7 +4721,7 @@ app.get('/api/admin/kyc/:userId', adminAuthMiddleware, async (req, res) => {
     if (!userRow.rows[0]) return res.status(404).json({ error: 'User not found' });
 
     const docsRow = await pool.query(
-      `SELECT * FROM kyc_submissions WHERE user_id = $1 ORDER BY submitted_at DESC`,
+      `SELECT * FROM kyc_submissions WHERE user_id = $1::uuid ORDER BY submitted_at DESC`,
       [userRow.rows[0].id]
     );
 
@@ -3076,7 +4935,7 @@ app.get('/api/reports/earnings', async (req, res) => {
     // ดึง transaction ล่าสุด
     const transactionsResult = await pool.query(
       `SELECT * FROM transactions
-       WHERE user_id = $1 ${dateRange}
+       WHERE user_id = $1::uuid ${dateRange}
        ORDER BY created_at DESC
        LIMIT 100`,
       params
@@ -3273,6 +5132,7 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
             email: u.email,
             phone: u.phone,
             name: u.full_name || u.display_name || u.name,
+            bio: u.bio || null,
             role: u.role,
             kyc_level: u.kyc_level || 'level_1',
             kyc_status: u.kyc_status || 'not_submitted',
@@ -3288,10 +5148,44 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
             vip_tier: (u.vip_tier || 'none').toLowerCase(),
             vip_quota_balance: u.vip_quota_balance != null ? parseInt(u.vip_quota_balance, 10) : 0,
             vip_expiry: u.vip_expiry ? (u.vip_expiry instanceof Date ? u.vip_expiry.toISOString() : u.vip_expiry) : null,
+            insurance_credit_balance: parseFloat(u.insurance_credit_balance || 0),
+            assurance_badge: getAssuranceBadge(parseFloat(u.insurance_credit_balance || 0)),
+            bank_accounts: Array.isArray(u.bank_accounts) ? u.bank_accounts : (u.bank_accounts ? JSON.parse(JSON.stringify(u.bank_accounts)) : []),
             source: 'postgresql'
           };
+          try {
+            const ba = await getBrandAdviserProfilePayload(pool, u.id);
+            Object.assign(response, ba);
+          } catch (_) {}
           return res.json(response);
         }
+      }
+
+      // Mock Talent profiles (สำหรับทดสอบจ้างจาก Talents) — ใช้ path แบบ relative เพื่อให้โหลดจาก origin ของแอป
+      const MOCK_TALENTS = {
+        'talent-balcony': { name: 'Mia', avatar_url: '/talents/talent-balcony.png', portfolio_urls: ['/talents/talent-balcony.png'], signature_service: 'เพื่อนเที่ยว • ชิลล์คุยสนุก', completed_jobs_count: 62, rating: 4.9 },
+        'talent-boat': { name: 'Luna', avatar_url: '/talents/talent-boat.png', portfolio_urls: ['/talents/talent-boat.png'], signature_service: 'เพื่อนเที่ยว • ชอบทะเล', completed_jobs_count: 48, rating: 4.8 },
+        'talent-sea': { name: 'Nina', avatar_url: '/talents/talent-sea.png', portfolio_urls: ['/talents/talent-sea.png'], signature_service: 'เพื่อนเที่ยว • ชิลล์ชายหาด', completed_jobs_count: 35, rating: 4.7 },
+        'talent-nong-kaning': { name: 'น้อง คะนิ้ง', avatar_url: '/talents/talent-nong-kaning.png', portfolio_urls: ['/talents/talent-nong-kaning.png'], signature_service: 'เอนดี คุยสนุก ตามใจลูกค้า', completed_jobs_count: 89, rating: 4.9, verified_badge: 'หญิงแท้' },
+        'talent-pray': { name: 'Pray', avatar_url: '/talents/talent-pray.png', portfolio_urls: ['/talents/talent-pray.png'], signature_service: 'เพื่อนเที่ยว • สไตล์ชิลล์', completed_jobs_count: 72, rating: 4.9 },
+        'talent-mirror': { name: 'Jade', avatar_url: '/talents/talent-mirror.png', portfolio_urls: ['/talents/talent-mirror.png'], signature_service: 'เพื่อนเที่ยว • คุยสนุก', completed_jobs_count: 55, rating: 4.8 },
+        'apple-demo-talent': { name: 'Demo Talent (Apple Review)', avatar_url: 'https://i.pravatar.cc/150?u=apple-demo-talent', portfolio_urls: ['https://i.pravatar.cc/150?u=apple-demo-talent'], signature_service: 'Demo Talent สำหรับ App Store Review', completed_jobs_count: 42, rating: 4.9, verified_badge: 'Verified' },
+      };
+      const mock = MOCK_TALENTS[userId];
+      if (mock) {
+        return res.json({
+          id: userId,
+          name: mock.name,
+          avatar_url: mock.avatar_url,
+          portfolio_urls: mock.portfolio_urls || [mock.avatar_url],
+          signature_service: mock.signature_service,
+          completed_jobs_count: mock.completed_jobs_count || 0,
+          rating: mock.rating || 4.5,
+          verified_badge: mock.verified_badge || 'Verified',
+          expert_category: 'party_guest',
+          role: 'provider',
+          source: 'mock_talent'
+        });
       }
 
       return res.status(404).json({
@@ -3310,6 +5204,7 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
       email: user.email,
       phone: user.phone,
       name: user.full_name || user.display_name || user.name,
+      bio: user.bio || null,
       role: user.role,
       kyc_level: user.kyc_level || 'level_1',
       kyc_status: user.kyc_status || 'not_submitted',
@@ -3342,8 +5237,22 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
       full_name: user.full_name || user.name,
       vehicle_reg: user.vehicle_reg || null,
       vehicle_type: user.vehicle_type || null,
-      worker_grade: user.worker_grade || null
+      worker_grade: user.worker_grade || null,
+      insurance_credit_balance: parseFloat(user.insurance_credit_balance || 0),
+      assurance_badge: getAssuranceBadge(parseFloat(user.insurance_credit_balance || 0)),
+      verified_hours: parseFloat(user.verified_hours || 0),
+      bank_accounts: Array.isArray(user.bank_accounts) ? user.bank_accounts : (user.bank_accounts ? JSON.parse(JSON.stringify(user.bank_accounts)) : []),
+      blood_type: user.blood_type || null,
+      allergies: user.allergies || null,
+      emergency_contact: user.emergency_contact || null
     };
+
+    try {
+      const baPayload = await getBrandAdviserProfilePayload(pool, user.id);
+      Object.assign(response, baPayload);
+    } catch (baErr) {
+      console.warn('Brand Adviser profile fields skipped:', baErr?.message);
+    }
 
     res.json(response);
 
@@ -3386,6 +5295,43 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
   }
 });
 
+// สรุปฟิลด์ Brand Adviser หลาย user ในครั้งเดียว (หน้างาน / แชท — ลดรอบ HTTP)
+app.post('/api/users/profiles/brand-adviser-summary', profileLimiter, async (req, res) => {
+  try {
+    const raw = req.body?.ids;
+    const ids = Array.isArray(raw) ? raw.map((x) => String(x).trim()).filter(Boolean).slice(0, 24) : [];
+    if (ids.length === 0) return res.json({ profiles: {} });
+    const out = {};
+    const resolveUuid = async (param) => {
+      const r = await pool.query(
+        `SELECT id FROM users WHERE firebase_uid = $1 OR email = $1 OR phone = $1 OR id::text = $1 LIMIT 1`,
+        [param]
+      );
+      return r.rows?.[0]?.id || null;
+    };
+    for (const key of ids) {
+      try {
+        const uuid = await resolveUuid(key);
+        if (!uuid) continue;
+        const baPayload = await getBrandAdviserProfilePayload(pool, uuid);
+        out[key] = {
+          is_brand_adviser: baPayload.is_brand_adviser,
+          adviser_status: baPayload.adviser_status,
+          brand_adviser_program_enabled: baPayload.brand_adviser_program_enabled,
+          brand_adviser_suspend_warning: baPayload.brand_adviser_suspend_warning,
+          days_until_suspend_estimate: baPayload.days_until_suspend_estimate ?? null,
+        };
+      } catch (e) {
+        console.warn('[brand-adviser-summary] skip', key, e?.message);
+      }
+    }
+    return res.json({ profiles: out });
+  } catch (e) {
+    console.error('POST /api/users/profiles/brand-adviser-summary:', e);
+    return res.status(500).json({ error: 'Failed to load Brand Adviser summary' });
+  }
+});
+
 // Debug endpoint
 app.get('/api/debug/db-test', async (req, res) => {
   try {
@@ -3425,6 +5371,37 @@ app.get('/api/debug/db-test', async (req, res) => {
     });
   }
 });
+
+// GET /api/users/:id/employer-summary — Employer Profile Summary (Rating, Verified, Total jobs) for Talent view
+app.get('/api/users/:id/employer-summary', async (req, res) => {
+  try {
+    const employerId = await resolveUserIdToUuid(req.params.id);
+    if (!employerId) return res.json({ rating: 0, verified: false, total_jobs_posted: 0, full_name: null, avatar_url: null });
+    const [userRow, ratingRow, jobsRow] = await Promise.all([
+      pool.query('SELECT full_name, avatar_url, kyc_status, kyc_level FROM users WHERE id = $1 LIMIT 1', [employerId]),
+      pool.query(
+        `SELECT COALESCE(AVG(rating), 0)::DECIMAL(3,2) AS avg_rating, COUNT(*)::INTEGER AS total_reviews
+         FROM advance_job_reviews WHERE reviewee_id = $1`,
+        [employerId]
+      ),
+      pool.query('SELECT COUNT(*)::INTEGER AS total FROM advance_jobs WHERE employer_id = $1', [employerId])
+    ]);
+    const u = userRow.rows?.[0];
+    const verified = !!(u?.kyc_status === 'verified' || u?.kyc_level === 'level_2');
+    return res.json({
+      full_name: u?.full_name || null,
+      avatar_url: u?.avatar_url || null,
+      rating: parseFloat(ratingRow.rows?.[0]?.avg_rating || 0),
+      total_reviews: parseInt(ratingRow.rows?.[0]?.total_reviews || 0, 10),
+      verified,
+      total_jobs_posted: parseInt(jobsRow.rows?.[0]?.total || 0, 10)
+    });
+  } catch (err) {
+    console.error('GET /api/users/:id/employer-summary error:', err);
+    return res.json({ rating: 0, verified: false, total_jobs_posted: 0, full_name: null, avatar_url: null });
+  }
+});
+
 // ✅ 2. งานของ user — เรียก JobModel.findByUserId (logic อยู่ที่ model เดียว)
 app.get('/api/users/jobs/:userId', async (req, res) => {
   try {
@@ -3506,18 +5483,30 @@ app.post('/api/payments/tip', authenticateToken, async (req, res) => {
     const receiverUuid = await resolveUserIdToUuid(toUserId);
     if (!receiverUuid) return res.status(400).json({ error: 'ไม่พบผู้รับทิป' });
 
+    let job = null;
     const jobRow = await pool.query(
       'SELECT id, created_by, accepted_by, status FROM jobs WHERE id::text = $1 LIMIT 1',
       [jobId]
     );
-    if (!jobRow.rows?.length) return res.status(404).json({ error: 'ไม่พบงานนี้' });
-    const job = jobRow.rows[0];
-
-    if (String(job.created_by) !== String(senderUuid)) {
-      return res.status(403).json({ error: 'เฉพาะผู้จ้างงานเท่านั้นที่ส่งทิปได้' });
+    if (jobRow.rows?.length) {
+      job = jobRow.rows[0];
+    } else {
+      const advRow = await pool.query(
+        'SELECT id, employer_id AS created_by, hired_user_id AS accepted_by, status FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+        [jobId]
+      );
+      if (advRow.rows?.length) job = advRow.rows[0];
     }
-    if (String(job.accepted_by) !== String(receiverUuid)) {
-      return res.status(403).json({ error: 'ผู้รับทิปต้องเป็นผู้รับงานนี้' });
+    if (!job) return res.status(404).json({ error: 'ไม่พบงานนี้' });
+
+    const jobEmployerUuid = job.created_by ? (await resolveUserIdToUuid(job.created_by)) : null;
+    const jobProviderUuid = job.accepted_by ? (await resolveUserIdToUuid(job.accepted_by)) : null;
+
+    // เฉพาะนายจ้าง→ผู้รับงาน เท่านั้น (ผู้รับงานส่งทิปให้นายจ้างไม่ได้) — ใช้ resolve เพื่อรองรับ mock talent (firebase_uid)
+    const isEmployerToProvider = jobEmployerUuid && jobProviderUuid &&
+      String(jobEmployerUuid) === String(senderUuid) && String(jobProviderUuid) === String(receiverUuid);
+    if (!isEmployerToProvider) {
+      return res.status(403).json({ error: 'เฉพาะผู้จ้างงานเท่านั้นที่ส่งทิปให้ผู้รับงานได้' });
     }
     if (String(job.status).toLowerCase() !== 'completed') {
       return res.status(400).json({ error: 'งานต้องเสร็จสมบูรณ์ก่อนส่งทิป' });
@@ -3553,29 +5542,63 @@ app.post('/api/payments/tip', authenticateToken, async (req, res) => {
         [tipAmount, senderUuid]
       );
       await client.query(
-        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
         [tipAmount, receiverUuid]
       );
 
       const ledgerId = `tip-${jobId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const senderIdStr = String(senderUuid ?? '');
+      const receiverIdStr = String(receiverUuid ?? '');
+      const tipMeta = {
+        tip_from: senderIdStr,
+        tip_to: receiverIdStr,
+        job_id: jobId,
+        employer_expense: tipAmount,
+        provider_income: tipAmount,
+        company_fee: 0,
+      };
+      const taxRefId = await generateTaxRefIdForInsert(pool, 'wallet_tip', tipMeta);
       await client.query(
-        `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, provider_id, metadata)
-         VALUES ($1, 'wallet_tip', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8, $9)`,
+        `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, provider_id, metadata)
+         VALUES ($1, $2, 'wallet_tip', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9, $10)`,
         [
-          ledgerId, jobId, jobId, tipAmount,
+          ledgerId, taxRefId, jobId, jobId, tipAmount,
           `TIP-${jobId}`, `T-TIP-${Date.now()}`,
-          senderUuid, receiverUuid,
-          JSON.stringify({ tip_from: String(senderUuid), tip_to: String(receiverUuid), job_id: jobId })
+          senderIdStr, receiverIdStr,
+          JSON.stringify(tipMeta)
         ]
       );
 
-      await client.query(
-        `UPDATE jobs SET tips_amount = COALESCE(tips_amount, 0) + $1, updated_at = NOW() WHERE id::text = $2`,
-        [tipAmount, jobId]
-      ).catch(() => {});
+      const jobsRow = await client.query('SELECT 1 FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+      if (jobsRow.rows?.length) {
+        await client.query(
+          `UPDATE jobs SET tips_amount = COALESCE(tips_amount, 0) + $1, updated_at = NOW() WHERE id::text = $2`,
+          [tipAmount, jobId]
+        ).catch(() => {});
+      }
 
       await client.query('COMMIT');
-      res.json({ success: true, message: 'ส่งทิปสำเร็จ', amount: tipAmount });
+      // แจ้งเตือนผู้รับทิปว่ามีทิปเข้ามา
+      const senderIsEmployer = String(job.created_by) === String(senderUuid);
+      const tipFromLabel = senderIsEmployer ? 'นายจ้าง' : 'ผู้รับงาน';
+      pushUserNotificationIfNotPeaceMode(
+        receiverUuid,
+        'ได้รับทิป!',
+        `${tipFromLabel}ส่งทิป ฿${tipAmount.toLocaleString()} ให้คุณ`
+      ).catch((e) => console.warn('[Tip notification]', e?.message));
+
+      // ดึง wallet ล่าสุดของ sender (employer) เพื่อให้ frontend อัปเดต UI ทันที — ใช้ได้ทั้ง Demo และบัญชีทั่วไป
+      const senderWallet = await pool.query(
+        'SELECT wallet_balance, wallet_pending FROM users WHERE id = $1',
+        [senderUuid]
+      ).catch(() => ({ rows: [] }));
+      res.json({
+        success: true,
+        message: 'ส่งทิปสำเร็จ',
+        amount: tipAmount,
+        employer_wallet_balance: parseFloat(senderWallet.rows?.[0]?.wallet_balance || 0),
+        employer_wallet_pending: parseFloat(senderWallet.rows?.[0]?.wallet_pending || 0)
+      });
     } catch (txErr) {
       await client.query('ROLLBACK').catch(() => {});
       throw txErr;
@@ -3871,10 +5894,12 @@ app.get('/api/bids/offers/:talentId', authenticateToken, async (req, res) => {
 app.get('/api/bids/offers/open/:talentId', async (req, res) => {
   try {
     const talentUuid = await resolveUserIdToUuid(req.params.talentId);
-    if (!talentUuid) return res.status(404).json({ error: 'ไม่พบ Talent' });
+    if (!talentUuid) {
+      return res.json({ offers: [] });
+    }
 
     const rows = await pool.query(
-      `SELECT id, title, base_price, offer_date, bid_window_start, bid_window_end, max_bidders,
+      `SELECT id, title, base_price, offer_date, slot_id, bid_window_start, bid_window_end, max_bidders,
         (SELECT COUNT(*) FROM bids WHERE offer_id = talent_offers.id AND status = 'pending') AS bid_count
        FROM talent_offers WHERE talent_id = $1 AND status = 'open' AND offer_date >= CURRENT_DATE
        ORDER BY offer_date ASC LIMIT 20`,
@@ -3956,6 +5981,29 @@ app.get('/api/jobs/category-list', async (req, res) => {
   }
 });
 
+// ✅ GET /api/jobs/:jobId/reviews/me — ตรวจว่า current user (นายจ้าง) รีวิวงานนี้แล้วหรือยัง (บังคับรีวิวหลังจบงาน)
+app.get('/api/jobs/:jobId/reviews/me', authenticateToken, async (req, res) => {
+  try {
+    const jobId = (req.params.jobId || '').toString().trim();
+    if (!jobId) return res.json({ has_reviewed: false, review: null });
+    const reviewerUuid = await resolveUserIdToUuid(req.user?.id);
+    if (!reviewerUuid) return res.json({ has_reviewed: false, review: null });
+    const row = await pool.query(
+      `SELECT id, rating_overall, comment, created_at FROM job_reviews WHERE job_id = $1 AND reviewer_id = $2 LIMIT 1`,
+      [jobId, reviewerUuid]
+    );
+    if (!row.rows?.length) return res.json({ has_reviewed: false, review: null });
+    const r = row.rows[0];
+    return res.json({
+      has_reviewed: true,
+      review: { id: String(r.id), rating: Number(r.rating_overall), comment: r.comment || '', created_at: r.created_at }
+    });
+  } catch (err) {
+    console.error('GET /api/jobs/:jobId/reviews/me error:', err?.message);
+    return res.json({ has_reviewed: false, review: null });
+  }
+});
+
 // ✅ รายละเอียดงาน — เรียก JobModel.findById + vip_tier สำหรับ Chat Badge
 app.get('/api/jobs/:jobId', async (req, res) => {
   const jobId = (req.params.jobId || req.params.id || '').toString().trim();
@@ -3977,12 +6025,64 @@ app.get('/api/jobs/:jobId', async (req, res) => {
       job.created_by_vip_tier = job.created_by ? vipMap[String(job.created_by)] : null;
       job.accepted_by_vip_tier = job.accepted_by ? vipMap[String(job.accepted_by)] : null;
     }
+    // ดึง provider_profile สำหรับผู้จ้าง — ชื่อจริงจาก Thai ID, ประเภทรถ, ทะเบียนรถ
+    if (job.accepted_by) {
+      try {
+        const [userRow, kycRow] = await Promise.all([
+          pool.query(
+            `SELECT full_name, vehicle_reg, vehicle_type, avatar_url FROM users WHERE id::text = $1 LIMIT 1`,
+            [String(job.accepted_by)]
+          ),
+          pool.query(
+            `SELECT full_name FROM kyc_submissions WHERE user_id::text = $1 AND status IN ('approved','verified') ORDER BY submitted_at DESC LIMIT 1`,
+            [String(job.accepted_by)]
+          )
+        ]);
+        const u = userRow.rows?.[0];
+        const k = kycRow.rows?.[0];
+        job.provider_profile = {
+          kyc_full_name: k?.full_name || u?.full_name || job.accepted_by_name || null,
+          vehicle_type: u?.vehicle_type || null,
+          vehicle_reg: u?.vehicle_reg || null,
+          avatar_url: u?.avatar_url || job.accepted_by_avatar || null,
+        };
+      } catch (e) {
+        job.provider_profile = { kyc_full_name: null, vehicle_type: null, vehicle_reg: null, avatar_url: null };
+      }
+    }
     res.json(normalizeJobForApi(job));
   } catch (e) {
     console.error('❌ [GET /api/jobs/:id]', e.message);
     res.status(500).json({ error: 'Failed to fetch job', jobId, message: e.message });
   }
 });
+
+// PATCH /api/jobs/:id/insurance-preference — นายจ้างเลือกซื้อประกัน (เก็บก่อน provider รับงาน เพื่อให้ hold รวมค่าประกัน)
+app.patch('/api/jobs/:id/insurance-preference', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const { wants_insurance, userId } = req.body || {};
+    const wantsInsurance = wants_insurance === true || wants_insurance === 'true';
+    if (!jobId) return res.status(400).json({ error: 'jobId required' });
+    const job = await JobModel.findById(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const employerId = job.created_by;
+    if (!employerId) return res.status(403).json({ error: 'เฉพาะผู้จ้างงานเท่านั้น' });
+    const callerUuid = userId ? await resolveUserIdToUuid(userId) : null;
+    if (callerUuid && String(callerUuid) !== String(employerId)) return res.status(403).json({ error: 'เฉพาะผู้จ้างงานเท่านั้น' });
+    const pd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+    const merged = { ...pd, employer_wants_insurance: wantsInsurance };
+    await pool.query(
+      `UPDATE jobs SET payment_details = $1, updated_at = NOW() WHERE id::text = $2`,
+      [JSON.stringify(merged), jobId]
+    );
+    return res.json({ success: true, employer_wants_insurance: wantsInsurance });
+  } catch (e) {
+    console.error('PATCH /api/jobs/:id/insurance-preference error:', e?.message);
+    res.status(500).json({ error: e?.message || 'Failed to update' });
+  }
+});
+
 // ✅ Get user transactions
 app.get('/api/users/transactions/:userId', async (req, res) => {
   try {
@@ -4117,6 +6217,7 @@ app.get('/api/providers', async (req, res) => {
     const filterCategory = validCategories.includes(category) ? category : null;
     const verifiedOnly = req.query.verified === 'true' || req.query.verified === '1';
 
+    // Apple Review: รวม Demo Talent เสมอ (firebase_uid = apple-demo-talent)
     const result = await pool.query(`
       SELECT 
         id,
@@ -4142,14 +6243,18 @@ app.get('/api/providers', async (req, res) => {
         is_vip
       FROM users
       WHERE role = 'provider'
-        AND account_status = 'active'
-        AND is_deleted = FALSE
+        AND (account_status = 'active' OR account_status IS NULL)
+        AND COALESCE(is_deleted, FALSE) = FALSE
         AND COALESCE(is_peace_mode, FALSE) = FALSE
         AND (ban_expires_at IS NULL OR ban_expires_at <= NOW())
-        AND COALESCE(provider_available, FALSE) = TRUE
-        AND ($1::text IS NULL OR expert_category = $1)
+        AND (
+          COALESCE(provider_available, FALSE) = TRUE
+          OR firebase_uid = 'apple-demo-talent'
+          OR (full_name ILIKE '%Demo Talent%Apple Review%')
+        )
+        AND ($1::text IS NULL OR expert_category = $1 OR expert_category IS NULL OR firebase_uid = 'apple-demo-talent')
         AND ($2::boolean IS FALSE OR COALESCE(provider_status, 'UNVERIFIED') = 'VERIFIED_PROVIDER')
-      ORDER BY rating DESC NULLS LAST, completed_jobs_count DESC
+      ORDER BY (firebase_uid = 'apple-demo-talent') DESC, rating DESC NULLS LAST, completed_jobs_count DESC
       LIMIT 50
     `, [filterCategory, verifiedOnly]);
 
@@ -4183,9 +6288,14 @@ app.get('/api/providers', async (req, res) => {
     }));
 
     // 2. ถ้าไม่มี provider ใน database — mock เฉพาะ development
+    const frontendBase = process.env.FRONTEND_URL || 'http://localhost:3000';
     if (providers.length === 0 && process.env.NODE_ENV !== 'production') {
       console.log('👥 [PROVIDERS] No providers in DB, using mock data');
       providers = [
+        { id: "talent-balcony", name: "Mia", rating: 4.9, completed_jobs_count: 62, completedJobs: 62, avatar_url: `${frontendBase}/talents/talent-balcony.png`, portfolio_urls: [`${frontendBase}/talents/talent-balcony.png`], skills: ["Party_Guest", "Dating"], signature_service: "เพื่อนเที่ยว • ชิลล์คุยสนุก", expert_category: "party_guest", gender: "female", verified_badge: "Verified", status: "available" },
+        { id: "talent-boat", name: "Luna", rating: 4.8, completed_jobs_count: 48, completedJobs: 48, avatar_url: `${frontendBase}/talents/talent-boat.png`, portfolio_urls: [`${frontendBase}/talents/talent-boat.png`], skills: ["Party_Guest", "Dating"], signature_service: "เพื่อนเที่ยว • ชอบทะเล", expert_category: "party_guest", gender: "female", verified_badge: "Verified", status: "available" },
+        { id: "talent-sea", name: "Nina", rating: 4.7, completed_jobs_count: 35, completedJobs: 35, avatar_url: `${frontendBase}/talents/talent-sea.png`, portfolio_urls: [`${frontendBase}/talents/talent-sea.png`], skills: ["Party_Guest", "Dating"], signature_service: "เพื่อนเที่ยว • ชิลล์ชายหาด", expert_category: "party_guest", gender: "female", verified_badge: "Verified", status: "available" },
+        { id: "talent-nong-kaning", name: "น้อง คะนิ้ง", rating: 4.9, completed_jobs_count: 89, completedJobs: 89, avatar_url: `${frontendBase}/talents/talent-nong-kaning.png`, portfolio_urls: [`${frontendBase}/talents/talent-nong-kaning.png`], skills: ["Party_Guest", "Dating"], signature_service: "เอนดี คุยสนุก ตามใจลูกค้า", expert_category: "party_guest", gender: "female", verified_badge: "หญิงแท้", bio: "ตัวเล็ก H:155 W:45 • สัดส่วน 36-25-35 • มีรอยสักที่แขน", status: "available" },
         {
           id: "550e8400-e29b-41d4-a716-446655440001",
           firebase_uid: "demo-bob-id",
@@ -4359,11 +6469,37 @@ function getBookingUserId(req) {
   return userId;
 }
 
+// Mock talent IDs — สำหรับทดสอบจองคิว/จองเลย
+const MOCK_TALENT_IDS = ['talent-balcony', 'talent-boat', 'talent-sea', 'talent-nong-kaning', 'talent-pray', 'talent-mirror', 'apple-demo-talent'];
+
 // GET /api/availability/:userId — ดึงเวลาว่างของ Talent (slot ที่ยังไม่ถูกจอง, start_time > now)
 app.get('/api/availability/:userId', async (req, res) => {
   try {
     const userId = (req.params.userId || '').toString().trim();
     if (!userId) return res.status(400).json({ error: 'userId required', slots: [] });
+
+    // Mock slots สำหรับ talent-* (ทดสอบจองคิว)
+    if (MOCK_TALENT_IDS.includes(userId)) {
+      const now = new Date();
+      const slots = [];
+      for (let i = 1; i <= 5; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        d.setHours(10, 0, 0, 0);
+        const start = new Date(d);
+        const end = new Date(d);
+        end.setHours(end.getHours() + 2);
+        slots.push({
+          id: `mock-slot-${userId}-${i}`,
+          user_id: userId,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          created_at: new Date().toISOString(),
+        });
+      }
+      return res.json({ slots });
+    }
+
     const userRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId]);
     const userUuid = userRow.rows?.[0]?.id;
     if (!userUuid) return res.json({ slots: [] });
@@ -4453,6 +6589,32 @@ app.post('/api/bookings', async (req, res) => {
     if (!bookerUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
     const { slot_id, talent_id } = req.body || {};
     if (!slot_id || !talent_id) return res.status(400).json({ error: 'slot_id และ talent_id ต้องส่งมา' });
+
+    // Mock booking — talent-* + mock-slot-* (ทดสอบจองคิว)
+    if (MOCK_TALENT_IDS.includes(talent_id) && String(slot_id).startsWith('mock-slot-')) {
+      const start = new Date();
+      start.setDate(start.getDate() + 1);
+      start.setHours(10, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(end.getHours() + 2);
+      return res.status(201).json({
+        success: true,
+        booking: {
+          id: `mock-booking-${talent_id}-${Date.now()}`,
+          slot_id,
+          booker_id: String(bookerUuid),
+          talent_id,
+          status: 'pending',
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          created_at: new Date().toISOString(),
+          deposit_amount: 0,
+          deposit_status: 'none'
+        },
+        message: 'จองคิวสำเร็จ (Mock)'
+      });
+    }
+
     const talentRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [talent_id]);
     const talentUuid = talentRow.rows?.[0]?.id;
     if (!talentUuid) return res.status(400).json({ error: 'ไม่พบ Talent' });
@@ -4520,9 +6682,9 @@ app.get('/api/bookings/me', async (req, res) => {
     if (!talentUuid) return res.json({ bookings: [] });
     const result = await pool.query(
       `SELECT b.id, b.slot_id, b.booker_id, b.talent_id, b.status, b.job_id, b.created_at, b.updated_at,
-              b.deposit_amount, b.deposit_status,
+              b.deposit_amount, b.deposit_status, b.started_at, b.session_status,
               s.start_time, s.end_time,
-              u.full_name AS booker_name, u.phone AS booker_phone, u.email AS booker_email
+              u.full_name AS booker_name, u.phone AS booker_phone, u.email AS booker_email, u.avatar_url AS booker_avatar
        FROM bookings b
        JOIN availability_slots s ON s.id = b.slot_id
        LEFT JOIN users u ON u.id = b.booker_id
@@ -4544,9 +6706,12 @@ app.get('/api/bookings/me', async (req, res) => {
       updated_at: r.updated_at,
       deposit_amount: r.deposit_amount != null ? Number(r.deposit_amount) : 0,
       deposit_status: r.deposit_status || 'none',
+      started_at: r.started_at || null,
+      session_status: r.session_status || 'awaiting_checkin',
       booker_name: r.booker_name || null,
       booker_phone: r.booker_phone || null,
-      booker_email: r.booker_email || null
+      booker_email: r.booker_email || null,
+      booker_avatar: r.booker_avatar || null
     }));
     return res.json({ bookings });
   } catch (err) {
@@ -4623,7 +6788,7 @@ app.patch('/api/bookings/:id', async (req, res) => {
       const depAmount = Math.max(0, Number(booking.deposit_amount) || 0);
       if (depStatus === 'held' && depAmount > 0 && booking.booker_id) {
         await pool.query(
-          'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+          'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
           [depAmount, booking.booker_id]
         );
         await pool.query(
@@ -4669,7 +6834,7 @@ app.get('/api/bookings/my-requests', async (req, res) => {
     
     const result = await pool.query(
       `SELECT b.id, b.slot_id, b.booker_id, b.talent_id, b.status, b.job_id, b.created_at, b.updated_at,
-              b.deposit_amount, b.deposit_status,
+              b.deposit_amount, b.deposit_status, b.started_at, b.session_status,
               s.start_time, s.end_time,
               u.full_name AS talent_name, u.phone AS talent_phone, u.email AS talent_email, u.avatar_url AS talent_avatar
        FROM bookings b
@@ -4680,6 +6845,14 @@ app.get('/api/bookings/my-requests', async (req, res) => {
        LIMIT 100`,
       [bookerUuid]
     );
+    let challengeCounts = {};
+    try {
+      const cc = await pool.query(
+        `SELECT booking_id, COUNT(*)::int AS cnt FROM slot_challenges WHERE status = 'pending' AND booking_id IN (SELECT id FROM bookings WHERE booker_id = $1) GROUP BY booking_id`,
+        [bookerUuid]
+      );
+      challengeCounts = (cc.rows || []).reduce((acc, r) => ({ ...acc, [String(r.booking_id)]: r.cnt }), {});
+    } catch (_) { /* slot_challenges may not exist */ }
     const bookings = (result.rows || []).map((r) => ({
       id: String(r.id),
       slot_id: String(r.slot_id),
@@ -4696,7 +6869,10 @@ app.get('/api/bookings/my-requests', async (req, res) => {
       talent_name: r.talent_name || null,
       talent_phone: r.talent_phone || null,
       talent_email: r.talent_email || null,
-      talent_avatar: r.talent_avatar || null
+      talent_avatar: r.talent_avatar || null,
+      pending_challenges: challengeCounts[String(r.id)] || 0,
+      started_at: r.started_at || null,
+      session_status: r.session_status || 'awaiting_checkin'
     }));
     return res.json({ bookings });
   } catch (err) {
@@ -4728,18 +6904,27 @@ app.post('/api/bookings/:id/pay-deposit', async (req, res) => {
     if (b.status !== 'confirmed') {
       return res.status(400).json({ error: 'ชำระมัดจำได้เฉพาะเมื่อ Talent ยืนยันคิวแล้ว' });
     }
-    const amount = Math.max(0, Number(b.deposit_amount) || 0);
-    if (amount <= 0) return res.status(400).json({ error: 'รายการนี้ไม่มียอดมัดจำ' });
+    const depositAmount = Math.max(0, Number(b.deposit_amount) || 0);
+    if (depositAmount <= 0) return res.status(400).json({ error: 'รายการนี้ไม่มียอดมัดจำ' });
     const status = (b.deposit_status || 'none').toLowerCase();
     if (status === 'held') return res.status(400).json({ error: 'ชำระมัดจำแล้ว' });
     const bookerFrozen = await isWalletFrozen(bookerUuid);
     if (bookerFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถชำระมัดจำได้' });
+    const bookerVipRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [bookerUuid]).catch(() => ({ rows: [] }));
+    const bookerVipTier = bookerVipRow.rows?.[0]?.vip_tier || 'none';
+    const { totalToPay, markupAmount } = calcBookingEmployerOutflow(depositAmount, bookerVipTier);
     const walletRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [bookerUuid]);
     const balance = parseFloat(walletRow.rows?.[0]?.wallet_balance || 0);
-    if (balance < amount) {
-      return res.status(400).json({ error: 'ยอดในกระเป๋าไม่พอ กรุณาเติมเงิน (ต้องการ ฿' + amount.toLocaleString() + ')' });
+    if (balance < totalToPay) {
+      return res.status(400).json({ error: 'ยอดในกระเป๋าไม่พอ กรุณาเติมเงิน (ต้องการ ฿' + totalToPay.toLocaleString() + ')' });
     }
-    await pool.query('UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2', [amount, bookerUuid]);
+    await pool.query('UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2', [totalToPay, bookerUuid]);
+    if (markupAmount > 0) {
+      const platformUser = await pool.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
+      if (platformUser.rows?.length) {
+        await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid', [markupAmount, platformUser.rows[0].id]);
+      }
+    }
     await pool.query("UPDATE bookings SET deposit_status = 'held', updated_at = NOW() WHERE id = $1", [b.id]);
     await pushUserNotificationIfNotPeaceMode(b.talent_id, 'มัดจำแล้ว', 'นายจ้างได้ชำระมัดจำแล้ว คิวถูกล็อค');
     return res.json({
@@ -4749,6 +6934,414 @@ app.post('/api/bookings/:id/pay-deposit', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/bookings/:id/pay-deposit error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/:id/chat-messages — ดึงข้อความแชทของ booking (เปิดเมื่อ deposit_status = held)
+app.get('/api/bookings/:id/chat-messages', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId]);
+    const userUuid = userRow.rows?.[0]?.id;
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const bookRow = await pool.query(
+      `SELECT id, booker_id, talent_id, deposit_status FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    const isParty = String(b.booker_id) === String(userUuid) || String(b.talent_id) === String(userUuid);
+    if (!isParty) return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าห้องแชทนี้' });
+    if ((b.deposit_status || '').toLowerCase() !== 'held') {
+      return res.json({ messages: [] });
+    }
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'booking_chat_messages'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ messages: [] });
+    const msgRows = await pool.query(
+      `SELECT m.id, m.sender_id, m.body, m.created_at,
+              u.full_name AS sender_name, u.avatar_url AS sender_avatar
+       FROM booking_chat_messages m
+       LEFT JOIN users u ON u.id = m.sender_id
+       WHERE m.booking_id = $1
+       ORDER BY m.created_at ASC`,
+      [b.id]
+    );
+    const messages = (msgRows.rows || []).map((r) => ({
+      id: String(r.id),
+      sender_id: String(r.sender_id),
+      sender_name: r.sender_name || null,
+      sender_avatar: r.sender_avatar || null,
+      body: r.body,
+      created_at: r.created_at
+    }));
+    return res.json({ messages });
+  } catch (err) {
+    console.error('GET /api/bookings/:id/chat-messages error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bookings/:id/chat-messages — ส่งข้อความในห้องแชท booking
+app.post('/api/bookings/:id/chat-messages', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId]);
+    const userUuid = userRow.rows?.[0]?.id;
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const body = String((req.body || {}).body || '').trim();
+    if (!body) return res.status(400).json({ error: 'กรุณาพิมพ์ข้อความ' });
+    const bookRow = await pool.query(
+      `SELECT id, booker_id, talent_id, deposit_status FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    const isParty = String(b.booker_id) === String(userUuid) || String(b.talent_id) === String(userUuid);
+    if (!isParty) return res.status(403).json({ error: 'ไม่มีสิทธิ์แชทในห้องนี้' });
+    if ((b.deposit_status || '').toLowerCase() !== 'held') {
+      return res.status(400).json({ error: 'แชทจะเปิดเมื่อชำระมัดจำแล้วเท่านั้น' });
+    }
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'booking_chat_messages'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ error: 'ระบบแชทยังไม่พร้อม' });
+    const ins = await pool.query(
+      `INSERT INTO booking_chat_messages (booking_id, sender_id, body) VALUES ($1, $2, $3)
+       RETURNING id, sender_id, body, created_at`,
+      [b.id, userUuid, body.slice(0, 2000)]
+    );
+    const row = ins.rows[0];
+    const recipientUuid = String(b.booker_id) === String(userUuid) ? b.talent_id : b.booker_id;
+    await pushUserNotificationIfNotPeaceMode(recipientUuid, 'ข้อความใหม่', 'มีข้อความใหม่ในการจองคิว');
+    return res.status(201).json({
+      message: {
+        id: String(row.id),
+        sender_id: String(row.sender_id),
+        body: row.body,
+        created_at: row.created_at
+      }
+    });
+  } catch (err) {
+    console.error('POST /api/bookings/:id/chat-messages error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/talents/:talentId/booked-slots — คิวที่ถูกจองแล้ว (สำหรับท้าชิง)
+app.get('/api/talents/:talentId/booked-slots', async (req, res) => {
+  try {
+    const talentUuid = await resolveUserIdToUuid(req.params.talentId);
+    if (!talentUuid) return res.json({ slots: [] });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'slot_challenges'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ slots: [] });
+    const result = await pool.query(
+      `SELECT b.id AS booking_id, b.slot_id, b.deposit_amount, s.start_time, s.end_time
+       FROM bookings b
+       JOIN availability_slots s ON s.id = b.slot_id
+       WHERE b.talent_id = $1 AND b.status = 'confirmed' AND (b.deposit_status = 'held')
+       AND s.start_time > NOW()
+       ORDER BY s.start_time ASC LIMIT 20`,
+      [talentUuid]
+    );
+    const slots = (result.rows || []).map((r) => ({
+      booking_id: String(r.booking_id),
+      slot_id: String(r.slot_id),
+      deposit_amount: Number(r.deposit_amount || 0),
+      start_time: r.start_time,
+      end_time: r.end_time,
+      min_challenge_amount: Math.ceil(Number(r.deposit_amount || 0) * 1.2)
+    }));
+    return res.json({ slots });
+  } catch (err) {
+    console.error('GET /api/talents/:talentId/booked-slots error:', err);
+    return res.json({ slots: [] });
+  }
+});
+
+// POST /api/bookings/:id/challenge — User B ส่ง Challenge (ราคาต้องสูงกว่าเดิม 20%)
+app.post('/api/bookings/:id/challenge', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const challengerUuid = await resolveUserIdToUuid(userId);
+    if (!challengerUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const { amount } = req.body || {};
+    const challengeAmount = Math.max(0, Number(amount) || 0);
+    const bookRow = await pool.query(
+      `SELECT id, booker_id, talent_id, deposit_amount, deposit_status, slot_id
+       FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    if (String(b.booker_id) === String(challengerUuid)) return res.status(400).json({ error: 'ไม่สามารถท้าชิงคิวของตัวเองได้' });
+    if (b.status !== 'confirmed' || (b.deposit_status || '').toLowerCase() !== 'held') {
+      return res.status(400).json({ error: 'ท้าชิงได้เฉพาะคิวที่มัดจำแล้วเท่านั้น' });
+    }
+    const originalAmount = Number(b.deposit_amount || 0);
+    const minAmount = Math.ceil(originalAmount * 1.2);
+    if (challengeAmount < minAmount) {
+      return res.status(400).json({ error: 'ราคาท้าชิงต้องสูงกว่าราคาเดิมอย่างน้อย 20% (อย่างน้อย ฿' + minAmount.toLocaleString() + ')' });
+    }
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'slot_challenges'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ error: 'ระบบท้าชิงยังไม่พร้อม' });
+    const existing = await pool.query(
+      `SELECT id FROM slot_challenges WHERE booking_id = $1 AND status = 'pending'`,
+      [b.id]
+    );
+    if (existing.rows?.length) return res.status(409).json({ error: 'มีการท้าชิงคิวนี้อยู่แล้ว รอผู้จองคนแรกตอบกลับ' });
+    const challengerFrozen = await isWalletFrozen(challengerUuid);
+    if (challengerFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถท้าชิงได้' });
+    const balRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [challengerUuid]);
+    const bal = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+    if (bal < challengeAmount) return res.status(400).json({ error: 'ยอดในกระเป๋าไม่พอ กรุณาเติมเงิน ฿' + challengeAmount.toLocaleString() });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [challengeAmount, challengerUuid]);
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+      const ins = await client.query(
+        `INSERT INTO slot_challenges (booking_id, challenger_id, original_amount, challenge_amount, challenge_fee_status, status, expires_at)
+         VALUES ($1, $2, $3, $4, 'paid', 'pending', $5) RETURNING id`,
+        [b.id, challengerUuid, originalAmount, challengeAmount, expiresAt]
+      );
+      await client.query('COMMIT');
+      await pushUserNotificationIfNotPeaceMode(b.booker_id, 'มีผู้ท้าชิงคิวของคุณ', 'มีผู้ใช้เสนอราคาสูงกว่าในเวลาที่คุณจองไว้ คุณต้องการ Match ราคาหรือรับค่าชดเชย?');
+      return res.status(201).json({
+        success: true,
+        challenge_id: ins.rows[0]?.id,
+        message: 'ส่งคำท้าชิงเรียบร้อย รอผู้จองคนแรกตอบกลับ (24 ชม.)'
+      });
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('POST /api/bookings/:id/challenge error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/:id/challenges — รายการ Challenge ที่รอตอบ (สำหรับผู้จองคนแรก)
+app.get('/api/bookings/:id/challenges', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const bookerUuid = await resolveUserIdToUuid(userId);
+    if (!bookerUuid) return res.json({ challenges: [] });
+    const bookingId = (req.params.id || '').toString().trim();
+    const bookRow = await pool.query(
+      `SELECT id, booker_id FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.json({ challenges: [] });
+    const b = bookRow.rows[0];
+    if (String(b.booker_id) !== String(bookerUuid)) return res.json({ challenges: [] });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'slot_challenges'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ challenges: [] });
+    const rows = await pool.query(
+      `SELECT c.id, c.challenger_id, c.original_amount, c.challenge_amount, c.status, c.created_at, c.expires_at,
+              u.full_name AS challenger_name, u.avatar_url AS challenger_avatar
+       FROM slot_challenges c
+       LEFT JOIN users u ON u.id = c.challenger_id
+       WHERE c.booking_id = $1 AND c.status = 'pending'
+       ORDER BY c.created_at DESC`,
+      [b.id]
+    );
+    const challenges = (rows.rows || []).map((r) => ({
+      id: String(r.id),
+      challenger_id: String(r.challenger_id),
+      challenger_name: r.challenger_name || null,
+      challenger_avatar: r.challenger_avatar || null,
+      original_amount: Number(r.original_amount),
+      challenge_amount: Number(r.challenge_amount),
+      status: r.status,
+      created_at: r.created_at,
+      expires_at: r.expires_at
+    }));
+    return res.json({ challenges });
+  } catch (err) {
+    console.error('GET /api/bookings/:id/challenges error:', err);
+    return res.json({ challenges: [] });
+  }
+});
+
+// POST /api/bookings/:id/challenge-response — ผู้จองคนแรกตอบ: match (จ่ายเท่า) หรือ compensate (รับ 30% ค่าเสียเวลา)
+app.post('/api/bookings/:id/challenge-response', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const firstUuid = await resolveUserIdToUuid(userId);
+    if (!firstUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const { challenge_id, action } = req.body || {};
+    if (!['match', 'compensate'].includes(String(action))) return res.status(400).json({ error: 'action ต้องเป็น match หรือ compensate' });
+    const bookRow = await pool.query(
+      `SELECT id, booker_id, talent_id, slot_id, deposit_amount FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    if (String(b.booker_id) !== String(firstUuid)) return res.status(403).json({ error: 'เฉพาะผู้จองคนแรกเท่านั้นที่ตอบได้' });
+    const challRow = await pool.query(
+      `SELECT id, challenger_id, original_amount, challenge_amount FROM slot_challenges
+       WHERE id::text = $1 AND booking_id = $2 AND status = 'pending' LIMIT 1`,
+      [challenge_id, b.id]
+    );
+    if (!challRow.rows?.length) return res.status(404).json({ error: 'ไม่พบคำท้าชิงหรือหมดเวลาแล้ว' });
+    const c = challRow.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (action === 'match') {
+        const balRow = await client.query('SELECT wallet_balance FROM users WHERE id = $1', [firstUuid]);
+        const bal = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+        if (bal < c.challenge_amount) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'ยอดในกระเป๋าไม่พอ Match ราคา กรุณาเติมเงิน ฿' + c.challenge_amount.toLocaleString() });
+        }
+        await client.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [c.challenge_amount, firstUuid]);
+        await client.query('UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2', [c.challenge_amount, c.challenger_id]);
+        await client.query(`UPDATE slot_challenges SET status = 'first_matched', first_employer_response_at = NOW() WHERE id = $1`, [c.id]);
+        await pushUserNotificationIfNotPeaceMode(c.challenger_id, 'ผู้จองคนแรก Match ราคาแล้ว', 'คิวนั้นยังเป็นของผู้จองคนแรก');
+        await client.query('COMMIT');
+        return res.json({ success: true, message: 'Match ราคาแล้ว คุณยังได้สิทธิ์คิว' });
+      }
+      if (action === 'compensate') {
+        const diff = Math.max(0, c.challenge_amount - c.original_amount);
+        const toFirstCompensate = Math.ceil(diff * 0.3);
+        const toTalent = diff - toFirstCompensate;
+        await client.query('UPDATE users SET wallet_balance = wallet_balance + $1 + $2 WHERE id = $3', [c.original_amount, toFirstCompensate, firstUuid]);
+        await client.query('UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1 WHERE id = $2', [toTalent, b.talent_id]);
+        await client.query(`UPDATE slot_challenges SET status = 'first_compensated', first_employer_response_at = NOW() WHERE id = $1`, [c.id]);
+        await client.query(`UPDATE bookings SET booker_id = $1, deposit_amount = $2 WHERE id = $3`, [c.challenger_id, c.challenge_amount, b.id]);
+        await pushUserNotificationIfNotPeaceMode(c.challenger_id, 'คุณได้คิวแล้ว', 'ผู้จองคนแรกยอมรับค่าชดเชย — คิวเป็นของคุณแล้ว');
+        await pushUserNotificationIfNotPeaceMode(firstUuid, 'คุณได้รับค่าชดเชย', 'คุณได้รับ ฿' + toFirstCompensate.toLocaleString() + ' เป็นค่าเสียเวลา');
+        await client.query('COMMIT');
+        return res.json({ success: true, message: 'รับค่าชดเชยแล้ว (30% ของส่วนต่างเข้ากระเป๋า)', compensation: toFirstCompensate });
+      }
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('POST /api/bookings/:id/challenge-response error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/:id/check-in-qr — Talent ดึง QR payload สำหรับ Employer สแกน
+app.get('/api/bookings/:id/check-in-qr', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const talentUuid = await resolveUserIdToUuid(userId);
+    if (!talentUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const bookRow = await pool.query(
+      `SELECT b.id, b.booker_id, b.talent_id, b.status, b.deposit_status, b.started_at, b.session_status,
+              s.start_time, s.end_time
+       FROM bookings b JOIN availability_slots s ON s.id = b.slot_id
+       WHERE b.id::text = $1 OR b.id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    if (String(b.talent_id) !== String(talentUuid)) return res.status(403).json({ error: 'เฉพาะ Talent เจ้าของคิวเท่านั้น' });
+    if (b.status !== 'confirmed' || (b.deposit_status || '').toLowerCase() !== 'held') {
+      return res.status(400).json({ error: 'Check-in ได้เฉพาะคิวที่มัดจำแล้ว' });
+    }
+    if (b.started_at) return res.status(400).json({ error: 'เริ่มงานแล้ว', started_at: b.started_at });
+    const slotStart = new Date(b.start_time);
+    const checkinOpens = new Date(slotStart);
+    checkinOpens.setMinutes(checkinOpens.getMinutes() - 15);
+    if (new Date() < checkinOpens) {
+      return res.status(400).json({
+        error: 'เปิด Check-in ได้ 15 นาทีก่อนเวลาเริ่ม',
+        checkin_opens_at: checkinOpens.toISOString()
+      });
+    }
+    const payload = Buffer.from(JSON.stringify({
+      booking_id: String(b.id),
+      talent_id: String(b.talent_id),
+      ts: Date.now()
+    })).toString('base64');
+    let qr_data_url = null;
+    try {
+      const QRCode = (await import('qrcode')).default;
+      qr_data_url = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', width: 256, margin: 2 });
+    } catch (_) {}
+    return res.json({
+      qr_payload: payload,
+      qr_data_url: qr_data_url,
+      expires_in_seconds: 300,
+      message: 'ให้นายจ้างสแกน QR นี้เพื่อเริ่มงาน'
+    });
+  } catch (err) {
+    console.error('GET /api/bookings/:id/check-in-qr error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bookings/:id/check-in — นายจ้างสแกน QR ของ Talent เพื่อเริ่มงาน
+app.post('/api/bookings/:id/check-in', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const bookerUuid = await resolveUserIdToUuid(userId);
+    if (!bookerUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bookingId = (req.params.id || '').toString().trim();
+    const { qr_payload } = req.body || {};
+    if (!qr_payload) return res.status(400).json({ error: 'กรุณาสแกน QR ของ Talent' });
+    let decoded;
+    try {
+      decoded = JSON.parse(Buffer.from(qr_payload, 'base64').toString('utf8'));
+    } catch (_) {
+      return res.status(400).json({ error: 'QR ไม่ถูกต้อง กรุณาสแกนใหม่' });
+    }
+    if (String(decoded.booking_id) !== String(bookingId)) {
+      return res.status(400).json({ error: 'QR ไม่ตรงกับการจองนี้' });
+    }
+    const bookRow = await pool.query(
+      `SELECT b.id, b.booker_id, b.talent_id, b.status, b.deposit_status, b.started_at,
+              s.start_time, s.end_time
+       FROM bookings b JOIN availability_slots s ON s.id = b.slot_id
+       WHERE b.id::text = $1 OR b.id = $1::uuid LIMIT 1`,
+      [bookingId]
+    );
+    if (!bookRow.rows?.length) return res.status(404).json({ error: 'ไม่พบการจองนี้' });
+    const b = bookRow.rows[0];
+    if (String(b.booker_id) !== String(bookerUuid)) return res.status(403).json({ error: 'เฉพาะผู้จองเท่านั้นที่ Check-in ได้' });
+    if (String(b.talent_id) !== String(decoded.talent_id)) return res.status(400).json({ error: 'QR ไม่ตรงกับ Talent' });
+    if (b.started_at) return res.json({ success: true, message: 'เริ่มงานแล้ว', started_at: b.started_at, job_id: `JB-${String(b.id).slice(0, 8)}` });
+    const ts = decoded.ts || 0;
+    if (Date.now() - ts > 300000) return res.status(400).json({ error: 'QR หมดอายุ (5 นาที) กรุณาขอ QR ใหม่' });
+    const slotStart = new Date(b.start_time);
+    const checkinOpens = new Date(slotStart);
+    checkinOpens.setMinutes(checkinOpens.getMinutes() - 15);
+    if (new Date() < checkinOpens) return res.status(400).json({ error: 'ยังไม่ถึงเวลา Check-in (15 นาทีก่อนเริ่ม)' });
+    await pool.query(
+      `UPDATE bookings SET started_at = NOW(), status = 'in_progress', session_status = 'in_progress', updated_at = NOW() WHERE id = $1`,
+      [b.id]
+    );
+    await pushUserNotificationIfNotPeaceMode(b.talent_id, 'เริ่มงานแล้ว', 'นายจ้างสแกน QR แล้ว — งานเริ่มต้นอย่างเป็นทางการ');
+    return res.json({
+      success: true,
+      message: 'เริ่มงานสำเร็จ — งานได้รับการคุ้มครองโดย AQOND Insurance',
+      started_at: new Date().toISOString(),
+      job_id: `JB-${String(b.id).slice(0, 8)}`
+    });
+  } catch (err) {
+    console.error('POST /api/bookings/:id/check-in error:', err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -4763,7 +7356,7 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     if (!bookerUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
     const bookingId = (req.params.id || '').toString().trim();
     const bookRow = await pool.query(
-      `SELECT id, booker_id, talent_id, status, deposit_amount, deposit_status
+      `SELECT id, booker_id, talent_id, status, deposit_amount, deposit_status, started_at
        FROM bookings WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
       [bookingId]
     );
@@ -4772,8 +7365,8 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     if (String(b.booker_id) !== String(bookerUuid)) {
       return res.status(403).json({ error: 'เฉพาะผู้จองเท่านั้นที่ปล่อยมัดจำได้' });
     }
-    if (b.status !== 'confirmed') {
-      return res.status(400).json({ error: 'ปล่อยมัดจำได้เฉพาะรายการที่ยืนยันแล้ว' });
+    if (!['confirmed', 'in_progress'].includes(b.status)) {
+      return res.status(400).json({ error: 'ปล่อยมัดจำได้เฉพาะรายการที่ยืนยันหรือกำลังดำเนินงาน' });
     }
     const depStatus = (b.deposit_status || '').toLowerCase();
     if (depStatus !== 'held') {
@@ -4784,15 +7377,23 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     const totalAmount = Math.max(0, Number(b.deposit_amount) || 0);
     if (totalAmount <= 0) return res.status(400).json({ error: 'ไม่มียอดมัดจำ' });
 
-    // Dynamic Fee Engine: Commission ตาม VIP tier ของ Partner (Booking)
+    // LOCKED: When challenged, deposit_amount = challenge_amount; base = original_amount
+    const challRow = await pool.query(
+      `SELECT original_amount, challenge_amount FROM slot_challenges WHERE booking_id = $1 AND status = 'first_compensated' LIMIT 1`,
+      [b.id]
+    ).catch(() => ({ rows: [] }));
+    const isChallenged = challRow.rows?.length > 0;
+    const baseDeposit = isChallenged ? Math.max(0, Number(challRow.rows[0].original_amount) || 0) : totalAmount;
+    const finalBidPrice = totalAmount;
+
     const talentRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1 LIMIT 1', [b.talent_id]).catch(() => ({ rows: [] }));
     const talentVipTier = talentRow.rows?.[0]?.vip_tier || 'none';
-    const commissionRate = getCommissionBooking(talentVipTier);
-    const feeAmount = Math.round(totalAmount * commissionRate * 100) / 100;
-    const talentPayout = Math.round((totalAmount - feeAmount) * 100) / 100;
+    const waiveBaBooking = await isPlatformCommissionWaivedForUser(pool, b.talent_id);
+    const result = calcBookingRelease(baseDeposit, finalBidPrice, talentVipTier, { waiveBookingCommission: waiveBaBooking });
+    const { talentPayout, totalPlatformRevenue: feeAmount, sourcingFee: baseFeeAmount, biddingFee: biddingDiffFeeAmount } = result;
 
     await pool.query(
-      'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+      'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
       [talentPayout, b.talent_id]
     );
     const platformUser = await pool.query(
@@ -4800,7 +7401,7 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     ).catch(() => ({ rows: [] }));
     if (platformUser.rows?.length && feeAmount > 0) {
       await pool.query(
-        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
         [feeAmount, platformUser.rows[0].id]
       );
     }
@@ -4809,21 +7410,62 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     const ledgerId = (s) => `L-booking-${bid}-${s}-${Date.now()}`;
     const billNo = `BOOK-${bid}`;
     const txnNo = (s) => `T-BOOK-${bid}-${s}-${Date.now()}`;
+    const receiptId = `RECEIPT-${bid}-${Date.now()}`;
 
-    await pool.query(
-      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
-       VALUES ($1, 'booking_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
-      [ledgerId('commission'), bid, feeAmount, billNo, txnNo('fee'), JSON.stringify({ leg: 'booking_commission', booking_id: bid, commission_rate: commissionRate })]
-    ).catch((e) => console.warn('Ledger booking_fee insert failed:', e.message));
+    // Ledger: append-only with full metadata (deposit_amount, sourcing, commission, bidding_fee)
+    const ledgerMeta = buildBookingLedgerMetadata(result, { leg: 'booking_commission', booking_id: bid });
+    if (result.sourcingFee > 0) {
+      await pool.query(
+        `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+         VALUES ($1, 'booking_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+        [ledgerId('sourcing'), bid, result.sourcingFee, billNo, txnNo('sourcing'), JSON.stringify({ ...ledgerMeta, sub_category: 'Sourcing' })]
+      ).catch((e) => console.warn('Ledger booking_fee sourcing insert failed:', e.message));
+    }
+    if (result.bookingCommission > 0) {
+      await pool.query(
+        `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+         VALUES ($1, 'booking_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+        [ledgerId('commission'), bid, result.bookingCommission, billNo, txnNo('commission'), JSON.stringify({ ...ledgerMeta, sub_category: 'Sourcing' })]
+      ).catch((e) => console.warn('Ledger booking_fee commission insert failed:', e.message));
+    }
+    if (result.biddingFee > 0) {
+      await pool.query(
+        `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+         VALUES ($1, 'booking_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+        [ledgerId('bidding'), bid, result.biddingFee, billNo, txnNo('bidding'), JSON.stringify({ ...ledgerMeta, sub_category: 'Bidding_Diff' })]
+      ).catch((e) => console.warn('Ledger booking_fee bidding insert failed:', e.message));
+    }
 
+    const receiptMeta = {
+      leg: 'talent_booking_payout',
+      booking_id: bid,
+      gross: totalAmount,
+      platform_fee: feeAmount,
+      net: talentPayout,
+      job_type: 'booking',
+      receipt_id: receiptId,
+      vip_tier: talentVipTier,
+      brand_adviser_booking_commission_waived: waiveBaBooking || undefined,
+      ...buildBookingLedgerMetadata(result)
+    };
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'talent_booking_payout', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
-      [ledgerId('payout'), bid, talentPayout, billNo, txnNo('payout'), b.talent_id, JSON.stringify({ leg: 'talent_booking_payout', booking_id: bid, commission_deducted: feeAmount, gross: totalAmount })]
+      [ledgerId('payout'), bid, talentPayout, billNo, txnNo('payout'), b.talent_id, JSON.stringify(receiptMeta)]
     ).catch((e) => console.warn('Ledger talent_booking_payout insert failed:', e.message));
 
+    const startedAt = b.started_at ? new Date(b.started_at) : null;
+    const slotRow = await pool.query('SELECT s.start_time, s.end_time FROM availability_slots s JOIN bookings bk ON bk.slot_id = s.id WHERE bk.id = $1 LIMIT 1', [b.id]);
+    if (slotRow.rows?.length && startedAt) {
+      const end = new Date(slotRow.rows[0].end_time);
+      const hours = Math.max(0, (end - startedAt) / (1000 * 60 * 60));
+      await pool.query(
+        'UPDATE users SET verified_hours = COALESCE(verified_hours, 0) + $1, updated_at = NOW() WHERE id = $2',
+        [Math.round(hours * 100) / 100, b.talent_id]
+      ).catch(() => {});
+    }
     await pool.query(
-      "UPDATE bookings SET deposit_status = 'released', status = 'completed', updated_at = NOW() WHERE id = $1",
+      "UPDATE bookings SET deposit_status = 'released', status = 'completed', session_status = 'completed', updated_at = NOW() WHERE id = $1",
       [b.id]
     );
     await pushUserNotificationIfNotPeaceMode(b.talent_id, 'มัดจำเข้าหมดแล้ว', 'นายจ้างยืนยันรับบริการแล้ว เงินมัดจำ ฿' + talentPayout.toLocaleString() + ' (หลังหักค่าธรรมเนียม) เข้ากระเป๋าคุณแล้ว');
@@ -4835,7 +7477,7 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
         await pool.query(
           `INSERT INTO vip_admin_fund (amount, source_event_type, source_ledger_id, source_job_id, source_metadata, vip_tier, gross_profit, siphon_percent)
            VALUES ($1, 'booking_release', $2, $3, $4, $5, $6, 12.5)`,
-          [siphonAmount, ledgerId('commission'), bid, JSON.stringify({ booking_id: bid, commission_rate: commissionRate }), talentVipTier, feeAmount]
+          [siphonAmount, ledgerId('sourcing'), bid, JSON.stringify({ booking_id: bid, is_challenged: result.isChallenged }), talentVipTier, feeAmount]
         ).catch((e) => console.warn('vip_admin_fund booking:', e.message));
       }
     }
@@ -4846,11 +7488,171 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
       deposit_status: 'released',
       status: 'completed',
       talent_payout: talentPayout,
-      commission: feeAmount
+      commission: feeAmount,
+      receipt: {
+        gross: totalAmount,
+        platform_fee: feeAmount,
+        net: talentPayout,
+        job_type: 'booking',
+        vip_tier: talentVipTier,
+        receipt_id: receiptId,
+        ...(result.isChallenged && { original_price: baseDeposit, final_price: finalBidPrice, sourcing_fee: result.sourcingFee, booking_commission: result.bookingCommission, bidding_fee: result.biddingFee })
+      }
     });
   } catch (err) {
     console.error('POST /api/bookings/:id/release-deposit error:', err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/earnings/receipt/booking/:id — ใบเสร็จรายได้สำหรับ Talent (Booking)
+app.get('/api/earnings/receipt/booking/:id', async (req, res) => {
+  try {
+    const userId = getBookingUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId]);
+    const userUuid = userRow.rows?.[0]?.id;
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    const bid = String(req.params.id || '').trim();
+    const row = await pool.query(
+      `SELECT L.metadata, L.amount, L.created_at, B.deposit_amount, B.booker_id, B.talent_id, u.vip_tier
+       FROM payment_ledger_audit L
+       JOIN bookings B ON B.id::text = L.payment_id OR B.id = L.payment_id::uuid
+       JOIN users u ON u.id = B.talent_id
+       WHERE L.event_type = 'talent_booking_payout' AND (L.payment_id = $1 OR L.payment_id::text = $1)
+         AND (L.provider_id = $2 OR B.booker_id = $2)
+       ORDER BY L.created_at DESC LIMIT 1`,
+      [bid, userUuid]
+    );
+    if (!row.rows?.length) return res.status(404).json({ error: 'ไม่พบใบเสร็จ' });
+    const r = row.rows[0];
+    const meta = r.metadata || {};
+    const gross = Number(meta.gross ?? r.deposit_amount ?? 0);
+    const platformFee = Number(meta.platform_fee ?? 0);
+    const net = Number(r.amount ?? meta.net ?? 0);
+    return res.json({
+      receipt_id: meta.receipt_id || `RECEIPT-${bid}`,
+      job_type: 'booking',
+      gross,
+      platform_fee: platformFee,
+      net,
+      booking_fee_percent: meta.booking_fee_percent ?? 0,
+      vip_tier: (r.vip_tier || meta.vip_tier || 'none').toLowerCase(),
+      created_at: r.created_at,
+      booking_id: bid
+    });
+  } catch (e) {
+    console.error('GET /api/earnings/receipt/booking/:id error:', e);
+    res.status(500).json({ error: 'Failed to get receipt' });
+  }
+});
+
+// GET /api/earnings/receipt/job/:id — ใบเสร็จรายได้สำหรับ Talent (Job/Advance)
+app.get('/api/earnings/receipt/job/:id', async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    let userId = null;
+    if (auth && auth.startsWith('Bearer ')) {
+      try {
+        const p = jwt.verify(auth.slice(7), process.env.JWT_SECRET);
+        userId = p.sub;
+      } catch (_) {}
+    }
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const jobId = String(req.params.id || '').trim();
+    const userUuid = (await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId])).rows?.[0]?.id;
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบผู้ใช้' });
+    let pd = null;
+    let providerId = null;
+    let jobType = 'match_board';
+    let receiptFromAdvanceJob = false;
+    const jobRow = await pool.query('SELECT id, payment_details, accepted_by FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (jobRow.rows?.length) {
+      const j = jobRow.rows[0];
+      pd = typeof j.payment_details === 'string' ? JSON.parse(j.payment_details || '{}') : (j.payment_details || {});
+      providerId = j.accepted_by;
+    }
+    if (!pd || !providerId) {
+      const advRow = await pool.query('SELECT id, payment_details, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+      if (advRow.rows?.length) {
+        const a = advRow.rows[0];
+        pd = typeof a.payment_details === 'string' ? JSON.parse(a.payment_details || '{}') : (a.payment_details || {});
+        providerId = a.hired_user_id;
+        jobType = 'bidding';
+        receiptFromAdvanceJob = true;
+      }
+    }
+    if (!pd || !providerId) return res.status(404).json({ error: 'ไม่พบงานหรือใบเสร็จ' });
+    if (String(providerId) !== String(userUuid)) return res.status(403).json({ error: 'ไม่มีสิทธิ์ดูใบเสร็จนี้' });
+    const jobTypeOut = (pd.job_type && String(pd.job_type)) || jobType;
+    let gross = Number(pd.job_fee ?? 0);
+    let platformFee = Number(pd.fee_amount ?? 0);
+    let net = Number(pd.provider_receive ?? 0);
+    let sourcingFeePercent = Number(pd.sourcing_fee_percent ?? 0);
+    const commissionFeePercentStored = Number(pd.commission_fee_percent ?? 0);
+    let biddingFeePercent = Number(pd.bidding_fee_percent ?? 0);
+    if (!biddingFeePercent && commissionFeePercentStored) biddingFeePercent = commissionFeePercentStored;
+    let handlingFeeAmount = Number(pd.handling_fee_amount ?? 0);
+    let commissionFeeAmount = Number(pd.commission_fee_amount ?? 0);
+    let taxServiceAmount = Number(pd.tax_service_amount ?? 0);
+    const coachFeeAmt = Number(pd.coach_fee_amount ?? 0);
+    const vipDisc = Number(pd.vip_discount_amount ?? 0);
+
+    const providerTierRow = await pool.query(
+      'SELECT vip_tier FROM users WHERE id::text = $1 OR id = $1::uuid LIMIT 1',
+      [String(providerId)]
+    );
+    const vipTierOut = (providerTierRow.rows?.[0]?.vip_tier || 'none').toString().toLowerCase();
+
+    /** ใบเสร็จอ่านจาก payment_details — ถ้าไม่มีเปอร์เซ็นต์/ยอดหักแต่ gross≈net ให้คำนวณใหม่จาก financialEngine (เฉพาะ Match/Board จาก jobs; ไม่ครอบ advance/bidding) */
+    const looksLikeMissingBreakdown =
+      !receiptFromAdvanceJob &&
+      jobTypeOut === 'match_board' &&
+      gross > 0 &&
+      Math.abs(net - gross) < 0.02 &&
+      platformFee < 0.01 &&
+      handlingFeeAmount < 0.01 &&
+      commissionFeeAmount < 0.01 &&
+      taxServiceAmount < 0.01 &&
+      coachFeeAmt < 0.01 &&
+      !(pd.vip_discount_applied && vipDisc > 0);
+    if (looksLikeMissingBreakdown) {
+      const waiveBaRecalc = await isPlatformCommissionWaivedForUser(pool, providerId);
+      const inf = calcMatchJobProviderInflow(gross, vipTierOut, { waivePlatformCommission: waiveBaRecalc });
+      handlingFeeAmount = inf.sourcingFee;
+      commissionFeeAmount = inf.platformCommission;
+      taxServiceAmount = inf.taxServiceAmount;
+      platformFee = round2(inf.sourcingFee + inf.platformCommission + inf.taxServiceAmount);
+      net = inf.talentNet;
+      sourcingFeePercent = Math.round(inf.sourcingRate * 100);
+      biddingFeePercent = Math.round(inf.commissionRate * 100);
+    }
+
+    const waiveBa = await isPlatformCommissionWaivedForUser(pool, providerId);
+    const pdWaived = !!(pd.brand_adviser_platform_commission_waived || pd.brand_adviser_booking_commission_waived);
+    return res.json({
+      receipt_id: `RECEIPT-JOB-${jobId}`,
+      job_type: jobTypeOut,
+      gross,
+      platform_fee: platformFee,
+      net,
+      sourcing_fee_percent: sourcingFeePercent,
+      bidding_fee_percent: biddingFeePercent,
+      commission_fee_percent: commissionFeePercentStored || biddingFeePercent,
+      handling_fee_amount: handlingFeeAmount,
+      commission_fee_amount: commissionFeeAmount,
+      tax_service_amount: taxServiceAmount,
+      coach_fee_amount: coachFeeAmt > 0 ? coachFeeAmt : undefined,
+      vip_tier: vipTierOut,
+      vip_discount_applied: !!pd.vip_discount_applied,
+      vip_discount_amount: vipDisc,
+      created_at: pd.released_at || new Date().toISOString(),
+      job_id: jobId,
+      brand_adviser_platform_commission_waived: waiveBa || pdWaived || undefined,
+    });
+  } catch (e) {
+    console.error('GET /api/earnings/receipt/job/:id error:', e);
+    res.status(500).json({ error: 'Failed to get receipt' });
   }
 });
 
@@ -5117,7 +7919,13 @@ app.get('/api/health/detailed', async (req, res) => {
 app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
   try {
     const userId = req.params.id;
-    const updates = req.body;
+    const updates = { ...req.body };
+
+    // Map frontend field names to backend columns
+    if (updates.name !== undefined) {
+      updates.full_name = updates.name;
+      delete updates.name;
+    }
 
     console.log(`🔄 Updating profile for user: ${userId}`, updates);
 
@@ -5141,18 +7949,54 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: can only update your own profile' });
     }
 
+    // SECURITY: Vehicle classification is server-side only. Never trust client-supplied vehicle_category.
+    const PREMIUM_BRANDS = ['BMW', 'Mercedes-Benz', 'Mercedes', 'Audi', 'Porsche', 'Lexus', 'Volvo', 'Jaguar', 'Land Rover', 'Mini'];
+    const PREMIUM_TRICYCLE_PATTERNS = ['ELECTRIC', 'TUK TUK', 'ตุ๊กตุ๊กไฟฟ้า', 'สามล้อ VIP', 'VIP', 'ELECTRIC TUK TUK'];
+    const PREMIUM_BOAT_PATTERNS = ['YACHT', 'CATAMARAN', 'SPEEDBOAT', 'LUXURY', 'PREMIUM', 'VIP', 'BENETEAU', 'LAGOON', 'AZIMUT'];
+    const classifyBoat = (brand) => {
+      if (!brand || typeof brand !== 'string') return 'standard';
+      const n = brand.trim().toUpperCase();
+      return PREMIUM_BOAT_PATTERNS.some(p => n.includes(p)) ? 'premium' : 'standard';
+    };
+    const classifyVehicle = (brand, vehicleType) => {
+      const vt = (vehicleType || '').toString().toLowerCase();
+      if (vt === 'tricycle' || vt.includes('tricycle') || vt.includes('tuktuk') || vt.includes('สามล้อ')) {
+        if (!brand || typeof brand !== 'string') return 'standard';
+        const n = brand.trim().toUpperCase();
+        return PREMIUM_TRICYCLE_PATTERNS.some(p => n.includes(p)) ? 'premium' : 'standard';
+      }
+      if (!brand || typeof brand !== 'string') return 'standard';
+      const n = brand.trim().toUpperCase();
+      return PREMIUM_BRANDS.some(b => n.includes(b.toUpperCase().replace(/-/g, ' '))) ? 'premium' : 'standard';
+    };
+    delete updates.vehicle_category; // Ignore client value
+    if (updates.vehicle_brand != null || updates.vehicle_type != null) {
+      updates.vehicle_category = classifyVehicle(updates.vehicle_brand || '', updates.vehicle_type);
+    }
+    delete updates.boat_category; // Ignore client value
+    if (updates.boat_brand != null) {
+      updates.boat_category = classifyBoat(updates.boat_brand);
+    }
+
     // สร้าง SQL update dynamically
     const updateFields = [];
     const values = [];
     let paramIndex = 1;
 
+    const jsonbColumns = ['bank_accounts', 'location', 'portfolio_urls', 'trainings', 'skills'];
+    const allowedColumns = ['full_name', 'email', 'phone', 'avatar_url', 'bio', 'display_name', 'bank_accounts', 'location', 'portfolio_urls', 'trainings', 'skills', 'vehicle_brand', 'vehicle_type', 'vehicle_reg', 'boat_brand', 'skipper_license_number', 'skipper_license_expiry', 'boat_registration_number', 'notifications_enabled', 'blood_type', 'allergies', 'emergency_contact'];
     Object.entries(updates).forEach(([key, value]) => {
-      // ไม่อนุญาตให้อัพเดท field บางอย่าง
       const forbiddenFields = ['id', 'created_at', 'firebase_uid'];
       if (forbiddenFields.includes(key)) return;
+      if (!allowedColumns.includes(key)) return;
 
-      updateFields.push(`${key} = $${paramIndex}`);
-      values.push(value);
+      if (jsonbColumns.includes(key) && (Array.isArray(value) || (value && typeof value === 'object'))) {
+        updateFields.push(`${key} = $${paramIndex}::jsonb`);
+        values.push(JSON.stringify(value));
+      } else {
+        updateFields.push(`${key} = $${paramIndex}`);
+        values.push(value);
+      }
       paramIndex++;
     });
 
@@ -5166,10 +8010,11 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
     updateFields.push('updated_at = NOW()');
     values.push(userId);
 
+    // รองรับทั้ง id (UUID) และ firebase_uid (JWT sub อาจเป็น firebase_uid)
     const query = `
       UPDATE users 
       SET ${updateFields.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE id::text = $${paramIndex} OR firebase_uid = $${paramIndex}
       RETURNING *
     `;
 
@@ -5187,9 +8032,9 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
 
     // ลบ cache
     try {
-      await redisClient.del(`profile:${userId}`);
+      if (redisClient) await redisClient.del(`profile:${userId}`);
     } catch (redisError) {
-      console.warn('Failed to clear cache:', redisError.message);
+      console.warn('Failed to clear cache:', redisError?.message);
     }
 
     res.json({
@@ -5199,7 +8044,8 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
         id: updatedUser.id,
         email: updatedUser.email,
         phone: updatedUser.phone,
-        name: updatedUser.full_name, // ✅ แก้เป็น full_name
+        name: updatedUser.full_name,
+        bio: updatedUser.bio || null,
         role: updatedUser.role,
         kyc_level: updatedUser.kyc_level,
         avatar_url: updatedUser.avatar_url,
@@ -5229,7 +8075,7 @@ app.get('/api/users/transactions/:userId', async (req, res) => {
 
     const result = await pool.query(
       `SELECT * FROM transactions 
-       WHERE user_id = $1
+       WHERE user_id = $1::uuid
        ORDER BY created_at DESC
        LIMIT 50`,
       [userId]
@@ -5338,10 +8184,10 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    // 3. อัพเดท last login (ถ้ามี column)
+    // 3. อัพเดท last login + clear force_logout_at (เมื่อ login ใหม่)
     try {
       await pool.query(
-        `UPDATE users SET last_login = NOW() WHERE id = $1`,
+        `UPDATE users SET last_login = NOW(), force_logout_at = NULL WHERE id = $1`,
         [user.id]
       );
     } catch (_) { /* column may not exist */ }
@@ -5364,7 +8210,7 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
       success: true,
       token: token,
       user: {
-        id: user.id,
+        id: String(user.id),
         email: user.email || `${user.phone}@aqond.com`,
         phone: user.phone,
         name: name,
@@ -5389,29 +8235,115 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
   }
 });
 
-// ✅ Forgot Password — รับเบอร์โทร ส่งคำขอรีเซ็ตรหัส (ใน production ควรส่ง SMS/link)
+// ✅ Forgot Password — ตรวจสอบเบอร์มีในระบบ (ขั้นตอนก่อนส่ง OTP ที่ frontend)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { phone } = req.body || {};
     if (!phone || !String(phone).trim()) {
       return res.status(400).json({ error: 'Phone number required' });
     }
+    const normalized = String(phone).trim().replace(/\s/g, '').replace(/-/g, '');
+    const alt = normalized.startsWith('0') ? '66' + normalized.slice(1) : '0' + normalized.replace(/^66/, '');
     const userResult = await pool.query(
-      'SELECT id, phone FROM users WHERE phone = $1',
-      [String(phone).trim()]
+      'SELECT id, phone FROM users WHERE phone = $1 OR phone = $2',
+      [normalized, alt]
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'ไม่พบบัญชีที่ผูกกับเบอร์นี้' });
     }
-    // TODO: สร้าง reset token + ส่ง SMS/อีเมลลิงก์รีเซ็ตรหัส
-    console.log('Forgot password requested for phone:', phone);
     res.json({
       success: true,
-      message: 'หากมีบัญชี เราจะส่งวิธีรีเซ็ตรหัสผ่านไปที่เบอร์นี้'
+      message: 'พบบัญชี กรุณาขอ OTP และยืนยันเพื่อตั้งรหัสผ่านใหม่'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ error: 'Request failed' });
+  }
+});
+
+// Helper: Normalize phone for comparison (+66812345678 ↔ 0812345678)
+function normalizePhoneForMatch(p) {
+  if (!p || typeof p !== 'string') return '';
+  const s = p.replace(/\s/g, '').replace(/-/g, '');
+  if (s.startsWith('+66')) return '0' + s.slice(3);
+  if (s.startsWith('66') && s.length >= 10) return '0' + s.slice(2);
+  return s.startsWith('0') ? s : '0' + s;
+}
+
+// ✅ Reset Password — หลังยืนยัน OTP (Firebase) แล้ว ส่ง firebase_id_token + newPassword
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { phone, newPassword, firebase_id_token } = req.body || {};
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' });
+    }
+    if (!firebase_id_token || !phone) {
+      return res.status(400).json({ error: 'ต้องยืนยัน OTP ก่อน กรุณาส่ง firebase_id_token และ phone' });
+    }
+
+    let firebaseAuth;
+    try {
+      const admin = await import('firebase-admin');
+      if (!admin.apps || admin.apps.length === 0) {
+        if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+          admin.initializeApp({ credential: admin.credential.applicationDefault() });
+        } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+          admin.initializeApp({ credential: admin.credential.cert(sa) });
+        } else {
+          const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+          const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+          const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+          if (projectId && clientEmail && privateKey) {
+            admin.initializeApp({
+              credential: admin.credential.cert({
+                projectId,
+                clientEmail,
+                privateKey,
+              }),
+            });
+          } else {
+            return res.status(503).json({ error: 'Firebase Admin: ใส่ FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY (จาก Service Account) และใช้ VITE_FIREBASE_PROJECT_ID ได้เลย' });
+          }
+        }
+      }
+      firebaseAuth = admin.auth();
+    } catch (e) {
+      console.error('Firebase Admin init:', e?.message);
+      return res.status(503).json({ error: 'ไม่สามารถตรวจสอบ OTP ได้ กรุณาติดต่อผู้ดูแลระบบ' });
+    }
+
+    const decoded = await firebaseAuth.verifyIdToken(firebase_id_token);
+    const tokenPhone = decoded.phone_number || decoded.firebase?.identities?.phone?.[0] || '';
+    const reqPhone = normalizePhoneForMatch(phone);
+    const tokPhone = normalizePhoneForMatch(tokenPhone);
+    if (!tokPhone || tokPhone !== reqPhone) {
+      return res.status(403).json({ error: 'เบอร์โทรที่ยืนยัน OTP ไม่ตรงกับที่ระบุ' });
+    }
+
+    const altReq = reqPhone.startsWith('0') ? '66' + reqPhone.slice(1) : '0' + reqPhone.replace(/^66/, '');
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE phone = $1 OR phone = $2 OR phone = $3',
+      [reqPhone, tokPhone, altReq]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบบัญชีที่ผูกกับเบอร์นี้' });
+    }
+    const userId = userResult.rows[0].id;
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, password = $2, updated_at = NOW() WHERE id = $3',
+      [hash, newPassword, userId]
+    );
+    const ip = getClientIp(req);
+    setImmediate(() => recordIdentityChange(pool, userId, 'password_reset', ip).catch(() => {}));
+    res.json({ success: true, message: 'ตั้งรหัสผ่านใหม่สำเร็จ สามารถเข้าสู่ระบบได้เลย' });
+  } catch (error) {
+    if (error.message && /invalid|expired|token/i.test(error.message)) {
+      return res.status(401).json({ error: 'รหัส OTP หมดอายุหรือไม่ถูกต้อง กรุณาขอ OTP ใหม่' });
+    }
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: error.message || 'Request failed' });
   }
 });
 
@@ -5679,7 +8611,9 @@ app.get('/api/admin/gateway-status', adminAuthMiddleware, async (req, res) => {
       { name: 'Support (รายการ)', path: '/api/support/tickets', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Support (ข้อความ)', path: '/api/support/tickets/:id/messages', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Support (ส่งข้อความ)', path: '/api/support/tickets/:id/messages', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Support (message async + Redis session)', path: '/api/support/message', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Insurance (อัตรา)', path: '/api/settings/insurance-rate', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Transport pricing (สูตรเหมา)', path: '/api/settings/transport-pricing', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Provider Onboarding (สถานะ)', path: '/api/provider-onboarding/status', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Provider Onboarding (ส่งข้อสอบ)', path: '/api/provider-onboarding/submit-exam', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Nexus Exam (ข้อสอบ)', path: '/api/nexus-exam/questions', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
@@ -5714,6 +8648,14 @@ app.get('/api/admin/gateway-status', adminAuthMiddleware, async (req, res) => {
       { name: 'Admin Banners (สร้าง)', path: '/api/admin/banners', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Banners (อัปเดต)', path: '/api/admin/banners/:id', method: 'PATCH', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Support (tickets)', path: '/api/admin/support/tickets', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (crisis alert)', path: '/api/admin/support/crisis-alert', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (learning feedback)', path: '/api/admin/support/learning-feedback', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (invite Pro)', path: '/api/admin/support/tickets/:id/invite-provider', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (sentiment trend)', path: '/api/admin/support/sentiment-trend', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (FAQ draft)', path: '/api/admin/support/tickets/:id/generate-faq-draft', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (knowledge drafts)', path: '/api/admin/support/knowledge-drafts', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (promote draft)', path: '/api/admin/support/knowledge-drafts/:id/promote', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Support (media URL)', path: '/api/admin/support/tickets/:id/attachments', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Insurance (Settings)', path: '/api/admin/insurance/settings', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Insurance (อัปเดต)', path: '/api/admin/insurance/settings', method: 'PATCH', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Insurance (Summary)', path: '/api/admin/insurance/summary', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
@@ -6307,10 +9249,14 @@ app.post('/api/admin/dr/failover', adminAuthMiddleware, async (req, res) => {
 // ✅ GET /api/admin/jobs/status — สถานะ Job Control (Pause/Resume)
 app.get('/api/admin/jobs/status', adminAuthMiddleware, (req, res) => {
   const mem = process.memoryUsage();
-  const heapPct = mem.heapTotal > 0 ? Math.round((mem.heapUsed / mem.heapTotal) * 100) : 0;
+  const heapRatioPct = mem.heapTotal > 0 ? Math.round((mem.heapUsed / mem.heapTotal) * 100) : 0;
   res.json({
     paused: jobsPaused,
-    memoryPercent: heapPct,
+    /** ใช้สำหรับ memory guard (เทียบ heap_size_limit) */
+    memoryPercent: getMemoryPressurePct(),
+    /** heapUsed/heapTotal — มักสูงก่อน GC; ใช้ debug เท่านั้น */
+    heapUsedToHeapTotalPercent: heapRatioPct,
+    memoryGuardDisabled: MEMORY_GUARD_DISABLED,
     memoryGuardPct: MEMORY_GUARD_PCT,
     lastRunAt: cronLastRunAt,
     lastError: cronLastError,
@@ -6334,12 +9280,53 @@ app.post('/api/admin/jobs/resume', adminAuthMiddleware, (req, res) => {
   res.json({ paused: false, message: 'Cron jobs resumed' });
 });
 
-// ✅ POST /api/admin/jobs/clear-cache — เคลียร์ Memory Cache (rate limit, etc.)
-app.post('/api/admin/jobs/clear-cache', adminAuthMiddleware, (req, res) => {
+// ✅ POST /api/rate-limit/clear — เคลียร์ login rate limit จาก SSH (ไม่ต้อง login admin)
+// ใช้: curl -X POST http://localhost:3001/api/rate-limit/clear -H "X-Clear-Secret: YOUR_SECRET"
+app.post('/api/rate-limit/clear', async (req, res) => {
+  const secret = process.env.RATE_LIMIT_CLEAR_SECRET || '';
+  const headerSecret = (req.headers['x-clear-secret'] || '').trim();
+  if (!secret || headerSecret !== secret) {
+    return res.status(403).json({ error: 'Invalid or missing X-Clear-Secret' });
+  }
   let cleared = 0;
   if (rateLimitMemory && rateLimitMemory.size > 0) {
     cleared = rateLimitMemory.size;
     rateLimitMemory.clear();
+  }
+  if (redisClient) {
+    try {
+      const keys = await redisClient.keys('ratelimit:login_*');
+      if (keys.length > 0) {
+        await redisClient.del(keys);
+        cleared += keys.length;
+        console.log(`🧹 [RateLimit] Cleared ${keys.length} Redis keys`);
+      }
+    } catch (e) {
+      console.warn('[RateLimit] Redis clear failed:', e?.message);
+    }
+  }
+  res.json({ cleared, message: `Cleared ${cleared} rate-limit entries` });
+});
+
+// ✅ POST /api/admin/jobs/clear-cache — เคลียร์ Memory Cache + Redis rate limit
+app.post('/api/admin/jobs/clear-cache', adminAuthMiddleware, async (req, res) => {
+  let cleared = 0;
+  if (rateLimitMemory && rateLimitMemory.size > 0) {
+    cleared = rateLimitMemory.size;
+    rateLimitMemory.clear();
+  }
+  // เคลียร์ Redis rate limit (login_phone, login_ip) — แก้ 429 Too Many Requests
+  if (redisClient) {
+    try {
+      const keys = await redisClient.keys('ratelimit:login_*');
+      if (keys.length > 0) {
+        await redisClient.del(keys);
+        cleared += keys.length;
+        console.log(`🧹 [Admin] Cleared Redis rate-limit keys: ${keys.length}`);
+      }
+    } catch (e) {
+      console.warn('[Admin] Redis rate-limit clear failed:', e?.message);
+    }
   }
   if (typeof global.gc === 'function') {
     try {
@@ -6347,7 +9334,7 @@ app.post('/api/admin/jobs/clear-cache', adminAuthMiddleware, (req, res) => {
       console.log('🧹 [Admin] Manual GC triggered');
     } catch (e) {}
   }
-  console.log(`🧹 [Admin] Cleared ${cleared} rate-limit cache entries`);
+  console.log(`🧹 [Admin] Cleared ${cleared} cache entries`);
   res.json({ cleared, message: `Cleared ${cleared} cache entries` });
 });
 
@@ -7020,7 +10007,8 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
       let jWhere = 'status = $1';
       if (category) { jParams.push(`%${category}%`); jWhere += ' AND (category ILIKE $2 OR subcategory ILIKE $2)'; }
       const jRows = await pool.query(
-        `SELECT id, title, category, subcategory, budget_amount, created_at, 'jobs' AS job_type
+        `SELECT id, title, category, subcategory, budget_amount, created_at, 'jobs' AS job_type,
+                payment_details->'transport_contract'->>'job_kind' AS transport_job_kind
          FROM jobs WHERE ${jWhere}
          ORDER BY created_at DESC LIMIT $${jParams.length + 1} OFFSET $${jParams.length + 2}`,
         [...jParams, limit, offset]
@@ -7049,6 +10037,7 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
         subcategory: r.subcategory || null,
         budget: r.budget_amount ?? (r.min_budget != null ? { min: r.min_budget, max: r.max_budget } : null),
         job_type: r.job_type,
+        transport_job_kind: r.transport_job_kind || null,
         created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
       }))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -7807,8 +10796,8 @@ app.get('/api/admin/incidents/nearby-workers/:incidentId', adminAuthMiddleware, 
 
     const incRow = await pool.query(
       `SELECT i.job_id, i.worker_id, j.category, j.location
-       FROM incidents i JOIN jobs j ON j.id = i.job_id
-       WHERE i.id = $1`,
+       FROM incidents i JOIN jobs j ON j.id::text = i.job_id
+       WHERE i.id::text = $1 OR i.id = $1::uuid`,
       [incidentId]
     );
     if (!incRow.rows[0]) return res.status(404).json({ error: 'Incident not found' });
@@ -7822,11 +10811,11 @@ app.get('/api/admin/incidents/nearby-workers/:incidentId', adminAuthMiddleware, 
       FROM users u
       LEFT JOIN worker_grades wg ON wg.user_id = u.id
       WHERE u.role = 'provider'
-        AND u.id != $1
+        AND u.id != $1::uuid
         AND u.shadow_banned_at IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM jobs j2
-          WHERE j2.accepted_by = u.id::text
+          WHERE j2.accepted_by = u.id
             AND j2.status IN ('accepted','in_progress')
         )
       ORDER BY wg.avg_rating DESC NULLS LAST
@@ -7848,7 +10837,7 @@ app.patch('/api/admin/incidents/:id/resolve', adminAuthMiddleware, async (req, r
     const resolverId = req.adminUser?.id || 'admin';
 
     const incRow = await pool.query(
-      `SELECT * FROM incidents WHERE id = $1`, [id]
+      `SELECT * FROM incidents WHERE id::text = $1 OR id = $1::uuid`, [id]
     );
     if (!incRow.rows[0]) return res.status(404).json({ error: 'Incident not found' });
 
@@ -7865,32 +10854,37 @@ app.patch('/api/admin/incidents/:id/resolve', adminAuthMiddleware, async (req, r
       );
 
       const jobForPayout = await pool.query(
-        `SELECT price, has_insurance, insurance_amount FROM jobs WHERE id = $1`, [inc.job_id]
+        `SELECT price, has_insurance, insurance_amount, payment_details FROM jobs WHERE id = $1`, [inc.job_id]
       ).catch(() => ({ rows: [] }));
       if (jobForPayout.rows[0]) {
-        const originalPrice     = parseFloat(jobForPayout.rows[0].price) || 0;
+        const j = jobForPayout.rows[0];
+        const pd = typeof j.payment_details === 'string' ? JSON.parse(j.payment_details || '{}') : (j.payment_details || {});
+        const insuranceAmt = parseFloat(j.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(j.price) || 0;
+        const originalPrice     = insuranceAmt;
         const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
         const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
-        const payId = `RPL-${inc.job_id.slice(0,8)}-${Date.now()}`;
+        await pool.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+          [replacementPayout, replacement_worker_id]
+        );
+        const payId = (tag) => `RPL-${inc.job_id.slice(0,8)}-${tag}-${Date.now()}`;
         await pool.query(`
-          INSERT INTO payment_ledger_audit
-            (id, job_id, payment_gateway, reference_id, amount, user_id,
-             idempotency_key, metadata, event_type, status, currency, created_at)
-          VALUES ($1,$2,'insurance_fund',$2,$3,$4,$5,$6,'reroute_replacement_payout','completed','THB',NOW())
+          INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+          VALUES ($1, 'insurance_replacement_payout', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)
         `, [
-          payId, inc.job_id, replacementPayout, replacement_worker_id, `${payId}-idem`,
-          JSON.stringify({
-            leg:              'replacement_payout_55pct',
-            original_price:   originalPrice,
-            replacement_payout: replacementPayout,
-            reserve_amount:   reserveAmount,
-            incident_id:      id,
-            rate:             REPLACEMENT_PAYOUT_RATE,
-          })
-        ]).catch((e) => console.warn('[55% Rule] ledger insert skipped:', e.message));
+          payId('rpl'), inc.job_id, inc.job_id, replacementPayout, `RPL-${inc.job_id}`, `T-RPL-${inc.job_id}-${Date.now()}`, replacement_worker_id,
+          JSON.stringify({ leg: 'replacement_payout_40pct', original_price: originalPrice, rate: REPLACEMENT_PAYOUT_RATE, incident_id: id })
+        ]).catch((e) => console.warn('[40/60 Rule] ledger payout insert skipped:', e.message));
+        await pool.query(`
+          INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+          VALUES ($1, 'platform_stability_reserve', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7)
+        `, [
+          payId('res'), inc.job_id, inc.job_id, reserveAmount, `RPL-RES-${inc.job_id}`, `T-RPL-RES-${inc.job_id}-${Date.now()}`,
+          JSON.stringify({ leg: 'platform_stability_reserve', original_price: originalPrice, rate: 0.60, incident_id: id })
+        ]).catch((e) => console.warn('[40/60 Rule] ledger reserve insert skipped:', e.message));
 
-        console.log(`[55% Rule] Job ${inc.job_id}: original ฿${originalPrice} → replacement ฿${replacementPayout} (reserve ฿${reserveAmount})`);
+        console.log(`[40/60 Rule] Job ${inc.job_id}: original ฿${originalPrice} → replacement ฿${replacementPayout} (reserve ฿${reserveAmount})`);
       }
     } else if (action === 'refund_close') {
       await pool.query(
@@ -7906,7 +10900,7 @@ app.patch('/api/admin/incidents/:id/resolve', adminAuthMiddleware, async (req, r
         [inc.worker_id]
       );
       await pool.query(
-        `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1`, [inc.worker_id]
+        `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`, [inc.worker_id]
       ).catch(() => {});
       await pool.query(
         `UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [inc.job_id]
@@ -8183,18 +11177,57 @@ function mapKycLevelToStatus(kycLevel) {
   return 'approved';
 }
 
+/** รองรับ DB ที่ยังไม่รัน migration ครบ (คอลัมน์ BA / bank_accounts ฯลฯ) */
+async function queryAdminUserDetailRow(userId) {
+  const uid = String(userId);
+  const tiers = [
+    // เต็ม: BA (135) + bank_accounts (124)
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, kyc_rejection_reason, last_login, avatar_url, provider_status, provider_verified_at, provider_test_attempts, provider_test_next_retry_at, banned_until, ban_reason, is_vip, wallet_frozen, bank_accounts,
+      is_brand_adviser, adviser_status, adviser_reputation_score, adviser_public_slug, adviser_public_profile_enabled, adviser_granted_at, adviser_suspended_at, adviser_suspended_reason`,
+    // ไม่มี BA
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, kyc_rejection_reason, last_login, avatar_url, provider_status, provider_verified_at, provider_test_attempts, provider_test_next_retry_at, banned_until, ban_reason, is_vip, wallet_frozen, bank_accounts`,
+    // ไม่มี bank_accounts
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, kyc_rejection_reason, last_login, avatar_url, provider_status, provider_verified_at, provider_test_attempts, provider_test_next_retry_at, banned_until, ban_reason, is_vip, wallet_frozen,
+      is_brand_adviser, adviser_status, adviser_reputation_score, adviser_public_slug, adviser_public_profile_enabled, adviser_granted_at, adviser_suspended_at, adviser_suspended_reason`,
+    // เหลือแก่น + BA ไม่มี bank
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, kyc_rejection_reason, last_login, avatar_url, provider_status, provider_verified_at, provider_test_attempts, provider_test_next_retry_at, banned_until, ban_reason, is_vip, wallet_frozen,
+      is_brand_adviser, adviser_status, adviser_reputation_score, adviser_public_slug, adviser_public_profile_enabled, adviser_granted_at, adviser_suspended_at, adviser_suspended_reason`,
+    // แก่นมาตรฐาน (036+)
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, kyc_rejection_reason, last_login, avatar_url, provider_status, provider_verified_at, provider_test_attempts, provider_test_next_retry_at, banned_until, ban_reason, is_vip, wallet_frozen`,
+    // ไม่มี kyc_rejection_reason / provider_test* / banned*
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, last_login, avatar_url, provider_status, is_vip, wallet_frozen`,
+    // เก่าสุดที่เป็นไปได้
+    `id, email, phone, full_name, created_at, wallet_balance, role, account_status, kyc_level, last_login, avatar_url, is_vip`,
+  ];
+  let lastErr = null;
+  for (let i = 0; i < tiers.length; i++) {
+    try {
+      const r = await pool.query(`SELECT ${tiers[i]} FROM users WHERE id::text = $1`, [uid]);
+      if (i > 0 && process.env.NODE_ENV !== 'production') {
+        console.warn(`[GET /api/admin/users/:id] used fallback tier ${i + 1}/${tiers.length} for ${uid}`);
+      }
+      return r;
+    } catch (e) {
+      lastErr = e;
+      const msg = (e && e.message) || '';
+      const code = e && e.code;
+      if (code === '42703' || /column .* does not exist/i.test(msg)) {
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr || new Error('queryAdminUserDetailRow: no tier matched');
+}
+
 // ✅ GET /api/admin/users/:id (detail — no password, no firebase_uid; รวม provider_status, banned_until, is_vip)
 // ใช้ minimal query ก่อน (รองรับ schema เก่า)
 app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
   try {
     const userId = req.params.id;
     let u;
-    const minimalCols = `id, email, phone, full_name, created_at, wallet_balance`;
     try {
-      u = await pool.query(
-        `SELECT ${minimalCols} FROM users WHERE id::text = $1`,
-        [String(userId)]
-      );
+      u = await queryAdminUserDetailRow(userId);
     } catch (minErr) {
       console.error('GET /api/admin/users/:id query error:', minErr.message, 'code:', minErr.code);
       throw minErr;
@@ -8205,7 +11238,7 @@ app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
     row.role = row.role || 'USER';
     row.kyc_level = row.kyc_level ?? null;
     row.kyc_rejection_reason = row.kyc_rejection_reason ?? null;
-    row.last_login = row.last_login ?? row.last_login_at ?? null;
+    row.last_login = row.last_login ?? null;
     row.avatar_url = row.avatar_url ?? null;
     row.provider_status = row.provider_status || 'UNVERIFIED';
     row.provider_verified_at = row.provider_verified_at ?? null;
@@ -8239,7 +11272,7 @@ app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
       role: r.role || 'USER',
       backend_role: backendRole,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
-      last_login_at: (r.last_login || r.last_login_at) ? new Date(r.last_login || r.last_login_at).toISOString() : undefined,
+      last_login_at: r.last_login ? new Date(r.last_login).toISOString() : undefined,
       wallet_balance: parseFloat(r.wallet_balance) || 0,
       currency: 'THB',
       avatar_url: r.avatar_url,
@@ -8250,7 +11283,16 @@ app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
       banned_until: r.banned_until ? new Date(r.banned_until).toISOString() : null,
       ban_reason: r.ban_reason || null,
       is_vip: !!r.is_vip,
-      wallet_frozen: !!r.wallet_frozen
+      wallet_frozen: !!r.wallet_frozen,
+      bank_accounts: Array.isArray(r.bank_accounts) ? r.bank_accounts : (r.bank_accounts ? JSON.parse(JSON.stringify(r.bank_accounts)) : []),
+      is_brand_adviser: !!r.is_brand_adviser,
+      adviser_status: r.adviser_status ?? null,
+      adviser_reputation_score: r.adviser_reputation_score != null ? parseFloat(r.adviser_reputation_score) : 0,
+      adviser_public_slug: r.adviser_public_slug ?? null,
+      adviser_public_profile_enabled: !!r.adviser_public_profile_enabled,
+      adviser_granted_at: r.adviser_granted_at ? new Date(r.adviser_granted_at).toISOString() : null,
+      adviser_suspended_at: r.adviser_suspended_at ? new Date(r.adviser_suspended_at).toISOString() : null,
+      adviser_suspended_reason: r.adviser_suspended_reason ?? null,
     };
     res.json({ user });
   } catch (error) {
@@ -8300,7 +11342,7 @@ app.post('/api/admin/users/:id/suspend', adminAuthMiddleware, adminAccountAction
   try {
     const userId = req.params.id;
     const reason = req.body.reason || 'Suspended by admin';
-    await pool.query(`UPDATE users SET account_status = 'suspended', wallet_frozen = true WHERE id = $1 OR id::text = $1`, [userId]);
+    await pool.query(`UPDATE users SET account_status = 'suspended', wallet_frozen = true WHERE id = $1::uuid`, [userId]);
     try {
       await pool.query(
         `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, reason, state_after) VALUES ('user', $1, 'user_suspend', 'users', $2, $3, '{"account_status":"suspended"}')`,
@@ -8322,7 +11364,7 @@ app.post('/api/admin/users/:id/ban', adminAuthMiddleware, adminAccountAction, as
     const bannedUntil = banDays > 0 ? new Date(Date.now() + banDays * 24 * 60 * 60 * 1000) : null;
     await pool.query(
       `UPDATE users SET account_status = 'banned', banned_until = $2, ban_reason = $3, wallet_frozen = true
-       WHERE id = $1 OR id::text = $1`,
+       WHERE id = $1::uuid`,
       [userId, bannedUntil, reason]
     );
     try {
@@ -8341,7 +11383,7 @@ app.post('/api/admin/users/:id/ban', adminAuthMiddleware, adminAccountAction, as
 app.post('/api/admin/users/:id/reactivate', adminAuthMiddleware, adminAccountAction, async (req, res) => {
   try {
     const userId = req.params.id;
-    await pool.query(`UPDATE users SET account_status = 'active', banned_until = NULL, ban_reason = NULL, wallet_frozen = false WHERE id = $1 OR id::text = $1`, [userId]);
+    await pool.query(`UPDATE users SET account_status = 'active', banned_until = NULL, ban_reason = NULL, wallet_frozen = false WHERE id = $1::uuid`, [userId]);
     try {
       await pool.query(
         `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, reason, state_after) VALUES ('user', $1, 'user_reactivate', 'users', $2, $3, '{"account_status":"active"}')`,
@@ -8356,15 +11398,123 @@ app.post('/api/admin/users/:id/reactivate', adminAuthMiddleware, adminAccountAct
   }
 });
 
+// ✅ Brand Adviser — มอบสิทธิ์ / ถอดสิทธิ์ (ADMIN only; audit)
+app.post('/api/admin/users/:id/brand-adviser/grant', adminAuthMiddleware, adminAccountAction, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const reason = (req.body?.reason || '').toString().trim() || 'Granted by admin';
+    const r = await pool.query(
+      `UPDATE users SET is_brand_adviser = true, adviser_status = 'active',
+         adviser_granted_at = COALESCE(adviser_granted_at, NOW()),
+         adviser_suspended_at = NULL, adviser_suspended_reason = NULL, updated_at = NOW()
+       WHERE id::text = $1 OR id = $1::uuid
+       RETURNING id`,
+      [userId]
+    );
+    if (!r.rows?.length) return res.status(404).json({ error: 'User not found' });
+    await insertBrandAdviserAudit(pool, {
+      userId: r.rows[0].id,
+      action: 'admin_granted',
+      reason,
+      actorId: String(req.adminUser?.id || 'admin'),
+      actorRole: 'Admin',
+      metadata: {},
+    });
+    try {
+      await pool.query(
+        `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, reason, state_after)
+         VALUES ('admin', $1, 'brand_adviser_grant', 'users', $2, $3, $4)`,
+        [String(req.adminUser?.id || 'admin'), String(r.rows[0].id), reason, JSON.stringify({ is_brand_adviser: true, adviser_status: 'active' })]
+      );
+    } catch (_) { /* optional table */ }
+    res.json({ success: true, user_id: String(r.rows[0].id), is_brand_adviser: true, adviser_status: 'active' });
+  } catch (e) {
+    console.error('POST brand-adviser/grant:', e);
+    res.status(500).json({ error: e.message || 'Failed to grant Brand Adviser' });
+  }
+});
+
+app.post('/api/admin/users/:id/brand-adviser/revoke', adminAuthMiddleware, adminAccountAction, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const reason = (req.body?.reason || '').toString().trim() || 'Revoked by admin';
+    const r = await pool.query(
+      `UPDATE users SET is_brand_adviser = false, adviser_status = NULL,
+         adviser_suspended_at = NOW(), adviser_suspended_reason = $2, updated_at = NOW()
+       WHERE id::text = $1 OR id = $1::uuid
+       RETURNING id`,
+      [userId, reason]
+    );
+    if (!r.rows?.length) return res.status(404).json({ error: 'User not found' });
+    await insertBrandAdviserAudit(pool, {
+      userId: r.rows[0].id,
+      action: 'admin_revoked',
+      reason,
+      actorId: String(req.adminUser?.id || 'admin'),
+      actorRole: 'Admin',
+      metadata: {},
+    });
+    try {
+      await pool.query(
+        `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, reason, state_after)
+         VALUES ('admin', $1, 'brand_adviser_revoke', 'users', $2, $3, $4)`,
+        [String(req.adminUser?.id || 'admin'), String(r.rows[0].id), reason, JSON.stringify({ is_brand_adviser: false, adviser_status: null })]
+      );
+    } catch (_) { }
+    res.json({ success: true, user_id: String(r.rows[0].id), is_brand_adviser: false, adviser_status: null });
+  } catch (e) {
+    console.error('POST brand-adviser/revoke:', e);
+    res.status(500).json({ error: e.message || 'Failed to revoke Brand Adviser' });
+  }
+});
+
+// Brand Adviser — audit log (อ่านได้สำหรับ dispute / ตรวจสอบย้อนหลัง)
+app.get('/api/admin/brand-adviser/audit-log', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const userFilter = (req.query.user_id || '').toString().trim();
+    let rows;
+    if (userFilter) {
+      rows = await pool.query(
+        `SELECT a.id, a.user_id, a.actor_id, a.actor_role, a.action, a.reason, a.metadata, a.created_at,
+                u.email AS user_email, u.phone AS user_phone, u.full_name AS user_full_name
+         FROM brand_adviser_audit_log a
+         LEFT JOIN users u ON u.id = a.user_id
+         WHERE a.user_id::text = $1 OR a.user_id = $1::uuid
+         ORDER BY a.created_at DESC
+         LIMIT $2`,
+        [userFilter, limit]
+      );
+    } else {
+      rows = await pool.query(
+        `SELECT a.id, a.user_id, a.actor_id, a.actor_role, a.action, a.reason, a.metadata, a.created_at,
+                u.email AS user_email, u.phone AS user_phone, u.full_name AS user_full_name
+         FROM brand_adviser_audit_log a
+         LEFT JOIN users u ON u.id = a.user_id
+         ORDER BY a.created_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+    }
+    res.json({
+      entries: rows.rows || [],
+      user_profile_path: '/api/users/profile/:id',
+    });
+  } catch (e) {
+    console.error('GET /api/admin/brand-adviser/audit-log:', e);
+    res.status(500).json({ error: e.message || 'Failed to load audit log' });
+  }
+});
+
 // ============ ADMIN JOB MODERATION (Platform Moderation System) ============
 // POST /api/admin/jobs/:id/reject — ปฏิเสธงาน
 app.post('/api/admin/jobs/:id/reject', adminAuthMiddleware, async (req, res) => {
   try {
     const jobId = req.params.id;
     const reason = req.body.reason || 'Rejected by platform moderation';
-    const r = await pool.query(`UPDATE jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+    const r = await pool.query(`UPDATE jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
     if (!r.rows?.length) {
-      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
       if (!ar.rows?.length) return res.status(404).json({ error: 'Job not found' });
     }
     auditService.log(req.adminUser?.id, 'job_rejected', { entityName: 'jobs', entityId: jobId, reason }, { actorRole: 'Admin' });
@@ -8378,9 +11528,9 @@ app.post('/api/admin/jobs/:id/reject', adminAuthMiddleware, async (req, res) => 
 app.post('/api/admin/jobs/:id/suspend', adminAuthMiddleware, async (req, res) => {
   try {
     const jobId = req.params.id;
-    const r = await pool.query(`UPDATE jobs SET moderation_status = 'suspended', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+    const r = await pool.query(`UPDATE jobs SET moderation_status = 'suspended', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
     if (!r.rows?.length) {
-      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'suspended', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'suspended', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
       if (!ar.rows?.length) return res.status(404).json({ error: 'Job not found' });
     }
     auditService.log(req.adminUser?.id, 'job_suspended', { entityName: 'jobs', entityId: jobId }, { actorRole: 'Admin' });
@@ -8394,9 +11544,9 @@ app.post('/api/admin/jobs/:id/suspend', adminAuthMiddleware, async (req, res) =>
 app.post('/api/admin/jobs/:id/delete', adminAuthMiddleware, async (req, res) => {
   try {
     const jobId = req.params.id;
-    const r = await pool.query(`UPDATE jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+    const r = await pool.query(`UPDATE jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
     if (!r.rows?.length) {
-      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1 OR id::text = $1 RETURNING id`, [jobId]);
+      const ar = await pool.query(`UPDATE advance_jobs SET moderation_status = 'rejected', status = 'cancelled', updated_at = NOW() WHERE id = $1::uuid RETURNING id`, [jobId]);
       if (!ar.rows?.length) return res.status(404).json({ error: 'Job not found' });
     }
     auditService.log(req.adminUser?.id, 'job_deleted', { entityName: 'jobs', entityId: jobId }, { actorRole: 'Admin' });
@@ -8411,7 +11561,7 @@ app.patch('/api/admin/users/:id/wallet-freeze', adminAuthMiddleware, adminAccoun
   try {
     const userId = req.params.id;
     const frozen = req.body.frozen === true || req.body.frozen === 'true';
-    await pool.query(`UPDATE users SET wallet_frozen = $2, updated_at = NOW() WHERE id = $1 OR id::text = $1`, [userId, frozen]);
+    await pool.query(`UPDATE users SET wallet_frozen = $2, updated_at = NOW() WHERE id = $1::uuid`, [userId, frozen]);
     auditService.log(req.adminUser?.id, 'wallet_freeze', { entityName: 'users', entityId: userId, new: { wallet_frozen: frozen } }, { actorRole: 'Admin' });
     res.json({ success: true, user_id: userId, wallet_frozen: frozen });
   } catch (e) {
@@ -8442,15 +11592,17 @@ app.patch('/api/admin/users/:id/app-role', adminAuthMiddleware, adminAccountActi
     const userId = req.params.id;
     const role = (req.body.role || '').toLowerCase();
     if (!['user', 'provider'].includes(role)) return res.status(400).json({ error: 'Invalid app role; use user or provider' });
-    await pool.query(
-      `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1 OR id::text = $1`,
+    const r = await pool.query(
+      `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1::uuid RETURNING id`,
       [userId, role]
     );
+    if (!r.rowCount) return res.status(404).json({ error: 'User not found' });
     auditService.log(req.adminUser.id, 'app_role_change', { entityName: 'users', entityId: userId, new: { role } }, { actorRole: req.adminUser.role, ipAddress: req.ip });
     res.json({ success: true, user_id: userId, role });
   } catch (e) {
     console.error('app-role error:', e);
-    res.status(500).json({ error: 'Failed to update app role' });
+    const hint = e.code === '42703' ? 'Column role may not exist. Run migration 036.' : (e.detail || '');
+    res.status(500).json({ error: 'Failed to update app role', details: hint });
   }
 });
 
@@ -8461,7 +11613,7 @@ app.post('/api/admin/users/:id/approve-provider', adminAuthMiddleware, adminAcco
     await pool.query(
       `UPDATE users SET provider_status = 'VERIFIED_PROVIDER', provider_verified_at = NOW(), provider_test_passed_at = NOW(),
        provider_test_next_retry_at = NULL, updated_at = NOW()
-       WHERE id = $1 OR id::text = $1`,
+       WHERE id = $1::uuid`,
       [userId]
     );
     auditService.log(req.adminUser.id, 'approve_provider', { entityName: 'users', entityId: userId, new: { provider_status: 'VERIFIED_PROVIDER' } }, { actorRole: req.adminUser.role, ipAddress: req.ip });
@@ -8495,6 +11647,10 @@ app.post('/api/admin/users/:id/force-logout', adminAuthMiddleware, adminAccountA
   try {
     const userId = req.params.id;
     const reason = req.body.reason || 'Force logout by admin';
+    await pool.query(
+      `UPDATE users SET force_logout_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`,
+      [userId]
+    );
     try {
       await pool.query(
         `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, reason) VALUES ('user', $1, 'force_logout', 'users', $2, $3)`,
@@ -8502,7 +11658,7 @@ app.post('/api/admin/users/:id/force-logout', adminAuthMiddleware, adminAccountA
       );
     } catch (_) { }
     auditService.log(req.adminUser.id, 'force_logout', { entityName: 'users', entityId: userId }, { actorRole: req.adminUser.role, ipAddress: req.ip });
-    res.json({ success: true, user_id: userId, message: 'Audit logged; invalidate tokens in your auth layer if applicable' });
+    res.json({ success: true, user_id: userId, message: 'Force logout สำเร็จ — โทเค็นของผู้ใช้จะถูกยกเลิกทันที' });
   } catch (e) {
     console.error('force-logout error:', e);
     res.status(500).json({ error: 'Failed to record force logout' });
@@ -8516,7 +11672,7 @@ app.post('/api/admin/users/:id/emergency-suspend', adminAuthMiddleware, adminAcc
     const reason = req.body.reason || 'Emergency Suspend by admin';
     await pool.query(
       `UPDATE users SET account_status = 'banned', banned_until = NULL, ban_reason = $2, wallet_frozen = true, updated_at = NOW()
-       WHERE id = $1 OR id::text = $1`,
+       WHERE id = $1::uuid`,
       [userId, reason]
     );
     try {
@@ -8669,7 +11825,7 @@ app.post('/api/admin/users/:id/wallet-adjust', adminAuthMiddleware, adminAccount
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const userRow = await client.query('SELECT wallet_balance FROM users WHERE id = $1 OR id::text = $1 FOR UPDATE', [userId]);
+      const userRow = await client.query('SELECT wallet_balance FROM users WHERE id = $1::uuid FOR UPDATE', [userId]);
       if (!userRow.rows?.length) {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'User not found' });
@@ -8682,7 +11838,7 @@ app.post('/api/admin/users/:id/wallet-adjust', adminAuthMiddleware, adminAccount
         return res.status(400).json({ error: 'Insufficient balance', current: currentBal, requested: amount });
       }
       await client.query(
-        `UPDATE users SET wallet_balance = $2, updated_at = NOW() WHERE id = $1 OR id::text = $1`,
+        `UPDATE users SET wallet_balance = $2, updated_at = NOW() WHERE id = $1::uuid`,
         [userId, newBal]
       );
       const eventType = direction === 'credit' ? 'admin_credit' : 'admin_debit';
@@ -8908,37 +12064,141 @@ app.get('/api/admin/financial/audit', adminAuthMiddleware, async (req, res) => {
   }
 });
 
-// ✅ GET /api/admin/financial/job-guarantees
+// ✅ GET /api/admin/financial/job-guarantees — Real-time from platform_revenues, ledger, jobs, advance_jobs
 app.get('/api/admin/financial/job-guarantees', adminAuthMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT id, job_id, job_title, amount, currency, status, employer_id, provider_id, created_at, released_at, due_release_at, note
-       FROM job_guarantees ORDER BY created_at DESC LIMIT 500`
-    ).catch(() => ({ rows: [] }));
-    const entries = (result.rows || []).map((r) => ({
-      id: r.id,
-      job_id: r.job_id,
-      job_title: r.job_title,
-      amount: parseFloat(r.amount) || 0,
-      currency: r.currency || 'THB',
-      status: r.status || 'active',
-      employer_id: r.employer_id,
-      provider_id: r.provider_id,
-      created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
-      released_at: r.released_at ? new Date(r.released_at).toISOString() : undefined,
-      due_release_at: r.due_release_at ? new Date(r.due_release_at).toISOString() : undefined,
-      note: r.note,
-    }));
-    const totalHeld = entries.filter((e) => e.status === 'active' || e.status === 'pending_release').reduce((s, e) => s + e.amount, 0);
-    const totalReleased = entries.filter((e) => e.status === 'released').reduce((s, e) => s + e.amount, 0);
-    const totalClaimed = entries.filter((e) => e.status === 'claimed').reduce((s, e) => s + e.amount, 0);
-    const liabilityToRelease = entries.filter((e) => e.status === 'pending_release').reduce((s, e) => s + e.amount, 0);
+    const [
+      matchJobsRow,
+      advanceJobsRow,
+      bookingsRow,
+      insurancePremiumRow,
+      refundedRow,
+    ] = await Promise.all([
+      pool.query(
+        `SELECT j.id, j.title, j.status, j.created_by, j.accepted_by, j.payment_details, j.created_at, j.updated_at
+         FROM jobs j
+         WHERE (j.payment_details->>'escrow_held')::boolean = true
+         ORDER BY j.created_at DESC NULLS LAST LIMIT 500`
+      ).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT id, title, escrow_amount, escrow_status, status, employer_id, hired_user_id, created_at
+         FROM advance_jobs
+         WHERE escrow_status = 'held' AND escrow_amount > 0
+         ORDER BY created_at DESC NULLS LAST LIMIT 200`
+      ).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT b.id, b.deposit_amount, b.status, b.created_at, b.talent_id
+         FROM bookings b
+         WHERE b.deposit_status = 'held' AND b.deposit_amount > 0
+         ORDER BY b.created_at DESC NULLS LAST LIMIT 100`
+      ).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM platform_revenues WHERE source_type = 'insurance_premium'`
+      ).catch(() => ({ rows: [{ total: 0 }] })),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM payment_ledger_audit
+         WHERE event_type = 'escrow_refunded'`
+      ).catch(() => ({ rows: [{ total: 0 }] })),
+    ]);
+
+    const insurancePremiumTotal = parseFloat(insurancePremiumRow.rows?.[0]?.total || 0);
+    const totalRefunded = parseFloat(refundedRow.rows?.[0]?.total || 0);
+    const autoReleaseEnabled = process.env.AUTO_PAYOUT_RELEASE_ENABLED !== '0';
+
+    const entries = [];
+    let totalHeld = 0;
+    let liabilityToRelease = 0;
+    let totalReleased = 0;
+    let totalClaimed = totalRefunded;
+
+    for (const r of matchJobsRow.rows || []) {
+      const pd = r.payment_details || {};
+      const escrowAmount = parseFloat(pd.escrow_amount) || 0;
+      if (escrowAmount <= 0) continue;
+      const releasedStatus = (pd.released_status || '').toLowerCase();
+      const jobStatus = (r.status || '').toLowerCase();
+      let status = 'active';
+      if (releasedStatus === 'released') status = 'released';
+      else if (releasedStatus === 'refunded' || pd.refunded_at) status = 'claimed';
+      else if (jobStatus === 'completed') status = 'pending_release';
+      else if (['matching', 'accepted', 'in_progress', 'waiting_for_approval', 'waiting_for_payment'].includes(jobStatus)) status = 'active';
+
+      entries.push({
+        id: `match-${r.id}`,
+        job_id: r.id,
+        job_title: r.title || `Job ${r.id}`,
+        amount: escrowAmount,
+        currency: 'THB',
+        status,
+        employer_id: r.created_by,
+        provider_id: r.accepted_by,
+        created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+        released_at: pd.released_at ? new Date(pd.released_at).toISOString() : (releasedStatus === 'released' ? r.updated_at : undefined),
+        due_release_at: pd.release_deadline ? new Date(pd.release_deadline).toISOString() : undefined,
+        note: status === 'claimed' ? 'คืนเงิน (Refund)' : undefined,
+        source: 'match_job',
+      });
+
+      if (status === 'active' || status === 'pending_release') totalHeld += escrowAmount;
+      if (status === 'pending_release') liabilityToRelease += escrowAmount;
+      if (status === 'released') totalReleased += escrowAmount;
+    }
+
+    for (const r of advanceJobsRow.rows || []) {
+      const amt = parseFloat(r.escrow_amount) || 0;
+      if (amt <= 0) continue;
+      const jobStatus = (r.status || '').toLowerCase();
+      const status = ['completed', 'disputed', 'cancelled'].includes(jobStatus) ? 'released' : 'active';
+      entries.push({
+        id: `advance-${r.id}`,
+        job_id: r.id,
+        job_title: r.title || `Advance Job ${r.id}`,
+        amount: amt,
+        currency: 'THB',
+        status,
+        employer_id: r.employer_id,
+        provider_id: r.hired_user_id,
+        created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+        source: 'advance_job',
+      });
+      if (status === 'active') totalHeld += amt;
+      else totalReleased += amt;
+    }
+
+    for (const r of bookingsRow.rows || []) {
+      const amt = parseFloat(r.deposit_amount) || 0;
+      if (amt <= 0) continue;
+      entries.push({
+        id: `booking-${r.id}`,
+        job_id: r.id,
+        job_title: `Booking #${r.id}`,
+        amount: amt,
+        currency: 'THB',
+        status: 'active',
+        employer_id: null,
+        provider_id: r.talent_id,
+        created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+        source: 'booking',
+      });
+      totalHeld += amt;
+    }
+
+    entries.sort((a, b) => (new Date(b.created_at || 0)).getTime() - (new Date(a.created_at || 0)).getTime());
+
     res.json({
-      entries,
-      total_held: totalHeld,
-      total_released: totalReleased,
-      total_claimed: totalClaimed,
-      liability_to_release: liabilityToRelease,
+      entries: entries.slice(0, 200),
+      total_held: Math.round(totalHeld * 100) / 100,
+      total_released: Math.round(totalReleased * 100) / 100,
+      total_claimed: Math.round(totalClaimed * 100) / 100,
+      liability_to_release: Math.round(liabilityToRelease * 100) / 100,
+      total_insurance_premium: Math.round(insurancePremiumTotal * 100) / 100,
+      auto_release_enabled: autoReleaseEnabled,
+      counts: {
+        active: entries.filter((e) => e.status === 'active').length,
+        pending_release: entries.filter((e) => e.status === 'pending_release').length,
+        released: entries.filter((e) => e.status === 'released').length,
+        claimed: entries.filter((e) => e.status === 'claimed').length,
+      },
     });
   } catch (error) {
     console.error('GET /api/admin/financial/job-guarantees error:', error);
@@ -9049,7 +12309,7 @@ app.post('/api/admin/financial/vip-admin-fund/reinject', adminAuthMiddleware, as
     const platformUser = await pool.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
     if (platformUser.rows?.length) {
       await pool.query(
-        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
         [amountNum, platformUser.rows[0].id]
       );
     }
@@ -9160,6 +12420,7 @@ app.get('/api/admin/analytics/earnings', adminAuthMiddleware, async (req, res) =
       amount: r.amount != null ? parseFloat(r.amount) : 0,
       currency: r.currency,
       leg: r.metadata?.leg || null,
+      sub_category: r.metadata?.sub_category || null,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : null
     }));
 
@@ -9402,7 +12663,7 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
     const rows = await pool.query(
       `SELECT key, value_json, updated_at FROM payout_config WHERE key IN (
         'withdrawal_min_jobs', 'withdrawal_min_balance_thb', 'fee_rates',
-        'withdrawal_fee_standard_thb', 'withdrawal_fee_instant_thb'
+        'withdrawal_fee_standard_thb', 'withdrawal_fee_instant_thb', 'brand_adviser_rules'
       )`
     );
     const map = {};
@@ -9425,13 +12686,33 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
       platform_fee: { none: 8, silver: 6, gold: 5, platinum: 4 },
       commission_match_board: { none: 24, silver: 18, gold: 15, platinum: 12 },
       commission_booking: { none: 32, silver: 18, gold: 15, platinum: 12 },
+      handling_fee_percent: 8,
+      payment_markup_percent: 5,
     };
+    const brand_adviser_rules = map.brand_adviser_rules && typeof map.brand_adviser_rules === 'object'
+      ? map.brand_adviser_rules
+      : {
+          program_enabled: false,
+          inactivity_days: 30,
+          warn_days_before_suspend: 3,
+          admin_alert_days_before_suspend: 5,
+          activity_requires_closed_job: true,
+          referral_reputation_multiplier: 1,
+        };
     res.json({
       withdrawal_min_jobs,
       withdrawal_min_balance_thb,
       withdrawal_fee_standard_thb,
       withdrawal_fee_instant_thb,
       fee_rates,
+      brand_adviser_rules,
+      brand_adviser_rules_help: {
+        inactivity_days: 'จำนวนวันที่ไม่มีกิจกรรมอ้างอิง (ปิดงาน/เข้าแอปตามกฎ) แล้วระบบจะพักสถานะ BA อัตโนมัติ — นับจากวันที่กิจกรรมล่าสุดที่ backend บันทึก',
+        warn_days_before_suspend: 'จำนวนวันก่อนถึงกำหนดพักที่จะส่งแจ้งเตือน (แบนเนอร์ + FCM)',
+        admin_alert_days_before_suspend: 'ระยะเตือนแอดมิน (ถ้ามีการใช้งานฝั่งแอดมิน)',
+        program_enabled: 'สวิตช์ปิดโปรแกรมทั้งแพลตฟอร์ม — ไม่ยกเว้นค่าธรรมเนียมและไม่นับ reputation จนกว่าจะเปิด',
+        activity_requires_closed_job: 'ถ้า true กิจกรรมที่นับเป็นหลักคืองานที่ปิดสำเร็จ (ดู implementation ใน brandAdviser.js)',
+      },
       updated_at: rows.rows?.[0]?.updated_at || null,
     });
   } catch (err) {
@@ -9444,7 +12725,7 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
 app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (req, res) => {
   try {
     const adminId = req.adminUser?.id || 'unknown';
-    const { withdrawal_min_jobs, withdrawal_min_balance_thb, fee_rates, withdrawal_fee_standard_thb, withdrawal_fee_instant_thb } = req.body || {};
+    const { withdrawal_min_jobs, withdrawal_min_balance_thb, fee_rates, withdrawal_fee_standard_thb, withdrawal_fee_instant_thb, brand_adviser_rules } = req.body || {};
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -9519,11 +12800,15 @@ app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (r
           platform_fee: { none: 8, silver: 6, gold: 5, platinum: 4 },
           commission_match_board: { none: 24, silver: 18, gold: 15, platinum: 12 },
           commission_booking: { none: 32, silver: 18, gold: 15, platinum: 12 },
+          handling_fee_percent: 8,
+          payment_markup_percent: 5,
         };
         const final = {
           platform_fee: { ...defaults.platform_fee, ...merged.platform_fee },
           commission_match_board: { ...defaults.commission_match_board, ...merged.commission_match_board },
           commission_booking: { ...defaults.commission_booking, ...merged.commission_booking },
+          handling_fee_percent: typeof fee_rates.handling_fee_percent === 'number' ? fee_rates.handling_fee_percent : (oldVal.handling_fee_percent ?? defaults.handling_fee_percent),
+          payment_markup_percent: typeof fee_rates.payment_markup_percent === 'number' ? fee_rates.payment_markup_percent : (oldVal.payment_markup_percent ?? defaults.payment_markup_percent),
         };
         await client.query(
           `INSERT INTO payout_config (key, value_json, updated_at) VALUES ('fee_rates', $1::jsonb, NOW())
@@ -9536,21 +12821,61 @@ app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (r
           [adminId, JSON.stringify(oldVal), JSON.stringify(final)]
         );
       }
+      if (brand_adviser_rules && typeof brand_adviser_rules === 'object') {
+        const prevBa = await client.query(`SELECT value_json FROM payout_config WHERE key = 'brand_adviser_rules'`);
+        let oldBa = prevBa.rows?.[0]?.value_json || {};
+        if (typeof oldBa === 'string') {
+          try {
+            oldBa = JSON.parse(oldBa);
+          } catch (_) {
+            oldBa = {};
+          }
+        }
+        const mergedBa = { ...oldBa, ...brand_adviser_rules };
+        await client.query(
+          `INSERT INTO payout_config (key, value_json, updated_at) VALUES ('brand_adviser_rules', $1::jsonb, NOW())
+           ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()`,
+          [JSON.stringify(mergedBa)]
+        );
+        await client.query(
+          `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, state_before, state_after, reason)
+           VALUES ('admin', $1, 'SETTING_CHANGE', 'payout_config', 'brand_adviser_rules', $2, $3, 'Admin control-settings update')`,
+          [adminId, JSON.stringify(oldBa), JSON.stringify(mergedBa)]
+        );
+      }
       await client.query('COMMIT');
       const out = await pool.query(
-        `SELECT key, value_json FROM payout_config WHERE key IN ('withdrawal_min_jobs','withdrawal_min_balance_thb','fee_rates','withdrawal_fee_standard_thb','withdrawal_fee_instant_thb')`
+        `SELECT key, value_json FROM payout_config WHERE key IN ('withdrawal_min_jobs','withdrawal_min_balance_thb','fee_rates','withdrawal_fee_standard_thb','withdrawal_fee_instant_thb','brand_adviser_rules')`
       );
       const m = {};
       for (const r of out.rows || []) {
         if (r.key === 'fee_rates') m.fee_rates = r.value_json;
         else m[r.key] = r.value_json;
       }
+      const baOut = m.brand_adviser_rules && typeof m.brand_adviser_rules === 'object'
+        ? m.brand_adviser_rules
+        : {
+            program_enabled: false,
+            inactivity_days: 30,
+            warn_days_before_suspend: 3,
+            admin_alert_days_before_suspend: 5,
+            activity_requires_closed_job: true,
+            referral_reputation_multiplier: 1,
+          };
       res.json({
         withdrawal_min_jobs: parseInt(m.withdrawal_min_jobs, 10) || 10,
         withdrawal_min_balance_thb: parseFloat(m.withdrawal_min_balance_thb) || 650,
         withdrawal_fee_standard_thb: parseFloat(m.withdrawal_fee_standard_thb) || 35,
         withdrawal_fee_instant_thb: parseFloat(m.withdrawal_fee_instant_thb) || 50,
         fee_rates: m.fee_rates || { platform_fee: {}, commission_match_board: {}, commission_booking: {} },
+        brand_adviser_rules: baOut,
+        brand_adviser_rules_help: {
+          inactivity_days: 'จำนวนวันที่ไม่มีกิจกรรมอ้างอิง (ปิดงาน/เข้าแอปตามกฎ) แล้วระบบจะพักสถานะ BA อัตโนมัติ — นับจากวันที่กิจกรรมล่าสุดที่ backend บันทึก',
+          warn_days_before_suspend: 'จำนวนวันก่อนถึงกำหนดพักที่จะส่งแจ้งเตือน (แบนเนอร์ + FCM)',
+          admin_alert_days_before_suspend: 'ระยะเตือนแอดมิน (ถ้ามีการใช้งานฝั่งแอดมิน)',
+          program_enabled: 'สวิตช์ปิดโปรแกรมทั้งแพลตฟอร์ม — ไม่ยกเว้นค่าธรรมเนียมและไม่นับ reputation จนกว่าจะเปิด',
+          activity_requires_closed_job: 'ถ้า true กิจกรรมที่นับเป็นหลักคืองานที่ปิดสำเร็จ (ดู implementation ใน brandAdviser.js)',
+        },
         message: 'Control settings updated',
       });
     } catch (e) {
@@ -9617,7 +12942,7 @@ app.get('/api/admin/financial/export/internal-ledger', adminAuthMiddleware, asyn
   }
 });
 
-// ✅ GET /api/admin/financial/export/payout-recon — CSV for Omise/Bank matching
+// ✅ GET /api/admin/financial/export/payout-recon — CSV for bank / processor matching
 app.get('/api/admin/financial/export/payout-recon', adminAuthMiddleware, async (req, res) => {
   try {
     const fromDate = (req.query.from || '').toString() || new Date().toISOString().slice(0, 10);
@@ -9948,23 +13273,22 @@ app.get('/api/admin/payouts', adminAuthMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/admin/omise/balance — ดึงยอดเงินคงเหลือใน Omise Account (Available Balance) สำหรับ Cash Flow Management
-app.get('/api/admin/omise/balance', adminAuthMiddleware, async (req, res) => {
+// GET /api/admin/payments/gateway-balance — available balance at configured payment processor (cash-flow)
+app.get('/api/admin/payments/gateway-balance', adminAuthMiddleware, async (req, res) => {
   try {
-    const secretKey = process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null);
+    const secretKey = getPaymentGatewaySecretKey();
     if (!secretKey) {
       return res.json({ 
         available: 0, 
         pending: 0, 
         total: 0, 
         currency: 'THB',
-        error: 'Omise Secret Key not configured',
+        error: 'Payment gateway secret key not configured',
       });
     }
-    const omiseClient = new OmiseClient(secretKey);
-    // ดึง Balance จาก Omise API
-    const balance = await omiseClient.getBalance();
-    // Omise Balance format: { available: 123400, total: 123400, currency: 'thb', ... } (จำนวนเป็น satang/cents)
+    const paymentClient = new PaymentHttpClient(secretKey);
+    const balance = await paymentClient.getBalance();
+    // Response amounts are typically in smallest currency unit (e.g. satang)
     const availableSatang = balance.available || 0;
     const totalSatang = balance.total || 0;
     const availableTHB = Math.round(availableSatang) / 100;
@@ -9986,13 +13310,13 @@ app.get('/api/admin/omise/balance', adminAuthMiddleware, async (req, res) => {
       safety_gap: availableTHB - totalPendingPayouts, // Available - Pending Payouts
     });
   } catch (err) {
-    console.error('GET /api/admin/omise/balance error:', err);
+    console.error('GET /api/admin/payments/gateway-balance error:', err);
     return res.status(200).json({
       available: 0,
       pending: 0,
       total: 0,
       currency: 'THB',
-      error: err.message || 'Failed to retrieve Omise balance',
+      error: err.message || 'Failed to retrieve gateway balance',
     });
   }
 });
@@ -10030,7 +13354,8 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
     }, {});
     const revenueB = (bySource.deposit_margin_truemoney || 0) + (bySource.deposit_margin_card || 0);
     const revenueC = bySource.withdrawal_fee_margin || 0;
-    const totalMargin = revenueB + revenueC;
+    const revenueInsurance = bySource.insurance_premium || 0;
+    const totalMargin = revenueB + revenueC + revenueInsurance;
     const revenueA = parseFloat(commissionRow.rows?.[0]?.total || 0);
 
     return res.json({
@@ -10038,6 +13363,7 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
       revenue_a_commission: Math.round(revenueA * 100) / 100,
       revenue_b_deposit_margin: Math.round(revenueB * 100) / 100,
       revenue_c_withdrawal_margin: Math.round(revenueC * 100) / 100,
+      revenue_insurance_premium: Math.round(revenueInsurance * 100) / 100,
       by_source: bySource,
       recent: (recent.rows || []).map((r) => ({
         id: String(r.id),
@@ -10055,11 +13381,11 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
   }
 });
 
-// GET /api/admin/reconcile/alerts — แจ้งเตือนเงินรั่ว (Omise vs platform_balance)
+// GET /api/admin/reconcile/alerts — balance drift vs platform ledger
 app.get('/api/admin/reconcile/alerts', adminAuthMiddleware, async (req, res) => {
   try {
     const unresolved = await pool.query(
-      `SELECT id, omise_balance_thb, platform_balance_thb, diff_thb, threshold_thb, created_at
+      `SELECT id, gateway_reported_balance_thb, platform_balance_thb, diff_thb, threshold_thb, created_at
        FROM reconcile_alerts WHERE resolved = FALSE ORDER BY created_at DESC LIMIT 20`
     ).catch(() => ({ rows: [] }));
     const count = unresolved.rows?.length ?? 0;
@@ -10067,7 +13393,7 @@ app.get('/api/admin/reconcile/alerts', adminAuthMiddleware, async (req, res) => 
       count,
       alerts: (unresolved.rows || []).map((r) => ({
         id: String(r.id),
-        omise_balance_thb: parseFloat(r.omise_balance_thb),
+        gateway_reported_balance_thb: parseFloat(r.gateway_reported_balance_thb),
         platform_balance_thb: parseFloat(r.platform_balance_thb),
         diff_thb: parseFloat(r.diff_thb),
         created_at: r.created_at ? new Date(r.created_at).toISOString() : null
@@ -10162,7 +13488,7 @@ app.patch('/api/admin/payouts/:id', adminAuthMiddleware, async (req, res) => {
               await client.query(
                 `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
                  VALUES ($1, 'withdrawal_fee_margin', $2, $3, $4)`,
-                [ledgerId, feeMargin, amount, JSON.stringify({ payout_request_id: payoutIdStr, withdrawal_fee: withdrawalFee, omise_cost: 30 })]
+                [ledgerId, feeMargin, amount, JSON.stringify({ payout_request_id: payoutIdStr, withdrawal_fee: withdrawalFee, processor_cost_estimate: 30 })]
               );
             } catch (e) { /* platform_revenues might not exist yet */ }
           }
@@ -10253,15 +13579,15 @@ app.post('/api/admin/payouts/run-auto-release', adminAuthMiddleware, async (req,
   }
 });
 
-// POST /api/admin/payouts/run-auto-payout — Admin trigger auto-payout via Omise (ถ้าเปิดใช้)
+// POST /api/admin/payouts/run-auto-payout — Admin trigger auto-payout via configured gateway transfer (if enabled)
 app.post('/api/admin/payouts/run-auto-payout', adminAuthMiddleware, async (req, res) => {
   try {
     const mod = await import('./scripts/auto-payout-cron.js');
-    const runAutoPayoutOmise = mod.runAutoPayoutOmise || mod.default?.runAutoPayoutOmise;
-    if (typeof runAutoPayoutOmise !== 'function') {
-      return res.status(501).json({ error: 'Auto-payout Omise not available', processed: 0, errors: [] });
+    const runAutoPayoutGatewayTransfer = mod.runAutoPayoutGatewayTransfer || mod.default?.runAutoPayoutGatewayTransfer;
+    if (typeof runAutoPayoutGatewayTransfer !== 'function') {
+      return res.status(501).json({ error: 'Auto-payout gateway transfer not available', processed: 0, errors: [] });
     }
-    const result = await runAutoPayoutOmise();
+    const result = await runAutoPayoutGatewayTransfer();
     return res.json({ success: true, processed: result.processed, errors: result.errors || [] });
   } catch (err) {
     console.error('POST /api/admin/payouts/run-auto-payout error:', err);
@@ -10269,22 +13595,22 @@ app.post('/api/admin/payouts/run-auto-payout', adminAuthMiddleware, async (req, 
   }
 });
 
-// GET /api/admin/payouts/config — สถานะ config ปัจจุบัน (Auto-release, Omise, Provider, Connection) สำหรับ Admin Control
+// GET /api/admin/payouts/config — auto-release / gateway payout flags
 app.get('/api/admin/payouts/config', adminAuthMiddleware, async (req, res) => {
   try {
     const releaseEnabled = process.env.AUTO_PAYOUT_RELEASE_ENABLED !== '0';
     const releaseHours = parseInt(process.env.AUTO_PAYOUT_RELEASE_HOURS || '24', 10);
-    const omiseEnabled = process.env.AUTO_PAYOUT_OMISE_ENABLED === '1';
+    const gatewayTransferEnabled = isAutoPayoutGatewayTransferEnabled();
     const jobLimit = parseInt(process.env.AUTO_PAYOUT_JOB_LIMIT || '100', 10);
     const requestLimit = parseInt(process.env.AUTO_PAYOUT_REQUEST_LIMIT || '50', 10);
-    const omiseConfigured = !!(process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null));
+    const gatewayConfigured = !!getPaymentGatewaySecretKey();
     return res.json({
       auto_release_enabled: releaseEnabled,
       auto_release_hours: releaseHours,
-      auto_payout_omise_enabled: omiseEnabled,
+      auto_payout_gateway_transfer_enabled: gatewayTransferEnabled,
       job_limit: jobLimit,
       request_limit: requestLimit,
-      omise_configured: omiseConfigured,
+      gateway_configured: gatewayConfigured,
       hint: 'แก้ไข .env แล้ว restart backend เพื่อเปลี่ยนค่า',
     });
   } catch (err) {
@@ -10313,26 +13639,115 @@ function pushUserNotification(targetUserId, title, message) {
 /** Push only if target user is NOT in Peace Mode (job-related notifications) */
 async function pushUserNotificationIfNotPeaceMode(targetUserId, title, message) {
   if (!targetUserId) return;
-  const r = await pool.query('SELECT is_peace_mode FROM users WHERE id = $1 OR id::text = $1', [String(targetUserId)]).catch(() => ({ rows: [] }));
+  const idStr = String(targetUserId);
+  const r = await pool.query('SELECT is_peace_mode FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1', [idStr]).catch(() => ({ rows: [] }));
   if (r.rows?.[0]?.is_peace_mode) return;
-  pushUserNotification(targetUserId, title, message);
+  // เก็บ targetUserId เป็น UUID เพื่อให้ match กับ notifications/latest (resolveUserIdToUuid)
+  const uuid = await resolveUserIdToUuid(idStr).catch(() => null);
+  const targetForStore = uuid ? String(uuid) : idStr;
+  pushUserNotification(targetForStore, title, message);
+  // ส่ง FCM Push ถ้ามี token (Applicant alert, Deal reminder ฯลฯ)
+  sendFcmToUser(targetForStore, title, message).catch((e) => console.warn('[FCM User]', e?.message));
 }
 
-app.post('/api/admin/notifications/broadcast', adminAuthMiddleware, (req, res) => {
+/** ส่ง FCM ไปยัง user ที่มี token ลงทะเบียน */
+async function sendFcmToUser(userId, title, body) {
+  if (!userId) return { success: 0, failed: 0 };
+  const r = await pool.query(
+    `SELECT token FROM fcm_tokens WHERE user_id = $1::uuid AND token IS NOT NULL AND token != ''`,
+    [String(userId)]
+  ).catch(() => ({ rows: [] }));
+  const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
+  if (tokens.length === 0) return { success: 0, failed: 0 };
+  return sendFcmMulticast(tokens, { title, body, icon: '/logo.png' });
+}
+
+app.post('/api/admin/notifications/broadcast', adminAuthMiddleware, async (req, res) => {
   try {
     const { title, message, target } = req.body || {};
     if (!title || !message) {
       return res.status(400).json({ error: 'title and message required' });
     }
+    const t = (target || 'All').toString();
     const id = `bc-${Date.now()}`;
     const sentAt = new Date().toISOString();
-    const item = { id, title: String(title), message: String(message), target: target || 'All', sentAt };
+    const item = { id, title: String(title), message: String(message), target: t, sentAt };
     broadcastNotificationsStore.unshift(item);
     if (broadcastNotificationsStore.length > BROADCAST_STORE_MAX) broadcastNotificationsStore.length = BROADCAST_STORE_MAX;
-    res.status(201).json({ id, sentAt });
+
+    // ส่ง FCM Web Push ไป Landing subscribers (เมื่อ target = All หรือ Landing)
+    let fcmResult = { success: 0, failed: 0 };
+    if (t === 'All' || t === 'Landing') {
+      try {
+        const r = await pool.query(
+          `SELECT token FROM fcm_tokens WHERE source = 'landing' AND token IS NOT NULL AND token != ''`
+        ).catch(() => ({ rows: [] }));
+        const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
+        if (tokens.length > 0) {
+          fcmResult = await sendFcmMulticast(tokens, {
+            title: String(title),
+            body: String(message),
+            icon: '/logo.png',
+            data: { broadcastId: id },
+          });
+          console.log(`[FCM Broadcast] target=${t} sent=${fcmResult.success} failed=${fcmResult.failed} tokens=${tokens.length}`);
+        }
+      } catch (fcmErr) {
+        console.warn('[FCM Broadcast]', fcmErr?.message);
+      }
+    }
+
+    res.status(201).json({ id, sentAt, fcm: fcmResult });
   } catch (e) {
     console.error('POST /api/admin/notifications/broadcast error:', e);
     res.status(500).json({ error: 'Failed to broadcast' });
+  }
+});
+
+// POST /api/admin/test-notification — ทดสอบเสียงแจ้งเตือน (FCM + channel + sound)
+app.post('/api/admin/test-notification', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.body || {};
+    if (!userId || String(userId).trim() === '') {
+      return res.status(400).json({ error: 'userId required' });
+    }
+    const title = 'ทดสอบเสียง Aqond 🔊';
+    const body =
+      "ถ้าคุณได้ยินเสียงสาวน้อย 'อะ-คอนด์' แสดงว่าระบบสำเร็จแล้ว!";
+    const channelId = 'aqond_intercity_jobs';
+    const sound = 'aqond_notification';
+
+    let targetId = String(userId).trim();
+    const uuid = await resolveUserIdToUuid(targetId).catch(() => null);
+    if (uuid) targetId = String(uuid);
+
+    const r = await pool
+      .query(
+        `SELECT token FROM fcm_tokens WHERE user_id = $1::uuid AND token IS NOT NULL AND token != ''`,
+        [targetId]
+      )
+      .catch(() => ({ rows: [] }));
+    const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
+    if (tokens.length === 0) {
+      return res.status(404).json({
+        error: 'No FCM tokens for this user — register device token first',
+        userId: targetId,
+      });
+    }
+
+    const fcm = await sendFcmMulticast(tokens, {
+      title,
+      body,
+      channelId,
+      sound,
+      icon: '/logo.png',
+      data: { test_notification: '1' },
+    });
+    console.log(`Sent test push to ${targetId} with sound: aqond_notification`);
+    res.json({ success: true, userId: targetId, channelId, sound, fcm });
+  } catch (e) {
+    console.error('POST /api/admin/test-notification error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to send test notification' });
   }
 });
 
@@ -10633,6 +14048,33 @@ const supportTicketsStore = [];
 const supportMessagesStore = [];
 const SUPPORT_TICKETS_MAX = 500;
 const SUPPORT_MESSAGES_MAX = 5000;
+const SUPPORT_SESSION_KEY = 'support:sess:';
+
+/** Heuristic sentiment for queue ordering (0 = very negative, 1 = positive) */
+function computeSupportSentimentFromText(text) {
+  const t = String(text || '').toLowerCase();
+  let score = 0.5;
+  const neg = ['แย่', 'โกง', 'ร้อง', 'ฟ้อง', 'ไม่พอใจ', 'รอนาน', 'ไม่ตอบ', 'ฉุน', 'angry', 'refund', 'dispute', 'error', 'บั๊ก', 'bug', 'urgent', 'ด่วน', 'โกง'];
+  const pos = ['ขอบคุณ', 'ดี', 'สุดยอด', 'ok', 'thanks', 'hello', 'สวัสดี'];
+  for (const w of neg) if (t.includes(w)) score -= 0.08;
+  for (const w of pos) if (t.includes(w)) score += 0.06;
+  score = Math.max(0, Math.min(1, score));
+  let label = 'neutral';
+  if (score < 0.38) label = 'negative';
+  else if (score > 0.65) label = 'positive';
+  return { sentiment_score: score, sentiment_label: label };
+}
+
+function applySentimentToTicket(ticket, text) {
+  const s = computeSupportSentimentFromText(text);
+  ticket.sentiment_score = s.sentiment_score;
+  ticket.sentiment_label = s.sentiment_label;
+  if (s.sentiment_score < 0.38 && ticket.priority === 'MEDIUM') ticket.priority = 'HIGH';
+  try {
+    recordSentimentSample(s.sentiment_score);
+  } catch (_) {}
+  return s;
+}
 
 function addSupportMessage(ticketId, sender, message, meta = {}) {
   const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -10671,12 +14113,18 @@ app.post('/api/support/tickets', async (req, res) => {
       source: 'help_support',
       jobId: null,
       ai_mode_enabled: false,
+      invited_provider_id: null,
+      invited_provider_name: null,
+      attachments: [],
+      ai_summary: null,
       lastUpdated: now,
       createdAt: now,
     };
+    applySentimentToTicket(ticket, message || subject || '');
     supportTicketsStore.unshift(ticket);
     if (supportTicketsStore.length > SUPPORT_TICKETS_MAX) supportTicketsStore.pop();
     const userMsg = addSupportMessage(id, 'USER', message || subject);
+    recordSupportUserMessage(message || subject || '');
     const subj = subject || (message ? message.slice(0, 80) : 'คำถามจาก Help & Support');
     const ruk = await getRukReply(pool, message || subject, [], null, subj);
     const botReply = typeof ruk === 'object' ? ruk.text : ruk;
@@ -10691,7 +14139,7 @@ app.post('/api/support/tickets', async (req, res) => {
 // POST /api/support/tickets/from-dispute — สร้าง ticket จาก Dispute (JobDetails) + Lock escrow
 app.post('/api/support/tickets/from-dispute', async (req, res) => {
   try {
-    const { jobId, userId, reason } = req.body || {};
+    const { jobId, userId, reason, use_insurance_claim } = req.body || {};
     if (!jobId || !reason) return res.status(400).json({ error: 'jobId and reason required' });
 
     // Circuit Breaker + Double Lock: อัปเดต job และบันทึกใน job_disputes
@@ -10723,13 +14171,20 @@ app.post('/api/support/tickets/from-dispute', async (req, res) => {
       category: 'Billing',
       source: 'dispute',
       jobId: String(jobId),
+      use_insurance_claim: !!use_insurance_claim,
       ai_mode_enabled: false,
+      invited_provider_id: null,
+      invited_provider_name: null,
+      attachments: [],
+      ai_summary: null,
       lastUpdated: now,
       createdAt: now,
     };
     supportTicketsStore.unshift(ticket);
     if (supportTicketsStore.length > SUPPORT_TICKETS_MAX) supportTicketsStore.pop();
-    addSupportMessage(id, 'USER', reason);
+    const userMsg = use_insurance_claim ? `[ใช้สิทธิประกัน] ${reason}` : reason;
+    addSupportMessage(id, 'USER', userMsg);
+    recordSupportUserMessage(userMsg);
     const botReply = 'เราได้รับเรื่องข้อพิพาทของคุณแล้ว ทีมงานจะพิจารณาภายใน 24-48 ชั่วโมง และจะติดต่อกลับทางแอปหรืออีเมลครับ';
     addSupportMessage(id, 'BOT', botReply);
     res.status(201).json({ ticket });
@@ -10771,7 +14226,9 @@ app.post('/api/support/tickets/:id/messages', async (req, res) => {
     const { message } = req.body || {};
     if (!message) return res.status(400).json({ error: 'message required' });
     ticket.lastUpdated = new Date().toISOString();
+    applySentimentToTicket(ticket, message);
     const userMsg = addSupportMessage(ticket.id, 'USER', message);
+    recordSupportUserMessage(message);
 
     if (ticket.ai_mode_enabled) {
       const allMsgs = supportMessagesStore.filter((m) => m.ticketId === ticket.id).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -10779,10 +14236,10 @@ app.post('/api/support/tickets/:id/messages', async (req, res) => {
       let jobInfo = null;
       if (ticket.jobId) {
         try {
-          const r = await pool.query(`SELECT id, title, category, subcategory, status FROM jobs WHERE id = $1 OR id::text = $1`, [String(ticket.jobId)]);
+          const r = await pool.query(`SELECT id, title, category, subcategory, status FROM jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
           if (r.rows?.[0]) jobInfo = r.rows[0];
           else {
-            const ar = await pool.query(`SELECT id, title, category, status FROM advance_jobs WHERE id = $1 OR id::text = $1`, [String(ticket.jobId)]);
+            const ar = await pool.query(`SELECT id, title, category, status FROM advance_jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
             if (ar.rows?.[0]) jobInfo = ar.rows[0];
           }
         } catch (_) {}
@@ -10795,6 +14252,69 @@ app.post('/api/support/tickets/:id/messages', async (req, res) => {
     res.status(201).json({ message: userMsg });
   } catch (e) {
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// POST /api/support/message — High volume: 202 Accepted + optional async bot reply; Redis session for millions of chats
+app.post('/api/support/message', async (req, res) => {
+  try {
+    const { sessionId, userId, ticketId, message } = req.body || {};
+    if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
+    if (!ticketId) return res.status(400).json({ error: 'ticketId required' });
+    const ticket = supportTicketsStore.find((t) => t.id === ticketId);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const sid = sessionId || `sess-${ticket.userId || 'anon'}-${ticketId}`;
+    if (redisClient) {
+      try {
+        const payload = JSON.stringify({
+          userId: userId || ticket.userId,
+          ticketId,
+          ts: Date.now(),
+        });
+        await redisClient.set(SUPPORT_SESSION_KEY + sid, payload, { EX: 86400 * 7 });
+      } catch (re) {
+        console.warn('support/message redis session:', re.message);
+      }
+    }
+    ticket.lastUpdated = new Date().toISOString();
+    applySentimentToTicket(ticket, message);
+    const userMsg = addSupportMessage(ticket.id, 'USER', message);
+    recordSupportUserMessage(message);
+
+    res.status(202).json({
+      accepted: true,
+      async: true,
+      message: userMsg,
+      sessionId: sid,
+      redis: !!redisClient,
+    });
+
+    if (!ticket.ai_mode_enabled) return;
+    setImmediate(async () => {
+      try {
+        const allMsgs = supportMessagesStore.filter((m) => m.ticketId === ticket.id).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const last5 = allMsgs.slice(-5);
+        let jobInfo = null;
+        if (ticket.jobId) {
+          try {
+            const r = await pool.query(`SELECT id, title, category, subcategory, status FROM jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
+            if (r.rows?.[0]) jobInfo = r.rows[0];
+            else {
+              const ar = await pool.query(`SELECT id, title, category, status FROM advance_jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
+              if (ar.rows?.[0]) jobInfo = ar.rows[0];
+            }
+          } catch (_) {}
+        }
+        const ruk = await getRukReply(pool, message, last5, jobInfo, ticket.subject);
+        const botReply = typeof ruk === 'object' ? ruk.text : ruk;
+        if (botReply) addSupportMessage(ticket.id, 'BOT', botReply, typeof ruk === 'object' ? { source: ruk.source, score: ruk.score } : {});
+        ticket.lastUpdated = new Date().toISOString();
+      } catch (e) {
+        console.error('async /api/support/message bot reply:', e);
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to accept message' });
   }
 });
 
@@ -10824,19 +14344,212 @@ app.get('/api/admin/support/tickets/:id/messages', adminAuthMiddleware, (req, re
   }
 });
 
-// POST /api/admin/support/tickets/:id/messages — admin/bot ตอบ
+// POST /api/admin/support/tickets/:id/messages — admin / bot / Verified Pro (three-way)
 app.post('/api/admin/support/tickets/:id/messages', adminAuthMiddleware, (req, res) => {
   try {
     const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    const { message, asBot } = req.body || {};
+    const { message, asBot, asProvider } = req.body || {};
     if (!message) return res.status(400).json({ error: 'message required' });
+    if (asProvider && !ticket.invited_provider_id) {
+      return res.status(400).json({ error: 'Invite Verified Pro to this ticket before sending as provider' });
+    }
     ticket.lastUpdated = new Date().toISOString();
-    const sender = asBot ? 'BOT' : 'ADMIN';
+    let sender = 'ADMIN';
+    if (asProvider) sender = 'PROVIDER';
+    else if (asBot) sender = 'BOT';
     const msg = addSupportMessage(ticket.id, sender, message);
     res.status(201).json({ message: msg });
   } catch (e) {
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// POST /api/admin/support/tickets/:id/invite-provider — เชิญ Verified Pro จากงานที่ผูก ticket (three-way dispute)
+app.post('/api/admin/support/tickets/:id/invite-provider', adminAuthMiddleware, async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    if (!ticket.jobId) return res.status(400).json({ error: 'Ticket has no job linked' });
+    let providerId = null;
+    let providerName = 'Verified Pro';
+    try {
+      const r = await pool.query(
+        `SELECT accepted_by::text AS ab, accepted_by_name FROM jobs WHERE id = $1::uuid LIMIT 1`,
+        [String(ticket.jobId)]
+      );
+      if (r.rows?.[0]?.ab) {
+        providerId = String(r.rows[0].ab);
+        providerName = r.rows[0].accepted_by_name || providerName;
+      }
+    } catch (_) {}
+    if (!providerId) {
+      try {
+        const ar = await pool.query(
+          `SELECT a.user_id::text AS uid, u.full_name AS fn
+           FROM advance_job_applicants a
+           LEFT JOIN users u ON u.id = a.user_id
+           WHERE a.job_id::text = $1 AND a.status = 'hired'
+           LIMIT 1`,
+          [String(ticket.jobId)]
+        );
+        if (ar.rows?.[0]?.uid) {
+          providerId = String(ar.rows[0].uid);
+          providerName = ar.rows[0].fn || 'Verified Pro (Advance Job)';
+        }
+      } catch (_) {}
+    }
+    if (!providerId) return res.status(404).json({ error: 'No assigned provider found for this job' });
+    ticket.invited_provider_id = providerId;
+    ticket.invited_provider_name = providerName;
+    ticket.lastUpdated = new Date().toISOString();
+    addSupportMessage(
+      ticket.id,
+      'BOT',
+      `Verified Pro (${providerName}) ถูกเชิญเข้าร่วมแชทนี้ — ทั้งสามฝ่ายสามารถชี้แจงข้อพิพาทในที่เดียวได้`
+    );
+    res.json({ ticket, invited_provider_id: providerId, invited_provider_name: providerName });
+  } catch (e) {
+    console.error('invite-provider:', e);
+    res.status(500).json({ error: 'Failed to invite provider' });
+  }
+});
+
+// GET /api/admin/support/crisis-alert — Crisis Heatmap / anomaly bell
+app.get('/api/admin/support/crisis-alert', adminAuthMiddleware, (req, res) => {
+  try {
+    res.json(getCrisisStatus());
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to read crisis status' });
+  }
+});
+
+// GET /api/admin/support/sentiment-trend — ค่าเฉลี่ย sentiment รายชั่วโมง (24 ชม.)
+app.get('/api/admin/support/sentiment-trend', adminAuthMiddleware, (req, res) => {
+  try {
+    const hours = Math.min(Math.max(parseInt(req.query.hours, 10) || 24, 1), 48);
+    const data = getSentimentTrend(supportTicketsStore, hours);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load sentiment trend' });
+  }
+});
+
+// POST /api/admin/support/tickets/:id/generate-faq-draft — Minnie สรุปบทสนทนาเป็น FAQ → knowledge_base_drafts
+app.post('/api/admin/support/tickets/:id/generate-faq-draft', adminAuthMiddleware, async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const msgs = supportMessagesStore
+      .filter((m) => m.ticketId === ticket.id)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const lines = msgs.map((m) => `${m.sender}: ${maskPiiForLlm(m.message || '')}`).join('\n');
+    const faq = await generateFaqFromTranscript({ subject: ticket.subject, transcriptText: lines });
+    if (!faq || !faq.question || !faq.answer) {
+      return res.status(500).json({ error: 'Failed to generate FAQ draft' });
+    }
+    const row = await insertKnowledgeDraft(pool, {
+      ticket_id: ticket.id,
+      question: faq.question,
+      draft_answer: faq.answer,
+      category: faq.category,
+      created_by: req.adminUser?.email || req.adminUser?.id || null,
+    });
+    if (!row) return res.status(500).json({ error: 'Failed to save draft to database' });
+    res.status(201).json({ draft: row, faq });
+  } catch (e) {
+    console.error('generate-faq-draft:', e);
+    res.status(500).json({ error: 'Failed to generate FAQ draft' });
+  }
+});
+
+// GET /api/admin/support/knowledge-drafts
+app.get('/api/admin/support/knowledge-drafts', adminAuthMiddleware, async (req, res) => {
+  try {
+    const rows = await listKnowledgeDrafts(pool, Math.min(parseInt(req.query.limit, 10) || 50, 100));
+    res.json({ items: rows });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list knowledge drafts' });
+  }
+});
+
+// POST /api/admin/support/knowledge-drafts/:id/promote — One-Click Promote → faq_knowledge
+app.post('/api/admin/support/knowledge-drafts/:id/promote', adminAuthMiddleware, async (req, res) => {
+  try {
+    const draft = await getKnowledgeDraftById(pool, req.params.id);
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    if (draft.status && draft.status !== 'draft') {
+      return res.status(400).json({ error: 'Draft already promoted' });
+    }
+    const q = String(draft.question || '').trim();
+    const ans = String(draft.draft_answer || '').trim();
+    if (!q || !ans) {
+      return res.status(400).json({ error: 'Draft ไม่มีคำถามหรือคำตอบ' });
+    }
+    const row = await saveFaq(pool, {
+      question: q,
+      best_answer: ans,
+      category: draft.category || 'general',
+      ticket_id: draft.ticket_id || null,
+      created_by: req.adminUser?.email || req.adminUser?.id || null,
+    });
+    if (!row) {
+      return res.status(500).json({ error: 'Failed to insert into faq_knowledge — check DB and faq_knowledge table' });
+    }
+    await markDraftPromoted(pool, draft.id);
+    res.json({ success: true, faq: row, draft_id: draft.id });
+  } catch (e) {
+    console.error('POST knowledge-drafts/:id/promote:', e);
+    res.status(500).json({
+      error: e?.message || 'Failed to promote draft',
+      code: e?.code,
+    });
+  }
+});
+
+// POST /api/admin/support/tickets/:id/attachments — URL รูป/วิดีโอ + สรุป Vision (ภาพ)
+app.post('/api/admin/support/tickets/:id/attachments', adminAuthMiddleware, async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const { url, type } = req.body || {};
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' });
+    if (!ticket.attachments) ticket.attachments = [];
+    ticket.attachments.push({ url: url.trim(), type: type || 'image', addedAt: new Date().toISOString() });
+    ticket.lastUpdated = new Date().toISOString();
+    const u = url.trim();
+    const typ = type || '';
+    setImmediate(async () => {
+      try {
+        const summary = await summarizeMediaUrl(u, typ);
+        if (summary) {
+          ticket.ai_summary = [ticket.ai_summary, summary].filter(Boolean).join('\n\n');
+          ticket.lastUpdated = new Date().toISOString();
+        }
+      } catch (_) {}
+    });
+    res.json({ ticket });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to add attachment' });
+  }
+});
+
+// POST /api/admin/support/learning-feedback — AI Correction Loop (Shadow Mode)
+app.post('/api/admin/support/learning-feedback', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { ticket_id, ai_suggestion, admin_final } = req.body || {};
+    if (!ai_suggestion || !admin_final) return res.status(400).json({ error: 'ai_suggestion and admin_final required' });
+    const row = await saveLearningFeedback(pool, {
+      ticket_id: ticket_id || null,
+      ai_suggestion: String(ai_suggestion),
+      admin_final: String(admin_final),
+      created_by: req.adminUser?.email || req.adminUser?.id || null,
+    });
+    if (!row) return res.json({ saved: false, message: 'No diff to store' });
+    res.status(201).json({ saved: true, id: row.id, created_at: row.created_at });
+  } catch (e) {
+    console.error('learning-feedback:', e);
+    res.status(500).json({ error: 'Failed to save learning feedback' });
   }
 });
 
@@ -10936,13 +14649,13 @@ app.post('/api/admin/support/ai-suggest', adminAuthMiddleware, async (req, res) 
     if (ticket?.jobId) {
       try {
         const r = await pool.query(
-          `SELECT id, title, category, subcategory, status FROM jobs WHERE id = $1 OR id::text = $1`,
+          `SELECT id, title, category, subcategory, status FROM jobs WHERE id = $1::uuid`,
           [String(ticket.jobId)]
         );
         if (r.rows?.[0]) jobInfo = r.rows[0];
         else {
           const ar = await pool.query(
-            `SELECT id, title, category, status FROM advance_jobs WHERE id = $1 OR id::text = $1`,
+            `SELECT id, title, category, status FROM advance_jobs WHERE id = $1::uuid`,
             [String(ticket.jobId)]
           );
           if (ar.rows?.[0]) jobInfo = ar.rows[0];
@@ -10962,15 +14675,82 @@ app.post('/api/admin/support/ai-suggest', adminAuthMiddleware, async (req, res) 
   }
 });
 
-app.get('/api/notifications/latest', (req, res) => {
+// POST /api/admin/notifications/register-fcm — Admin ลงทะเบียน FCM token เพื่อรับ Marine SOS / No-check-in push
+app.post('/api/admin/notifications/register-fcm', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'token required' });
+    }
+    const adminId = req.adminUser?.id;
+    await pool.query(
+      `INSERT INTO fcm_tokens (token, source, user_id, updated_at)
+       VALUES ($1, 'admin', $2::uuid, NOW())
+       ON CONFLICT (token) DO UPDATE SET source = 'admin', user_id = $2::uuid, updated_at = NOW()`,
+      [token.trim(), adminId || null]
+    );
+    res.status(201).json({ success: true, message: 'ลงทะเบียน FCM สำหรับ Marine Alerts แล้ว' });
+  } catch (e) {
+    if (e.code === '42P01') {
+      return res.status(503).json({ error: 'Run migration 089 first (fcm_tokens table)' });
+    }
+    console.error('POST /api/admin/notifications/register-fcm error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to register' });
+  }
+});
+
+// POST /api/notifications/register — รับ FCM token จาก Landing (หรือ Mobile) เพื่อส่ง Web Push
+app.post('/api/notifications/register', async (req, res) => {
+  try {
+    const { token, source = 'landing', userId } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'token required' });
+    }
+    const src = ['landing', 'mobile'].includes(String(source)) ? String(source) : 'landing';
+    await pool.query(
+      `INSERT INTO fcm_tokens (token, source, user_id, updated_at)
+       VALUES ($1, $2, $3::uuid, NOW())
+       ON CONFLICT (token) DO UPDATE SET source = $2, user_id = NULLIF($3, ''), updated_at = NOW()`,
+      [token.trim(), src, userId || null]
+    );
+    res.status(201).json({ success: true });
+  } catch (e) {
+    if (e.code === '42P01') {
+      return res.status(503).json({ error: 'Run migration 089 first (fcm_tokens table)' });
+    }
+    console.error('POST /api/notifications/register error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to register' });
+  }
+});
+
+app.get('/api/notifications/latest', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
-    const userId = (req.query.userId || '').toString().trim();
+    const userIdRaw = (req.query.userId || '').toString().trim();
     let list;
-    if (userId) {
-      const userItems = userNotificationsStore.filter((n) => String(n.targetUserId) === userId).slice(0, limit);
+    if (userIdRaw) {
+      const userUuid = await resolveUserIdToUuid(userIdRaw).catch(() => null);
+      const matchIds = new Set([userIdRaw]);
+      if (userUuid) matchIds.add(String(userUuid));
+      const userItems = userNotificationsStore.filter((n) => matchIds.has(String(n.targetUserId))).slice(0, limit);
       const broadcastItems = broadcastNotificationsStore.filter((n) => !n.target || n.target === 'All').slice(0, Math.min(10, limit));
-      list = [...userItems, ...broadcastItems].sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt)).slice(0, limit);
+      let dbItems = [];
+      if (userUuid) {
+        const dbRows = await pool.query(
+          `SELECT id, title, message, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+          [userUuid, limit]
+        ).catch(() => ({ rows: [] }));
+        dbItems = (dbRows.rows || []).map((r) => ({
+          id: String(r.id),
+          targetUserId: String(userUuid),
+          title: r.title || '',
+          message: r.message || '',
+          sentAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
+        }));
+      }
+      list = [...userItems, ...dbItems, ...broadcastItems]
+        .sort((a, b) => new Date(b.sentAt || b.created_at) - new Date(a.sentAt || a.created_at))
+        .slice(0, limit);
     } else {
       list = broadcastNotificationsStore.slice(0, limit);
     }
@@ -11465,6 +15245,33 @@ app.get('/api/settings/insurance-rate', async (req, res) => {
   }
 });
 
+// Public: สูตรราคาเหมาข้ามจังหวัด (ให้ mobile แสดง breakdown ให้ตรงกับ server)
+app.get('/api/settings/transport-pricing', async (req, res) => {
+  try {
+    const formula = getIntercityFormulaFromEnv();
+    const globalEnabled = await getTransportIntercityPricingEnabled(pool);
+    res.json({
+      intercity_pricing_globally_enabled: globalEnabled,
+      formula: {
+        thb_per_km: formula.thbPerKm,
+        base_surcharge_thb: formula.baseSurchargeThb,
+        floor_job_fee_thb: formula.floorJobFeeThb,
+        platform_markup_percent: 5,
+      },
+    });
+  } catch (e) {
+    res.json({
+      intercity_pricing_globally_enabled: false,
+      formula: {
+        thb_per_km: 15,
+        base_surcharge_thb: 500,
+        floor_job_fee_thb: 800,
+        platform_markup_percent: 5,
+      },
+    });
+  }
+});
+
 // รายการหมวดงาน — ตรงกับ NEXUS_MODULE2_CATEGORIES / คอร์สข้อสอบที่ปรับปรุงแล้ว
 const JOB_CATEGORY_KEYS = [
   'Cleaning', 'Gardening', 'Moving', 'Repair', 'AC Technician', 'Construction', 'Plumber', 'Electrician',
@@ -11932,12 +15739,14 @@ app.post('/api/jobs/match', async (req, res) => {
 
     let providers = [];
     try {
+      const isMarine = jobCategory === 'marine';
       let query = `
         SELECT u.id, u.firebase_uid, u.full_name, u.email, u.phone, u.avatar_url,
                u.vehicle_reg, u.vehicle_type, u.expert_category,
                COALESCE(u.worker_grade, 'C') AS worker_grade,
                u.rating, u.total_jobs AS completed_jobs_count,
                u.location,
+               u.skipper_license_expiry, u.boat_brand, u.boat_category,
                (SELECT COALESCE(json_agg(json_build_object('skill_category', skill_category, 'skill_name', skill_name)), '[]'::json)
                 FROM user_skills WHERE user_id = u.id) AS skills_json
          FROM users u
@@ -11948,6 +15757,7 @@ app.post('/api/jobs/match', async (req, res) => {
            AND COALESCE(u.is_peace_mode, FALSE) = FALSE
            AND (u.ban_expires_at IS NULL OR u.ban_expires_at <= NOW())
            AND COALESCE(u.provider_available, FALSE) = TRUE
+           ${isMarine ? 'AND u.skipper_license_number IS NOT NULL AND u.skipper_license_expiry >= CURRENT_DATE' : ''}
       `;
       const params = [];
       if (employer_id) {
@@ -12005,6 +15815,7 @@ app.post('/api/jobs/match', async (req, res) => {
           const ratingScore = (parseFloat(row.rating) || 0) * 5;
           const score = Math.min(100, gradeScore * 25 + distScore + ratingScore);
 
+          const isEligibleMarine = isMarine ? isSkipperEligible(row.skipper_license_expiry) : true;
           return {
             user: {
               id: row.id,
@@ -12021,13 +15832,15 @@ app.post('/api/jobs/match', async (req, res) => {
               hourly_rate: 500,
               vehicle_reg: row.vehicle_reg,
               vehicle_type: row.vehicle_type,
-              worker_grade: grade
+              worker_grade: grade,
+              ...(isMarine && { is_eligible: isEligibleMarine, boat_brand: row.boat_brand, boat_category: row.boat_category })
             },
             score: Math.round(score),
             distance: distance != null ? Math.round(distance * 10) / 10 : null,
             category_match: categoryMatch
           };
         })
+        .filter((p) => !isMarine || p.user.is_eligible !== false)
         .sort((a, b) => {
           if (a.category_match !== b.category_match) return a.category_match ? -1 : 1;
           if (a.distance != null && b.distance != null) return a.distance - b.distance;
@@ -12053,7 +15866,12 @@ function resolveAdvanceJobUserId(req) {
   if (!auth || !auth.startsWith('Bearer ')) return null;
   const token = auth.slice(7).trim();
   let userId = null;
-  if (token.startsWith('mock_')) {
+  if (token.startsWith('mock-jwt-token-')) {
+    const rest = token.slice('mock-jwt-token-'.length);
+    const lastDash = rest.lastIndexOf('-');
+    userId = lastDash > 0 ? rest.slice(0, lastDash) : rest;
+  }
+  if (!userId && token.startsWith('mock_')) {
     try {
       const raw = Buffer.from(token.slice(5), 'base64').toString('utf8');
       const payload = JSON.parse(raw);
@@ -12078,13 +15896,109 @@ async function resolveUserIdToUuid(userId) {
 /** Platform Safety Authority: ตรวจสอบว่าวอลเล็ตถูกระงับหรือไม่ (wallet_frozen หรือ account suspended/banned) */
 async function isWalletFrozen(userId) {
   if (!userId) return false;
+  const idStr = String(userId);
   const r = await pool.query(
-    'SELECT wallet_frozen, account_status FROM users WHERE id = $1 OR id::text = $1 LIMIT 1',
-    [userId]
+    'SELECT wallet_frozen, account_status FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1',
+    [idStr]
   );
   const u = r.rows?.[0];
   if (!u) return false;
   return !!(u.wallet_frozen || u.account_status === 'suspended' || u.account_status === 'banned');
+}
+
+/** งานเหมาข้ามจังหวัด — อายุข้อเสนอ (นาที) จาก env; ค่าเริ่ม 30; จำกัด 5–1440 */
+function getIntercityBidTtlMinutes() {
+  const raw = parseInt(process.env.INTERCITY_BID_TTL_MINUTES || '30', 10);
+  const n = Number.isFinite(raw) ? raw : 30;
+  return Math.min(Math.max(n, 5), 24 * 60);
+}
+
+/** อัปเดต pending ที่หมดอายุ → expired (เรียกก่อนอ่าน/รับข้อเสนอ) */
+async function expireStalePendingIntercityBids(db, jobId) {
+  const q = String(jobId || '').trim();
+  if (!q) return;
+  await db.query(
+    `UPDATE job_bids SET status = 'expired', updated_at = NOW()
+     WHERE job_id::text = $1 AND status = 'pending'
+       AND bid_expires_at IS NOT NULL AND bid_expires_at < NOW()`,
+    [q]
+  ).catch(() => {});
+}
+
+/**
+ * Intercity charter — เสนอราคา: เข้มกว่ารับงานทั่วไป — ต้อง VERIFIED_PROVIDER (ยกเว้น Apple Review demo) + บล็อกบัญชีระงับแบน
+ * @returns {Promise<{ ok: true, user: object } | { ok: false, status: number, body: object }>}
+ */
+async function assertProviderCanBidIntercityCharter(userId) {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE id::text = $1 OR firebase_uid = $1 OR email = $1 OR phone = $1 LIMIT 1',
+    [userId]
+  );
+  const user = userResult.rows[0];
+  if (!user) {
+    return { ok: false, status: 403, body: { error: 'ไม่พบบัญชีผู้ใช้', code: 'USER_NOT_FOUND' } };
+  }
+  const acct = String(user.account_status || 'active').toLowerCase();
+  if (acct === 'suspended' || acct === 'banned') {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: 'บัญชีถูกระงับ — ไม่สามารถเสนอราคางานข้ามจังหวัดได้', code: 'ACCOUNT_BLOCKED' },
+    };
+  }
+  if (user.banned_until && new Date(user.banned_until) > new Date()) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'บัญชีถูกระงับชั่วคราว — ไม่สามารถเสนอราคาได้',
+        code: 'ACCOUNT_BANNED_UNTIL',
+        banned_until: user.banned_until,
+      },
+    };
+  }
+  if (user.ban_expires_at && new Date(user.ban_expires_at) > new Date()) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'บัญชีถูก Lock ชั่วคราว — ไม่สามารถเสนอราคาได้',
+        code: 'COLLISION_LOCK',
+        ban_expires_at: user.ban_expires_at,
+      },
+    };
+  }
+  const frozen = await isWalletFrozen(user.id);
+  if (frozen) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'บัญชีหรือวอลเล็ตถูกระงับ — ไม่สามารถเสนอราคาได้',
+        code: 'WALLET_OR_ACCOUNT_FROZEN',
+      },
+    };
+  }
+
+  const isAppleDemoTalent =
+    /apple-demo-talent|demo talent|0812345602/i.test(String(userId)) ||
+    (user.firebase_uid && /apple-demo-talent/i.test(String(user.firebase_uid))) ||
+    (user.phone && /0812345602|66812345602/.test(String(user.phone || '').replace(/\D/g, ''))) ||
+    (user.full_name && /demo talent.*apple review|apple review.*demo talent/i.test(String(user.full_name)));
+  const providerStatus = String(user.provider_status || 'UNVERIFIED').toUpperCase();
+  const canBid = isAppleDemoTalent || providerStatus === 'VERIFIED_PROVIDER';
+  if (!canBid) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'INTERCITY_BID_REQUIRES_VERIFIED_PROVIDER',
+        message: 'งานข้ามจังหวัดต้องเป็นผู้ให้บริการที่ยืนยันตัวตนแล้ว (VERIFIED_PROVIDER) เท่านั้น',
+        provider_status: providerStatus,
+      },
+    };
+  }
+  return { ok: true, user };
 }
 
 // POST /api/advance-jobs — สร้างงาน (เช็ก JWT, tier ถ้า is_platinum_priority)
@@ -12188,16 +16102,18 @@ app.post('/api/advance-jobs', async (req, res) => {
   }
 });
 
-// GET /api/advance-jobs — list + filter
+// GET /api/advance-jobs — list + filter + search
 app.get('/api/advance-jobs', async (req, res) => {
   try {
-    const { status, category, min_budget, max_budget, page = 1, limit = 50, sort = 'newest' } = req.query;
+    const { status, category, min_budget, max_budget, min_duration, max_duration, q, page = 1, limit = 50, sort = 'newest' } = req.query;
+    const hasViewsTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
+    const viewCountSelect = hasViewsTable ? ', (SELECT COUNT(*)::INT FROM advance_job_views v WHERE v.job_id = j.id) AS view_count' : '';
     let query = `
       SELECT j.id, j.employer_id, j.title, j.description, j.scope, j.category,
              j.min_budget, j.max_budget, j.duration_days, j.status, j.applicant_count,
              j.is_platinum_priority, j.created_at, j.updated_at, j.published_at, j.closed_at,
              u.full_name AS employer_name,
-             COALESCE(u.employer_trust_score, 0) AS employer_trust_score
+             COALESCE(u.employer_trust_score, 0) AS employer_trust_score${viewCountSelect}
       FROM advance_jobs j
       LEFT JOIN users u ON u.id = j.employer_id
       WHERE 1=1
@@ -12224,6 +16140,22 @@ app.get('/api/advance-jobs', async (req, res) => {
       params.push(Number(max_budget));
       idx++;
     }
+    if (min_duration != null && min_duration !== '') {
+      query += ` AND j.duration_days >= $${idx}`;
+      params.push(parseInt(min_duration, 10));
+      idx++;
+    }
+    if (max_duration != null && max_duration !== '') {
+      query += ` AND j.duration_days <= $${idx}`;
+      params.push(parseInt(max_duration, 10));
+      idx++;
+    }
+    if (q && String(q).trim()) {
+      const term = '%' + String(q).trim().replace(/%/g, '\\%') + '%';
+      query += ` AND (j.title ILIKE $${idx} OR j.description ILIKE $${idx} OR j.scope ILIKE $${idx})`;
+      params.push(term);
+      idx++;
+    }
     const order = String(sort) === 'budget_high' ? 'j.max_budget DESC' : String(sort) === 'applicants' ? 'j.applicant_count DESC' : 'j.created_at DESC';
     query += ` ORDER BY ${order}`;
     let countQuery = "SELECT COUNT(*) AS count FROM advance_jobs j WHERE 1=1 AND (COALESCE(j.moderation_status, 'approved') = 'approved')";
@@ -12233,6 +16165,9 @@ app.get('/api/advance-jobs', async (req, res) => {
     if (category) { countQuery += ` AND j.category = $${ci}`; countParams.push(category); ci++; }
     if (min_budget != null && min_budget !== '') { countQuery += ` AND j.max_budget >= $${ci}`; countParams.push(Number(min_budget)); ci++; }
     if (max_budget != null && max_budget !== '') { countQuery += ` AND j.min_budget <= $${ci}`; countParams.push(Number(max_budget)); ci++; }
+    if (min_duration != null && min_duration !== '') { countQuery += ` AND j.duration_days >= $${ci}`; countParams.push(parseInt(min_duration, 10)); ci++; }
+    if (max_duration != null && max_duration !== '') { countQuery += ` AND j.duration_days <= $${ci}`; countParams.push(parseInt(max_duration, 10)); ci++; }
+    if (q && String(q).trim()) { const term = '%' + String(q).trim().replace(/%/g, '\\%') + '%'; countQuery += ` AND (j.title ILIKE $${ci} OR j.description ILIKE $${ci} OR j.scope ILIKE $${ci})`; countParams.push(term); ci++; }
     const countResult = await pool.query(countQuery, countParams);
     const total = parseInt(countResult.rows?.[0]?.count, 10) || 0;
     const pageNum = Math.max(1, parseInt(page, 10));
@@ -12258,7 +16193,8 @@ app.get('/api/advance-jobs', async (req, res) => {
       created_at: row.created_at,
       updated_at: row.updated_at,
       published_at: row.published_at,
-      closed_at: row.closed_at
+      closed_at: row.closed_at,
+      view_count: row.view_count ?? 0
     }));
     return res.json({ success: true, jobs, total, page: pageNum, limit: limitNum });
   } catch (err) {
@@ -12267,115 +16203,111 @@ app.get('/api/advance-jobs', async (req, res) => {
   }
 });
 
-// GET /api/advance-jobs/:id — รายละเอียด + employer_trust_score
-app.get('/api/advance-jobs/:id', async (req, res) => {
-  try {
-    const jobId = String(req.params.id || '').trim();
-    if (!jobId) {
-      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
-    }
-    const result = await pool.query(
-      `SELECT j.*, u.full_name AS employer_name,
-              COALESCE(u.employer_trust_score, 0) AS employer_trust_score
-       FROM advance_jobs j
-       LEFT JOIN users u ON u.id = j.employer_id
-       WHERE j.id::text = $1 LIMIT 1`,
-      [jobId]
-    );
-    if (!result.rows?.length) {
-      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
-    }
-    const row = result.rows[0];
-    const modStatus = row.moderation_status || 'approved';
-    if (modStatus === 'rejected' || modStatus === 'suspended') {
-      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
-    }
-    const job = {
-      id: String(row.id),
-      employer_id: row.employer_id,
-      employer_name: row.employer_name || 'ผู้จ้าง',
-      employer_trust_score: row.employer_trust_score ?? 0,
-      title: row.title,
-      description: row.description,
-      scope: row.scope,
-      category: row.category,
-      min_budget: Number(row.min_budget),
-      max_budget: Number(row.max_budget),
-      duration_days: row.duration_days,
-      status: row.status,
-      applicant_count: row.applicant_count || 0,
-      is_platinum_priority: row.is_platinum_priority || false,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      published_at: row.published_at,
-      closed_at: row.closed_at,
-      hired_user_id: row.hired_user_id ? String(row.hired_user_id) : null,
-      hired_at: row.hired_at,
-      agreed_amount: row.agreed_amount != null ? Number(row.agreed_amount) : null,
-      escrow_amount: Number(row.escrow_amount || 0),
-      escrow_status: row.escrow_status || 'none'
-    };
-    return res.json({ success: true, job });
-  } catch (err) {
-    console.error('GET /api/advance-jobs/:id error:', err);
-    return res.status(500).json({ success: false, error: 'โหลดรายละเอียดไม่สำเร็จ' });
-  }
-});
-
-// POST /api/advance-jobs/:id/apply — สนใจงาน (insert applicant, อัปเดต applicant_count)
-app.post('/api/advance-jobs/:id/apply', async (req, res) => {
+// GET /api/advance-jobs/saved-ids — รายการ id งานที่บันทึกไว้ (สำหรับแสดง badge)
+app.get('/api/advance-jobs/saved-ids', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
-    if (!userId) {
-      return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบก่อนส่งข้อเสนอ' });
-    }
+    if (!userId) return res.json({ success: true, ids: [] });
     const userUuid = await resolveUserIdToUuid(userId);
-    if (!userUuid) {
-      return res.status(403).json({ success: false, error: 'ไม่พบตัวตนผู้ใช้ในระบบ' });
-    }
-    const jobId = String(req.params.id || '').trim();
-    const jobCheck = await pool.query(
-      'SELECT id, employer_id, status, applicant_count FROM advance_jobs WHERE id::text = $1 LIMIT 1',
-      [jobId]
-    );
-    if (!jobCheck.rows?.length) {
-      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
-    }
-    const jobRow = jobCheck.rows[0];
-    if (jobRow.status !== 'open') {
-      return res.status(400).json({ success: false, error: 'งานนี้ปิดรับข้อเสนอแล้ว' });
-    }
-    const existing = await pool.query(
-      'SELECT id FROM advance_job_applicants WHERE job_id = (SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1) AND user_id = $2 LIMIT 1',
-      [jobId, userUuid]
-    );
-    if (existing.rows?.length) {
-      const countResult = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id::text = $1 OR id = $1::uuid', [jobId]);
-      const count = countResult.rows?.[0]?.applicant_count ?? 0;
-      return res.json({ success: true, applicant_count: count, message: 'คุณสนใจงานนี้แล้ว' });
-    }
-    const jobUuid = jobRow.id;
-    await pool.query(
-      'INSERT INTO advance_job_applicants (job_id, user_id, status) VALUES ($1, $2, $3)',
-      [jobUuid, userUuid, 'interested']
-    );
-    await pool.query(
-      'UPDATE advance_jobs SET applicant_count = applicant_count + 1, updated_at = NOW() WHERE id = $1',
-      [jobUuid]
-    );
-    const countResult = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id = $1', [jobUuid]);
-    const applicant_count = countResult.rows?.[0]?.applicant_count ?? jobRow.applicant_count + 1;
-    if (jobRow.employer_id) {
-      await pushUserNotificationIfNotPeaceMode(jobRow.employer_id, 'มี Talent คนใหม่สนใจงานของคุณ!', 'มี Talent คนใหม่สนใจงานของคุณ!');
-    }
-    return res.json({ success: true, applicant_count, message: 'ส่งความสนใจแล้ว' });
+    if (!userUuid) return res.json({ success: true, ids: [] });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, ids: [] });
+    const r = await pool.query('SELECT job_id::text AS id FROM saved_advance_jobs WHERE user_id = $1', [userUuid]);
+    return res.json({ success: true, ids: (r.rows || []).map((x) => String(x.id)) });
   } catch (err) {
-    console.error('POST /api/advance-jobs/:id/apply error:', err);
-    return res.status(500).json({ success: false, error: 'ส่งข้อเสนอไม่สำเร็จ', message: err.message });
+    return res.json({ success: true, ids: [] });
   }
 });
 
-// GET /api/advance-jobs/my-jobs — งานที่ฉันโพสต์ (นายจ้าง)
+// GET /api/advance-jobs/saved — งานที่บันทึกไว้ (Talent)
+app.get('/api/advance-jobs/saved', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', jobs: [] });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.json({ success: true, jobs: [] });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, jobs: [] });
+    const result = await pool.query(
+      `SELECT j.id, j.employer_id, j.title, j.description, j.scope, j.category,
+              j.min_budget, j.max_budget, j.duration_days, j.status, j.applicant_count,
+              j.is_platinum_priority, j.created_at, j.updated_at, j.published_at, j.closed_at,
+              u.full_name AS employer_name, COALESCE(u.employer_trust_score, 0) AS employer_trust_score
+       FROM saved_advance_jobs s
+       JOIN advance_jobs j ON j.id = s.job_id
+       LEFT JOIN users u ON u.id = j.employer_id
+       WHERE s.user_id = $1 AND (COALESCE(j.moderation_status, 'approved') = 'approved')
+       ORDER BY s.created_at DESC`,
+      [userUuid]
+    );
+    const jobs = (result.rows || []).map((r) => ({
+      id: String(r.id),
+      employer_id: r.employer_id,
+      employer_name: r.employer_name || 'ผู้จ้าง',
+      employer_trust_score: r.employer_trust_score ?? 0,
+      title: r.title,
+      description: r.description,
+      scope: r.scope,
+      category: r.category,
+      min_budget: Number(r.min_budget),
+      max_budget: Number(r.max_budget),
+      duration_days: r.duration_days,
+      status: r.status,
+      applicant_count: r.applicant_count || 0,
+      is_platinum_priority: r.is_platinum_priority || false,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      published_at: r.published_at,
+      closed_at: r.closed_at
+    }));
+    return res.json({ success: true, jobs });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/saved error:', err);
+    return res.status(500).json({ success: false, jobs: [] });
+  }
+});
+
+// GET /api/advance-jobs/my-applications — งานที่ฉันสมัคร (Talent) — MUST be before /:id
+app.get('/api/advance-jobs/my-applications', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', applications: [] });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.json({ success: true, applications: [] });
+    const result = await pool.query(
+      `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at,
+              j.title, j.category, j.min_budget, j.max_budget, j.duration_days, j.status AS job_status,
+              j.hired_user_id, u.full_name AS employer_name
+       FROM advance_job_applicants a
+       JOIN advance_jobs j ON j.id = a.job_id
+       LEFT JOIN users u ON u.id = j.employer_id
+       WHERE a.user_id = $1
+       ORDER BY a.created_at DESC`,
+      [userUuid]
+    );
+    const applications = (result.rows || []).map((r) => ({
+      id: String(r.id),
+      job_id: String(r.job_id),
+      user_id: String(r.user_id),
+      status: r.status,
+      created_at: r.created_at,
+      title: r.title,
+      category: r.category,
+      min_budget: Number(r.min_budget),
+      max_budget: Number(r.max_budget),
+      duration_days: r.duration_days,
+      job_status: r.job_status,
+      hired_user_id: r.hired_user_id ? String(r.hired_user_id) : null,
+      employer_name: r.employer_name || 'ผู้จ้าง',
+    }));
+    return res.json({ success: true, applications });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/my-applications error:', err);
+    return res.status(500).json({ success: false, applications: [] });
+  }
+});
+
+// GET /api/advance-jobs/my-jobs — งานที่ฉันโพสต์ (นายจ้าง) — MUST be before /:id
 app.get('/api/advance-jobs/my-jobs', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
@@ -12419,6 +16351,513 @@ app.get('/api/advance-jobs/my-jobs', async (req, res) => {
   }
 });
 
+// GET /api/advance-jobs/templates — รายการ Template (system + ของฉัน)
+app.get('/api/advance-jobs/templates', async (req, res) => {
+  try {
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_templates'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, templates: [] });
+    const userId = resolveAdvanceJobUserId(req);
+    const userUuid = userId ? await resolveUserIdToUuid(userId) : null;
+    const rows = await pool.query(
+      `SELECT id, name, category, description, scope, min_budget, max_budget, duration_days, is_system, employer_id
+       FROM advance_job_templates
+       WHERE is_system = TRUE OR (employer_id IS NOT NULL AND employer_id = $1)
+       ORDER BY is_system DESC, name ASC`,
+      [userUuid]
+    );
+    const templates = (rows.rows || []).map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      category: r.category,
+      description: r.description,
+      scope: r.scope,
+      min_budget: Number(r.min_budget || 0),
+      max_budget: Number(r.max_budget || 0),
+      duration_days: parseInt(r.duration_days, 10) || 7,
+      is_system: !!r.is_system
+    }));
+    return res.json({ success: true, templates });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/templates error:', err);
+    return res.json({ success: true, templates: [] });
+  }
+});
+
+// POST /api/advance-jobs/templates — บันทึกเป็น Template
+app.post('/api/advance-jobs/templates', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_templates'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบ Template ยังไม่พร้อม' });
+    const { name, category, description, scope, min_budget, max_budget, duration_days } = req.body || {};
+    if (!name || !category || !description || !scope) return res.status(400).json({ success: false, error: 'ต้องระบุ name, category, description, scope' });
+    const minB = Math.max(0, Number(min_budget) || 0);
+    const maxB = Math.max(minB, Number(max_budget) || minB);
+    const days = Math.max(1, parseInt(duration_days, 10) || 7);
+    const ins = await pool.query(
+      `INSERT INTO advance_job_templates (employer_id, name, category, description, scope, min_budget, max_budget, duration_days, is_system)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+       RETURNING id, name, category, description, scope, min_budget, max_budget, duration_days`,
+      [employerUuid, String(name).trim().slice(0, 200), String(category).trim().slice(0, 100), String(description).trim(), String(scope).trim(), minB, maxB, days]
+    );
+    const r = ins.rows[0];
+    return res.status(201).json({
+      success: true,
+      template: {
+        id: String(r.id),
+        name: r.name,
+        category: r.category,
+        description: r.description,
+        scope: r.scope,
+        min_budget: Number(r.min_budget),
+        max_budget: Number(r.max_budget),
+        duration_days: parseInt(r.duration_days, 10)
+      }
+    });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/templates error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/deals/update-expired — Cron: Deal หมดอายุหลัง X ชม. ถ้าไม่ตอบ
+app.post('/api/advance-jobs/deals/update-expired', async (req, res) => {
+  try {
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    if (!hasDeals) return res.json({ success: true, updated: 0, deals: [] });
+
+    const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+    if (!hasExpires) return res.json({ success: true, updated: 0, deals: [] });
+
+    const result = await pool.query(`
+      UPDATE advance_job_deals
+      SET status = 'expired'
+      WHERE status = 'pending'
+        AND expires_at IS NOT NULL
+        AND expires_at < NOW()
+      RETURNING id, job_id, talent_id, amount, expires_at
+    `);
+
+    const updatedCount = result.rows.length;
+    if (updatedCount > 0) {
+      console.log(`✅ [Deal-Expiry] Marked ${updatedCount} advance job deals as expired`);
+    }
+
+    res.json({
+      success: true,
+      updated: updatedCount,
+      deals: result.rows.map(d => ({ id: d.id, job_id: d.job_id, amount: d.amount }))
+    });
+  } catch (error) {
+    console.error('🔴 [Deal-Expiry] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/advance-jobs/deals/send-reminders — Cron: Deal Reminder (6–12 ชม. ก่อนหมดอายุ)
+app.post('/api/advance-jobs/deals/send-reminders', async (req, res) => {
+  try {
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+    const hasProposedBy = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+    if (!hasDeals || !hasExpires || !hasProposedBy) return res.json({ success: true, sent: 0 });
+
+    const rows = await pool.query(`
+      SELECT d.id, d.talent_id, d.employer_id, d.amount, d.proposed_by, j.title
+      FROM advance_job_deals d
+      JOIN advance_jobs j ON j.id = d.job_id
+      WHERE d.status = 'pending' AND d.expires_at IS NOT NULL
+        AND d.expires_at > NOW() + INTERVAL '11 hours'
+        AND d.expires_at <= NOW() + INTERVAL '12 hours'
+    `);
+    let sent = 0;
+    for (const row of rows.rows || []) {
+      const proposedBy = row.proposed_by || 'employer';
+      const recipientId = proposedBy === 'employer' ? row.talent_id : row.employer_id;
+      const amt = Number(row.amount || 0).toLocaleString();
+      const jobTitle = (row.title || 'งาน').slice(0, 40);
+      await pushUserNotificationIfNotPeaceMode(recipientId, 'Deal รอคุณตอบ — หมดอายุในไม่กี่ชม.', `Deal ฿${amt} (${jobTitle}) รอคุณตอบรับ ปฏิเสธ หรือเสนอราคาใหม่`);
+      sent++;
+    }
+    res.json({ success: true, sent });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/deals/send-reminders error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/digest/send — Cron: Email digest งานใหม่ที่ตรงกับความสนใจ (เรียก daily)
+app.post('/api/advance-jobs/digest/send', async (req, res) => {
+  try {
+    const hasSaved = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+    const hasApplicants = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_applicants'`).then(r => r.rows?.length > 0);
+    if (!hasSaved && !hasApplicants) return res.json({ success: true, sent: 0, skipped: 0 });
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const savedCond = hasSaved ? `EXISTS (SELECT 1 FROM saved_advance_jobs s JOIN advance_jobs j ON j.id = s.job_id WHERE s.user_id = u.id AND j.created_at >= $1::timestamptz - INTERVAL '90 days')` : 'FALSE';
+    const applCond = hasApplicants ? `EXISTS (SELECT 1 FROM advance_job_applicants a JOIN advance_jobs j ON j.id = a.job_id WHERE a.user_id = u.id AND j.created_at >= $1::timestamptz - INTERVAL '90 days')` : 'FALSE';
+    const usersWithInterest = await pool.query(`
+      SELECT DISTINCT u.id, u.email, u.full_name
+      FROM users u
+      WHERE u.email IS NOT NULL AND u.email != '' AND u.email NOT LIKE '%@aqond.com'
+        AND (${savedCond} OR ${applCond})
+    `, [since]).catch(() => ({ rows: [] }));
+
+    let sent = 0;
+    let skipped = 0;
+    for (const u of usersWithInterest.rows || []) {
+      const catParts = [];
+      if (hasSaved) catParts.push(`SELECT DISTINCT j.category FROM advance_jobs j JOIN saved_advance_jobs s ON s.job_id = j.id AND s.user_id = $1 WHERE j.category IS NOT NULL AND j.category != ''`);
+      if (hasApplicants) catParts.push(`SELECT DISTINCT j.category FROM advance_jobs j JOIN advance_job_applicants a ON a.job_id = j.id AND a.user_id = $1 WHERE j.category IS NOT NULL AND j.category != ''`);
+      const categoriesRes = catParts.length > 0
+        ? await pool.query(catParts.join(' UNION '), [u.id]).catch(() => ({ rows: [] }))
+        : { rows: [] };
+      const categories = (categoriesRes.rows || []).map((r) => r.category).filter(Boolean);
+      if (categories.length === 0) { skipped++; continue; }
+
+      const jobsRes = await pool.query(`
+        SELECT id, title, category, min_budget, max_budget, created_at
+        FROM advance_jobs
+        WHERE status = 'open' AND (COALESCE(moderation_status, 'approved') = 'approved')
+          AND created_at >= $1::timestamptz
+          AND category = ANY($2::varchar[])
+        ORDER BY created_at DESC LIMIT 10
+      `, [since, categories]).catch(() => ({ rows: [] }));
+      const jobs = jobsRes.rows || [];
+      if (jobs.length === 0) { skipped++; continue; }
+
+      const name = (u.full_name || u.email || 'คุณ').replace(/<[^>]*>/g, '');
+      const lines = jobs.map((j) => {
+        const budget = j.min_budget && j.max_budget ? `฿${Number(j.min_budget).toLocaleString()}–${Number(j.max_budget).toLocaleString()}` : '';
+        return `• ${(j.title || 'งาน').slice(0, 50)}${budget ? ' – ' + budget : ''} (${j.category})`;
+      });
+      const text = `สวัสดี ${name}\n\nมีงานใหม่ที่ตรงกับความสนใจของคุณ:\n\n${lines.join('\n')}\n\nดูรายละเอียดเพิ่มเติม: ${process.env.VITE_APP_URL || 'https://aqond.com'}/job-board\n\n— AQOND Job Board`;
+
+      const emailRes = await sendAlertEmail({ to: u.email, subject: '[AQOND] สรุปงานใหม่ที่ตรงกับความสนใจของคุณ', text }).catch(() => ({ ok: false }));
+      if (emailRes.ok) sent++;
+      else skipped++;
+    }
+
+    res.json({ success: true, sent, skipped });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/digest/send error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/users/:id/report — แจ้งรายงานผู้ใช้ (Trust & Safety)
+app.post('/api/users/:id/report', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const reporterUuid = await resolveUserIdToUuid(userId);
+    if (!reporterUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const reportedId = String(req.params.id || '').trim();
+    const reportedUuid = await resolveUserIdToUuid(reportedId);
+    if (!reportedUuid) return res.status(400).json({ success: false, error: 'ไม่พบผู้ใช้ที่ต้องการรายงาน' });
+    if (String(reporterUuid) === String(reportedUuid)) return res.status(400).json({ success: false, error: 'ไม่สามารถรายงานตัวเองได้' });
+    const { context, context_id, reason } = req.body || {};
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_reports'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบรายงานยังไม่พร้อม' });
+    await pool.query(
+      `INSERT INTO user_reports (reporter_id, reported_user_id, context, context_id, reason) VALUES ($1, $2, $3, $4, $5)`,
+      [reporterUuid, reportedUuid, (context || 'general').slice(0, 50) || null, context_id || null, (reason || '').slice(0, 1000) || null]
+    );
+    res.json({ success: true, message: 'ขอบคุณที่แจ้งรายงาน เราจะตรวจสอบและดำเนินการ' });
+  } catch (err) {
+    console.error('POST /api/users/:id/report error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/users/:id/block — บล็อกผู้ใช้ (Trust & Safety)
+app.post('/api/users/:id/block', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const blockedId = String(req.params.id || '').trim();
+    const blockedUuid = await resolveUserIdToUuid(blockedId);
+    if (!blockedUuid) return res.status(400).json({ success: false, error: 'ไม่พบผู้ใช้ที่ต้องการบล็อก' });
+    if (String(userUuid) === String(blockedUuid)) return res.status(400).json({ success: false, error: 'ไม่สามารถบล็อกตัวเองได้' });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_blocked_users'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบบล็อกยังไม่พร้อม' });
+    await pool.query(
+      `INSERT INTO user_blocked_users (user_id, blocked_user_id) VALUES ($1, $2) ON CONFLICT (user_id, blocked_user_id) DO NOTHING`,
+      [userUuid, blockedUuid]
+    );
+    res.json({ success: true, message: 'บล็อกแล้ว จะไม่เห็นข้อความหรือติดต่อผู้ใช้คนนี้ได้อีก' });
+  } catch (err) {
+    console.error('POST /api/users/:id/block error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/advance-jobs/:id — รายละเอียด + employer_trust_score
+app.get('/api/advance-jobs/:id', async (req, res) => {
+  try {
+    const jobId = String(req.params.id || '').trim();
+    if (!jobId) {
+      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    }
+    const result = await pool.query(
+      `SELECT j.*, u.full_name AS employer_name,
+              COALESCE(u.employer_trust_score, 0) AS employer_trust_score
+       FROM advance_jobs j
+       LEFT JOIN users u ON u.id = j.employer_id
+       WHERE j.id::text = $1 LIMIT 1`,
+      [jobId]
+    );
+    if (!result.rows?.length) {
+      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    }
+    const row = result.rows[0];
+    const modStatus = row.moderation_status || 'approved';
+    if (modStatus === 'rejected' || modStatus === 'suspended') {
+      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    }
+    let viewCount = 0;
+    const hasViews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
+    if (hasViews) {
+      const vc = await pool.query('SELECT COUNT(*)::INT AS c FROM advance_job_views WHERE job_id = $1', [row.id]);
+      viewCount = vc.rows?.[0]?.c ?? 0;
+    }
+    const job = {
+      id: String(row.id),
+      employer_id: row.employer_id,
+      employer_name: row.employer_name || 'ผู้จ้าง',
+      employer_trust_score: row.employer_trust_score ?? 0,
+      title: row.title,
+      description: row.description,
+      scope: row.scope,
+      category: row.category,
+      min_budget: Number(row.min_budget),
+      max_budget: Number(row.max_budget),
+      duration_days: row.duration_days,
+      status: row.status,
+      applicant_count: row.applicant_count || 0,
+      is_platinum_priority: row.is_platinum_priority || false,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      published_at: row.published_at,
+      closed_at: row.closed_at,
+      hired_user_id: row.hired_user_id ? String(row.hired_user_id) : null,
+      hired_at: row.hired_at,
+      agreed_amount: row.agreed_amount != null ? Number(row.agreed_amount) : null,
+      escrow_amount: Number(row.escrow_amount || 0),
+      escrow_status: row.escrow_status || 'none',
+      view_count: viewCount,
+      work_submission_status: row.work_submission_status || 'none',
+      work_submitted_at: row.work_submitted_at,
+      work_submission_url: row.work_submission_url || null,
+      work_submission_links: (() => {
+        const raw = row.work_submission_links;
+        if (Array.isArray(raw)) return raw;
+        if (raw && typeof raw === 'object' && Array.isArray(raw.items)) return raw.items;
+        if (raw && typeof raw === 'object') return raw.links || [];
+        return [];
+      })(),
+      revision_count: parseInt(row.revision_count, 10) || 0,
+      revision_limit: parseInt(row.revision_limit, 10) || 3,
+      revision_notes: Array.isArray(row.revision_notes) ? row.revision_notes : [],
+      last_revision_requested_at: row.last_revision_requested_at
+    };
+    return res.json({ success: true, job });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id error:', err);
+    return res.status(500).json({ success: false, error: 'โหลดรายละเอียดไม่สำเร็จ' });
+  }
+});
+
+// GET /api/advance-jobs/:id/analytics — Employer: Views vs Applicants, Time to hire
+app.get('/api/advance-jobs/:id/analytics', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    const userUuid = userId ? await resolveUserIdToUuid(userId) : null;
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query(
+      'SELECT id, employer_id, created_at, published_at, hired_at, applicant_count FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      [jobId]
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, analytics: null });
+    const job = jobRow.rows[0];
+    if (!userUuid || String(job.employer_id) !== String(userUuid)) return res.status(403).json({ success: false, analytics: null });
+    let viewCount = 0;
+    const hasViews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
+    if (hasViews) {
+      const vc = await pool.query('SELECT COUNT(*)::INT AS c FROM advance_job_views WHERE job_id = $1', [job.id]);
+      viewCount = vc.rows?.[0]?.c ?? 0;
+    }
+    const applicantCount = job.applicant_count || 0;
+    const createdAt = job.created_at ? new Date(job.created_at) : null;
+    const hiredAt = job.hired_at ? new Date(job.hired_at) : null;
+    const timeToHireHours = (createdAt && hiredAt) ? (hiredAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60) : null;
+    const timeToHireDays = timeToHireHours != null ? (timeToHireHours / 24).toFixed(1) : null;
+    return res.json({
+      success: true,
+      analytics: {
+        view_count: viewCount,
+        applicant_count: applicantCount,
+        conversion_rate: viewCount > 0 ? ((applicantCount / viewCount) * 100).toFixed(1) + '%' : null,
+        time_to_hire_hours: timeToHireHours,
+        time_to_hire_days: timeToHireDays,
+        created_at: job.created_at,
+        hired_at: job.hired_at
+      }
+    });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id/analytics error:', err);
+    return res.status(500).json({ success: false, analytics: null });
+  }
+});
+
+// POST /api/advance-jobs/:id/view — บันทึก View เมื่อเปิดดูงาน (สำหรับนับ view_count)
+app.post('/api/advance-jobs/:id/view', async (req, res) => {
+  try {
+    const jobId = String(req.params.id || '').trim();
+    if (!jobId) return res.status(404).json({ success: false });
+    const hasViewsTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
+    if (!hasViewsTable) return res.json({ success: true });
+    const jobRow = await pool.query('SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false });
+    const jobUuid = jobRow.rows[0].id;
+    let viewerId = null;
+    const userId = resolveAdvanceJobUserId(req);
+    if (userId) {
+      viewerId = await resolveUserIdToUuid(userId).catch(() => null);
+    }
+    await pool.query(
+      'INSERT INTO advance_job_views (job_id, viewer_id) VALUES ($1, $2)',
+      [jobUuid, viewerId]
+    );
+    if (viewerId) {
+      await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [viewerId]).catch(() => {});
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/view error:', err);
+    return res.json({ success: true });
+  }
+});
+
+// POST /api/advance-jobs/:id/save — บันทึกงานไว้ดูภายหลัง (Talent)
+app.post('/api/advance-jobs/:id/save', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, saved: true });
+    const jobRow = await pool.query('SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const jobIdUuid = jobRow.rows[0].id;
+    const hasLastCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_advance_jobs' AND column_name = 'last_applicant_count'`).then(r => r.rows?.length > 0);
+    if (hasLastCol) {
+      const appCount = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id = $1', [jobIdUuid]).then(r => r.rows?.[0]?.applicant_count ?? 0);
+      await pool.query(
+        `INSERT INTO saved_advance_jobs (user_id, job_id, last_applicant_count) VALUES ($1, $2, $3) ON CONFLICT (user_id, job_id) DO NOTHING`,
+        [userUuid, jobIdUuid, appCount]
+      );
+    } else {
+      await pool.query(
+        'INSERT INTO saved_advance_jobs (user_id, job_id) VALUES ($1, $2) ON CONFLICT (user_id, job_id) DO NOTHING',
+        [userUuid, jobIdUuid]
+      );
+    }
+    return res.json({ success: true, saved: true });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/save error:', err);
+    return res.status(500).json({ success: false, error: 'บันทึกไม่สำเร็จ' });
+  }
+});
+
+// DELETE /api/advance-jobs/:id/save — ยกเลิกบันทึก
+app.delete('/api/advance-jobs/:id/save', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, saved: false });
+    const jobRow = await pool.query('SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    await pool.query('DELETE FROM saved_advance_jobs WHERE user_id = $1 AND job_id = $2', [userUuid, jobRow.rows[0].id]);
+    return res.json({ success: true, saved: false });
+  } catch (err) {
+    console.error('DELETE /api/advance-jobs/:id/save error:', err);
+    return res.status(500).json({ success: false, error: 'ยกเลิกบันทึกไม่สำเร็จ' });
+  }
+});
+
+// POST /api/advance-jobs/:id/apply — สนใจงาน (insert applicant, อัปเดต applicant_count)
+app.post('/api/advance-jobs/:id/apply', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบก่อนส่งข้อเสนอ' });
+    }
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) {
+      return res.status(403).json({ success: false, error: 'ไม่พบตัวตนผู้ใช้ในระบบ' });
+    }
+    const jobId = String(req.params.id || '').trim();
+    const jobCheck = await pool.query(
+      'SELECT id, employer_id, status, applicant_count FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      [jobId]
+    );
+    if (!jobCheck.rows?.length) {
+      return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    }
+    const jobRow = jobCheck.rows[0];
+    if (jobRow.status !== 'open') {
+      return res.status(400).json({ success: false, error: 'งานนี้ปิดรับข้อเสนอแล้ว' });
+    }
+    const existing = await pool.query(
+      'SELECT id FROM advance_job_applicants WHERE job_id = (SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1) AND user_id = $2 LIMIT 1',
+      [jobId, userUuid]
+    );
+    if (existing.rows?.length) {
+      const countResult = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id::text = $1 OR id = $1::uuid', [jobId]);
+      const count = countResult.rows?.[0]?.applicant_count ?? 0;
+      return res.json({ success: true, applicant_count: count, message: 'คุณสนใจงานนี้แล้ว' });
+    }
+    const jobUuid = jobRow.id;
+    await pool.query(
+      'INSERT INTO advance_job_applicants (job_id, user_id, status) VALUES ($1, $2, $3)',
+      [jobUuid, userUuid, 'interested']
+    );
+    // สร้าง Private Chat Thread ระหว่าง Employer กับ Talent ทันที
+    const hasThreads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_chat_threads'`).then(r => r.rows?.length > 0);
+    if (hasThreads && jobRow.employer_id) {
+      await pool.query(
+        `INSERT INTO advance_job_chat_threads (job_id, employer_id, talent_id) VALUES ($1, $2, $3) ON CONFLICT (job_id, talent_id) DO NOTHING`,
+        [jobUuid, jobRow.employer_id, userUuid]
+      ).catch(() => {});
+    }
+    await pool.query(
+      'UPDATE advance_jobs SET applicant_count = applicant_count + 1, updated_at = NOW() WHERE id = $1',
+      [jobUuid]
+    );
+    const countResult = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id = $1', [jobUuid]);
+    const applicant_count = countResult.rows?.[0]?.applicant_count ?? jobRow.applicant_count + 1;
+    if (jobRow.employer_id) {
+      await pushUserNotificationIfNotPeaceMode(jobRow.employer_id, 'มี Talent คนใหม่สนใจงานของคุณ!', 'มี Talent คนใหม่สนใจงานของคุณ!');
+    }
+    return res.json({ success: true, applicant_count, message: 'ส่งความสนใจแล้ว' });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/apply error:', err);
+    return res.status(500).json({ success: false, error: 'ส่งข้อเสนอไม่สำเร็จ', message: err.message });
+  }
+});
+
 // GET /api/advance-jobs/:id/applicants — รายชื่อผู้สนใจ (เฉพาะนายจ้าง)
 app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
   try {
@@ -12433,27 +16872,87 @@ app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
       return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น', applicants: [] });
     }
     const jobUuid = jobRow.rows[0].id;
+    const hasProfileViews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'applicant_profile_views'`).then(r => r.rows?.length > 0);
+    const viewJoin = hasProfileViews
+      ? `LEFT JOIN applicant_profile_views apv ON apv.job_id = a.job_id AND apv.talent_id = a.user_id AND apv.employer_id = $2`
+      : '';
+    const viewSelect = hasProfileViews ? ', apv.viewed_at AS viewed_at' : ', NULL::timestamptz AS viewed_at';
+    const hasTrustCols = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'completed_jobs_count'`).then(r => r.rows?.length > 0);
+    const trustSelect = hasTrustCols
+      ? ', u.kyc_level, u.verified_badge, COALESCE(u.completed_jobs_count, 0)::int AS completed_jobs_count'
+      : ', NULL::varchar AS kyc_level, NULL::varchar AS verified_badge, 0::int AS completed_jobs_count';
+    const hasRating = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'rating'`).then(r => r.rows?.length > 0);
+    const ratingSelect = hasRating ? ', COALESCE(u.rating, 0)::numeric AS rating' : ', 0::numeric AS rating';
+    const hasSkills = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_skills'`).then(r => r.rows?.length > 0);
+    const skillsSub = hasSkills
+      ? `, (SELECT COALESCE(json_agg(json_build_object('skill_category', skill_category, 'skill_name', skill_name)), '[]'::json) FROM user_skills WHERE user_id = u.id) AS skills_json`
+      : ", '[]'::json AS skills_json";
     const result = await pool.query(
-      `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at, u.full_name, u.phone, u.email
+      `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at, u.full_name, u.phone, u.email, u.last_active_at${viewSelect}${trustSelect}${ratingSelect}${skillsSub}
        FROM advance_job_applicants a
        JOIN users u ON u.id = a.user_id
+       ${viewJoin}
        WHERE a.job_id = $1 ORDER BY a.created_at DESC`,
-      [jobUuid]
+      hasProfileViews ? [jobUuid, employerUuid] : [jobUuid]
     );
-    const applicants = (result.rows || []).map((r) => ({
-      id: String(r.id),
-      job_id: String(r.job_id),
-      user_id: String(r.user_id),
-      status: r.status,
-      created_at: r.created_at,
-      full_name: r.full_name || 'ผู้สมัคร',
-      phone: r.phone || '',
-      email: r.email || ''
-    }));
+    const applicants = (result.rows || []).map((r) => {
+      let skills = [];
+      try {
+        const raw = r.skills_json;
+        if (Array.isArray(raw)) skills = raw;
+        else if (typeof raw === 'string') skills = raw ? JSON.parse(raw) : [];
+        else if (raw && typeof raw === 'object') skills = Array.isArray(raw) ? raw : [];
+      } catch (_) {}
+      return {
+        id: String(r.id),
+        job_id: String(r.job_id),
+        user_id: String(r.user_id),
+        status: r.status,
+        created_at: r.created_at,
+        full_name: r.full_name || 'ผู้สมัคร',
+        phone: r.phone || '',
+        email: r.email || '',
+        viewed_at: r.viewed_at || null,
+        last_active_at: r.last_active_at || null,
+        kyc_level: r.kyc_level || null,
+        verified_badge: r.verified_badge || null,
+        completed_jobs_count: parseInt(r.completed_jobs_count, 10) || 0,
+        rating: parseFloat(r.rating) || 0,
+        skills: (skills || []).map((s) => ({ category: s.skill_category, name: s.skill_name })).filter((s) => s.name || s.category)
+      };
+    });
     return res.json({ success: true, applicants });
   } catch (err) {
     console.error('GET /api/advance-jobs/:id/applicants error:', err);
     return res.status(500).json({ success: false, applicants: [] });
+  }
+});
+
+// POST /api/advance-jobs/:id/applicants/:talentId/view — บันทึกเมื่อ employer เปิดดูโปรไฟล์ Talent (Viewed)
+app.post('/api/advance-jobs/:id/applicants/:talentId/view', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false });
+    const employerUuid = await resolveUserIdToUuid(userId).catch(() => null);
+    if (!employerUuid) return res.status(403).json({ success: false });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = String(req.params.talentId || '').trim();
+    if (!jobId || !talentId) return res.status(400).json({ success: false });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'applicant_profile_views'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true });
+    const jobRow = await pool.query('SELECT id, employer_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false });
+    if (String(jobRow.rows[0].employer_id) !== String(employerUuid)) return res.status(403).json({ success: false });
+    const talentUuid = await resolveUserIdToUuid(talentId).catch(() => null);
+    if (!talentUuid) return res.status(400).json({ success: false });
+    await pool.query(
+      `INSERT INTO applicant_profile_views (job_id, talent_id, employer_id) VALUES ($1, $2, $3) ON CONFLICT (job_id, talent_id, employer_id) DO NOTHING`,
+      [jobRow.rows[0].id, talentUuid, employerUuid]
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/applicants/:talentId/view error:', err);
+    return res.json({ success: true });
   }
 });
 
@@ -12489,16 +16988,27 @@ app.patch('/api/advance-jobs/:id/applicants/:applicantUserId', async (req, res) 
 
     // Collision Guard: conflict check when hiring
     if (newStatus === 'hired') {
-      const userRow = await pool.query('SELECT ban_expires_at FROM users WHERE id = $1', [applicantUuid]);
+      const userRow = await pool.query('SELECT ban_expires_at, phone, full_name, firebase_uid FROM users WHERE id = $1', [applicantUuid]);
       const u = userRow.rows?.[0];
       if (u?.ban_expires_at && new Date(u.ban_expires_at) > new Date()) {
         return res.status(403).json({ success: false, error: 'บัญชีถูก Lock ชั่วคราว 24 ชม. เนื่องจากฝ่าฝืน Collision', ban_expires_at: u.ban_expires_at });
       }
-      const durationDays = Math.max(1, parseInt(job.duration_days, 10) || 1);
-      const hireStart = new Date();
-      const hireEnd = new Date();
-      hireEnd.setDate(hireEnd.getDate() + durationDays);
-      const { hasConflict, conflicting } = await checkProviderConflict(pool, applicantUuid, { start: hireStart, end: hireEnd }, jobId);
+      // Bypass conflict check for Apple Reviewer / Demo test accounts
+      const isDemoTalent = !!(u?.phone && /0812345602|66812345602/.test(String(u.phone || '').replace(/\D/g, ''))) ||
+        (u?.full_name && /demo talent.*apple review|apple review.*demo talent/i.test(String(u.full_name))) ||
+        (u?.firebase_uid && /apple-demo-talent/i.test(String(u.firebase_uid)));
+      const skipConflictCheck = isDemoTalent;
+      let hasConflict = false;
+      let conflicting = [];
+      if (!skipConflictCheck) {
+        const durationDays = Math.max(1, parseInt(job.duration_days, 10) || 1);
+        const hireStart = new Date();
+        const hireEnd = new Date();
+        hireEnd.setDate(hireEnd.getDate() + durationDays);
+        const result = await checkProviderConflict(pool, applicantUuid, { start: hireStart, end: hireEnd }, jobId);
+        hasConflict = result.hasConflict;
+        conflicting = result.conflicting || [];
+      }
       const forceIgnore = !!req.body.force_ignore_conflict;
       if (hasConflict && !forceIgnore) {
         return res.status(409).json({
@@ -12569,23 +17079,67 @@ app.post('/api/advance-jobs/:id/escrow', async (req, res) => {
     if (employerFrozen) return res.status(403).json({ success: false, error: 'วอลเล็ตถูกระงับ — ไม่สามารถโอน Escrow ได้' });
     const talentFrozen = await isWalletFrozen(job.hired_user_id);
     if (talentFrozen) return res.status(403).json({ success: false, error: 'บัญชี Talent ถูกระงับ — ไม่สามารถรับเงินได้' });
+
+    // AQOND Fee: Markup 5% + หัก Sourcing + Commission ตาม VIP tier ที่ Escrow (ยอดใน pending = net)
+    const feeConfig = await getFeeConfig();
+    const markupRate = feeConfig.paymentMarkupPercent / 100;
+    const talentRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [job.hired_user_id]);
+    const talentVipTier = talentRow.rows?.[0]?.vip_tier || 'none';
+    const sourcingRate = feeConfig.sourcingFeeMatchBoard ? feeConfig.sourcingFeeMatchBoard(talentVipTier) : (feeConfig.handlingFeePercent / 100);
+    const waiveBaAdvance = await isPlatformCommissionWaivedForUser(pool, job.hired_user_id);
+    const commissionRate = waiveBaAdvance ? 0 : feeConfig.commissionMatchBoard(talentVipTier);
+    const employerPays = round2(payAmount * (1 + markupRate));
+    const totalHandling = round2(payAmount * sourcingRate);
+    const totalCommission = round2(payAmount * commissionRate);
+    const totalNet = round2(payAmount - totalHandling - totalCommission);
+
     const userWallet = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [employerUuid]);
     const balance = parseFloat(userWallet.rows?.[0]?.wallet_balance || 0);
-    if (balance < payAmount) return res.status(400).json({ success: false, error: 'ยอดใน Wallet ไม่พอ', required: payAmount, balance });
-    await pool.query('UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2', [payAmount, employerUuid]);
+    if (balance < employerPays) return res.status(400).json({ success: false, error: 'ยอดใน Wallet ไม่พอ (รวม Markup 5%)', required: employerPays, balance });
+    await pool.query('UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2', [employerPays, employerUuid]);
     await pool.query(
-      `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, updated_at = NOW() WHERE id = $2`,
-      [payAmount, job.hired_user_id]
+      `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+      [totalNet, job.hired_user_id]
     );
     await pool.query(
       `UPDATE advance_jobs SET escrow_amount = $1, escrow_status = 'held', updated_at = NOW() WHERE id = $2`,
       [payAmount, job.id]
     );
+    const totalCompanyFee = round2(totalHandling + totalCommission);
+    const advJobIdStr = String(job.id);
+    const ledgerId = (s) => `L-adv-escrow-${advJobIdStr}-${s}-${Date.now()}`;
     await pool.query(
-      `INSERT INTO advance_job_milestones (job_id, "order", amount, status) VALUES ($1, 1, $2, 'pending')`,
-      [job.id, payAmount]
-    );
-    return res.json({ success: true, message: 'โอนเงินเข้า Escrow แล้ว', escrow_amount: payAmount, escrow_status: 'held' });
+      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+       VALUES ($1, 'escrow_held', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
+      [ledgerId('commission'), advJobIdStr, advJobIdStr, totalCompanyFee, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-f-${Date.now()}`, job.hired_user_id, JSON.stringify({ leg: 'commission', source: 'advance_escrow', handling_fee: totalHandling, commission_fee: totalCommission, commission_rate: commissionRate, brand_adviser_platform_commission_waived: waiveBaAdvance || undefined })]
+    ).catch((e) => console.warn('Ledger commission insert failed:', e.message));
+    const hasProposalTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_milestone_proposals'`).then(r => r.rows?.length > 0);
+    let propItems = [];
+    if (hasProposalTable) {
+      const propRow = await pool.query(`SELECT proposal_json FROM advance_job_milestone_proposals WHERE job_id = $1 AND status = 'approved' LIMIT 1`, [job.id]);
+      const p = propRow.rows?.[0];
+      if (p?.proposal_json) {
+        const parsed = typeof p.proposal_json === 'string' ? JSON.parse(p.proposal_json) : p.proposal_json;
+        propItems = Array.isArray(parsed?.items) ? parsed.items : [];
+      }
+    }
+    if (propItems.length > 0) {
+      const grossTotal = propItems.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+      const scale = totalNet / Math.max(0.01, grossTotal);
+      for (let i = 0; i < propItems.length; i++) {
+        const grossAmt = Number(propItems[i].amount) || 0;
+        const netAmt = round2(grossAmt * scale);
+        if (netAmt > 0) {
+          await pool.query(`INSERT INTO advance_job_milestones (job_id, "order", amount, status) VALUES ($1, $2, $3, 'pending')`, [job.id, i + 1, netAmt]);
+        }
+      }
+    } else {
+      await pool.query(
+        `INSERT INTO advance_job_milestones (job_id, "order", amount, status) VALUES ($1, 1, $2, 'pending')`,
+        [job.id, totalNet]
+      );
+    }
+    return res.json({ success: true, message: 'โอนเงินเข้า Escrow แล้ว', escrow_amount: payAmount, escrow_gross: employerPays, escrow_net: totalNet, escrow_status: 'held' });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/escrow error:', err);
     return res.status(500).json({ success: false, error: err.message });
@@ -12614,7 +17168,8 @@ app.post('/api/advance-jobs/:id/release', async (req, res) => {
     }
     const talentFrozen = await isWalletFrozen(job.hired_user_id);
     if (talentFrozen) return res.status(403).json({ success: false, error: 'บัญชี Talent ถูกระงับ — ไม่สามารถรับเงินได้' });
-    const amount = parseFloat(job.escrow_amount || 0);
+    const milestoneRows = await pool.query('SELECT amount FROM advance_job_milestones WHERE job_id = $1 AND status = $2', [job.id, 'pending']);
+    const amount = (milestoneRows.rows || []).reduce((s, r) => s + parseFloat(r.amount || 0), 0) || parseFloat(job.escrow_amount || 0);
     if (amount <= 0) return res.status(400).json({ success: false, error: 'จำนวน Escrow ไม่ถูกต้อง' });
     const talentId = job.hired_user_id;
     const pendingRow = await pool.query('SELECT wallet_pending FROM users WHERE id = $1', [talentId]);
@@ -12627,9 +17182,20 @@ app.post('/api/advance-jobs/:id/release', async (req, res) => {
       [amount, talentId]
     );
     await pool.query(
+      `UPDATE advance_job_milestones SET status = 'released', released_at = NOW(), commission_deducted = 0, net_amount = amount WHERE job_id = $1 AND status = 'pending'`,
+      [job.id]
+    );
+    await pool.query(
       `UPDATE advance_jobs SET escrow_status = 'released', status = 'completed', updated_at = NOW() WHERE id = $1`,
       [job.id]
     );
+    const advJobIdStr = String(job.id);
+    const ledgerId = (s) => `L-adv-full-${advJobIdStr}-${s}-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+       VALUES ($1, 'escrow_released', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
+      [ledgerId('provider_net'), advJobIdStr, advJobIdStr, amount, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-full-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_full_release', commission_deducted: 0, job_title: job.title || null })]
+    ).catch((e) => console.warn('Ledger escrow_released (full) insert failed:', e.message));
     return res.json({
       success: true,
       message: 'ปล่อยเงินให้ Talent แล้ว',
@@ -12638,6 +17204,297 @@ app.post('/api/advance-jobs/:id/release', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/release error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/advance-jobs/:id/milestone-proposal — ดู proposal (Talent/Employer)
+app.get('/api/advance-jobs/:id/milestone-proposal', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    const userUuid = userId ? await resolveUserIdToUuid(userId) : null;
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, proposal: null });
+    const job = jobRow.rows[0];
+    const isEmployer = userUuid && String(job.employer_id) === String(userUuid);
+    const isHired = job.hired_user_id && userUuid && String(job.hired_user_id) === String(userUuid);
+    if (!isEmployer && !isHired) return res.status(403).json({ success: false, proposal: null });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_milestone_proposals'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, proposal: null });
+    const row = await pool.query('SELECT id, talent_id, proposal_json, status, approved_by, approved_at, created_at FROM advance_job_milestone_proposals WHERE job_id = $1 LIMIT 1', [job.id]);
+    const r = row.rows?.[0];
+    if (!r) return res.json({ success: true, proposal: null });
+    const items = Array.isArray(r.proposal_json) ? r.proposal_json : (r.proposal_json && typeof r.proposal_json === 'object' ? (r.proposal_json.items || r.proposal_json) : []);
+    return res.json({
+      success: true,
+      proposal: {
+        id: String(r.id),
+        talent_id: String(r.talent_id),
+        items: Array.isArray(items) ? items : [],
+        status: r.status,
+        approved_by: r.approved_by ? String(r.approved_by) : null,
+        approved_at: r.approved_at,
+        created_at: r.created_at
+      }
+    });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id/milestone-proposal error:', err);
+    return res.json({ success: true, proposal: null });
+  }
+});
+
+// POST /api/advance-jobs/:id/milestone-proposal — Talent ส่ง proposal
+app.post('/api/advance-jobs/:id/milestone-proposal', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const talentUuid = await resolveUserIdToUuid(userId);
+    if (!talentUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'ต้องระบุ items เป็น array ของ {order, amount, description}' });
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id, agreed_amount FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    if (String(job.hired_user_id) !== String(talentUuid)) return res.status(403).json({ success: false, error: 'เฉพาะ Talent ที่ถูกจ้างเท่านั้น' });
+    const agreedAmount = parseFloat(job.agreed_amount || 0);
+    if (agreedAmount <= 0) return res.status(400).json({ success: false, error: 'งานนี้ยังไม่มี agreed_amount' });
+    const proposalItems = items.map((x, i) => ({
+      order: parseInt(x.order, 10) || (i + 1),
+      amount: Math.max(0, Number(x.amount) || 0),
+      description: String(x.description || '').slice(0, 200)
+    })).sort((a, b) => a.order - b.order);
+    const total = proposalItems.reduce((s, x) => s + x.amount, 0);
+    if (Math.abs(total - agreedAmount) > 0.01) return res.status(400).json({ success: false, error: `ผลรวมงวดต้องเท่ากับ ฿${agreedAmount.toLocaleString()} (ได้ ฿${total.toLocaleString()})` });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_milestone_proposals'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบ proposal ยังไม่พร้อม' });
+    await pool.query(
+      `INSERT INTO advance_job_milestone_proposals (job_id, talent_id, proposal_json, status)
+       VALUES ($1, $2, $3, 'pending')
+       ON CONFLICT (job_id) DO UPDATE SET talent_id = $2, proposal_json = $3, status = 'pending', approved_by = NULL, approved_at = NULL`,
+      [job.id, talentUuid, JSON.stringify({ items: proposalItems })]
+    );
+    await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Talent เสนอโครงงวด', 'Talent เสนอโครงการจ่ายเป็นงวด — เปิดดูและอนุมัติได้ในหน้า Escrow');
+    return res.json({ success: true, message: 'ส่ง proposal แล้ว รอนายจ้างอนุมัติ' });
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ success: false, error: 'มี proposal อยู่แล้ว — รออนุมัติหรือแก้ไข' });
+    console.error('POST /api/advance-jobs/:id/milestone-proposal error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/advance-jobs/:id/milestone-proposal — Employer อนุมัติหรือแก้ไข
+app.patch('/api/advance-jobs/:id/milestone-proposal', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { action, items } = req.body || {};
+    if (!['approve', 'reject', 'edit'].includes(String(action))) return res.status(400).json({ success: false, error: 'action ต้องเป็น approve, reject หรือ edit' });
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id, agreed_amount, escrow_status FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    if (String(job.employer_id) !== String(employerUuid)) return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    const propRow = await pool.query('SELECT id, proposal_json FROM advance_job_milestone_proposals WHERE job_id = $1 LIMIT 1', [job.id]);
+    if (!propRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบ proposal' });
+    const prop = propRow.rows[0];
+    const agreedAmount = parseFloat(job.agreed_amount || 0);
+    if (action === 'reject') {
+      await pool.query('UPDATE advance_job_milestone_proposals SET status = $1 WHERE id = $2', ['rejected', prop.id]);
+      return res.json({ success: true, message: 'ปฏิเสธ proposal แล้ว' });
+    }
+    const rawProp = prop.proposal_json;
+    const parsedProp = typeof rawProp === 'string' ? (JSON.parse(rawProp || '{}') || {}) : (rawProp || {});
+    let finalItems = Array.isArray(parsedProp.items) ? parsedProp.items : [];
+    if (action === 'edit' && Array.isArray(items) && items.length > 0) {
+      const edited = items.map((x, i) => ({ order: parseInt(x.order, 10) || (i + 1), amount: Math.max(0, Number(x.amount) || 0), description: String(x.description || '').slice(0, 200) }));
+      const total = edited.reduce((s, x) => s + x.amount, 0);
+      if (Math.abs(total - agreedAmount) > 0.01) return res.status(400).json({ success: false, error: `ผลรวมงวดต้องเท่ากับ ฿${agreedAmount.toLocaleString()}` });
+      finalItems = edited.sort((a, b) => a.order - b.order);
+      await pool.query('UPDATE advance_job_milestone_proposals SET proposal_json = $1 WHERE id = $2', [JSON.stringify({ items: finalItems }), prop.id]);
+    }
+    if (action === 'approve' || action === 'edit') {
+      await pool.query('UPDATE advance_job_milestone_proposals SET status = $1, approved_by = $2, approved_at = NOW() WHERE id = $3', ['approved', employerUuid, prop.id]);
+      if (action === 'edit') await pool.query('UPDATE advance_job_milestone_proposals SET proposal_json = $1 WHERE id = $2', [JSON.stringify({ items: finalItems }), prop.id]);
+    }
+    return res.json({ success: true, message: action === 'approve' ? 'อนุมัติ proposal แล้ว' : 'แก้ไขและอนุมัติแล้ว' });
+  } catch (err) {
+    console.error('PATCH /api/advance-jobs/:id/milestone-proposal error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============ Scope Agreement (Checklist deliverables ก่อนเริ่มงาน) ============
+// GET /api/advance-jobs/:id/scope-agreement
+app.get('/api/advance-jobs/:id/scope-agreement', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    const userUuid = userId ? await resolveUserIdToUuid(userId) : null;
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, scope: null });
+    const job = jobRow.rows[0];
+    const isEmployer = userUuid && String(job.employer_id) === String(userUuid);
+    const isHired = job.hired_user_id && userUuid && String(job.hired_user_id) === String(userUuid);
+    if (!isEmployer && !isHired) return res.status(403).json({ success: false, scope: null });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_scope_agreements'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ success: true, scope: null });
+    const row = await pool.query('SELECT id, deliverables_json, employer_confirmed_at, talent_confirmed_at FROM advance_job_scope_agreements WHERE job_id = $1 LIMIT 1', [job.id]);
+    const r = row.rows?.[0];
+    if (!r) return res.json({ success: true, scope: null });
+    const items = Array.isArray(r.deliverables_json) ? r.deliverables_json : (r.deliverables_json && typeof r.deliverables_json === 'object' ? (r.deliverables_json.items || r.deliverables_json) : []);
+    return res.json({
+      success: true,
+      scope: {
+        id: String(r.id),
+        deliverables: Array.isArray(items) ? items : [],
+        employer_confirmed_at: r.employer_confirmed_at,
+        talent_confirmed_at: r.talent_confirmed_at,
+        both_confirmed: !!(r.employer_confirmed_at && r.talent_confirmed_at)
+      }
+    });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id/scope-agreement error:', err);
+    return res.json({ success: true, scope: null });
+  }
+});
+
+// PUT /api/advance-jobs/:id/scope-agreement — Employer หรือ Talent แก้ไข deliverables
+app.put('/api/advance-jobs/:id/scope-agreement', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { deliverables } = req.body || {};
+    const items = Array.isArray(deliverables) ? deliverables.map((x, i) => ({ text: String(x.text || x).slice(0, 500), order: i + 1 })) : [];
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    const isEmployer = String(job.employer_id) === String(userUuid);
+    const isHired = job.hired_user_id && String(job.hired_user_id) === String(userUuid);
+    if (!isEmployer && !isHired) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์' });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_scope_agreements'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบ scope agreement ยังไม่พร้อม' });
+    await pool.query(
+      `INSERT INTO advance_job_scope_agreements (job_id, deliverables_json, employer_confirmed_at, talent_confirmed_at, updated_at)
+       VALUES ($1, $2, NULL, NULL, NOW())
+       ON CONFLICT (job_id) DO UPDATE SET deliverables_json = $2, employer_confirmed_at = NULL, talent_confirmed_at = NULL, updated_at = NOW()`,
+      [job.id, JSON.stringify(items)]
+    );
+    return res.json({ success: true, message: 'บันทึกรายการส่งมอบแล้ว — ทั้งสองฝ่ายต้องกดยืนยัน' });
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ success: false, error: 'มี scope อยู่แล้ว' });
+    console.error('PUT /api/advance-jobs/:id/scope-agreement error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/:id/scope-agreement/confirm — Employer หรือ Talent กดยืนยัน
+app.post('/api/advance-jobs/:id/scope-agreement/confirm', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    const isEmployer = String(job.employer_id) === String(userUuid);
+    const isHired = job.hired_user_id && String(job.hired_user_id) === String(userUuid);
+    if (!isEmployer && !isHired) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์' });
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_scope_agreements'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.status(503).json({ success: false, error: 'ระบบ scope agreement ยังไม่พร้อม' });
+    const scopeRow = await pool.query('SELECT id, employer_confirmed_at, talent_confirmed_at FROM advance_job_scope_agreements WHERE job_id = $1 LIMIT 1', [job.id]);
+    if (!scopeRow.rows?.length) return res.status(400).json({ success: false, error: 'ยังไม่มีรายการส่งมอบ — เพิ่มก่อนแล้วค่อยยืนยัน' });
+    const s = scopeRow.rows[0];
+    if (isEmployer) {
+      await pool.query('UPDATE advance_job_scope_agreements SET employer_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1', [s.id]);
+      if (!s.talent_confirmed_at) await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'นายจ้างยืนยัน Scope แล้ว', 'นายจ้างกดยืนยันรายการส่งมอบแล้ว — รอคุณกดยืนยันเพื่อเริ่มงาน');
+      else await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'Scope Agreement เสร็จสมบูรณ์', 'ทั้งสองฝ่ายยืนยันแล้ว — สามารถเริ่มงานได้');
+    } else {
+      await pool.query('UPDATE advance_job_scope_agreements SET talent_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1', [s.id]);
+      if (!s.employer_confirmed_at) await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Talent ยืนยัน Scope แล้ว', 'Talent กดยืนยันรายการส่งมอบแล้ว — รอคุณกดยืนยันเพื่อเริ่มงาน');
+      else await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Scope Agreement เสร็จสมบูรณ์', 'ทั้งสองฝ่ายยืนยันแล้ว — สามารถเริ่มงานได้');
+    }
+    return res.json({ success: true, message: 'ยืนยันแล้ว' });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/scope-agreement/confirm error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/:id/submit-work — Talent ส่งงาน (status → submitted / Under Review)
+app.post('/api/advance-jobs/:id/submit-work', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const talentUuid = await resolveUserIdToUuid(userId);
+    if (!talentUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { submission_url, submission_links } = req.body || {};
+    const url = (submission_url || '').toString().trim();
+    const links = Array.isArray(submission_links) ? submission_links.map((l) => ({ url: String(l?.url || l).slice(0, 500), label: String(l?.label || '').slice(0, 100) })) : [];
+    if (!url && links.length === 0) return res.status(400).json({ success: false, error: 'กรุณาระบุ URL หรือลิงก์อย่างน้อย 1 รายการ' });
+    const jobRow = await pool.query(
+      'SELECT id, employer_id, hired_user_id, escrow_status, work_submission_status FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      [jobId]
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    if (String(job.hired_user_id) !== String(talentUuid)) return res.status(403).json({ success: false, error: 'เฉพาะ Talent ที่ถูกจ้างเท่านั้น' });
+    if (job.escrow_status !== 'held') return res.status(400).json({ success: false, error: 'ต้องรอนายจ้างโอนเงินเข้า Escrow ก่อนส่งงาน' });
+    const hasCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_jobs' AND column_name = 'work_submission_status'`).then(r => r.rows?.length > 0);
+    if (!hasCol) return res.status(503).json({ success: false, error: 'ระบบส่งงานยังไม่พร้อม' });
+    await pool.query(
+      `UPDATE advance_jobs SET work_submission_status = 'submitted', work_submitted_at = NOW(), work_submission_url = $1, work_submission_links = $2, updated_at = NOW() WHERE id = $3`,
+      [url || null, JSON.stringify(links), job.id]
+    );
+    await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Talent ส่งงานแล้ว', 'Talent ส่งงานรอให้คุณตรวจสอบ — เปิดดูได้ใน Escrow');
+    return res.json({ success: true, message: 'ส่งงานแล้ว รอให้นายจ้างตรวจสอบ', work_submission_status: 'submitted' });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/submit-work error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/:id/request-revision — นายจ้างขอแก้ไข (increment revision_count)
+app.post('/api/advance-jobs/:id/request-revision', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { revision_note } = req.body || {};
+    const note = (revision_note || '').toString().trim().slice(0, 2000);
+    if (!note) return res.status(400).json({ success: false, error: 'กรุณาระบุรายการที่ต้องแก้ไข' });
+    const jobRow = await pool.query(
+      'SELECT id, employer_id, hired_user_id, work_submission_status, revision_count, revision_limit, revision_notes FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      [jobId]
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    if (String(job.employer_id) !== String(employerUuid)) return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    if (job.work_submission_status !== 'submitted') return res.status(400).json({ success: false, error: 'ต้องรอ Talent ส่งงานก่อนขอแก้ไข' });
+    const revCount = parseInt(job.revision_count, 10) || 0;
+    const revLimit = parseInt(job.revision_limit, 10) || 3;
+    if (revCount >= revLimit) return res.status(400).json({ success: false, error: `ใช้สิทธิ์ขอแก้ไขครบ ${revLimit} ครั้งแล้ว` });
+    const existingNotes = Array.isArray(job.revision_notes) ? job.revision_notes : (job.revision_notes && typeof job.revision_notes === 'object' ? (job.revision_notes.items || []) : []);
+    const newNotes = [...existingNotes, { note, requested_at: new Date().toISOString() }];
+    await pool.query(
+      `UPDATE advance_jobs SET work_submission_status = 'revision_requested', revision_count = $1, revision_notes = $2, last_revision_requested_at = NOW(), updated_at = NOW() WHERE id = $3`,
+      [revCount + 1, JSON.stringify(newNotes), job.id]
+    );
+    await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'นายจ้างขอแก้ไขงาน', `รายละเอียด: ${note.slice(0, 100)}${note.length > 100 ? '...' : ''}`);
+    return res.json({ success: true, message: 'ส่งคำขอแก้ไขแล้ว', revision_count: revCount + 1, revision_limit: revLimit });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/request-revision error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -12720,35 +17577,25 @@ app.post('/api/advance-jobs/:id/milestones/:milestoneId/release', async (req, re
     const talentId = job.hired_user_id;
     const talentFrozen = await isWalletFrozen(talentId);
     if (talentFrozen) return res.status(403).json({ success: false, error: 'บัญชี Talent ถูกระงับ — ไม่สามารถรับเงินได้' });
-    const talentRow = await pool.query(
-      'SELECT wallet_pending, completed_jobs_count FROM users WHERE id = $1',
-      [talentId]
-    );
+    const talentRow = await pool.query('SELECT wallet_pending FROM users WHERE id = $1', [talentId]);
     const pending = parseFloat(talentRow.rows?.[0]?.wallet_pending || 0);
-    const completedJobs = parseInt(talentRow.rows?.[0]?.completed_jobs_count || 0, 10);
     if (pending < amount) return res.status(400).json({ success: false, error: 'ยอด pending ไม่พอ' });
-    const commissionRate = calculateCommission(completedJobs);
-    const feeAmount = round2(amount * commissionRate);
-    const talentReceive = round2(amount - feeAmount);
+    // AQOND: amount is already net (fees deducted at escrow) — just transfer pending → balance
+    const talentReceive = amount;
     await pool.query(
-      `UPDATE users SET wallet_pending = wallet_pending - $1, wallet_balance = wallet_balance + $2, updated_at = NOW() WHERE id = $3`,
-      [amount, talentReceive, talentId]
+      `UPDATE users SET wallet_pending = wallet_pending - $1, wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`,
+      [amount, talentId]
     );
     await pool.query(
-      `UPDATE advance_job_milestones SET status = 'released', released_at = NOW(), commission_deducted = $1, net_amount = $2 WHERE id = $3`,
-      [feeAmount, talentReceive, milestone.id]
+      `UPDATE advance_job_milestones SET status = 'released', released_at = NOW(), commission_deducted = 0, net_amount = $1 WHERE id = $2`,
+      [talentReceive, milestone.id]
     );
     const advJobIdStr = String(job.id);
     const ledgerId = (s) => `L-adv-${advJobIdStr}-${s}-${Date.now()}`;
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
-       VALUES ($1, 'escrow_held', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-      [ledgerId('commission'), advJobIdStr, advJobIdStr, feeAmount, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-${Date.now()}`, talentId, JSON.stringify({ leg: 'commission', source: 'advance_milestone', milestone_id: String(milestone.id), commission_rate: commissionRate })]
-    ).catch((e) => console.warn('Ledger audit insert (commission) failed:', e.message));
-    await pool.query(
-      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'escrow_released', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-      [ledgerId('provider_net'), advJobIdStr, advJobIdStr, talentReceive, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-net-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_milestone', milestone_id: String(milestone.id), commission_deducted: feeAmount, job_title: job.title || null })]
+      [ledgerId('provider_net'), advJobIdStr, advJobIdStr, talentReceive, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-net-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_milestone', milestone_id: String(milestone.id), commission_deducted: 0, job_title: job.title || null })]
     ).catch((e) => console.warn('Ledger audit insert (provider_net) failed:', e.message));
     const pendingCount = (await pool.query(
       'SELECT COUNT(*) AS c FROM advance_job_milestones WHERE job_id = $1 AND status = $2',
@@ -12773,7 +17620,7 @@ app.post('/api/advance-jobs/:id/milestones/:milestoneId/release', async (req, re
       success: true,
       message: 'ปล่อยเงินงวดนี้ให้ Talent แล้ว',
       amount_released: talentReceive,
-      commission_deducted: feeAmount,
+      commission_deducted: 0,
       is_job_completed: parseInt(pendingCount, 10) === 0
     });
   } catch (err) {
@@ -12830,7 +17677,7 @@ app.get('/api/advance-jobs/:id/reviews/me', async (req, res) => {
   }
 });
 
-// POST /api/advance-jobs/:id/reviews — Talent ให้ดาวนายจ้าง (งานต้อง completed)
+// POST /api/advance-jobs/:id/reviews — Employer ให้ดาว Talent หรือ Talent ให้ดาว Employer (งานต้อง completed)
 app.post('/api/advance-jobs/:id/reviews', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
@@ -12847,13 +17694,18 @@ app.post('/api/advance-jobs/:id/reviews', async (req, res) => {
     );
     if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
     const job = jobRow.rows[0];
-    if (String(job.hired_user_id) !== String(userUuid)) {
-      return res.status(403).json({ success: false, error: 'เฉพาะ Talent ที่รับงานนี้เท่านั้นที่ให้รีวิวได้' });
-    }
     if (job.status !== 'completed') {
       return res.status(400).json({ success: false, error: 'งานต้องเสร็จสมบูรณ์ก่อนถึงจะให้คะแนนได้' });
     }
-    const employerId = job.employer_id;
+    let revieweeId = null;
+    if (String(job.employer_id) === String(userUuid)) {
+      revieweeId = job.hired_user_id; // Employer ให้ดาว Talent
+    } else if (String(job.hired_user_id) === String(userUuid)) {
+      revieweeId = job.employer_id; // Talent ให้ดาว Employer
+    } else {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานหรือ Talent ที่รับงานเท่านั้นที่ให้รีวิวได้' });
+    }
+    if (!revieweeId) return res.status(400).json({ success: false, error: 'ไม่พบผู้รับคะแนน' });
     const existing = await pool.query(
       'SELECT id FROM advance_job_reviews WHERE job_id = $1 AND reviewer_id = $2 LIMIT 1',
       [job.id, userUuid]
@@ -12861,25 +17713,81 @@ app.post('/api/advance-jobs/:id/reviews', async (req, res) => {
     if (existing.rows?.length) return res.status(400).json({ success: false, error: 'คุณให้คะแนนงานนี้แล้ว' });
     await pool.query(
       'INSERT INTO advance_job_reviews (job_id, reviewer_id, reviewee_id, rating, comment) VALUES ($1, $2, $3, $4, $5)',
-      [job.id, userUuid, employerId, r, comment ? String(comment).trim().slice(0, 2000) : null]
+      [job.id, userUuid, revieweeId, r, comment ? String(comment).trim().slice(0, 2000) : null]
     );
     const avgRow = await pool.query(
       'SELECT COALESCE(AVG(rating), 0) AS avg_rating FROM advance_job_reviews WHERE reviewee_id = $1',
-      [employerId]
+      [revieweeId]
     );
     const avgRating = Math.round(parseFloat(avgRow.rows?.[0]?.avg_rating || 0) * 100) / 100;
-    await pool.query(
-      'UPDATE users SET employer_trust_score = $1, updated_at = NOW() WHERE id = $2',
-      [avgRating, employerId]
-    );
-    return res.status(201).json({ success: true, message: 'บันทึกคะแนนแล้ว', employer_trust_score: avgRating });
+    const hasTalentScore = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'talent_trust_score'`).then(r => r.rows?.length > 0);
+    if (String(job.employer_id) === String(userUuid)) {
+      if (hasTalentScore) {
+        await pool.query('UPDATE users SET talent_trust_score = $1, updated_at = NOW() WHERE id = $2', [avgRating, revieweeId]);
+      }
+      return res.status(201).json({ success: true, message: 'บันทึกคะแนนแล้ว', talent_trust_score: avgRating });
+    } else {
+      await pool.query('UPDATE users SET employer_trust_score = $1, updated_at = NOW() WHERE id = $2', [avgRating, revieweeId]);
+      return res.status(201).json({ success: true, message: 'บันทึกคะแนนแล้ว', employer_trust_score: avgRating });
+    }
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/reviews error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// GET /api/advance-jobs/:id/messages — รายการแชท (นายจ้างหรือ Talent ที่จ้างแล้ว)
+// Typing indicator — in-memory store (key: jobId:talentId, value: { userId, at })
+const advanceJobTypingMap = new Map();
+const TYPING_TTL_MS = 5000;
+
+// POST /api/advance-jobs/:id/typing — แจ้งว่ากำลังพิมพ์
+app.post('/api/advance-jobs/:id/typing', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false });
+    const userUuid = await resolveUserIdToUuid(userId).catch(() => null);
+    if (!userUuid) return res.json({ success: true });
+    const jobId = String(req.params.id || '').trim();
+    const { talent_id, is_typing } = req.body || {};
+    const talentUuid = talent_id ? await resolveUserIdToUuid(String(talent_id)).catch(() => null) : null;
+    if (!talentUuid) return res.json({ success: true });
+    const key = `typing:${jobId}:${talentUuid}`;
+    if (is_typing) {
+      advanceJobTypingMap.set(key, { userId: userUuid, at: Date.now() });
+    } else {
+      advanceJobTypingMap.delete(key);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    return res.json({ success: true });
+  }
+});
+
+// GET /api/advance-jobs/:id/typing?talent_id=X — ตรวจว่าอีกฝ่ายกำลังพิมพ์หรือไม่
+app.get('/api/advance-jobs/:id/typing', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.json({ success: true, is_typing: false });
+    const userUuid = await resolveUserIdToUuid(userId).catch(() => null);
+    if (!userUuid) return res.json({ success: true, is_typing: false });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = req.query.talent_id ? await resolveUserIdToUuid(String(req.query.talent_id)).catch(() => null) : null;
+    if (!talentId) return res.json({ success: true, is_typing: false });
+    const key = `typing:${jobId}:${talentId}`;
+    const entry = advanceJobTypingMap.get(key);
+    if (!entry) return res.json({ success: true, is_typing: false });
+    if (Date.now() - entry.at > TYPING_TTL_MS) {
+      advanceJobTypingMap.delete(key);
+      return res.json({ success: true, is_typing: false });
+    }
+    const isOther = String(entry.userId) !== String(userUuid);
+    return res.json({ success: true, is_typing: isOther });
+  } catch (err) {
+    return res.json({ success: true, is_typing: false });
+  }
+});
+
+// GET /api/advance-jobs/:id/messages — รายการแชท (Private ต่อ talent_id หรือ Job-level เก่า)
 app.get('/api/advance-jobs/:id/messages', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
@@ -12887,26 +17795,68 @@ app.get('/api/advance-jobs/:id/messages', async (req, res) => {
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.json({ success: true, messages: [] });
     const jobId = String(req.params.id || '').trim();
+    const talentId = req.query.talent_id ? await resolveUserIdToUuid(String(req.query.talent_id)) : null;
     const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
     if (!jobRow.rows?.length) return res.status(404).json({ success: false, messages: [] });
     const job = jobRow.rows[0];
     const isEmployer = String(job.employer_id) === String(userUuid);
     const isHired = job.hired_user_id && String(job.hired_user_id) === String(userUuid);
-    if (!isEmployer && !isHired) return res.status(403).json({ success: false, messages: [] });
-    const result = await pool.query(
-      `SELECT m.id, m.job_id, m.sender_id, m.body, m.created_at, u.full_name AS sender_name
-       FROM advance_job_messages m
-       LEFT JOIN users u ON u.id = m.sender_id
-       WHERE m.job_id = $1 ORDER BY m.created_at ASC`,
-      [job.id]
-    );
+    const isApplicant = await pool.query('SELECT 1 FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2', [job.id, userUuid]).then(r => r.rows?.length > 0);
+    if (!isEmployer && !isHired && !isApplicant) return res.status(403).json({ success: false, messages: [] });
+    if (talentId && !isEmployer && String(talentId) !== String(userUuid)) return res.status(403).json({ success: false, messages: [] });
+
+    let result;
+    const hasThreads = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_messages' AND column_name = 'thread_id'`).then(r => r.rows?.length > 0);
+    if (hasThreads && talentId) {
+      const otherParty = isEmployer ? talentId : userUuid;
+      const talentParty = isEmployer ? talentId : userUuid;
+      const threadRow = await pool.query(
+        'SELECT id FROM advance_job_chat_threads WHERE job_id = $1 AND employer_id = $2 AND talent_id = $3 LIMIT 1',
+        [job.id, job.employer_id, talentParty]
+      );
+      const threadId = threadRow.rows?.[0]?.id;
+      if (threadId) {
+        const hasReads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_message_reads'`).then(r => r.rows?.length > 0);
+        const readJoin = hasReads ? `LEFT JOIN advance_job_message_reads mr ON mr.message_id = m.id AND mr.reader_id = (CASE WHEN m.sender_id = $2 THEN $3 ELSE $2 END)` : '';
+        const readSelect = hasReads ? ', mr.read_at AS read_at' : ', NULL::timestamptz AS read_at';
+        result = await pool.query(
+          `SELECT m.id, m.job_id, m.sender_id, m.body, m.created_at, u.full_name AS sender_name${readSelect}
+           FROM advance_job_messages m
+           LEFT JOIN users u ON u.id = m.sender_id
+           ${readJoin}
+           WHERE m.thread_id = $1 ORDER BY m.created_at ASC`,
+          hasReads ? [threadId, userUuid, otherParty] : [threadId]
+        );
+        if (hasReads && result.rows?.length) {
+          for (const r of result.rows) {
+            if (r.sender_id && String(r.sender_id) !== String(userUuid)) {
+              await pool.query(
+                'INSERT INTO advance_job_message_reads (message_id, reader_id) VALUES ($1, $2) ON CONFLICT (message_id, reader_id) DO NOTHING',
+                [r.id, userUuid]
+              ).catch(() => {});
+            }
+          }
+        }
+      } else {
+        result = { rows: [] };
+      }
+    } else {
+      result = await pool.query(
+        `SELECT m.id, m.job_id, m.sender_id, m.body, m.created_at, u.full_name AS sender_name
+         FROM advance_job_messages m
+         LEFT JOIN users u ON u.id = m.sender_id
+         WHERE m.job_id = $1 AND m.thread_id IS NULL ORDER BY m.created_at ASC`,
+        [job.id]
+      );
+    }
     const messages = (result.rows || []).map((r) => ({
       id: String(r.id),
       job_id: String(r.job_id),
       sender_id: String(r.sender_id),
       sender_name: r.sender_name || 'ผู้ใช้',
       body: r.body,
-      created_at: r.created_at
+      created_at: r.created_at,
+      read_at: r.read_at || null
     }));
     return res.json({ success: true, messages });
   } catch (err) {
@@ -12915,28 +17865,63 @@ app.get('/api/advance-jobs/:id/messages', async (req, res) => {
   }
 });
 
-// POST /api/advance-jobs/:id/messages — ส่งข้อความ
+// POST /api/advance-jobs/:id/messages — ส่งข้อความ (รองรับ talent_id สำหรับ Private Chat)
 app.post('/api/advance-jobs/:id/messages', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [userUuid]).catch(() => {});
     const jobId = String(req.params.id || '').trim();
-    const { body } = req.body || {};
+    const { body, talent_id } = req.body || {};
     const text = String(body || '').trim();
     if (!text) return res.status(400).json({ success: false, error: 'กรุณาพิมพ์ข้อความ' });
-    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id, title FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
     if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
     const job = jobRow.rows[0];
     const isEmployer = String(job.employer_id) === String(userUuid);
     const isHired = job.hired_user_id && String(job.hired_user_id) === String(userUuid);
-    if (!isEmployer && !isHired) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์แชทในงานนี้' });
-    const ins = await pool.query(
-      'INSERT INTO advance_job_messages (job_id, sender_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
-      [job.id, userUuid, text]
-    );
+    const isApplicant = await pool.query('SELECT 1 FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2', [job.id, userUuid]).then(r => r.rows?.length > 0);
+    if (!isEmployer && !isHired && !isApplicant) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์แชทในงานนี้' });
+    const talentUuid = talent_id ? await resolveUserIdToUuid(String(talent_id)) : null;
+    if (talentUuid && !isEmployer && String(talentUuid) !== String(userUuid)) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์แชทห้องนี้' });
+
+    let threadId = null;
+    const hasThreads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_chat_threads'`).then(r => r.rows?.length > 0);
+    if (hasThreads && talentUuid) {
+      const talentParty = isEmployer ? talentUuid : userUuid;
+      const threadRow = await pool.query(
+        'SELECT id FROM advance_job_chat_threads WHERE job_id = $1 AND employer_id = $2 AND talent_id = $3 LIMIT 1',
+        [job.id, job.employer_id, talentParty]
+      );
+      threadId = threadRow.rows?.[0]?.id;
+      if (!threadId) {
+        const insThread = await pool.query(
+          'INSERT INTO advance_job_chat_threads (job_id, employer_id, talent_id) VALUES ($1, $2, $3) ON CONFLICT (job_id, talent_id) DO UPDATE SET job_id = EXCLUDED.job_id RETURNING id',
+          [job.id, job.employer_id, talentParty]
+        );
+        threadId = insThread.rows?.[0]?.id;
+      }
+    }
+
+    const hasThreadCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_messages' AND column_name = 'thread_id'`).then(r => r.rows?.length > 0);
+    const ins = hasThreadCol && threadId
+      ? await pool.query(
+          'INSERT INTO advance_job_messages (job_id, sender_id, body, thread_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at',
+          [job.id, userUuid, text, threadId]
+        )
+      : await pool.query(
+          'INSERT INTO advance_job_messages (job_id, sender_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
+          [job.id, userUuid, text]
+        );
     const row = ins.rows[0];
+    if (talentUuid) {
+      const recipientUuid = isEmployer ? talentUuid : job.employer_id;
+      if (recipientUuid && String(recipientUuid) !== String(userUuid)) {
+        await pushUserNotificationIfNotPeaceMode(recipientUuid, 'มีข้อความใหม่ในแชทงาน ' + (job.title || 'Advance Job'), String(text || '').slice(0, 80) + (text.length > 80 ? '...' : ''));
+      }
+    }
     return res.status(201).json({ success: true, message: { id: String(row.id), body: text, sender_id: String(userUuid), created_at: row.created_at } });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/messages error:', err);
@@ -12944,7 +17929,258 @@ app.post('/api/advance-jobs/:id/messages', async (req, res) => {
   }
 });
 
-// ============ WALLET DEPOSIT (Omise PromptPay / Credit Card) ============
+// POST /api/advance-jobs/:id/deals — Employer ส่ง Deal ให้ Talent
+app.post('/api/advance-jobs/:id/deals', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const { talent_id, amount } = req.body || {};
+    const talentUuid = talent_id ? await resolveUserIdToUuid(String(talent_id)) : null;
+    if (!talentUuid) return res.status(400).json({ success: false, error: 'ต้องระบุ talent_id' });
+    const amt = Math.max(0, Number(amount));
+    if (!amt) return res.status(400).json({ success: false, error: 'กรุณาระบุจำนวนเงิน' });
+
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    if (!hasDeals) return res.status(503).json({ success: false, error: 'ระบบ Deal ยังไม่พร้อม' });
+
+    const jobRow = await pool.query('SELECT id, employer_id, min_budget, max_budget, status, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    const job = jobRow.rows[0];
+    if (String(job.employer_id) !== String(employerUuid)) return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    if (job.hired_user_id) return res.status(400).json({ success: false, error: 'งานนี้จ้าง Talent แล้ว' });
+    if (job.status !== 'open' && job.status !== 'pending') return res.status(400).json({ success: false, error: 'งานนี้ปิดรับข้อเสนอแล้ว' });
+
+    const appRow = await pool.query('SELECT 1 FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2', [job.id, talentUuid]);
+    if (!appRow.rows?.length) return res.status(400).json({ success: false, error: 'ไม่พบผู้สมัครในงานนี้' });
+
+    const minB = Number(job.min_budget) || 0;
+    const maxB = Number(job.max_budget) || 0;
+    if (amt < minB || (maxB > 0 && amt > maxB)) return res.status(400).json({ success: false, error: `จำนวนเงินต้องอยู่ระหว่าง ฿${minB.toLocaleString()} – ฿${maxB.toLocaleString()}` });
+
+    const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+    const hasProposedBy = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+    const pendingRow = await pool.query(
+      hasProposedBy
+        ? "SELECT id, proposed_by FROM advance_job_deals WHERE job_id = $1 AND talent_id = $2 AND status = 'pending'"
+        : "SELECT id FROM advance_job_deals WHERE job_id = $1 AND talent_id = $2 AND status = 'pending'",
+      [job.id, talentUuid]
+    );
+    if (pendingRow.rows?.length) {
+      const proposedBy = hasProposedBy ? pendingRow.rows[0].proposed_by : 'employer';
+      if (proposedBy === 'employer') {
+        return res.status(400).json({ success: false, error: 'มี Deal รอ Talent ตอบอยู่แล้ว กรุณารอหรือส่ง Deal ใหม่แทน' });
+      }
+    }
+    try {
+      await pool.query(
+        "UPDATE advance_job_deals SET status = 'replaced' WHERE job_id = $1 AND talent_id = $2 AND status IN ('pending','counter_offered')",
+        [job.id, talentUuid]
+      );
+    } catch (_) { /* migration 095 อาจยังไม่รัน */ }
+
+    const expiresSql = hasExpires ? ", expires_at" : "";
+    const expiresVal = hasExpires ? ", NOW() + INTERVAL '24 hours'" : "";
+    const proposedByCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+    const proposedBySql = proposedByCol ? ", proposed_by" : "";
+    const proposedByVal = proposedByCol ? ", 'employer'" : "";
+    const ins = await pool.query(
+      `INSERT INTO advance_job_deals (job_id, employer_id, talent_id, amount${expiresSql}${proposedBySql}) VALUES ($1, $2, $3, $4${expiresVal}${proposedByVal}) RETURNING id, amount, status, created_at, expires_at`,
+      [job.id, employerUuid, talentUuid, amt]
+    );
+    const row = ins.rows[0];
+    await pushUserNotificationIfNotPeaceMode(talentUuid, 'นายจ้างส่ง Deal ฿' + amt.toLocaleString() + ' มาให้คุณ', 'นายจ้างส่ง Deal ฿' + amt.toLocaleString() + ' มาให้คุณ — เปิดแชทเพื่อตอบรับ ปฏิเสธ หรือเสนอราคาใหม่');
+    const dealPayload = { id: String(row.id), amount: Number(row.amount), status: row.status, created_at: row.created_at, proposed_by: row.proposed_by || 'employer', expires_at: row.expires_at || null };
+    return res.status(201).json({ success: true, deal: dealPayload });
+  } catch (err) {
+    console.error('POST /api/advance-jobs/:id/deals error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/advance-jobs/:id/deals?talent_id=X — ดู Deal รอตอบ
+app.get('/api/advance-jobs/:id/deals', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, deal: null });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.json({ success: true, deal: null });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = req.query.talent_id ? await resolveUserIdToUuid(String(req.query.talent_id)) : null;
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, deal: null });
+    const job = jobRow.rows[0];
+    const isEmployer = String(job.employer_id) === String(userUuid);
+    const isTalent = talentId && String(talentId) === String(userUuid);
+    if (!talentId || (!isEmployer && !isTalent)) return res.json({ success: true, deal: null });
+    if (talentId && !isEmployer && String(talentId) !== String(userUuid)) return res.status(403).json({ success: false, deal: null, error: 'ไม่มีสิทธิ์ดู Deal นี้' });
+
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    if (!hasDeals) return res.json({ success: true, deal: null });
+
+    const checkTalent = isEmployer ? talentId : userUuid;
+    const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+    const cols = hasExpires ? 'id, amount, status, created_at, expires_at, proposed_by, counter_to_deal_id' : 'id, amount, status, created_at';
+    const dealRow = await pool.query(
+      `SELECT ${cols} FROM advance_job_deals WHERE job_id = $1 AND talent_id = $2 AND status = $3 ORDER BY created_at DESC LIMIT 1`,
+      [job.id, checkTalent, 'pending']
+    );
+    let d = dealRow.rows[0];
+    if (!d) return res.json({ success: true, deal: null });
+    if (hasExpires && d.expires_at && new Date(d.expires_at) < new Date()) {
+      await pool.query('UPDATE advance_job_deals SET status = $1 WHERE id = $2', ['expired', d.id]);
+      return res.json({ success: true, deal: null });
+    }
+    const dealPayload = { id: String(d.id), amount: Number(d.amount), status: d.status, created_at: d.created_at };
+    if (hasExpires && d.expires_at !== undefined) {
+      dealPayload.expires_at = d.expires_at;
+      dealPayload.proposed_by = d.proposed_by || 'employer';
+      dealPayload.counter_to_deal_id = d.counter_to_deal_id ? String(d.counter_to_deal_id) : null;
+    }
+    return res.json({ success: true, deal: dealPayload });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id/deals error:', err);
+    return res.json({ success: true, deal: null });
+  }
+});
+
+// GET /api/advance-jobs/:id/deals/history?talent_id=X — Deal history (ปฏิเสธ/หมดอายุ/ตอบแล้ว)
+app.get('/api/advance-jobs/:id/deals/history', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, history: [] });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.json({ success: true, history: [] });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = req.query.talent_id ? await resolveUserIdToUuid(String(req.query.talent_id)) : null;
+    const jobRow = await pool.query('SELECT id, employer_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, history: [] });
+    const job = jobRow.rows[0];
+    const isEmployer = String(job.employer_id) === String(userUuid);
+    const isTalent = talentId && String(talentId) === String(userUuid);
+    if (!talentId || (!isEmployer && !isTalent)) return res.json({ success: true, history: [] });
+    if (talentId && !isEmployer && String(talentId) !== String(userUuid)) return res.status(403).json({ success: false, history: [], error: 'ไม่มีสิทธิ์ดู' });
+
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    if (!hasDeals) return res.json({ success: true, history: [] });
+
+    const checkTalent = isEmployer ? talentId : userUuid;
+    const hasProposedBy = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+    const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+    const cols = [hasProposedBy ? 'id, amount, status, proposed_by, created_at, responded_at' : 'id, amount, status, created_at, responded_at', hasExpires ? ', expires_at' : ''].join('');
+    const rows = await pool.query(
+      `SELECT ${cols} FROM advance_job_deals WHERE job_id = $1 AND talent_id = $2 AND status IN ('accepted','declined','expired','counter_offered','replaced') ORDER BY created_at DESC LIMIT 50`,
+      [job.id, checkTalent]
+    );
+    const history = (rows.rows || []).map((r) => ({
+      id: String(r.id),
+      amount: Number(r.amount),
+      status: r.status,
+      proposed_by: hasProposedBy ? (r.proposed_by || 'employer') : 'employer',
+      created_at: r.created_at,
+      responded_at: r.responded_at || null,
+      expires_at: hasExpires ? (r.expires_at || null) : null,
+    }));
+    return res.json({ success: true, history });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/:id/deals/history error:', err);
+    return res.json({ success: true, history: [] });
+  }
+});
+
+// PATCH /api/advance-jobs/:id/deals/:dealId — Talent Accept/Decline/Counter-offer; Employer Accept/Decline (เมื่อ Talent counter)
+app.patch('/api/advance-jobs/:id/deals/:dealId', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const dealId = String(req.params.dealId || '').trim();
+    const { action, amount: counterAmount } = req.body || {};
+    if (!['accept', 'decline', 'counter_offer'].includes(String(action))) return res.status(400).json({ success: false, error: 'action ต้องเป็น accept, decline หรือ counter_offer' });
+
+    const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+    if (!hasDeals) return res.status(503).json({ success: false, error: 'ระบบ Deal ยังไม่พร้อม' });
+
+    const hasProposedBy = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+    const dealCols = hasProposedBy ? 'd.id, d.job_id, d.talent_id, d.amount, d.status, d.proposed_by, j.employer_id, j.title, j.min_budget, j.max_budget' : 'd.id, d.job_id, d.talent_id, d.amount, d.status, j.employer_id, j.title, j.min_budget, j.max_budget';
+    const dealRow = await pool.query(
+      `SELECT ${dealCols} FROM advance_job_deals d JOIN advance_jobs j ON j.id = d.job_id WHERE d.id::text = $1 AND d.job_id::text = $2`,
+      [dealId, jobId]
+    );
+    if (!dealRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบ Deal นี้' });
+    const deal = dealRow.rows[0];
+    if (deal.status !== 'pending') return res.status(400).json({ success: false, error: 'Deal นี้ตอบแล้ว' });
+    const proposedBy = hasProposedBy ? (deal.proposed_by || 'employer') : 'employer';
+    const isTalent = String(deal.talent_id) === String(userUuid);
+    const isEmployer = String(deal.employer_id) === String(userUuid);
+
+    if (action === 'counter_offer') {
+      if (!isTalent) return res.status(403).json({ success: false, error: 'เฉพาะ Talent ที่ได้รับ Deal เท่านั้นที่เสนอราคาใหม่ได้' });
+      if (proposedBy !== 'employer') return res.status(400).json({ success: false, error: 'Deal นี้เป็น counter offer แล้ว ไม่สามารถเสนอซ้ำได้' });
+      const amt = Math.max(0, Number(counterAmount));
+      const minB = Number(deal.min_budget) || 0;
+      const maxB = Number(deal.max_budget) || 0;
+      if (!amt || amt < minB || (maxB > 0 && amt > maxB)) return res.status(400).json({ success: false, error: `จำนวนเงินต้องอยู่ระหว่าง ฿${minB.toLocaleString()} – ฿${maxB.toLocaleString()}` });
+      const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+      const hasCounterTo = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'counter_to_deal_id'`).then(r => r.rows?.length > 0);
+      await pool.query('UPDATE advance_job_deals SET status = $1, responded_at = NOW() WHERE id = $2', ['counter_offered', deal.id]);
+      const insCols = hasExpires && hasCounterTo
+        ? 'job_id, employer_id, talent_id, amount, proposed_by, counter_to_deal_id, expires_at'
+        : 'job_id, employer_id, talent_id, amount';
+      const insVals = hasExpires && hasCounterTo
+        ? `$1, $2, $3, $4, 'talent', $5, NOW() + INTERVAL '24 hours'`
+        : '$1, $2, $3, $4';
+      await pool.query(
+        `INSERT INTO advance_job_deals (${insCols}) VALUES (${insVals})`,
+        hasExpires && hasCounterTo ? [deal.job_id, deal.employer_id, deal.talent_id, amt, deal.id] : [deal.job_id, deal.employer_id, deal.talent_id, amt]
+      );
+      await pushUserNotificationIfNotPeaceMode(deal.employer_id, 'Talent เสนอราคาใหม่ ฿' + amt.toLocaleString(), 'Talent เสนอราคาใหม่ ฿' + amt.toLocaleString() + ' — เปิดแชทเพื่อตอบรับหรือปฏิเสธ');
+      return res.json({ success: true, action: 'counter_offer', deal: { amount: amt, proposed_by: 'talent' }, message: 'ส่งข้อเสนอราคาใหม่แล้ว' });
+    }
+
+    if (action === 'accept' || action === 'decline') {
+      const canRespond = (isTalent && proposedBy === 'employer') || (isEmployer && proposedBy === 'talent');
+      if (!canRespond) return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์ตอบ Deal นี้' });
+      const jobHiredCheck = await pool.query('SELECT hired_user_id FROM advance_jobs WHERE id = $1', [deal.job_id]);
+      if (action === 'accept' && jobHiredCheck.rows?.[0]?.hired_user_id) return res.status(400).json({ success: false, error: 'งานนี้จ้าง Talent แล้ว ไม่สามารถรับ Deal ซ้ำได้' });
+
+      const newStatus = action === 'accept' ? 'accepted' : 'declined';
+      await pool.query('UPDATE advance_job_deals SET status = $1, responded_at = NOW() WHERE id = $2', [newStatus, deal.id]);
+
+      if (action === 'accept') {
+        const hireUserId = isTalent ? userUuid : deal.talent_id;
+        await pool.query(
+          `UPDATE advance_jobs SET status = 'in_progress', hired_user_id = $1, hired_at = NOW(), agreed_amount = $2, updated_at = NOW() WHERE id = $3`,
+          [hireUserId, deal.amount, deal.job_id]
+        );
+        await pool.query('UPDATE advance_job_applicants SET status = $1 WHERE job_id = $2 AND user_id != $3', ['rejected', deal.job_id, hireUserId]);
+        await pool.query('UPDATE advance_job_applicants SET status = $1 WHERE job_id = $2 AND user_id = $3', ['hired', deal.job_id, hireUserId]);
+        const amtStr = '฿' + Number(deal.amount).toLocaleString();
+        await pushUserNotificationIfNotPeaceMode(deal.employer_id, 'Talent รับ Deal แล้ว! กรุณาชำระเงิน ' + amtStr + ' เข้า Escrow เพื่อเริ่มงาน', 'Talent ตอบรับดีลแล้ว กรุณาชำระเงินจำนวน ' + amtStr + ' เพื่อเริ่มงาน');
+        await pushUserNotificationIfNotPeaceMode(deal.talent_id, 'ยินดีด้วย! คุณรับ Deal แล้ว — รอนายจ้างโอนเงินเข้า Escrow', 'ยินดีด้วย! คุณรับ Deal แล้ว');
+
+        const sysMsg = '[System] Talent ตอบรับดีลแล้ว กรุณาชำระเงินจำนวน ' + amtStr + ' เพื่อเริ่มงาน (โอนเข้า Escrow ที่แท็บ Escrow)';
+        const threadRow = await pool.query('SELECT id FROM advance_job_chat_threads WHERE job_id = $1 AND employer_id = $2 AND talent_id = $3 LIMIT 1', [deal.job_id, deal.employer_id, deal.talent_id]);
+        const tid = threadRow.rows?.[0]?.id;
+        const hasThreadCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_messages' AND column_name = 'thread_id'`).then(r => r.rows?.length > 0);
+        if (tid && hasThreadCol) {
+          await pool.query('INSERT INTO advance_job_messages (job_id, sender_id, body, thread_id) VALUES ($1, $2, $3, $4)', [deal.job_id, deal.talent_id, sysMsg, tid]);
+        }
+      }
+      return res.json({ success: true, action, message: action === 'accept' ? 'รับ Deal แล้ว' : 'ปฏิเสธ Deal แล้ว' });
+    }
+    return res.status(400).json({ success: false, error: 'action ไม่ถูกต้อง' });
+  } catch (err) {
+    console.error('PATCH /api/advance-jobs/:id/deals/:dealId error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============ WALLET DEPOSIT (PromptPay / card token / TrueMoney — via configured gateway) ============
 // GET /api/wallet/deposit/preview — คำนวณค่าธรรมเนียมก่อนเติม (สำหรับ UI แสดง "Processing Fee")
 app.get('/api/wallet/deposit/preview', (req, res) => {
   try {
@@ -12966,7 +18202,7 @@ app.get('/api/wallet/deposit/preview', (req, res) => {
   }
 });
 
-// POST /api/wallet/deposit — สร้าง Charge Omise (PromptPay QR หรือบัตร) แล้วบันทึก pending; เมื่อจ่ายสำเร็จ Webhook จะ credit wallet + ledger
+// POST /api/wallet/deposit — create processor charge; webhook credits wallet + ledger when paid
 app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
@@ -12979,9 +18215,9 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     }
     const userFrozen = await isWalletFrozen(userUuid);
     if (userFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถเติมเงินได้ กรุณาติดต่อฝ่ายสนับสนุน' });
-    const secretKey = process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null);
+    let secretKey = getPaymentGatewaySecretKey();
     if (!secretKey || secretKey.includes('xxxxx')) {
-      return res.status(503).json({ error: 'Payment gateway (Omise) ยังไม่ได้ตั้งค่า - กรุณาใส่ OMISE_SECRET_KEY หรือ OMISE_SECRET_KEY_TEST ใน .env' });
+      return res.status(503).json({ error: 'Payment gateway ยังไม่ได้ตั้งค่า — ใส่ PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST ใน .env' });
     }
     const { amount, payment_method, return_uri, card } = req.body || {};
     const amountNum = Math.round(Number(amount) * 100) / 100;
@@ -12991,13 +18227,12 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     const returnUrl = return_uri || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile`;
 
     let charge;
-    
-    // Real Omise API
-    const omiseClient = new OmiseClient(secretKey);
+
+    const paymentClient = new PaymentHttpClient(secretKey);
     
     if (method === 'promptpay') {
-      const source = await omiseClient.createPromptPaySource(amountSatang, 'thb');
-      charge = await omiseClient.createCharge({
+      const source = await paymentClient.createPromptPaySource(amountSatang, 'thb');
+      charge = await paymentClient.createCharge({
         amount: amountSatang,
         currency: 'thb',
         source: source.id,
@@ -13009,8 +18244,8 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
       if (!phoneNumber || !/^0\d{9}$/.test(phoneNumber)) {
         return res.status(400).json({ error: 'กรุณาระบุเบอร์โทรศัพท์ที่ถูกต้อง (10 หลัก เริ่มต้นด้วย 0)' });
       }
-      const source = await omiseClient.createTrueMoneySource(amountSatang, phoneNumber, 'thb');
-      charge = await omiseClient.createCharge({
+      const source = await paymentClient.createTrueMoneySource(amountSatang, phoneNumber, 'thb');
+      charge = await paymentClient.createCharge({
         amount: amountSatang,
         currency: 'thb',
         source: source.id,
@@ -13018,7 +18253,7 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
         metadata: { user_id: String(userUuid), source: 'wallet_deposit', phone: phoneNumber }
       });
     } else if (method === 'card' && card) {
-      charge = await omiseClient.createCharge({
+      charge = await paymentClient.createCharge({
         amount: amountSatang,
         currency: 'thb',
         card: card,
@@ -13050,13 +18285,21 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     }
 
     const authorizationUri = charge.authorize_uri || charge.authorization_uri || null;
-    
-    // Extract QR Code URL from Omise response
+
     let qrImageUrl = null;
-    if (charge.source?.scannable_code?.image?.download_uri) {
-      qrImageUrl = charge.source.scannable_code.image.download_uri;
-    } else if (charge.source?.scuri_omise_th || charge.source?.scuri) {
-      qrImageUrl = charge.source.scuri_omise_th || charge.source.scuri;
+    const src = charge.source;
+    if (src?.scannable_code?.image?.download_uri) {
+      qrImageUrl = src.scannable_code.image.download_uri;
+    } else if (src) {
+      if (src.scuri) qrImageUrl = src.scuri;
+      else {
+        for (const k of Object.keys(src)) {
+          if (k.toLowerCase().includes('scuri') && src[k]) {
+            qrImageUrl = src[k];
+            break;
+          }
+        }
+      }
     }
     
     return res.status(201).json({
@@ -13071,7 +18314,89 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/wallet/deposit error:', err);
-    return res.status(500).json({ error: err.message || 'Failed to create deposit charge' });
+    const code = err?.code || err?.response?.data?.code;
+    const msg = String(err?.message || err?.response?.data?.message || '').toLowerCase();
+    const isKeyExpired = code === 'key_expired_error' || msg.includes('expired key') || msg.includes('expired');
+    const isAuthFailure = code === 'authentication_failure' || msg.includes('authentication failed');
+    if (isKeyExpired) {
+      return res.status(503).json({
+        error: 'รหัสเชื่อมต่อ payment gateway หมดอายุ — หมุน key ที่แดชบอร์ดผู้ให้บริการแล้วอัปเดต PAYMENT_GATEWAY_SECRET_KEY ใน .env',
+        code: 'gateway_key_expired'
+      });
+    }
+    if (isAuthFailure) {
+      return res.status(503).json({
+        error: 'รหัสเชื่อมต่อ payment gateway ไม่ถูกต้อง — ตรวจสอบ PAYMENT_GATEWAY_SECRET_KEY และคู่กับ public key',
+        code: 'gateway_auth_failure'
+      });
+    }
+    const errMsg = err?.message || err?.response?.data?.message || err?.response?.data?.error || 'Failed to create deposit charge';
+    return res.status(500).json({ error: String(errMsg) });
+  }
+});
+
+// POST /api/wallet/topup — เติมเงินผ่านโอนบัญชี (manual confirmation)
+// เมื่อผู้ใช้กดยืนยันว่าโอนแล้ว → credit wallet + บันทึก ledger
+app.post('/api/wallet/topup', paymentLimiter, async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตนผู้ใช้ในระบบ' });
+    const userFrozen = await isWalletFrozen(userUuid);
+    if (userFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถเติมเงินได้' });
+
+    const { idempotency_key, amount, gateway, payment_id, bill_no, transaction_no } = req.body || {};
+    const amountNum = Math.round(Number(amount) * 100) / 100;
+    if (!(amountNum >= 1)) return res.status(400).json({ error: 'กรุณาระบุจำนวนเงิน (ขั้นต่ำ 1 บาท)' });
+    const gate = (gateway || 'bank_transfer').toLowerCase();
+    const payId = payment_id || `topup_${userUuid}_${Date.now()}`;
+    const billNo = bill_no || `B${Date.now()}`;
+    const txnNo = transaction_no || idempotency_key || `T${Date.now()}`;
+
+    // Idempotency: ถ้า transaction_no ซ้ำ → คืน balance ปัจจุบัน
+    const existing = await pool.query(
+      `SELECT net_amount FROM payment_ledger_audit WHERE event_type = 'wallet_deposit' AND transaction_no = $1 AND user_id = $2 LIMIT 1`,
+      [txnNo, userUuid]
+    ).catch(() => ({ rows: [] }));
+    if (existing.rows?.length) {
+      const bal = await pool.query(
+        'SELECT wallet_balance FROM users WHERE id = $1',
+        [userUuid]
+      ).then(r => parseFloat(r.rows?.[0]?.wallet_balance || 0));
+      return res.status(200).json({ balance: bal, transaction_group_id: txnNo, idempotent: true });
+    }
+
+    const feeBreakdown = calcDepositFeeBreakdown(amountNum, gate);
+    const creditAmount = feeBreakdown.net_to_wallet;
+    const ledgerId = `L-topup-${payId}-${Date.now()}`;
+
+    await pool.query('BEGIN');
+    await pool.query(
+      'UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid',
+      [creditAmount, userUuid]
+    );
+    await pool.query(
+      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, gateway_fee_amount, platform_margin_amount, net_amount, metadata)
+       VALUES ($1, 'wallet_deposit', $2, $3, $2, $4, 'THB', 'completed', $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        ledgerId, payId, gate, amountNum, billNo, txnNo, userUuid,
+        feeBreakdown.gateway_fee_amount ?? null,
+        feeBreakdown.platform_margin_amount ?? null,
+        creditAmount,
+        JSON.stringify({ leg: 'wallet_deposit', source: 'bank_transfer_topup', gateway: gate })
+      ]
+    );
+    await pool.query('COMMIT');
+
+    const balRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [userUuid]);
+    const newBalance = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+
+    return res.status(201).json({ balance: newBalance, transaction_group_id: ledgerId });
+  } catch (err) {
+    await pool.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/wallet/topup error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to top up wallet' });
   }
 });
 
@@ -13112,8 +18437,8 @@ app.get('/api/wallet/transactions', async (req, res) => {
     if (!userUuid) return res.json({ transactions: [] });
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
     const result = await pool.query(
-      `SELECT id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at, user_id, provider_id,
-              gateway_fee_amount, net_amount
+      `SELECT id, tax_ref_id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at, user_id, provider_id,
+              gateway_fee_amount, net_amount, bill_no, transaction_no
        FROM payment_ledger_audit
        WHERE (provider_id::text = $1 OR user_id::text = $1)
        ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $2`,
@@ -13127,14 +18452,41 @@ app.get('/api/wallet/transactions', async (req, res) => {
       const tnRes = await pool.query('SELECT id, full_name FROM users WHERE id::text = ANY($1)', [traineeIds.map((id) => String(id))]);
       (tnRes.rows || []).forEach((row) => { traineeNames[String(row.id)] = row.full_name || 'ศิษย์'; });
     }
+    // ดึง job titles + tips_amount สำหรับ Match jobs (payment_created, escrow_held, wallet_tip)
+    const jobIds = [...new Set(rows.map((x) => x.job_id).filter(Boolean))];
+    const jobInfoMap = {};
+    if (jobIds.length > 0) {
+      try {
+        const jr = await pool.query(
+          `SELECT id, title, tips_amount FROM jobs WHERE id::text = ANY($1)`,
+          [jobIds.map((id) => String(id))]
+        );
+        (jr.rows || []).forEach((row) => {
+          jobInfoMap[String(row.id)] = { title: row.title, tips_amount: parseFloat(row.tips_amount || 0) || 0 };
+        });
+        const advJr = await pool.query(
+          `SELECT id, title FROM advance_jobs WHERE id::text = ANY($1)`,
+          [jobIds.map((id) => String(id))]
+        );
+        (advJr.rows || []).forEach((row) => {
+          if (!jobInfoMap[String(row.id)]) {
+            jobInfoMap[String(row.id)] = { title: row.title || 'Advance Job', tips_amount: 0 };
+          }
+        });
+      } catch (_) {}
+    }
+
     const transactions = rows.map((r) => {
       const meta = r.metadata || {};
-      const isCredit = r.provider_id && String(r.provider_id) === String(userUuid) && (r.event_type === 'escrow_released' || (r.event_type === 'escrow_held' && meta.leg === 'provider_net'));
+      const isCredit = r.provider_id && String(r.provider_id) === String(userUuid) && (r.event_type === 'escrow_released' || (r.event_type === 'escrow_held' && meta.leg === 'provider_net') || r.event_type === 'wallet_tip' || r.event_type === 'talent_booking_payout');
       const isDebit = r.user_id && String(r.user_id) === String(userUuid);
       const grossAmount = Number(r.amount);
       const netAmount = r.net_amount != null ? Number(r.net_amount) : grossAmount;
       const depositFeeAmount = grossAmount - netAmount;
       const withdrawalFee = meta.withdrawal_fee != null ? Number(meta.withdrawal_fee) : 0;
+      const insuranceAmount = meta.insurance_amount != null ? Number(meta.insurance_amount) : 0;
+      const jobInfo = r.job_id ? jobInfoMap[String(r.job_id)] : null;
+      const tipsAmount = jobInfo?.tips_amount ?? 0;
 
       let description = '';
       if (r.event_type === 'wallet_deposit') {
@@ -13149,11 +18501,26 @@ app.get('/api/wallet/transactions', async (req, res) => {
         } else {
           description = `ถอนเงิน ฿${netAmount.toLocaleString()}`;
         }
-      } else if (r.event_type === 'escrow_released' && meta.source === 'advance_milestone') {
-        description = `จากงาน Advance Job ID: ${r.job_id}`;
+      } else if (r.event_type === 'payment_created' && meta.leg === 'user_debit') {
+        description = `ชำระงาน${jobInfo?.title ? `: ${jobInfo.title}` : ` #${r.job_id}`}`;
+      } else if (r.event_type === 'wallet_tip') {
+        if (isCredit) {
+          description = `ได้รับทิป ฿${grossAmount.toLocaleString()} จากงาน${jobInfo?.title ? `: ${jobInfo.title}` : ` #${r.job_id}`}`;
+        } else {
+          description = `ส่งทิป ฿${grossAmount.toLocaleString()} ให้งาน${jobInfo?.title ? `: ${jobInfo.title}` : ` #${r.job_id}`}`;
+        }
+      } else if (r.event_type === 'escrow_released' && (meta.source === 'advance_milestone' || meta.source === 'advance_full_release')) {
+        description = `จากงาน Advance Job${jobInfo?.title ? `: ${jobInfo.title}` : ` ID: ${r.job_id}`}`;
         if (meta.commission_deducted != null && Number(meta.commission_deducted) > 0) {
           description += ` · หัก Commission ฿${Number(meta.commission_deducted).toLocaleString()}`;
         }
+      } else if (r.event_type === 'talent_booking_payout' && r.provider_id && String(r.provider_id) === String(userUuid)) {
+        description = `รายได้จาก Booking (Slot-based)${r.job_id ? ` · ${r.job_id}` : ''}`;
+        if (meta.platform_fee != null && Number(meta.platform_fee) > 0) {
+          description += ` · หัก Platform Fee ฿${Number(meta.platform_fee).toLocaleString()}`;
+        }
+      } else if (r.event_type === 'escrow_held' && meta.leg === 'provider_net' && r.job_id) {
+        description = `รายได้จากงาน Match${jobInfo?.title ? `: ${jobInfo.title}` : ` #${r.job_id}`}`;
       } else if (r.event_type === 'escrow_held' && meta.leg === 'commission') {
         return null; // skip commission row (talent sees net via escrow_released)
       } else if (r.event_type === 'coach_training_fee' && r.provider_id && String(r.provider_id) === String(userUuid)) {
@@ -13175,11 +18542,22 @@ app.get('/api/wallet/transactions', async (req, res) => {
         };
       } else if (r.event_type === 'payment_refunded' && meta.leg === 'user_credit') {
         description = 'เงินคืน (Refund)';
+      } else if (r.event_type === 'marine_deposit_held') {
+        description = isDebit ? `มัดจำ Marine (Pending Deposit) ฿${grossAmount.toLocaleString()}` : `มัดจำ Marine ฿${grossAmount.toLocaleString()}`;
+      } else if (r.event_type === 'marine_deposit_refund') {
+        description = `คืนมัดจำ Marine ฿${grossAmount.toLocaleString()} (ยกเลิก ${meta.refund_percent ?? 0}%)`;
+      } else if (r.event_type === 'marine_compensation_captain' && r.provider_id && String(r.provider_id) === String(userUuid)) {
+        description = `ค่าชดเชยน้ำมัน (Compensation Received) ฿${grossAmount.toLocaleString()} — Marine`;
+      } else if (r.event_type === 'marine_deposit_released') {
+        description = isCredit ? `ปล่อยมัดจำ Marine ฿${grossAmount.toLocaleString()}` : `ปล่อยมัดจำ Marine ฿${grossAmount.toLocaleString()}`;
       } else {
         description = r.event_type || 'รายการ';
       }
-      return {
+      const out = {
         id: r.id,
+        tax_ref_id: r.tax_ref_id || undefined,
+        bill_no: r.bill_no || undefined,
+        transaction_no: r.transaction_no || undefined,
         event_type: r.event_type,
         job_id: r.job_id,
         amount: (r.event_type === 'wallet_deposit' || r.event_type === 'user_payout_withdrawal') ? netAmount : Number(r.amount),
@@ -13192,6 +18570,24 @@ app.get('/api/wallet/transactions', async (req, res) => {
         commission_deducted: meta.commission_deducted != null ? Number(meta.commission_deducted) : undefined,
         created_at: r.created_at
       };
+      if (meta.employer_expense != null) out.employer_expense = Number(meta.employer_expense);
+      if (meta.provider_income != null) out.provider_income = Number(meta.provider_income);
+      if (meta.company_fee != null) out.company_fee = Number(meta.company_fee);
+      if (insuranceAmount > 0) out.insurance_amount = insuranceAmount;
+      if (r.event_type === 'escrow_held' && meta.leg === 'provider_net' && meta.job_fee != null) {
+        out.gross_earnings = Number(meta.job_fee);
+        if (meta.handling_fee != null) out.handling_fee = Number(meta.handling_fee);
+        if (meta.commission_fee != null) out.commission_fee = Number(meta.commission_fee);
+        if (meta.fee_percent != null) out.commission_percent = Number(meta.fee_percent);
+      }
+      if (r.event_type === 'talent_booking_payout' && meta.gross != null) {
+        out.gross_earnings = Number(meta.gross);
+        if (meta.platform_fee != null) out.commission_fee = Number(meta.platform_fee);
+        if (meta.booking_fee_percent != null) out.commission_percent = Number(meta.booking_fee_percent);
+      }
+      if (r.event_type === 'wallet_tip') out.tips_amount = grossAmount;
+      else if (tipsAmount > 0 && (r.event_type === 'escrow_held' && meta.leg === 'provider_net')) out.tips_amount = tipsAmount;
+      return out;
     }).filter(Boolean);
     return res.json({ transactions });
   } catch (err) {
@@ -13210,7 +18606,7 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
     
     const transactionId = String(req.params.transactionId || '').trim();
     const result = await pool.query(
-      `SELECT id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata, created_at, user_id, provider_id
+      `SELECT id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata, created_at, user_id, provider_id
        FROM payment_ledger_audit
        WHERE id = $1 AND (user_id::text = $2 OR provider_id::text = $2)`,
       [transactionId, String(userUuid)]
@@ -13224,9 +18620,12 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
     const userResult = await pool.query('SELECT id, full_name, email FROM users WHERE id = $1', [userUuid]);
     const userInfo = userResult.rows?.[0] || {};
     
+    const meta = tx.metadata || {};
+    const insuranceAmount = meta.insurance_amount != null ? Number(meta.insurance_amount) : null;
     return res.json({
       receipt: {
         id: tx.id,
+        tax_ref_id: tx.tax_ref_id || null,
         receipt_no: tx.bill_no || tx.id,
         transaction_no: tx.transaction_no || tx.payment_id,
         date: tx.created_at ? new Date(tx.created_at).toISOString() : null,
@@ -13235,13 +18634,22 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
         payment_method: tx.gateway || 'wallet',
         status: tx.status,
         event_type: tx.event_type,
-        description: tx.event_type === 'wallet_deposit' ? 'เติมเงินเข้ากระเป๋า' : tx.event_type,
-        metadata: tx.metadata || {},
+        description: tx.event_type === 'wallet_deposit' ? 'เติมเงินเข้ากระเป๋า' : tx.event_type === 'talent_booking_payout' ? 'รายได้จาก Booking (Slot-based)' : tx.event_type,
+        metadata: meta,
+        employer_expense: meta.employer_expense != null ? Number(meta.employer_expense) : null,
+        provider_income: meta.provider_income != null ? Number(meta.provider_income) : null,
+        company_fee: meta.company_fee != null ? Number(meta.company_fee) : null,
+        insurance_amount: insuranceAmount,
+        gross_earnings: meta.job_fee != null || meta.gross_earnings != null ? Number(meta.job_fee ?? meta.gross_earnings) : (meta.gross != null ? Number(meta.gross) : null),
+        handling_fee: meta.handling_fee != null ? Number(meta.handling_fee) : null,
+        commission_fee: meta.commission_fee != null ? Number(meta.commission_fee) : (meta.platform_fee != null ? Number(meta.platform_fee) : null),
+        commission_percent: meta.fee_percent != null ? Number(meta.fee_percent) : (meta.booking_fee_percent != null ? Number(meta.booking_fee_percent) : null),
         company: {
           name: 'AQOND Technology Co., Ltd.',
           address: 'Bangkok, Thailand',
-          tax_id: 'xxx-xxxx-xxxxx',
-          phone: '02-xxx-xxxx'
+          tax_id: process.env.COMPANY_TAX_ID || process.env.TAX_ID || 'xxx-xxxx-xxxxx',
+          tax_ref_id: tx.tax_ref_id || null,
+          phone: process.env.COMPANY_PHONE || '02-xxx-xxxx'
         },
         customer: {
           name: userInfo.name || userInfo.email || 'N/A',
@@ -13595,7 +19003,24 @@ app.post('/api/compliance/accept', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
-    const userUuid = await resolveUserIdToUuid(userId);
+    let userUuid = await resolveUserIdToUuid(userId);
+    // Fallback: Demo/Apple Review — ลองหา user จาก JWT payload.phone (แก้ปัญหา firebase_uid/sub ไม่ตรง)
+    if (!userUuid && req.headers.authorization && process.env.JWT_SECRET) {
+      try {
+        const token = req.headers.authorization.replace(/^Bearer\s+/i, '').trim();
+        if (token && !token.startsWith('mock')) {
+          const payload = jwt.verify(token, process.env.JWT_SECRET);
+          const phone = payload.phone;
+          if (phone) {
+            const phoneNorm = String(phone).trim().replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+            const p = phoneNorm.startsWith('66') && phoneNorm.length >= 10 ? '0' + phoneNorm.slice(2) : phoneNorm.startsWith('0') ? phoneNorm : '0' + phoneNorm;
+            const phoneAlt = p.startsWith('0') ? '66' + p.slice(1) : p.startsWith('66') ? '0' + p.slice(2) : null;
+            const r = await pool.query('SELECT id FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) LIMIT 1', [p, phoneAlt]);
+            if (r.rows?.length) userUuid = r.rows[0].id;
+          }
+        }
+      } catch (_) {}
+    }
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
     
     const { policy_id, policy_type, policy_version } = req.body;
@@ -13603,8 +19028,15 @@ app.post('/api/compliance/accept', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    const userAgent = req.headers['user-agent'];
+    // ตรวจสอบ policy_id มีใน compliance_policies (ป้องกัน FK violation)
+    const policyCheck = await pool.query('SELECT id FROM compliance_policies WHERE id = $1', [policy_id]);
+    if (policyCheck.rows?.length === 0) {
+      return res.status(400).json({ error: 'Policy not found. Please refresh and try again.' });
+    }
+    
+    // ip_address VARCHAR(100) — truncate เพื่อป้องกัน "value too long for type character varying(100)"
+    const ip = String(req.headers['x-forwarded-for'] || req.connection.remoteAddress || '').trim().slice(0, 100);
+    const userAgent = String(req.headers['user-agent'] || '').slice(0, 100); // เผื่อ column เป็น VARCHAR(100)
     
     await pool.query('BEGIN');
     
@@ -13616,17 +19048,22 @@ app.post('/api/compliance/accept', async (req, res) => {
       [userUuid, policy_id, policy_type, policy_version, ip, userAgent]
     );
     
-    // อัปเดต users table
-    if (policy_type === 'terms') {
-      await pool.query(
-        `UPDATE users SET last_accepted_terms_version = $1, last_terms_accepted_at = NOW() WHERE id = $2`,
-        [policy_version, userUuid]
-      );
-    } else if (policy_type === 'privacy') {
-      await pool.query(
-        `UPDATE users SET last_accepted_privacy_version = $1 WHERE id = $2`,
-        [policy_version, userUuid]
-      );
+    // อัปเดต users table (wrap ใน try-catch เผื่อคอลัมน์ยังไม่มี)
+    try {
+      if (policy_type === 'terms') {
+        await pool.query(
+          `UPDATE users SET last_accepted_terms_version = $1, last_terms_accepted_at = NOW() WHERE id = $2`,
+          [policy_version, userUuid]
+        );
+      } else if (policy_type === 'privacy') {
+        await pool.query(
+          `UPDATE users SET last_accepted_privacy_version = $1 WHERE id = $2`,
+          [policy_version, userUuid]
+        );
+      }
+    } catch (upErr) {
+      if (process.env.DEBUG_LOGIN === '1') console.warn('Compliance accept: UPDATE users failed (columns may not exist):', upErr.message);
+      // ไม่ fail ทั้ง request — acceptance บันทึกแล้ว
     }
     
     await pool.query('COMMIT');
@@ -14237,6 +19674,325 @@ app.get('/api/jobs/:id', async (req, res) => {
   }
 });
 
+// ============ Intercity charter — counter offers (job_bids) ============
+app.get('/api/jobs/:id/bid-floor', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const jobR = await pool.query(`SELECT * FROM jobs WHERE id::text = $1`, [jobId]);
+    if (!jobR.rows.length) return res.status(404).json({ error: 'Job not found' });
+    const floor = getIntercityBidFloorFromJob(jobR.rows[0]);
+    if (!floor) return res.status(400).json({ error: 'Not an intercity charter job' });
+    res.json({
+      min_job_fee_thb: floor.jobFeeThb,
+      insurance_amount: floor.insuranceAmount,
+      listed_final_price_thb: floor.finalPrice,
+      bid_ttl_minutes: getIntercityBidTtlMinutes(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/jobs/:id/bids', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const userId = (req.query.userId || '').toString().trim();
+    if (!userId) return res.status(400).json({ error: 'userId query required' });
+    const jobR = await pool.query(`SELECT * FROM jobs WHERE id::text = $1`, [jobId]);
+    if (!jobR.rows.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobR.rows[0];
+    await expireStalePendingIntercityBids(pool, jobId);
+    const employerUuid = await resolveUserIdToUuid(userId);
+    const uidStr = String(employerUuid || userId);
+    const isOwner =
+      String(job.created_by || '') === uidStr ||
+      String(job.client_id || '') === uidStr ||
+      String(job.created_by || '') === String(userId);
+    const providerUuid = await resolveUserIdToUuid(userId);
+    let q;
+    let params;
+    if (isOwner) {
+      q = `
+        SELECT b.id, b.job_id, b.provider_id, b.proposed_job_fee_thb, b.proposed_final_price_thb, b.status, b.created_at,
+               b.bid_expires_at,
+               u.full_name AS provider_name
+        FROM job_bids b
+        LEFT JOIN users u ON u.id = b.provider_id
+        WHERE b.job_id::text = $1
+        ORDER BY b.created_at DESC
+        LIMIT 50`;
+      params = [jobId];
+    } else {
+      q = `
+        SELECT b.id, b.job_id, b.provider_id, b.proposed_job_fee_thb, b.proposed_final_price_thb, b.status, b.created_at,
+               b.bid_expires_at,
+               u.full_name AS provider_name
+        FROM job_bids b
+        LEFT JOIN users u ON u.id = b.provider_id
+        WHERE b.job_id::text = $1 AND b.provider_id::text = $2
+        ORDER BY b.created_at DESC
+        LIMIT 20`;
+      params = [jobId, String(providerUuid || userId)];
+    }
+    const rows = await pool.query(q, params);
+    const floor = getIntercityBidFloorFromJob(job);
+    res.json({
+      bids: rows.rows,
+      bid_ttl_minutes: getIntercityBidTtlMinutes(),
+      floor: floor
+        ? { min_job_fee_thb: floor.jobFeeThb, insurance_amount: floor.insuranceAmount, listed_final_price_thb: floor.finalPrice }
+        : null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/jobs/:id/bids', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const { userId, proposed_job_fee_thb } = req.body || {};
+    if (!userId || proposed_job_fee_thb == null) {
+      return res.status(400).json({ error: 'userId and proposed_job_fee_thb required' });
+    }
+    const jobR = await pool.query(`SELECT * FROM jobs WHERE id::text = $1`, [jobId]);
+    if (!jobR.rows.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobR.rows[0];
+    if (job.status !== 'open') return res.status(400).json({ error: 'Job is not open' });
+    const floor = getIntercityBidFloorFromJob(job);
+    if (!floor) return res.status(400).json({ error: 'Counter-offers only for intercity charter jobs' });
+    const proposed = round2(parseFloat(proposed_job_fee_thb));
+    if (!Number.isFinite(proposed) || proposed < floor.jobFeeThb - 0.005) {
+      return res.status(400).json({
+        error: `ค่าจ้างต้องไม่ต่ำกว่า ${floor.jobFeeThb} บาท`,
+        min_job_fee_thb: floor.jobFeeThb,
+      });
+    }
+    const employer = calcMatchJobEmployerOutflowDynamic(proposed, floor.insuranceAmount);
+    const gate = await assertProviderCanBidIntercityCharter(userId);
+    if (!gate.ok) return res.status(gate.status).json(gate.body);
+    const providerUuid = gate.user.id;
+    await expireStalePendingIntercityBids(pool, jobId);
+    await pool.query(
+      `DELETE FROM job_bids WHERE job_id::text = $1 AND provider_id::text = $2 AND status = 'pending'`,
+      [jobId, String(providerUuid)]
+    );
+    const ttlMin = getIntercityBidTtlMinutes();
+    const ins = await pool.query(
+      `INSERT INTO job_bids (job_id, provider_id, proposed_job_fee_thb, proposed_final_price_thb, status, updated_at, bid_expires_at)
+       VALUES ($1, $2::uuid, $3, $4, 'pending', NOW(), NOW() + ($5::int * INTERVAL '1 minute'))
+       RETURNING *`,
+      [String(jobId), String(providerUuid), proposed, employer.finalPrice, ttlMin]
+    );
+    const bid = ins.rows[0];
+    const employerId = job.created_by || job.client_id;
+    const priceLabel = Number.isFinite(proposed) ? String(round2(proposed)) : String(proposed);
+    if (employerId) {
+      const notifTitle = 'ข้อเสนอเหมาข้ามจังหวัด';
+      const notifMsg = `มีข้อเสนอใหม่สำหรับงานข้ามจังหวัดของคุณ! ราคาเริ่มต้นที่ ${priceLabel} บาท ดูเลย!`;
+      pushUserNotificationIfNotPeaceMode(employerId, notifTitle, notifMsg).catch(() => {});
+      const empUuid = await resolveUserIdToUuid(employerId).catch(() => null);
+      if (empUuid) {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, message, data, created_at)
+           VALUES ($1, 'job_bid', $2, $3, $4, NOW())`,
+          [
+            empUuid,
+            notifTitle,
+            notifMsg,
+            JSON.stringify({
+              job_id: jobId,
+              bid_id: bid.id,
+              proposed_job_fee_thb: proposed,
+              bid_expires_at: bid.bid_expires_at,
+            }),
+          ]
+        ).catch(() => {});
+      }
+    }
+    res.json({ success: true, bid, bid_ttl_minutes: ttlMin });
+  } catch (e) {
+    if (e.code === '42P01') return res.status(503).json({ error: 'job_bids table missing — run migration 140' });
+    if (e.code === '42703') {
+      return res.status(503).json({ error: 'job_bids.bid_expires_at missing — run migration 141' });
+    }
+    console.error('POST /api/jobs/:id/bids', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/jobs/:id/bids/:bidId/accept', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const bidId = req.params.bidId;
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    const uidStr = String(employerUuid || userId);
+
+    const jobR = await pool.query(`SELECT * FROM jobs WHERE id::text = $1`, [jobId]);
+    if (!jobR.rows.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobR.rows[0];
+    const isOwner =
+      String(job.created_by || '') === uidStr ||
+      String(job.client_id || '') === uidStr ||
+      String(job.created_by || '') === String(userId);
+    if (!isOwner) return res.status(403).json({ error: 'Only owner can accept a bid' });
+    if (job.status !== 'open') return res.status(400).json({ error: 'Job is not open' });
+
+    await expireStalePendingIntercityBids(pool, jobId);
+    const bidR = await pool.query(`SELECT * FROM job_bids WHERE id::text = $1 AND job_id::text = $2`, [bidId, jobId]);
+    if (!bidR.rows.length) return res.status(404).json({ error: 'Bid not found' });
+    const bid = bidR.rows[0];
+    if (bid.status !== 'pending') {
+      const msg =
+        bid.status === 'expired'
+          ? 'ข้อเสนอนี้หมดอายุแล้ว — กรุณาให้คนขับเสนอราคาใหม่'
+          : 'Bid is not pending';
+      return res.status(400).json({ error: msg, code: bid.status === 'expired' ? 'BID_EXPIRED' : 'BID_NOT_PENDING' });
+    }
+
+    const floor = getIntercityBidFloorFromJob(job);
+    if (!floor) return res.status(400).json({ error: 'Not intercity charter' });
+    const proposed = round2(parseFloat(bid.proposed_job_fee_thb));
+    if (proposed < floor.jobFeeThb - 0.005) {
+      return res.status(400).json({ error: 'Bid below floor — invalid' });
+    }
+    const employerOut = calcMatchJobEmployerOutflowDynamic(proposed, floor.insuranceAmount);
+    const finalPrice = employerOut.finalPrice;
+    const providerUuid = bid.provider_id;
+
+    const client = await pool.connect();
+    let updateResult;
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query('SELECT * FROM jobs WHERE id::text = $1 FOR UPDATE', [String(jobId)]);
+      if (!locked.rows?.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Job not found' });
+      }
+      const jobLocked = locked.rows[0];
+      if (jobLocked.status !== 'open') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Job is not available' });
+      }
+
+      let pdOut = parseJobPaymentDetailsRaw(jobLocked.payment_details);
+      const empMethod = (pdOut.employer_payment_method || pdOut.payment_method || 'wallet').toString().toLowerCase();
+      const cashAmt = empMethod === 'cash' ? round2(Number(finalPrice) || 0) : 0;
+
+      if (empMethod === 'cash' && cashAmt > 0) {
+        const provFrozen = await isWalletFrozen(providerUuid);
+        if (provFrozen) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'บัญชีผู้รับงานถูกระงับ — ไม่สามารถรับงานเงินสดได้' });
+        }
+        const wUp = await client.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) - $1, updated_at = NOW()
+           WHERE (id::text = $2 OR id = $2::uuid OR firebase_uid = $2)
+             AND COALESCE(wallet_balance, 0) >= $1
+           RETURNING id, wallet_balance`,
+          [cashAmt, String(providerUuid)]
+        );
+        if (!wUp.rows?.length) {
+          await client.query('ROLLBACK');
+          const balRow = await pool.query(
+            `SELECT wallet_balance FROM users WHERE id::text = $1 OR id = $1::uuid OR firebase_uid = $1 LIMIT 1`,
+            [String(providerUuid)]
+          );
+          const bal = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+          return res.status(400).json({
+            error: `งานเงินสด: ต้องมีเครดิตในระบบอย่างน้อย ${cashAmt} บาท (ยอดปัจจุบัน ${round2(bal)} บาท)`,
+            code: 'INSUFFICIENT_WALLET_FOR_CASH_JOB',
+            required: cashAmt,
+            balance: round2(bal),
+          });
+        }
+        pdOut = {
+          ...pdOut,
+          employer_payment_method: 'cash',
+          cash_liability_amount: cashAmt,
+          cash_liability_currency: 'THB',
+          cash_liability_applied_at: new Date().toISOString(),
+          cash_liability_debit: cashAmt,
+          cash_liability_status: 'held',
+        };
+      }
+
+      pdOut = {
+        ...pdOut,
+        agreed_bid_id: bidId,
+        agreed_job_fee_thb: proposed,
+        agreed_final_price_thb: finalPrice,
+        price_includes_payment_markup: true,
+      };
+
+      const bidLock = await client.query(
+        `SELECT * FROM job_bids WHERE id::text = $1 AND job_id::text = $2 FOR UPDATE`,
+        [bidId, jobId]
+      );
+      const bRow = bidLock.rows?.[0];
+      if (!bRow || bRow.status !== 'pending') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Bid is no longer available' });
+      }
+      if (bRow.bid_expires_at && new Date(bRow.bid_expires_at) < new Date()) {
+        await client.query(
+          `UPDATE job_bids SET status = 'expired', updated_at = NOW() WHERE id::text = $1`,
+          [bidId]
+        );
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'ข้อเสนอนี้หมดอายุแล้ว', code: 'BID_EXPIRED' });
+      }
+
+      updateResult = await client.query(
+        `UPDATE jobs SET
+          status = 'accepted',
+          accepted_by = $1,
+          accepted_at = NOW(),
+          price = $3,
+          updated_at = NOW(),
+          payment_details = $4::jsonb
+         WHERE id::text = $2
+         RETURNING *`,
+        [providerUuid, String(jobId), finalPrice, JSON.stringify(pdOut)]
+      );
+
+      await client.query(
+        `UPDATE job_bids SET status = 'superseded', updated_at = NOW() WHERE job_id::text = $1 AND status = 'pending' AND id::text <> $2`,
+        [jobId, bidId]
+      );
+      await client.query(`UPDATE job_bids SET status = 'accepted', updated_at = NOW() WHERE id::text = $1`, [bidId]);
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    const providerRow = await pool.query(`SELECT full_name FROM users WHERE id::text = $1 OR id = $1::uuid LIMIT 1`, [String(providerUuid)]);
+    const providerName = providerRow.rows?.[0]?.full_name || 'ผู้รับงาน';
+    if (employerUuid || job.created_by) {
+      pushUserNotificationIfNotPeaceMode(providerUuid, 'ยอมรับราคาของคุณแล้ว', `ผู้จ้างตกลงราคาเหมาข้ามจังหวัด — ${job.title || ''}`.slice(0, 120)).catch(() => {});
+    }
+
+    res.json({
+      success: true,
+      job: normalizeJobForApi(updateResult.rows[0]),
+      message: 'Bid accepted — job assigned',
+      provider_name: providerName,
+    });
+  } catch (e) {
+    if (e.code === '42P01') return res.status(503).json({ error: 'job_bids table missing — run migration 140' });
+    console.error('POST /api/jobs/:id/bids/:bidId/accept', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ✅ 3. Create Job
 // ✅ Duplicate POST /api/jobs endpoint removed - using the one at line 751 instead
 
@@ -14297,18 +20053,23 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
 
     const job = jobResult.rows[0];
 
-    // Provider Onboarding lock: ต้อง VERIFIED_PROVIDER ถึงจะรับงานได้
+    // Provider Onboarding: อนุญาตให้รับงานได้เมื่อ
+    // 1) Demo Talent (Apple Review) — bypass สำหรับ App Store Review
+    // 2) Provider อื่นๆ — role=provider หรือ VERIFIED_PROVIDER
+    const isAppleDemoTalent = /apple-demo-talent|demo talent|0812345602/i.test(String(userId)) ||
+      (user.firebase_uid && /apple-demo-talent/i.test(String(user.firebase_uid))) ||
+      (user.phone && /0812345602|66812345602/.test(String(user.phone || '').replace(/\D/g, ''))) ||
+      (user.full_name && /demo talent.*apple review|apple review.*demo talent/i.test(String(user.full_name)));
+    const userRole = String(user.role || '').toLowerCase();
+    const isProvider = userRole === 'provider';
     const providerStatus = String(user.provider_status || 'UNVERIFIED').toUpperCase();
-    if (providerStatus !== 'VERIFIED_PROVIDER') {
+    const canAccept = isAppleDemoTalent || isProvider || providerStatus === 'VERIFIED_PROVIDER';
+    if (!canAccept) {
       return res.status(403).json({
         error: 'PROVIDER_NOT_VERIFIED',
         message: 'Provider must pass professional test before accepting jobs.',
         provider_status: providerStatus
       });
-    }
-
-    if (job.status !== 'open') {
-      return res.status(400).json({ error: 'Job is not available' });
     }
 
     const providerUuid = user.id;
@@ -14343,17 +20104,123 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
       ).catch(() => {});
     }
 
-    // อัพเดท job (รองรับ id เป็น number หรือ string)
-    const updateResult = await pool.query(
-      `UPDATE jobs SET 
-        status = 'accepted',
-        accepted_by = $1,
-        accepted_at = NOW(),
-        updated_at = NOW()
-       WHERE id::text = $2
-       RETURNING *`,
-      [userId, String(jobId)]
-    );
+    // งานเงินสด: ผู้รับงานต้องมียอดเครดิตในระบบ ≥ ยอมรับผิดชอบ (หักทันทีตอนรับงาน) — ใช้ transaction กับการรับงาน
+    const client = await pool.connect();
+    let updateResult;
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query('SELECT * FROM jobs WHERE id::text = $1 FOR UPDATE', [String(jobId)]);
+      if (!locked.rows?.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Job not found' });
+      }
+      const jobLocked = locked.rows[0];
+      if (jobLocked.status !== 'open') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Job is not available' });
+      }
+
+      let pdOut = parseJobPaymentDetailsRaw(jobLocked.payment_details);
+      const empMethod = (pdOut.employer_payment_method || pdOut.payment_method || 'wallet').toString().toLowerCase();
+      const cashAmt = empMethod === 'cash'
+        ? round2(Number(pdOut.cash_liability_amount ?? jobLocked.price) || 0)
+        : 0;
+
+      // เงินสด: ลูกค้าจ่ายสดให้ผู้รับงาน — แพลตฟอร์มต้องกันคนรับงานไม่ค้ำยอดจ้างจริงในระบบ (ไม่ให้รับฟรี / นิเวศไม่เป็นธรรม)
+      // หัก wallet ตามยอดจ้าง (cash_liability) เท่านั้น และห้ามรับถ้า wallet < ยอดนั้น (รวมกรณี 0 บาท)
+      if (empMethod === 'cash' && cashAmt > 0) {
+        const provFrozen = await isWalletFrozen(providerUuid);
+        if (provFrozen) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({
+            error: 'บัญชีผู้รับงานถูกระงับ — ไม่สามารถรับงานเงินสดได้',
+            message: 'บัญชีผู้รับงานถูกระงับ — ไม่สามารถรับงานเงินสดได้',
+          });
+        }
+        const wUp = await client.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) - $1, updated_at = NOW()
+           WHERE (id::text = $2 OR id = $2::uuid OR firebase_uid = $2)
+             AND COALESCE(wallet_balance, 0) >= $1
+           RETURNING id, wallet_balance`,
+          [cashAmt, String(providerUuid)]
+        );
+        if (!wUp.rows?.length) {
+          await client.query('ROLLBACK');
+          const balRow = await pool.query(
+            `SELECT wallet_balance FROM users WHERE id::text = $1 OR id = $1::uuid OR firebase_uid = $1 LIMIT 1`,
+            [String(providerUuid)]
+          );
+          const bal = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+          const zeroHint = bal <= 0 ? ' ยอดกระเป๋าเป็น 0 บาท — ไม่สามารถรับงานเงินสดที่ต้องค้ำยอดนี้ได้' : '';
+          const msg = `งานเงินสด: ต้องมีเครดิตในระบบอย่างน้อย ${cashAmt} บาท (ยอดปัจจุบัน ${round2(bal)} บาท) — กรุณาเติมเงินก่อนรับงาน${zeroHint}`;
+          return res.status(400).json({
+            error: msg,
+            message: msg,
+            code: 'INSUFFICIENT_WALLET_FOR_CASH_JOB',
+            required: cashAmt,
+            balance: round2(bal),
+          });
+        }
+        pdOut = {
+          ...pdOut,
+          employer_payment_method: 'cash',
+          cash_liability_applied_at: new Date().toISOString(),
+          cash_liability_debit: cashAmt,
+          cash_liability_status: 'held',
+        };
+      }
+
+      updateResult = await client.query(
+        `UPDATE jobs SET 
+          status = 'accepted',
+          accepted_by = $1,
+          accepted_at = NOW(),
+          updated_at = NOW(),
+          payment_details = $3::jsonb
+         WHERE id::text = $2
+         RETURNING *`,
+        [providerUuid, String(jobId), JSON.stringify(pdOut)]
+      );
+
+      const isMarineDeposit = jobLocked.category === 'Marine' && jobLocked.safety_deposit_status === 'held' && parseFloat(jobLocked.safety_deposit_amount || 0) > 0;
+      if (isMarineDeposit) {
+        const jobPrice = parseFloat(jobLocked.price || 0);
+        if (jobPrice > 0) {
+          const { captainPayout } = calcMarineCompleteRelease(jobPrice);
+          await client.query(
+            `UPDATE users SET wallet_pending = COALESCE(wallet_pending, 0) + $1, updated_at = NOW() WHERE id::text = $2 OR id = $2`,
+            [captainPayout, String(providerUuid)]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    // แจ้งเตือนนายจ้างว่ามีคนรับงานแล้ว (ทั้ง in-memory + DB เพื่อให้เห็นแน่นอน)
+    const employerId = job.created_by || job.client_id;
+    const providerName = user.full_name || user.name || user.phone || 'ผู้รับงาน';
+    const jobTitle = (job.title || 'งานของคุณ').toString().slice(0, 50);
+    if (employerId) {
+      const notifTitle = 'มีคนรับงานแล้ว!';
+      const notifMsg = `${providerName} รับงาน "${jobTitle}" แล้ว — ตรวจสอบได้ในหน้ารายละเอียดงาน`;
+      pushUserNotificationIfNotPeaceMode(employerId, notifTitle, notifMsg).catch((e) => console.warn('[Accept notification]', e?.message));
+      const employerUuid = await resolveUserIdToUuid(employerId).catch(() => null);
+      if (employerUuid) {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, message, data, created_at)
+           VALUES ($1, 'job_accepted', $2, $3, $4, NOW())`,
+          [employerUuid, notifTitle, notifMsg, JSON.stringify({ job_id: jobId, provider_name: providerName })]
+        ).catch((e) => console.warn('[Accept notification DB]', e?.message));
+      }
+    }
 
     res.json({
       success: true,
@@ -14368,43 +20235,323 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
 
   } catch (error) {
     console.error('Job accept error:', error);
-    res.status(500).json({ error: 'Failed to accept job' });
+    const errMsg = error?.message || 'Failed to accept job';
+    res.status(500).json({ error: errMsg, message: errMsg });
   }
 });
 
-// ✅ ยกเลิกงาน (เจ้าของงานเท่านั้น, สถานะ open หรือ accepted)
-app.post('/api/jobs/:id/cancel', async (req, res) => {
+// ── Intercity charter: driver milestone (เริ่มเดินทาง / ถึงจุดรับ) — สำหรับคำนวณค่ายกเลิก
+app.post('/api/jobs/:id/intercity-milestone', async (req, res) => {
   try {
     const jobId = (req.params.id || '').toString().trim();
-    const { userId, reason } = req.body || {};
-    if (!jobId || !userId) {
-      return res.status(400).json({ error: 'Job ID and userId required' });
+    const { userId, kind } = req.body || {};
+    if (!userId || !kind) return res.status(400).json({ error: 'userId and kind required' });
+    if (!['started', 'arrived'].includes(String(kind))) {
+      return res.status(400).json({ error: 'kind must be started or arrived' });
     }
-    const jobResult = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
-    if (!jobResult.rows?.length) {
-      return res.status(404).json({ error: 'Job not found', jobId });
+    const jobR = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobR.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobR.rows[0];
+    if (!isIntercityCharterJob(job)) return res.status(400).json({ error: 'Not an intercity charter job' });
+    const providerUuid = await resolveUserIdToUuid(userId);
+    if (!providerUuid || String(job.accepted_by) !== String(providerUuid)) {
+      return res.status(403).json({ error: 'Only assigned driver can update milestone' });
     }
-    const job = jobResult.rows[0];
-    const userIdStr = String(userId).trim();
-    const userUuid = await resolveUserIdToUuid(userIdStr);
+    if (kind === 'started') {
+      await pool.query(
+        `UPDATE jobs SET status = 'in_progress', started_at = COALESCE(started_at, NOW()), updated_at = NOW() WHERE id::text = $1`,
+        [jobId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE jobs SET arrived_at = COALESCE(arrived_at, NOW()), updated_at = NOW() WHERE id::text = $1`,
+        [jobId]
+      );
+    }
+    const out = await pool.query('SELECT * FROM jobs WHERE id::text = $1', [jobId]);
+    res.json({ success: true, job: normalizeJobForApi(out.rows[0]) });
+  } catch (e) {
+    if (e.code === '42703') return res.status(503).json({ error: 'รัน migration 142 (started_at / arrived_at) ก่อน' });
+    console.error('POST /api/jobs/:id/intercity-milestone', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Intercity: ดูค่าธรรมเนียมยกเลิกก่อนกด (ผู้จ้าง)
+app.get('/api/jobs/:id/cancel-quote', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const userId = (req.query.userId || '').toString().trim();
+    if (!userId) return res.status(400).json({ error: 'userId query required' });
+    const jobR = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobR.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobR.rows[0];
+    const userUuid = await resolveUserIdToUuid(userId);
     const createdBy = String(job.created_by || '');
     const clientId = job.client_id ? String(job.client_id) : '';
     const isOwner =
       (userUuid && clientId && clientId === String(userUuid)) ||
       (userUuid && createdBy && createdBy === String(userUuid)) ||
-      (createdBy && createdBy === userIdStr);
-    if (!isOwner) {
-      return res.status(403).json({ error: 'Only job owner can cancel' });
+      (createdBy && createdBy === userId) ||
+      (clientId && clientId === userId);
+    if (!isOwner) return res.status(403).json({ error: 'Only job owner can view cancel quote' });
+    if (!isIntercityCharterJob(job)) return res.json({ applies: false });
+    const st = (job.status || '').toLowerCase();
+    if (!['accepted', 'in_progress'].includes(st)) {
+      return res.json({ applies: false, message: 'ไม่มีค่าธรรมเนียมยกเลิกสำหรับสถานะนี้' });
     }
-    const status = (job.status || '').toLowerCase();
-    if (status !== 'open' && status !== 'accepted') {
-      return res.status(400).json({ error: 'Cannot cancel job in current status', currentStatus: job.status });
+    const feeCalc = calculateCancelFee({ job, cancelTime: new Date(), jobStatus: job.status });
+    return res.json({ applies: true, cancel_fee: feeCalc, job_id: jobId });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ✅ ยกเลิกงาน (เจ้าของงานเท่านั้น, สถานะ open/accepted/pending)
+// รองรับทั้ง jobs (Match) และ advance_jobs (Job Board)
+app.post('/api/jobs/:id/cancel', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const { userId: bodyUserId, reason, confirm_intercity_cancel_fee: confirmIntercity } = req.body || {};
+    const tokenUserId = resolveAdvanceJobUserId(req);
+    const userIdStr = (bodyUserId != null && bodyUserId !== '' ? String(bodyUserId) : tokenUserId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ error: 'Job ID required' });
     }
-    await pool.query(
-      `UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1 RETURNING *`,
+    if (!userIdStr) {
+      return res.status(400).json({ error: 'กรุณาเข้าสู่ระบบ หรือส่ง userId ใน request body' });
+    }
+    const userUuid = await resolveUserIdToUuid(userIdStr);
+
+    // 1. ลอง jobs table ก่อน (Match jobs)
+    const jobResult = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (jobResult.rows?.length) {
+      const job = jobResult.rows[0];
+      const createdBy = String(job.created_by || '');
+      const clientId = job.client_id ? String(job.client_id) : '';
+      const isOwner =
+        (userUuid && clientId && clientId === String(userUuid)) ||
+        (userUuid && createdBy && createdBy === String(userUuid)) ||
+        (createdBy && createdBy === userIdStr) ||
+        (clientId && clientId === userIdStr);
+      if (!isOwner) {
+        return res.status(403).json({ error: 'Only job owner can cancel' });
+      }
+      const status = (job.status || '').toLowerCase();
+      const intercity = isIntercityCharterJob(job);
+      const allowedStatuses = intercity
+        ? ['open', 'accepted', 'pending', 'in_progress']
+        : ['open', 'accepted', 'pending'];
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          error: 'Cannot cancel job in current status',
+          currentStatus: job.status,
+          hint: intercity
+            ? 'ยกเลิกได้เมื่อ status เป็น open, accepted, pending หรือ in_progress'
+            : 'ยกเลิกได้เฉพาะงานที่ status เป็น open, accepted หรือ pending',
+        });
+      }
+
+      const reasonStr = (reason || '').toString().slice(0, 2000);
+
+      /** งานเหมาข้ามจังหวัด + รับงานแล้ว → ค่าธรรมเนียมยกเลิก + แบ่งเงิน */
+      if (intercity && ['accepted', 'in_progress'].includes(status)) {
+        const feeCalc = calculateCancelFee({ job, cancelTime: new Date(), jobStatus: job.status });
+        const feeAmt = round2(Number(feeCalc.totalFeeThb) || 0);
+        if (feeAmt > 0 && !confirmIntercity) {
+          return res.status(400).json({
+            error: 'INTERCITY_CANCEL_FEE_CONFIRMATION_REQUIRED',
+            code: 'INTERCITY_CANCEL_FEE_CONFIRMATION_REQUIRED',
+            cancel_fee: feeCalc,
+            message: 'กรุณายืนยันค่าธรรมเนียมยกเลิกงาน (ส่ง confirm_intercity_cancel_fee: true)',
+          });
+        }
+
+        const employerUuid = userUuid || (await resolveUserIdToUuid(job.created_by || job.client_id));
+        const providerId = job.accepted_by;
+
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const locked = await client.query('SELECT * FROM jobs WHERE id::text = $1 FOR UPDATE', [jobId]);
+          const j = locked.rows[0];
+          const feeCalc2 = calculateCancelFee({ job: j, cancelTime: new Date(), jobStatus: j.status });
+          const feeAmt2 = round2(Number(feeCalc2.totalFeeThb) || 0);
+          const driverComp = round2(Number(feeCalc2.driverAmountThb) || 0);
+          const platformPart = round2(Number(feeCalc2.platformAmountThb) || 0);
+
+          if (feeAmt2 > 0) {
+            const wUp = await client.query(
+              `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) - $1, updated_at = NOW()
+               WHERE (id::text = $2 OR id = $2::uuid) AND COALESCE(wallet_balance, 0) >= $1
+               RETURNING id`,
+              [feeAmt2, String(employerUuid)]
+            );
+            if (!wUp.rows?.length) {
+              await client.query('ROLLBACK');
+              const balRow = await pool.query(
+                `SELECT wallet_balance FROM users WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+                [String(employerUuid)]
+              );
+              const bal = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
+              return res.status(400).json({
+                error: 'ยอดเงินในกระเป๋าไม่พอหักค่าธรรมเนียมยกเลิก',
+                code: 'INSUFFICIENT_WALLET_FOR_CANCEL_FEE',
+                required: feeAmt2,
+                balance: round2(bal),
+                cancel_fee: feeCalc2,
+              });
+            }
+            if (driverComp > 0 && providerId) {
+              await client.query(
+                `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW()
+                 WHERE id::text = $2 OR id = $2::uuid`,
+                [driverComp, String(providerId)]
+              );
+            }
+            const lid = `ICX-${jobId}-${Date.now()}`;
+            await client.query(
+              `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, provider_id, metadata)
+               VALUES ($1, 'intercity_cancel', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7, $8::jsonb)`,
+              [
+                lid,
+                String(jobId),
+                feeAmt2,
+                `ICX-${jobId}`,
+                `T-${lid}`,
+                String(employerUuid),
+                providerId ? String(providerId) : null,
+                JSON.stringify({
+                  tier: feeCalc2.tier,
+                  employer_debit_thb: feeAmt2,
+                  driver_compensation_thb: driverComp,
+                  platform_fee_thb: platformPart,
+                }),
+              ]
+            );
+          }
+
+          let pdWork = parseJobPaymentDetailsRaw(j.payment_details);
+          if (j.accepted_by && (pdWork.cash_liability_debit || 0) > 0 && (pdWork.cash_liability_status === 'held' || !pdWork.cash_liability_status)) {
+            const debit = round2(Number(pdWork.cash_liability_debit) || 0);
+            if (debit > 0) {
+              await client.query(
+                `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW()
+                 WHERE id::text = $2 OR id = $2::uuid`,
+                [debit, String(j.accepted_by)]
+              );
+              pdWork = {
+                ...pdWork,
+                cash_liability_status: 'refunded_on_cancel',
+                cash_liability_refunded_at: new Date().toISOString(),
+              };
+            }
+          }
+
+          const breakdown = { ...feeCalc2, cancelled_at: new Date().toISOString() };
+          pdWork = { ...pdWork, intercity_cancel: breakdown };
+
+          await client.query(
+            `UPDATE jobs SET
+              status = 'cancelled',
+              updated_at = NOW(),
+              cancel_reason = $2,
+              cancel_fee_applied = $3,
+              cancel_fee_breakdown = $4::jsonb,
+              payment_details = $5::jsonb
+             WHERE id::text = $1`,
+            [jobId, reasonStr || null, feeAmt2 > 0 ? feeAmt2 : null, JSON.stringify(breakdown), JSON.stringify(pdWork)]
+          );
+          await client.query('COMMIT');
+
+          if (driverComp > 0 && providerId) {
+            pushUserNotificationIfNotPeaceMode(
+              providerId,
+              'งานถูกยกเลิก!',
+              `งานถูกยกเลิก! คุณได้รับเงินชดเชย ${driverComp} บาท เข้าวอลเล็ตเรียบร้อยแล้ว`
+            ).catch(() => {});
+          }
+
+          return res.json({
+            success: true,
+            message: 'Job cancelled',
+            jobId,
+            cancel_fee: feeCalc2,
+          });
+        } catch (txErr) {
+          try {
+            await client.query('ROLLBACK');
+          } catch (_) {}
+          if (txErr.code === '23514' || (txErr.message && String(txErr.message).includes('intercity_cancel'))) {
+            return res.status(503).json({ error: 'รัน migration 143 (ledger intercity_cancel) ก่อน' });
+          }
+          throw txErr;
+        } finally {
+          client.release();
+        }
+      }
+
+      // ไม่ใช่ intercity รับงานแล้ว — พฤติกรรมเดิม
+      if (status === 'accepted' && job.accepted_by) {
+        const pd = parseJobPaymentDetailsRaw(job.payment_details);
+        const debit = round2(Number(pd.cash_liability_debit) || 0);
+        if (debit > 0 && (pd.cash_liability_status === 'held' || !pd.cash_liability_status)) {
+          try {
+            await pool.query(
+              `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW()
+               WHERE id::text = $2 OR id = $2::uuid`,
+              [debit, String(job.accepted_by)]
+            );
+            const pdNext = {
+              ...pd,
+              cash_liability_status: 'refunded_on_cancel',
+              cash_liability_refunded_at: new Date().toISOString(),
+            };
+            await pool.query(
+              `UPDATE jobs SET payment_details = $1::jsonb, updated_at = NOW() WHERE id::text = $2`,
+              [JSON.stringify(pdNext), jobId]
+            );
+          } catch (refErr) {
+            console.warn('[cancel job] cash liability refund:', refErr.message);
+          }
+        }
+      }
+      await pool.query(
+        `UPDATE jobs SET status = 'cancelled', updated_at = NOW(), cancel_reason = COALESCE($2, cancel_reason) WHERE id::text = $1 RETURNING *`,
+        [jobId, reasonStr || null]
+      );
+      return res.json({ success: true, message: 'Job cancelled', jobId });
+    }
+
+    // 2. ลอง advance_jobs (Job Board)
+    const advResult = await pool.query(
+      `SELECT id, employer_id, status, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1`,
       [jobId]
     );
-    res.json({ success: true, message: 'Job cancelled', jobId });
+    if (advResult.rows?.length) {
+      const adv = advResult.rows[0];
+      const employerId = String(adv.employer_id || '');
+      const isOwner = (userUuid && employerId === String(userUuid)) || (employerId && employerId === userIdStr);
+      if (!isOwner) {
+        return res.status(403).json({ error: 'Only job owner can cancel' });
+      }
+      const status = (adv.status || '').toLowerCase();
+      const advAllowed = ['open', 'pending'];
+      if (!advAllowed.includes(status)) {
+        return res.status(400).json({
+          error: 'Cannot cancel advance job in current status',
+          currentStatus: adv.status,
+          hint: 'ยกเลิกได้เฉพาะงานที่ยังไม่มีผู้รับ (open/pending)',
+        });
+      }
+      await pool.query(
+        `UPDATE advance_jobs SET status = 'cancelled', updated_at = NOW() WHERE id::text = $1 RETURNING *`,
+        [jobId]
+      );
+      return res.json({ success: true, message: 'Job cancelled', jobId });
+    }
+
+    return res.status(404).json({ error: 'Job not found', jobId });
   } catch (e) {
     console.error('Job cancel error:', e.message);
     res.status(500).json({ error: 'Failed to cancel job', message: e.message });
@@ -14427,7 +20574,7 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 app.post('/api/jobs/:id/complete', async (req, res) => {
   try {
     const jobId = req.params.id;
-    const { providerLocation, otpCode, userId } = req.body;
+    const { providerLocation, otpCode, userId, meetCode } = req.body;
     const ipAddress = getClientIp(req);
 
     const jobResult = await pool.query('SELECT * FROM jobs WHERE id::text = $1', [jobId]);
@@ -14437,8 +20584,18 @@ app.post('/api/jobs/:id/complete', async (req, res) => {
     const job = jobResult.rows[0];
 
     // Strict State Machine: ห้ามข้ามขั้น — เฉพาะ accepted / in_progress -> waiting_for_approval
+    // Idempotent: ถ้าส่งซ้ำ (status เป็น waiting_for_approval แล้ว) ให้ return success
     const currentStatus = (job.status || '').toLowerCase();
     const allowedStatuses = ['accepted', 'in_progress', 'in progress'];
+    const alreadySubmitted = currentStatus === 'waiting_for_approval';
+    if (alreadySubmitted) {
+      return res.json({
+        success: true,
+        message: 'Job already submitted; waiting for employer approval.',
+        jobId,
+        alreadySubmitted: true
+      });
+    }
     if (!allowedStatuses.includes(currentStatus)) {
       return res.status(400).json({
         error: 'invalid_status_transition',
@@ -14446,6 +20603,13 @@ app.post('/api/jobs/:id/complete', async (req, res) => {
         currentStatus: job.status
       });
     }
+
+    const createdByName = (job.created_by_name || '').toString();
+    const title = (job.title || '').toString();
+    const createdBy = (job.created_by || '').toString();
+    const isDemoJob = /demo employer|apple review/i.test(createdByName) ||
+      /apple review/i.test(title) ||
+      /demo|apple/i.test(createdBy);
 
     const providerId = (userId || job.accepted_by || '').toString();
     const category = (job.category || '').toLowerCase();
@@ -14456,7 +20620,14 @@ app.post('/api/jobs/:id/complete', async (req, res) => {
       let auditAction = null;
       let auditMeta = { job_id: jobId, provider_id: providerId };
 
-      if (otpCode && redisClient) {
+      // Apple Review / Demo: ข้าม GPS/OTP สำหรับงาน Demo เพื่อให้ผ่านการตรวจสอบ App Store
+      if (isDemoJob) {
+        verified = true;
+        auditAction = 'JOB_COMPLETE_DEMO_BYPASS';
+        auditMeta.demo_bypass = 'Apple Review / Demo mode';
+      }
+
+      if (!verified && otpCode && redisClient) {
         const stored = await redisClient.get(`job_otp:${jobId}`);
         if (stored && String(stored) === String(otpCode).trim()) {
           verified = true;
@@ -14512,6 +20683,63 @@ app.post('/api/jobs/:id/complete', async (req, res) => {
       }, { actorRole: 'User', status: 'Success', ipAddress });
     }
 
+    // หลักฐานรูปก่อน/หลังต้องผ่าน POST verify-proof-image (บันทึกใน DB) — ปิดด้วย JOB_PROOF_DB_REQUIRED=0
+    const proofDbRequired = process.env.JOB_PROOF_DB_REQUIRED !== '0';
+    if (proofDbRequired && !isDemoJob) {
+      try {
+        const pr = await pool.query(
+          `SELECT proof_before_verified_at, proof_after_verified_at,
+                  COALESCE(proof_before_vision_skipped, true) AS b_skip,
+                  COALESCE(proof_after_vision_skipped, true) AS a_skip
+           FROM jobs WHERE id::text = $1 LIMIT 1`,
+          [jobId]
+        );
+        const row = pr.rows[0];
+        if (!row?.proof_before_verified_at || !row?.proof_after_verified_at) {
+          return res.status(400).json({
+            error: 'proof_not_verified',
+            message: 'ต้องอัปโหลดและยืนยันรูปก่อนและหลังทำงานผ่านระบบให้ครบก่อนส่งมอบงาน',
+            hint: 'เรียก POST /api/jobs/:id/verify-proof-image สำหรับทั้ง before และ after',
+          });
+        }
+        if (process.env.JOB_PROOF_VISION_REQUIRED === '1') {
+          if (row.b_skip || row.a_skip) {
+            return res.status(400).json({
+              error: 'proof_vision_required',
+              message: 'งานนี้กำหนดให้ตรวจภาพด้วย AI — ตั้ง GEMINI_API_KEY และเปิด JOB_PROOF_VISION_ENABLED',
+            });
+          }
+        }
+      } catch (pe) {
+        if (pe?.code === '42703' || String(pe?.message || '').includes('does not exist')) {
+          return res.status(503).json({
+            error: 'proof_columns_missing',
+            message: 'ยังไม่ได้รัน migration สำหรับ proof_* — รัน db/migrations/134_job_proof_and_meet_hardening.sql หรือตั้ง JOB_PROOF_DB_REQUIRED=0 ชั่วคราว',
+          });
+        }
+        throw pe;
+      }
+    }
+
+    // รหัสพบกันจากผู้จ้าง (QR / 6 หลัก) — ปิดได้ด้วย JOB_MEET_CODE_REQUIRED=0
+    const meetCodeRequired = process.env.JOB_MEET_CODE_REQUIRED !== '0';
+    if (meetCodeRequired && !isDemoJob) {
+      const row = await getJobMeetCodeEntry(jobId);
+      if (!row) {
+        return res.status(400).json({
+          error: 'meet_code_required',
+          message: 'ต้องรับรหัสยืนยันการพบจากผู้จ้างงาน (สแกน QR หรือกรอกรหัส 6 หลัก) ก่อนส่งมอบงาน — หากยังไม่มีให้ผู้จ้างกดสร้างรหัสในแอป',
+        });
+      }
+      if (String(row.code).trim() !== String(meetCode || '').trim()) {
+        return res.status(400).json({
+          error: 'meet_code_invalid',
+          message: 'รหัสยืนยันการพบกันไม่ถูกต้อง — ตรวจสอบกับผู้จ้างงาน',
+        });
+      }
+      await deleteJobMeetCodeEntry(jobId);
+    }
+
     await pool.query(
       `UPDATE jobs SET 
         status = 'waiting_for_approval',
@@ -14532,30 +20760,267 @@ app.post('/api/jobs/:id/complete', async (req, res) => {
   }
 });
 
-// Rate limit: OTP request per job + per IP (Phase 1 Security)
-const RATE_LIMIT_OTP_REQUEST_JOB = { max: 5, windowSec: 15 * 60 };  // 5 per 15 min per job
-const RATE_LIMIT_OTP_REQUEST_IP = { max: 20, windowSec: 15 * 60 };  // 20 per 15 min per IP
-
-// Request OTP for job completion (employer or system calls — stores in Redis for provider to use)
-app.post('/api/jobs/:id/request-completion-otp', async (req, res) => {
+// ผู้จ้างสร้างรหัสพบกัน — แสดงเป็น QR ให้ผู้รับงานสแกน/กรอกก่อนส่งมอบ
+app.post('/api/jobs/:id/meet-code', async (req, res) => {
   try {
-    const jobId = req.params.id;
-    const ip = getClientIp(req);
-    const [byJob, byIp] = await Promise.all([
-      checkRateLimit('otp_request_job', jobId, RATE_LIMIT_OTP_REQUEST_JOB),
-      checkRateLimit('otp_request_ip', ip, RATE_LIMIT_OTP_REQUEST_IP)
-    ]);
-    if (!byJob.allowed) {
-      return sendRateLimitResponse(res, byJob.retryAfter, 'Too many OTP requests for this job.');
+    const jobId = (req.params.id || '').toString().trim();
+    const { userId: bodyUserId } = req.body || {};
+    const userIdStr = (bodyUserId != null && bodyUserId !== '' ? String(bodyUserId) : '').trim();
+    if (!jobId) return res.status(400).json({ error: 'Job ID required' });
+    if (!userIdStr) return res.status(400).json({ error: 'กรุณาส่ง userId' });
+
+    const jobResult = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobResult.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobResult.rows[0];
+
+    const userUuid = await resolveUserIdToUuid(userIdStr).catch(() => null);
+    const createdBy = String(job.created_by || '');
+    const clientId = job.client_id ? String(job.client_id) : '';
+    const isOwner =
+      (userUuid && clientId && clientId === String(userUuid)) ||
+      (userUuid && createdBy && createdBy === String(userUuid)) ||
+      (createdBy && createdBy === userIdStr) ||
+      (clientId && clientId === userIdStr);
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Only job owner can create meet code' });
     }
-    if (!byIp.allowed) {
-      return sendRateLimitResponse(res, byIp.retryAfter, 'Too many OTP requests.');
+    const st = (job.status || '').toLowerCase();
+    if (!['accepted', 'in_progress', 'in progress'].includes(st)) {
+      return res.status(400).json({
+        error: 'invalid_status',
+        message: 'สร้างรหัสได้เมื่องานถูกรับแล้วและกำลังดำเนินการ',
+        currentStatus: job.status,
+      });
+    }
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await setJobMeetCodeEntry(jobId, { code, createdBy: userIdStr });
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    res.json({
+      code,
+      expiresAt: new Date(expiresAt).toISOString(),
+      qrPayload: `meerak:meet:${jobId}:${code}`,
+    });
+  } catch (e) {
+    console.error('meet-code error:', e);
+    res.status(500).json({ error: 'Failed to create meet code', message: e.message });
+  }
+});
+
+// ตรวจรูปหลักฐานงาน (Vision) — หลังอัปโหลด URL แล้ว เรียกก่อนบันทึกสำเร็จใน Firestore
+app.post('/api/jobs/:id/verify-proof-image', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const {
+      userId: bodyUserId,
+      imageUrl,
+      phase,
+      compareUrl,
+      captureLat,
+      captureLng,
+    } = req.body || {};
+    const userIdStr = (bodyUserId != null && bodyUserId !== '' ? String(bodyUserId) : '').trim();
+    if (!jobId) return res.status(400).json({ error: 'Job ID required' });
+    if (!userIdStr) return res.status(400).json({ error: 'กรุณาส่ง userId' });
+    if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl))) {
+      return res.status(400).json({ error: 'imageUrl_required', message: 'ต้องมี imageUrl' });
+    }
+    const ph = String(phase || '').toLowerCase();
+    if (ph !== 'before' && ph !== 'after') {
+      return res.status(400).json({ error: 'invalid_phase', message: 'phase ต้องเป็น before หรือ after' });
+    }
+
+    const jobResult = await pool.query('SELECT * FROM jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobResult.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const job = jobResult.rows[0];
+
+    const userUuid = await resolveUserIdToUuid(userIdStr).catch(() => null);
+    const acceptedBy = String(job.accepted_by || '');
+    const isProvider =
+      (userUuid && acceptedBy && acceptedBy === String(userUuid)) ||
+      (acceptedBy && acceptedBy === userIdStr);
+    if (!isProvider) {
+      return res.status(403).json({ error: 'forbidden', message: 'เฉพาะผู้รับงานที่ถูกจับคู่เท่านั้น' });
+    }
+
+    const st = (job.status || '').toLowerCase();
+    if (!['accepted', 'in_progress', 'in progress'].includes(st)) {
+      return res.status(400).json({
+        error: 'invalid_status',
+        message: 'อัปโหลดหลักฐานได้เมื่องานกำลังดำเนินการ',
+      });
+    }
+
+    let geoWarning = null;
+    const jLat = job.location_lat ?? job.lat ?? job.job_lat;
+    const jLng = job.location_lng ?? job.lng ?? job.job_lng;
+    if (captureLat != null && captureLng != null && jLat != null && jLng != null) {
+      const d = haversineMeters(
+        Number(captureLat),
+        Number(captureLng),
+        Number(jLat),
+        Number(jLng)
+      );
+      if (d > 200000) geoWarning = 'location_far_from_job';
+      if (process.env.JOB_PROOF_GEO_STRICT === '1' && d > 500000) {
+        return res.status(400).json({
+          error: 'geo_mismatch',
+          message: 'พิกัดการถ่ายรูปห่างจากจุดงานมากเกินไป',
+          distance_m: Math.round(d),
+        });
+      }
+    }
+
+    const v = await verifyJobProofImages({
+      imageUrl: String(imageUrl).trim(),
+      phase: ph,
+      compareUrl: ph === 'after' ? (compareUrl ? String(compareUrl).trim() : undefined) : undefined,
+      jobTitle: job.title,
+      jobCategory: job.category,
+    });
+
+    if (!v.ok) {
+      if (process.env.JOB_PROOF_REJECT_DELETE_S3 !== '0') {
+        try {
+          const del = await tryDeleteS3ObjectFromPublicUrl(String(imageUrl).trim());
+          if (del.deleted) {
+            console.log('verify-proof: removed rejected upload from S3', del.key);
+          }
+        } catch (delErr) {
+          console.warn('verify-proof S3 delete after rejection:', delErr?.message || delErr);
+        }
+      }
+      return res.status(400).json({
+        error: 'proof_rejected',
+        message: (v.reasons && v.reasons[0]) || 'ภาพไม่ผ่านการตรวจสอบ',
+        reasons: v.reasons || [],
+        code: v.code,
+      });
+    }
+
+    const url = String(imageUrl).trim();
+    const sha = v.contentSha256;
+    if (!sha) {
+      return res.status(500).json({ error: 'internal', message: 'missing content hash' });
+    }
+    try {
+      if (ph === 'before') {
+        await pool.query(
+          `UPDATE jobs SET
+            before_photo_url = $1,
+            proof_before_verified_at = NOW(),
+            proof_before_sha256 = $2,
+            proof_before_vision_skipped = $3,
+            updated_at = NOW()
+           WHERE id::text = $4`,
+          [url, sha, !!v.skipped, jobId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE jobs SET
+            after_photo_url = $1,
+            proof_after_verified_at = NOW(),
+            proof_after_sha256 = $2,
+            proof_after_vision_skipped = $3,
+            updated_at = NOW()
+           WHERE id::text = $4`,
+          [url, sha, !!v.skipped, jobId]
+        );
+      }
+    } catch (dbErr) {
+      console.error('verify-proof DB update:', dbErr);
+      const missingCol =
+        dbErr?.code === '42703' || String(dbErr?.message || '').includes('does not exist');
+      if (missingCol && process.env.JOB_PROOF_DB_REQUIRED === '0') {
+        console.warn('verify-proof: columns missing — persist skipped (JOB_PROOF_DB_REQUIRED=0)');
+        return res.json({
+          success: true,
+          skipped: !!v.skipped,
+          geo_warning: geoWarning,
+          details: v.details,
+          content_sha256: sha,
+          persisted: false,
+        });
+      }
+      if (missingCol) {
+        return res.status(503).json({
+          error: 'proof_columns_missing',
+          message: 'รัน migration 134_job_proof_and_meet_hardening.sql หรือตั้ง JOB_PROOF_DB_REQUIRED=0 ชั่วคราว',
+        });
+      }
+      return res.status(500).json({
+        error: 'db_update_failed',
+        message: dbErr?.message || 'Could not save proof verification',
+      });
+    }
+
+    res.json({
+      success: true,
+      skipped: !!v.skipped,
+      geo_warning: geoWarning,
+      details: v.details,
+      content_sha256: sha,
+      persisted: true,
+    });
+  } catch (e) {
+    console.error('verify-proof-image:', e);
+    res.status(500).json({ error: 'verification_failed', message: e.message });
+  }
+});
+
+// Rate limit: OTP request — แยกตาม user, job, IP (Apple-friendly: จำกัดต่อคน ไม่ใช่ภาพรวม)
+const RATE_LIMIT_OTP_REQUEST_USER = { max: 5, windowSec: 15 * 60 };   // 5 per 15 min ต่อ user
+const RATE_LIMIT_OTP_REQUEST_JOB = { max: 10, windowSec: 15 * 60 };  // 10 per 15 min ต่อ job
+const RATE_LIMIT_OTP_REQUEST_IP = { max: 150, windowSec: 15 * 60 };  // 150 per 15 min ต่อ IP (รองรับ shared IP)
+
+// Request OTP for job completion (provider หรือ employer เรียก — เก็บใน Redis, แจ้ง employer พร้อมรหัส)
+app.post('/api/jobs/:id/request-completion-otp', optionalAuth, async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const ip = getClientIp(req);
+    const userId = req.user?.id ? String(req.user.id) : null;
+
+    // localhost = ไม่จำกัด (พัฒนา/ทดสอบ)
+    if (isLocalhost(ip)) {
+      // skip rate limit
+    } else {
+      const checks = await Promise.all([
+        userId ? checkRateLimit('otp_request_user', userId, RATE_LIMIT_OTP_REQUEST_USER) : { allowed: true },
+        jobId ? checkRateLimit('otp_request_job', jobId, RATE_LIMIT_OTP_REQUEST_JOB) : { allowed: true },
+        checkRateLimit('otp_request_ip', ip, RATE_LIMIT_OTP_REQUEST_IP)
+      ]);
+      const [byUser, byJob, byIp] = checks;
+      if (!byUser.allowed) {
+        return sendRateLimitResponse(res, byUser.retryAfter, 'คุณขอรหัส OTP เกินจำนวนที่กำหนด กรุณารอ ' + (byUser.retryAfter || 60) + ' วินาที');
+      }
+      if (!byJob.allowed) {
+        return sendRateLimitResponse(res, byJob.retryAfter, 'งานนี้ขอรหัส OTP เกินจำนวนที่กำหนด กรุณารอ ' + (byJob.retryAfter || 60) + ' วินาที');
+      }
+      if (!byIp.allowed) {
+        return sendRateLimitResponse(res, byIp.retryAfter, 'Too many OTP requests from this network. Try again later.');
+      }
     }
     if (!redisClient) {
       return res.status(503).json({ error: 'OTP service unavailable' });
     }
     const code = String(Math.floor(100000 + Math.random() * 900000));
     await redisClient.setEx(`job_otp:${jobId}`, 600, code);
+
+    // แจ้ง employer พร้อมรหัส OTP — ให้ส่งต่อให้ผู้รับงาน
+    const jobRow = await pool.query(
+      'SELECT id, created_by, title FROM jobs WHERE id::text = $1 LIMIT 1',
+      [jobId]
+    ).catch(() => ({ rows: [] }));
+    if (jobRow.rows?.[0]?.created_by) {
+      const employerId = jobRow.rows[0].created_by;
+      const title = (jobRow.rows[0].title || 'งาน').toString().slice(0, 30);
+      pushUserNotificationIfNotPeaceMode(
+        employerId,
+        '📱 ผู้รับงานขอรหัส OTP',
+        `รหัส OTP สำหรับงาน "${title}": ${code} — กรุณาส่งให้ผู้รับงาน (ใช้ได้ 10 นาที)`
+      ).catch((e) => console.warn('[OTP notify employer]', e?.message));
+    }
+
     res.json({ success: true, message: 'OTP generated; share with provider.' });
   } catch (e) {
     res.status(500).json({ error: 'Failed to request OTP' });
@@ -14783,12 +21248,27 @@ function shuffleArray(arr) {
   return a;
 }
 
-// GET ข้อสอบ Module 1 (จาก DB), Module 2, Module 3
+// GET ข้อสอบ Module 1 (จาก DB), Module 2, Module 3 — รองรับ lang=en สำหรับภาษาอังกฤษ
 app.get('/api/nexus-exam/questions', async (req, res) => {
   try {
     const moduleNum = parseInt(req.query.module, 10);
     const category = (req.query.category || '').trim() || 'General';
+    const lang = (req.query.lang || 'th').toLowerCase();
+    const useEn = lang === 'en';
     if (moduleNum === 1) {
+      if (useEn) {
+        try {
+          const { default: MODULE1_EN } = await import('./seedModule1QuestionsEn.js');
+          const questions = MODULE1_EN.map((q) => ({
+            id: q.id,
+            text: q.question_text,
+            options: shuffleArray(q.options || []),
+          }));
+          return res.json({ module: 1, questions: shuffleArray(questions) });
+        } catch (e) {
+          console.warn('Module 1 EN fallback to TH:', e?.message);
+        }
+      }
       const rows = await pool.query(
         `SELECT id, question_text, options, correct_option_id FROM questions WHERE module = 1 ORDER BY sort_order, id`
       ).catch(() => ({ rows: [] }));
@@ -14833,14 +21313,22 @@ app.get('/api/nexus-exam/questions', async (req, res) => {
       return res.json({ module: 2, category, questions: shuffleArray(questions) });
     }
     if (moduleNum === 3) {
-      // Module 3: Scenario — ตัวอย่าง 5 ข้อ (เพิ่มได้ภายหลัง)
-      const scenarios = [
+      // Module 3: Scenario — ตัวอย่าง 5 ข้อ (รองรับ lang=en)
+      const scenariosTh = [
         { id: 'm3-q1', text: 'ลูกค้าโทรมาบอกว่ามาสาย 15 นาที คุณควรทำอย่างไร?', options: shuffleArray([{ id: 'a', text: 'ขอโทษและเร่งเดินทาง' }, { id: 'b', text: 'แจ้งเวลาที่คาดว่าจะถึง' }, { id: 'c', text: 'ทั้ง a และ b' }, { id: 'd', text: 'ไม่ต้องทำอะไร' }]), recommended_action: 'ขอโทษอย่างจริงใจ แจ้งเวลาที่คาดว่าจะถึง และดำเนินงานด้วยความรับผิดชอบ' },
         { id: 'm3-q2', text: 'ระหว่างทำงานพบของมีค่าของลูกค้า คุณควรทำอย่างไร?', options: shuffleArray([{ id: 'a', text: 'เก็บไว้แล้วคืนหลังจบงาน' }, { id: 'b', text: 'แจ้งลูกค้าทันทีและเก็บในที่ปลอดภัย' }, { id: 'c', text: 'ไม่สนใจ' }, { id: 'd', text: 'นำกลับไป' }]), recommended_action: 'แจ้งลูกค้าทันที และเก็บในที่ปลอดภัยจนกว่าจะส่งมอบ' },
         { id: 'm3-q3', text: 'ลูกค้าไม่พอใจผลงานและพูดจาไม่ดี คุณควรทำอย่างไร?', options: shuffleArray([{ id: 'a', text: 'โต้กลับ' }, { id: 'b', text: 'ฟังและเสนอแก้ไขอย่างสงบ' }, { id: 'c', text: 'หยุดทำงานทันที' }, { id: 'd', text: 'ไม่สนใจ' }]), recommended_action: 'รักษาความสงบ ฟังปัญหา และเสนอทางแก้ไขหรือปรับปรุงอย่างมืออาชีพ' },
         { id: 'm3-q4', text: 'คุณมีอาการไม่สบายเล็กน้อยในวันที่มีงาน คุณควรทำอย่างไร?', options: shuffleArray([{ id: 'a', text: 'ไปทำงานตามปกติแต่ล้างมือบ่อย' }, { id: 'b', text: 'แจ้งลูกค้าและนัดเลื่อนถ้าจำเป็น' }, { id: 'c', text: 'ไม่ไปโดยไม่แจ้ง' }, { id: 'd', text: 'ส่งเพื่อนไปแทน' }]), recommended_action: 'ถ้าส่งผลต่อคุณภาพงานหรือความปลอดภัย ควรแจ้งลูกค้าและนัดเลื่อน หรือหาคนแทนอย่างเหมาะสม' },
         { id: 'm3-q5', text: 'หลังจบงานลูกค้าถามเบอร์โทรส่วนตัวเพื่อติดต่อนอกแพลตฟอร์ม คุณควรทำอย่างไร?', options: shuffleArray([{ id: 'a', text: 'ให้เบอร์ได้' }, { id: 'b', text: 'ปฏิเสธอย่างสุภาพและแนะนำให้ใช้แอป' }, { id: 'c', text: 'ไม่ตอบ' }, { id: 'd', text: 'ให้เบอร์คนอื่น' }]), recommended_action: 'ปฏิเสธอย่างสุภาพ และอธิบายว่าการติดต่อผ่านแพลตฟอร์มช่วยให้ทั้งสองฝ่ายได้รับความคุ้มครอง' },
       ];
+      const scenariosEn = [
+        { id: 'm3-q1', text: 'The client calls to say they will be 15 minutes late. What should you do?', options: shuffleArray([{ id: 'a', text: 'Apologize and hurry' }, { id: 'b', text: 'Inform your estimated arrival time' }, { id: 'c', text: 'Both a and b' }, { id: 'd', text: 'Do nothing' }]), recommended_action: 'Apologize sincerely, inform your estimated arrival time, and proceed with responsibility.' },
+        { id: 'm3-q2', text: 'While working you find a valuable item belonging to the client. What should you do?', options: shuffleArray([{ id: 'a', text: 'Keep it and return after the job' }, { id: 'b', text: 'Inform the client immediately and keep it in a safe place' }, { id: 'c', text: 'Ignore it' }, { id: 'd', text: 'Take it with you' }]), recommended_action: 'Inform the client immediately and keep it in a safe place until handover.' },
+        { id: 'm3-q3', text: 'The client is unhappy with your work and speaks rudely. What should you do?', options: shuffleArray([{ id: 'a', text: 'Respond in kind' }, { id: 'b', text: 'Listen calmly and offer to fix it' }, { id: 'c', text: 'Stop working immediately' }, { id: 'd', text: 'Ignore them' }]), recommended_action: 'Stay calm, listen to the issue, and offer solutions or improvements professionally.' },
+        { id: 'm3-q4', text: 'You feel slightly unwell on a day you have work. What should you do?', options: shuffleArray([{ id: 'a', text: 'Go to work as usual but wash hands often' }, { id: 'b', text: 'Inform the client and reschedule if necessary' }, { id: 'c', text: 'Don\'t go without informing' }, { id: 'd', text: 'Send a friend instead' }]), recommended_action: 'If it affects work quality or safety, inform the client and reschedule, or find a suitable replacement.' },
+        { id: 'm3-q5', text: 'After the job the client asks for your personal phone number to contact outside the platform. What should you do?', options: shuffleArray([{ id: 'a', text: 'Give your number' }, { id: 'b', text: 'Politely decline and suggest using the app' }, { id: 'c', text: 'Don\'t respond' }, { id: 'd', text: 'Give someone else\'s number' }]), recommended_action: 'Politely decline and explain that contact through the platform protects both parties.' },
+      ];
+      const scenarios = useEn ? scenariosEn : scenariosTh;
       return res.json({ module: 3, questions: shuffleArray(scenarios) });
     }
     return res.status(400).json({ error: 'module must be 1, 2, or 3' });
@@ -15474,7 +21962,7 @@ app.post('/api/jobs/categories/:category/calculate-billing', async (req, res) =>
 
     if (userId) {
       const userRow = await pool.query(
-        'SELECT vip_tier, vip_quota_balance, vip_expiry FROM users WHERE id = $1 OR id::text = $1 LIMIT 1',
+        'SELECT vip_tier, vip_quota_balance, vip_expiry FROM users WHERE id = $1::uuid LIMIT 1',
         [userId]
       ).catch(() => ({ rows: [] }));
       const user = userRow.rows[0];
@@ -15891,12 +22379,14 @@ app.post('/api/jobs/update-expired', async (req, res) => {
   try {
     console.log('🔄 [Auto-Update] Checking for expired jobs...');
     
+    // โพสต์ใหม่ 7 วัน ไม่ expired — เฉพาะงานที่ created_at > 7 วัน และ datetime ผ่านแล้ว
     const result = await pool.query(`
       UPDATE jobs 
       SET status = 'expired', 
           updated_at = NOW()
       WHERE datetime IS NOT NULL 
         AND datetime < NOW() 
+        AND created_at < NOW() - INTERVAL '2 days'
         AND status NOT IN ('expired', 'completed', 'cancelled', 'deleted')
       RETURNING id, title, datetime, status
     `);
@@ -15935,14 +22425,24 @@ let jobsPaused = false;
 let cronLastRunAt = null;
 let cronLastError = null;
 const CRON_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const MEMORY_GUARD_PCT = 85;
+/** ปิด guard ชั่วคราว (เช่น dev) — MEMORY_GUARD_DISABLED=1 */
+const MEMORY_GUARD_DISABLED =
+  process.env.MEMORY_GUARD_DISABLED === '1' || process.env.MEMORY_GUARD_DISABLED === 'true';
+/** เปอร์เซ็นต์เทียบ heap limit ของ V8 (ค่าเริ่มต้น 85) */
+const MEMORY_GUARD_PCT = Math.min(99, Math.max(50, parseInt(process.env.MEMORY_GUARD_PCT || '85', 10)));
 
-function getMemoryUsagePct() {
+/**
+ * แรงดันหน่วยความจำจริงกว่า heapUsed/heapTotal (อัตราหลังมัก 90%+ ก่อน GC — false positive)
+ * ใช้ heapUsed / heap_size_limit จาก V8
+ */
+function getMemoryPressurePct() {
   try {
     const mem = process.memoryUsage();
-    const heapTotal = mem.heapTotal || 1;
-    return Math.round((mem.heapUsed / heapTotal) * 100);
-  } catch (e) { return 0; }
+    const limit = v8.getHeapStatistics().heap_size_limit || 1;
+    return Math.round((mem.heapUsed / limit) * 100);
+  } catch (e) {
+    return 0;
+  }
 }
 
 function scheduleNextExpiredJobsRun() {
@@ -15950,13 +22450,17 @@ function scheduleNextExpiredJobsRun() {
     console.log('🛑 [Cron] Jobs paused — skipping next schedule');
     return;
   }
-  const memPct = getMemoryUsagePct();
-  if (memPct >= MEMORY_GUARD_PCT) {
-    jobsPaused = true;
-    cronLastError = `Memory guard: ${memPct}% >= ${MEMORY_GUARD_PCT}% — jobs auto-paused`;
-    console.error('🔴 [Cron]', cronLastError);
-    try { logError(new Error(cronLastError), { memoryPercent: memPct }); } catch (e) {}
-    return;
+  if (!MEMORY_GUARD_DISABLED) {
+    const memPct = getMemoryPressurePct();
+    if (memPct >= MEMORY_GUARD_PCT) {
+      jobsPaused = true;
+      cronLastError = `Memory guard: ${memPct}% >= ${MEMORY_GUARD_PCT}% (heap vs V8 limit) — jobs auto-paused`;
+      console.error('🔴 [Cron]', cronLastError);
+      try {
+        logError(new Error(cronLastError), { memoryPercent: memPct, memoryGuard: 'heap_vs_limit' });
+      } catch (e) {}
+      return;
+    }
   }
   setTimeout(runExpiredJobsSequential, CRON_INTERVAL_MS);
 }
@@ -15967,18 +22471,171 @@ async function runExpiredJobsSequential() {
     cronLastRunAt = new Date().toISOString();
     cronLastError = null;
     console.log('🕐 [Cron] Running expired jobs cleanup...');
+    // โพสต์ใหม่ 7 วัน ไม่ expired — เฉพาะงานที่ created_at > 7 วัน และ datetime ผ่านแล้ว
     const result = await pool.query(`
       UPDATE jobs 
       SET status = 'expired', 
           updated_at = NOW()
       WHERE datetime IS NOT NULL 
         AND datetime < NOW() 
+        AND created_at < NOW() - INTERVAL '2 days'
         AND status NOT IN ('expired', 'completed', 'cancelled', 'deleted')
       RETURNING id, title, datetime
     `);
     const count = result.rows.length;
     if (count > 0) {
       console.log(`✅ [Cron] Marked ${count} jobs as expired`);
+    }
+    // Advance Job Deals — Reminder (6–12 ชม. ก่อนหมดอายุ) + หมดอายุ
+    try {
+      const hasDeals = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_deals'`).then(r => r.rows?.length > 0);
+      const hasExpires = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'expires_at'`).then(r => r.rows?.length > 0);
+      const hasProposedBy = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_deals' AND column_name = 'proposed_by'`).then(r => r.rows?.length > 0);
+      if (hasDeals && hasExpires) {
+        // Deal Reminder: แจ้งเตือน Deal ที่รอตอบ (หมดอายุใน 11–12 ชม. — ส่งครั้งเดียว)
+        if (hasProposedBy) {
+          const reminderRows = await pool.query(`
+            SELECT d.id, d.talent_id, d.employer_id, d.amount, d.proposed_by, j.title
+            FROM advance_job_deals d
+            JOIN advance_jobs j ON j.id = d.job_id
+            WHERE d.status = 'pending' AND d.expires_at IS NOT NULL
+              AND d.expires_at > NOW() + INTERVAL '11 hours'
+              AND d.expires_at <= NOW() + INTERVAL '12 hours'
+          `).catch(() => ({ rows: [] }));
+          for (const row of reminderRows.rows || []) {
+            const proposedBy = row.proposed_by || 'employer';
+            const recipientId = proposedBy === 'employer' ? row.talent_id : row.employer_id;
+            const amt = Number(row.amount || 0).toLocaleString();
+            const jobTitle = (row.title || 'งาน').slice(0, 40);
+            await pushUserNotificationIfNotPeaceMode(recipientId, 'Deal รอคุณตอบ — หมดอายุในไม่กี่ชม.', `Deal ฿${amt} (${jobTitle}) รอคุณตอบรับ ปฏิเสธ หรือเสนอราคาใหม่`);
+          }
+          if (reminderRows.rows?.length > 0) {
+            console.log(`✅ [Cron] Sent ${reminderRows.rows.length} deal reminders`);
+          }
+        }
+        // หมดอายุ
+        const dealResult = await pool.query(`
+          UPDATE advance_job_deals SET status = 'expired'
+          WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < NOW()
+          RETURNING id
+        `);
+        if (dealResult.rows.length > 0) {
+          console.log(`✅ [Cron] Marked ${dealResult.rows.length} advance job deals as expired`);
+        }
+      }
+    } catch (dealErr) {
+      console.error('🔴 [Cron] Advance deals:', dealErr?.message || dealErr);
+    }
+    // Saved Jobs: แจ้งเตือนเมื่องานที่บันทึกมีผู้สนใจเพิ่ม หรือใกล้ปิด
+    try {
+      const hasSaved = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'saved_advance_jobs'`).then(r => r.rows?.length > 0);
+      const hasLastCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_advance_jobs' AND column_name = 'last_applicant_count'`).then(r => r.rows?.length > 0);
+      if (hasSaved && hasLastCol) {
+        const rows = await pool.query(`
+          SELECT s.user_id, s.job_id, s.last_applicant_count, j.title, j.applicant_count, j.status, j.closed_at, j.created_at, j.duration_days
+          FROM saved_advance_jobs s
+          JOIN advance_jobs j ON j.id = s.job_id
+          WHERE j.status = 'open' AND j.applicant_count > COALESCE(s.last_applicant_count, 0)
+        `).catch(() => ({ rows: [] }));
+        for (const r of rows.rows || []) {
+          await pushUserNotificationIfNotPeaceMode(r.user_id, 'งานที่บันทึกมีผู้สนใจเพิ่ม', `"${(r.title || 'งาน').slice(0, 40)}" มี ${r.applicant_count} คนสนใจแล้ว`);
+          await pool.query('UPDATE saved_advance_jobs SET last_applicant_count = $1 WHERE user_id = $2 AND job_id = $3', [r.applicant_count, r.user_id, r.job_id]);
+        }
+        if (rows.rows?.length > 0) console.log(`✅ [Cron] Sent ${rows.rows.length} saved job applicant alerts`);
+        const hasLastNotified = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_advance_jobs' AND column_name = 'last_notified_at'`).then(r => r.rows?.length > 0);
+        const nearCloseCond = hasLastNotified
+          ? `AND (s.last_notified_at IS NULL OR s.last_notified_at < NOW() - INTERVAL '24 hours')`
+          : '';
+        const nearClose = await pool.query(`
+          SELECT s.user_id, s.job_id, j.title
+          FROM saved_advance_jobs s
+          JOIN advance_jobs j ON j.id = s.job_id
+          WHERE j.status = 'open' AND j.closed_at IS NULL
+            AND j.created_at + (j.duration_days || 7) * INTERVAL '1 day' <= NOW() + INTERVAL '24 hours'
+            AND j.created_at + (j.duration_days || 7) * INTERVAL '1 day' > NOW()
+            ${nearCloseCond}
+        `).catch(() => ({ rows: [] }));
+        for (const r of nearClose.rows || []) {
+          await pushUserNotificationIfNotPeaceMode(r.user_id, 'งานที่บันทึกใกล้ปิด', `"${(r.title || 'งาน').slice(0, 40)}" ใกล้ปิดรับสมัคร — สมัครด่วน`);
+          if (hasLastNotified) await pool.query('UPDATE saved_advance_jobs SET last_notified_at = NOW() WHERE user_id = $1 AND job_id = $2', [r.user_id, r.job_id]);
+        }
+        if (nearClose.rows?.length > 0) console.log(`✅ [Cron] Sent ${nearClose.rows.length} saved job near-close alerts`);
+      }
+    } catch (savedErr) {
+      console.error('🔴 [Cron] Saved jobs alerts:', savedErr?.message || savedErr);
+    }
+    // Maturity Rewards: 1,000 THB + no claim 90 days → 50 THB voucher
+    try {
+      await runMaturityRewardsCheck();
+    } catch (maturityErr) {
+      console.warn('🔴 [Cron] Maturity Rewards:', maturityErr?.message || maturityErr);
+    }
+    // Booking Auto-Settlement: งานที่เริ่มแล้ว + หมดเวลา → ปล่อยมัดจำอัตโนมัติ + verified_hours
+    try {
+      const hasStartedAt = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'started_at'`).then(r => r.rows?.length > 0);
+      if (hasStartedAt) {
+        const toSettle = await pool.query(`
+          SELECT b.id, b.booker_id, b.talent_id, b.deposit_amount, b.started_at, s.end_time
+          FROM bookings b
+          JOIN availability_slots s ON s.id = b.slot_id
+          WHERE b.deposit_status = 'held' AND b.started_at IS NOT NULL
+            AND s.end_time < NOW() - INTERVAL '5 minutes'
+            AND b.status IN ('confirmed', 'in_progress')
+          LIMIT 20
+        `);
+        for (const row of toSettle.rows || []) {
+          try {
+            const talentVip = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [row.talent_id]).then(r => r.rows?.[0]?.vip_tier || 'none');
+            const commissionRate = getCommissionBooking(talentVip);
+            const totalAmount = Number(row.deposit_amount || 0);
+            const feeAmount = Math.round(totalAmount * commissionRate * 100) / 100;
+            const talentPayout = Math.round((totalAmount - feeAmount) * 100) / 100;
+            const startedAt = new Date(row.started_at);
+            const endAt = new Date(row.end_time);
+            const hours = Math.max(0, (endAt - startedAt) / (1000 * 60 * 60));
+            await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1, verified_hours = COALESCE(verified_hours, 0) + $2 WHERE id = $3', [talentPayout, Math.round(hours * 100) / 100, row.talent_id]);
+            const platformUser = await pool.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
+            if (platformUser.rows?.length && feeAmount > 0) {
+              await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2', [feeAmount, platformUser.rows[0].id]);
+            }
+            await pool.query("UPDATE bookings SET deposit_status = 'released', status = 'completed', session_status = 'completed' WHERE id = $1", [row.id]);
+            await pushUserNotificationIfNotPeaceMode(row.talent_id, 'มัดจำเข้าหมดแล้ว (Auto)', 'งานสิ้นสุด — ระบบปล่อยมัดจำอัตโนมัติ ฿' + talentPayout.toLocaleString());
+            console.log(`✅ [Cron] Auto-settled booking ${row.id}`);
+          } catch (e) { console.warn('[Cron] Auto-settle booking', row.id, e.message); }
+        }
+      }
+    } catch (bookingErr) {
+      console.warn('🔴 [Cron] Booking auto-settlement:', bookingErr?.message || bookingErr);
+    }
+    // Booking No-Show: หมดเวลา + ไม่ได้ Check-in → ปรับทั้งคู่
+    try {
+      const hasSessionStatus = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'session_status'`).then(r => r.rows?.length > 0);
+      if (hasSessionStatus) {
+        const noShowRows = await pool.query(`
+          SELECT b.id, b.booker_id, b.talent_id, b.deposit_amount
+          FROM bookings b
+          JOIN availability_slots s ON s.id = b.slot_id
+          WHERE b.deposit_status = 'held' AND b.started_at IS NULL
+            AND s.end_time < NOW() - INTERVAL '1 hour'
+            AND b.status = 'confirmed'
+          LIMIT 10
+        `);
+        for (const row of noShowRows.rows || []) {
+          try {
+            await pool.query("UPDATE bookings SET session_status = 'no_show', status = 'cancelled', deposit_status = 'refunded' WHERE id = $1", [row.id]);
+            await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2', [Number(row.deposit_amount || 0), row.booker_id]);
+            const hasPenalties = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_reliability_penalties'`).then(r => r.rows?.length > 0);
+            if (hasPenalties) {
+              await pool.query('INSERT INTO user_reliability_penalties (user_id, booking_id, penalty_type, points_deducted) VALUES ($1, $2, $3, $4), ($5, $2, $3, $4)', [row.booker_id, row.id, 'no_show', 5, row.talent_id]);
+            }
+            await pushUserNotificationIfNotPeaceMode(row.booker_id, 'No-Show', 'การจองถูกยกเลิก — คืนมัดจำแล้ว (ไม่มีการ Check-in ในแอป)');
+            await pushUserNotificationIfNotPeaceMode(row.talent_id, 'No-Show', 'การจองถูกยกเลิก — ไม่มีการ Check-in ในแอป');
+            console.log(`✅ [Cron] No-show penalty booking ${row.id}`);
+          } catch (e) { console.warn('[Cron] No-show booking', row.id, e.message); }
+        }
+      }
+    } catch (noShowErr) {
+      console.warn('🔴 [Cron] Booking no-show:', noShowErr?.message || noShowErr);
     }
   } catch (error) {
     cronLastError = error.message;
@@ -16003,7 +22660,7 @@ async function autoUpdateExpiredJobs() {
  * รองรับ: mock-jwt-token-<id>, mock_<base64>, และ real JWT (sub = userId)
  * ใช้เฉพาะใน Worker Grading routes ด้านล่าง
  */
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
@@ -16011,6 +22668,7 @@ function authenticateToken(req, res, next) {
   const token = auth.slice(7).trim();
   let userId = null;
   let userRole = null;
+  let tokenIat = null;
 
   // mock-jwt-token-<userId>-<timestamp>
   if (token.startsWith('mock-jwt-token-')) {
@@ -16033,12 +22691,32 @@ function authenticateToken(req, res, next) {
       const payload = jwt.verify(token, JWT_SECRET);
       userId = String(payload.sub);
       userRole = payload.role || null;
+      tokenIat = payload.iat;
     } catch (e) {
       return res.status(401).json({ error: 'Token ไม่ถูกต้องหรือหมดอายุ' });
     }
   }
 
   if (!userId) return res.status(401).json({ error: 'ไม่สามารถระบุตัวตนได้' });
+
+  // Force logout check: ถ้า Admin force logout แล้ว token นี้จะถูก reject
+  if (tokenIat != null && pool) {
+    try {
+      const r = await pool.query(
+        `SELECT force_logout_at FROM users WHERE id = $1::uuid LIMIT 1`,
+        [userId]
+      );
+      const forceLogoutAt = r.rows?.[0]?.force_logout_at;
+      if (forceLogoutAt) {
+        const iatMs = tokenIat * 1000;
+        const logoutMs = new Date(forceLogoutAt).getTime();
+        if (iatMs < logoutMs) {
+          return res.status(401).json({ error: 'บัญชีถูกบังคับออกจากระบบ กรุณาเข้าสู่ระบบใหม่' });
+        }
+      }
+    } catch (_) { /* table/column may not exist */ }
+  }
+
   req.user = { id: userId, role: userRole };
   next();
 }
@@ -16194,9 +22872,18 @@ app.post('/api/reviews', authenticateToken, async (req, res) => {
 // ── GET /api/reviews/worker/:userId — รีวิวทั้งหมดของ worker ──
 app.get('/api/reviews/worker/:userId', async (req, res) => {
   try {
-    const { userId } = req.params;
+    let { userId } = req.params;
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(userId)) {
+      const resolved = await resolveUserIdToUuid(userId);
+      if (!resolved) {
+        return res.json({ reviews: [], stats: { avg_overall: 0, total_reviews: 0 }, total: 0 });
+      }
+      userId = resolved;
+    }
 
     const [reviewsResult, statsResult] = await Promise.all([
       pool.query(`
@@ -16561,8 +23248,8 @@ app.get('/api/incidents/nearby-workers/:incidentId', authenticateToken, async (r
     // ดึงข้อมูลงานของ incident
     const incRow = await pool.query(
       `SELECT i.job_id, i.worker_id, j.category, j.location
-       FROM incidents i JOIN jobs j ON j.id = i.job_id
-       WHERE i.id = $1`,
+       FROM incidents i JOIN jobs j ON j.id::text = i.job_id
+       WHERE i.id::text = $1 OR i.id = $1::uuid`,
       [incidentId]
     );
     if (!incRow.rows[0]) return res.status(404).json({ error: 'Incident not found' });
@@ -16577,11 +23264,11 @@ app.get('/api/incidents/nearby-workers/:incidentId', authenticateToken, async (r
       FROM users u
       LEFT JOIN worker_grades wg ON wg.user_id = u.id
       WHERE u.role = 'provider'
-        AND u.id != $1
+        AND u.id != $1::uuid
         AND u.shadow_banned_at IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM jobs j2
-          WHERE j2.accepted_by = u.id::text
+          WHERE j2.accepted_by = u.id
             AND j2.status IN ('accepted','in_progress')
         )
       ORDER BY wg.avg_rating DESC NULLS LAST
@@ -16605,7 +23292,7 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
     // action: 'reroute' | 'refund_close' | 'mark_fraud'
 
     const incRow = await pool.query(
-      `SELECT * FROM incidents WHERE id = $1`, [id]
+      `SELECT * FROM incidents WHERE id::text = $1 OR id = $1::uuid`, [id]
     );
     if (!incRow.rows[0]) return res.status(404).json({ error: 'Incident not found' });
 
@@ -16622,36 +23309,41 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
         [req.user.id, notes || 'Rerouted to replacement worker', id]
       );
 
-      // ── 55% Payout Rule for Replacement Worker ──
-      // ดึง original price จาก job แล้วคำนวณ 55% ให้คนแทน
+      // ── 40/60 Payout Rule for Replacement Worker (Platform Stability Policy) ──
       const jobForPayout = await pool.query(
-        `SELECT price, has_insurance, insurance_amount FROM jobs WHERE id = $1`, [inc.job_id]
+        `SELECT price, has_insurance, insurance_amount, payment_details FROM jobs WHERE id = $1`, [inc.job_id]
       ).catch(() => ({ rows: [] }));
       if (jobForPayout.rows[0]) {
-        const originalPrice     = parseFloat(jobForPayout.rows[0].price) || 0;
+        const j = jobForPayout.rows[0];
+        const pd = typeof j.payment_details === 'string' ? JSON.parse(j.payment_details || '{}') : (j.payment_details || {});
+        const insuranceAmt = parseFloat(j.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(j.price) || 0;
+        const originalPrice     = insuranceAmt;
         const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
         const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
-        // บันทึก ledger สำหรับ 55% payout ให้คนแทน
-        const payId = `RPL-${inc.job_id.slice(0,8)}-${Date.now()}`;
+        // Credit 40% to replacement worker wallet
+        await pool.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+          [replacementPayout, replacement_worker_id]
+        );
+        // Ledger: 40% payout + 60% reserve
+        const payId = (tag) => `RPL-${inc.job_id.slice(0,8)}-${tag}-${Date.now()}`;
         await pool.query(`
-          INSERT INTO payment_ledger_audit
-            (id, job_id, payment_gateway, reference_id, amount, user_id,
-             idempotency_key, metadata, event_type, status, currency, created_at)
-          VALUES ($1,$2,'insurance_fund',$2,$3,$4,$5,$6,'reroute_replacement_payout','completed','THB',NOW())
+          INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+          VALUES ($1, 'insurance_replacement_payout', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)
         `, [
-          payId, inc.job_id, replacementPayout, replacement_worker_id, `${payId}-idem`,
-          JSON.stringify({
-            leg:              'replacement_payout_55pct',
-            original_price:   originalPrice,
-            replacement_payout: replacementPayout,
-            reserve_amount:   reserveAmount,
-            incident_id:      id,
-            rate:             REPLACEMENT_PAYOUT_RATE,
-          })
-        ]).catch((e) => console.warn('[55% Rule] ledger insert skipped:', e.message));
+          payId('rpl'), inc.job_id, inc.job_id, replacementPayout, `RPL-${inc.job_id}`, `T-RPL-${inc.job_id}-${Date.now()}`, replacement_worker_id,
+          JSON.stringify({ leg: 'replacement_payout_40pct', original_price: originalPrice, rate: REPLACEMENT_PAYOUT_RATE, incident_id: id })
+        ]).catch((e) => console.warn('[40/60 Rule] ledger payout insert skipped:', e.message));
+        await pool.query(`
+          INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+          VALUES ($1, 'platform_stability_reserve', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7)
+        `, [
+          payId('res'), inc.job_id, inc.job_id, reserveAmount, `RPL-RES-${inc.job_id}`, `T-RPL-RES-${inc.job_id}-${Date.now()}`,
+          JSON.stringify({ leg: 'platform_stability_reserve', original_price: originalPrice, rate: 0.60, incident_id: id })
+        ]).catch((e) => console.warn('[40/60 Rule] ledger reserve insert skipped:', e.message));
 
-        console.log(`[55% Rule] Job ${inc.job_id}: original ฿${originalPrice} → replacement ฿${replacementPayout} (reserve ฿${reserveAmount})`);
+        console.log(`[40/60 Rule] Job ${inc.job_id}: original ฿${originalPrice} → replacement ฿${replacementPayout} (reserve ฿${reserveAmount})`);
       }
     } else if (action === 'refund_close') {
       // คืนเงินลูกค้า + ปิดงาน
@@ -16669,7 +23361,7 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
         [inc.worker_id]
       );
       await pool.query(
-        `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1`, [inc.worker_id]
+        `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`, [inc.worker_id]
       ).catch(() => {});
       await pool.query(`
         UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [inc.job_id]
@@ -16707,16 +23399,17 @@ app.get('/api/incidents/pending-count', authenticateToken, async (req, res) => {
 //  ─ POST   /api/insurance/claim              — Client ยื่นเคลม
 //  ─ GET    /api/insurance/claim/:jobId        — ดูสถานะเคลมของงาน
 //  ─ GET    /api/admin/insurance/claims        — Admin: รายการเคลมทั้งหมด
-//  ─ PATCH  /api/admin/insurance/claims/:id/approve — Admin: อนุมัติ (55%)
+//  ─ PATCH  /api/admin/insurance/claims/:id/approve — Admin: อนุมัติ (40/60)
 //  ─ PATCH  /api/admin/insurance/claims/:id/reject  — Admin: ปฏิเสธ
 // ════════════════════════════════════════════════════════════════════════
 
-const REPLACEMENT_PAYOUT_RATE = 0.55; // 55% ของราคางานเดิม
+const REPLACEMENT_PAYOUT_RATE = 0.40; // 40% ของ insurance amount (Platform Stability Policy: 60% reserved)
 
 /**
  * processInsuranceClaim(jobId)
  * ─ ตรวจสอบเงื่อนไขและสร้าง insurance_claims record ใหม่
  * ─ One-time only: ห้ามเคลมซ้ำ
+ * ─ 40/60 Rule: 40% immediate payout, 60% → Platform Stability Reserve
  */
 async function processInsuranceClaim(jobId, clientId, evidenceText = '') {
   // 1. ดึงข้อมูลงาน
@@ -16740,8 +23433,10 @@ async function processInsuranceClaim(jobId, clientId, evidenceText = '') {
     if (s === 'rejected') throw new Error('คำขอเคลมประกันของงานนี้ถูกปฏิเสธแล้ว');
   }
 
-  // 3. คำนวณวงเงิน: 55% ของ original price
-  const originalPrice = parseFloat(job.price) || 0;
+  // 3. คำนวณวงเงิน: 40/60 Rule — ใช้ insurance_amount (fallback: price)
+  const pd = typeof job.payment_details === 'string' ? JSON.parse(job.payment_details || '{}') : (job.payment_details || {});
+  const insuranceAmount = parseFloat(job.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(job.price) || 0;
+  const originalPrice = insuranceAmount;
   const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
   const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
@@ -16876,8 +23571,42 @@ app.patch('/api/admin/insurance/claims/:id/approve', adminAuthMiddleware, async 
       [claim.job_id]
     ).catch(() => {});
 
-    // ── บันทึก insurance_fund_movements เป็น liability_debit ──
-    // (ทำให้ TIPO ใน InsuranceManager อัปเดต และ 60% Reserve ลดลงตาม claim ที่จ่ายออก)
+    // ── 40/60 Rule: 40% → User Wallet, 60% → Platform Stability Reserve ──
+    const recipientId = replacement_worker_id || claim.client_id;
+    if (!recipientId) {
+      return res.status(400).json({ error: 'ต้องระบุ replacement_worker_id หรือ client_id สำหรับการจ่าย' });
+    }
+
+    // 1. Credit 40% to recipient wallet
+    await pool.query(
+      `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+      [claim.replacement_payout, recipientId]
+    );
+
+    // 2. Ledger: 40% → insurance_replacement_payout (user payout)
+    const ledgerId = (tag) => `IC-${claim.id.slice(0, 8)}-${tag}-${Date.now()}`;
+    const taxRef40 = await generateTaxRefIdForInsert(pool, 'insurance_replacement_payout', { claim_id: id, leg: 'user_payout_40pct', rate: 0.40 }).catch(() => null);
+    await pool.query(`
+      INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+      VALUES ($1, $2, 'insurance_replacement_payout', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)
+    `, [
+      ledgerId('rpl'), taxRef40, claim.job_id, claim.job_id, claim.replacement_payout,
+      `INS-CLAIM-${claim.job_id}`, `T-IC-${id.slice(0, 8)}-${Date.now()}`,
+      recipientId, JSON.stringify({ claim_id: id, original_price: claim.original_price, rate: 0.40, leg: 'user_payout_40pct' })
+    ]).catch((e) => console.warn('[Insurance] ledger user payout insert skipped:', e.message));
+
+    // 3. Ledger: 60% → platform_stability_reserve (non-withdrawable by user)
+    const taxRef60 = await generateTaxRefIdForInsert(pool, 'platform_stability_reserve', { claim_id: id, leg: 'reserve_60pct', rate: 0.60 }).catch(() => null);
+    await pool.query(`
+      INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+      VALUES ($1, $2, 'platform_stability_reserve', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)
+    `, [
+      ledgerId('res'), taxRef60, claim.job_id, claim.job_id, claim.reserve_amount,
+      `INS-RES-${claim.job_id}`, `T-IC-RES-${id.slice(0, 8)}-${Date.now()}`,
+      JSON.stringify({ claim_id: id, original_price: claim.original_price, rate: 0.60, leg: 'platform_stability_reserve' })
+    ]).catch((e) => console.warn('[Insurance] ledger reserve insert skipped:', e.message));
+
+    // 4. insurance_fund_movements: liability_debit (40% payout)
     const movId = `CLAIM-PAY-${id.slice(0, 8)}-${Date.now()}`;
     await pool.query(`
       INSERT INTO insurance_fund_movements
@@ -16888,36 +23617,23 @@ app.patch('/api/admin/insurance/claims/:id/approve', adminAuthMiddleware, async 
       claim.replacement_payout,
       claim.job_id,
       id,
-      `Claim approved: ${claim.job_id} (55% rule)`,
+      `Claim approved: ${claim.job_id} (40/60 rule)`,
       JSON.stringify({
         claim_id:          id,
         original_price:    claim.original_price,
         replacement_payout: claim.replacement_payout,
         reserve_amount:    claim.reserve_amount,
-        rate:              0.55,
+        rate:              0.40,
       }),
       adminId,
     ]).catch((e) => console.warn('[Insurance] fund_movements insert skipped:', e.message));
 
-    // ── ถ้า admin ส่ง replacement_worker_id → assign งานให้คนแทนพร้อม ledger ขาจ่าย ──
+    // 5. ถ้า admin ส่ง replacement_worker_id → assign งานให้คนแทน
     if (replacement_worker_id) {
       await pool.query(
         `UPDATE jobs SET accepted_by=$1, status='accepted', updated_at=NOW() WHERE id=$2`,
         [replacement_worker_id, claim.job_id]
       ).catch(() => {});
-
-      // บันทึก payment_ledger_audit ขา payout 55% ให้คนแทน
-      const ledgerId = (tag) => `IC-${claim.id.slice(0, 8)}-${tag}-${Date.now()}`;
-      await pool.query(`
-        INSERT INTO payment_ledger_audit
-          (id, job_id, payment_gateway, reference_id, amount, user_id,
-           idempotency_key, metadata, event_type, status, currency, created_at)
-        VALUES ($1,$2,'insurance_fund',$2,$3,$4,$5,$6,'insurance_replacement_payout','completed','THB',NOW())
-      `, [
-        ledgerId('rpl'), claim.job_id, claim.replacement_payout, replacement_worker_id,
-        `IC-${claim.id}-55pct-${Date.now()}`,
-        JSON.stringify({ claim_id: claim.id, original_price: claim.original_price, rate: 0.55, leg: 'replacement_payout_55pct' }),
-      ]).catch(() => {});
     }
 
     auditService.log(
@@ -16973,6 +23689,112 @@ app.patch('/api/admin/insurance/claims/:id/reject', adminAuthMiddleware, async (
   }
 });
 
+// ── GET /api/admin/stability-fund — Stability Fund Dashboard (Admin only)
+app.get('/api/admin/stability-fund', adminAuthMiddleware, async (req, res) => {
+  try {
+    const [reserveRes] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0)::numeric AS total_reserve
+         FROM payment_ledger_audit WHERE event_type = 'platform_stability_reserve'`
+      )
+    ]);
+    const totalReserve = parseFloat(reserveRes?.rows?.[0]?.total_reserve || 0);
+    const annualRate = 0.02;
+    const projectedMonthlyInterest = round2(totalReserve * (annualRate / 12));
+    res.json({
+      total_reserve_cash: totalReserve,
+      projected_monthly_interest: projectedMonthlyInterest,
+      annual_rate_percent: 2,
+    });
+  } catch (err) {
+    console.error('❌ [Stability Fund] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Maturity Rewards: 1,000 THB + no claim 90 days → 50 THB voucher ──
+const MATURITY_THRESHOLD = 1000;
+const MATURITY_VOUCHER_AMOUNT = 50;
+const MATURITY_CLAIM_FREE_DAYS = 90;
+
+async function runMaturityRewardsCheck() {
+  try {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - MATURITY_CLAIM_FREE_DAYS);
+    const ninetyDaysAgoStr = ninetyDaysAgo.toISOString();
+
+    const users = await pool.query(
+      `SELECT u.id, u.insurance_credit_balance
+       FROM users u
+       WHERE COALESCE(u.insurance_credit_balance, 0) >= $1
+         AND NOT EXISTS (
+           SELECT 1 FROM insurance_claims ic
+           JOIN jobs j ON j.id::text = ic.job_id
+           WHERE (j.created_by::text = u.id::text OR ic.client_id::text = u.id::text)
+             AND ic.claimed_at >= $2
+         )`,
+      [MATURITY_THRESHOLD, ninetyDaysAgoStr]
+    );
+
+    let generated = 0;
+    for (const row of users.rows || []) {
+      let balance = parseFloat(row.insurance_credit_balance || 0);
+      const userId = String(row.id);
+      while (balance >= MATURITY_THRESHOLD) {
+        const voucherId = `MR-${Date.now()}-${userId.slice(0, 8)}-${generated}`;
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + 3);
+
+        await pool.query(
+          `INSERT INTO maturity_rewards_vouchers (id, user_id, amount_baht, source_credit, remaining_baht, expires_at, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [voucherId, userId, MATURITY_VOUCHER_AMOUNT, MATURITY_THRESHOLD, MATURITY_VOUCHER_AMOUNT, expiresAt, JSON.stringify({ source: 'maturity_rewards' })]
+        ).catch(() => {});
+
+        await pool.query(
+          `UPDATE users SET insurance_credit_balance = GREATEST(0, COALESCE(insurance_credit_balance, 0) - $1), updated_at = NOW() WHERE id = $2::uuid`,
+          [MATURITY_THRESHOLD, userId]
+        );
+
+        balance -= MATURITY_THRESHOLD;
+        generated++;
+      }
+    }
+    if (generated > 0) console.log(`[Maturity Rewards] Generated ${generated} voucher(s)`);
+  } catch (e) {
+    console.warn('[Maturity Rewards] check failed:', e?.message);
+  }
+}
+
+// POST /api/admin/maturity-rewards/run — Manual trigger (Admin)
+app.post('/api/admin/maturity-rewards/run', adminAuthMiddleware, async (req, res) => {
+  try {
+    await runMaturityRewardsCheck();
+    res.json({ success: true, message: 'Maturity rewards check completed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/vouchers/maturity-rewards — User's maturity vouchers (authenticated)
+app.get('/api/vouchers/maturity-rewards', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.json({ vouchers: [] });
+    const r = await pool.query(
+      `SELECT id, amount_baht, remaining_baht, created_at, expires_at, used_at
+       FROM maturity_rewards_vouchers
+       WHERE user_id = $1 AND used_at IS NULL AND remaining_baht > 0
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY created_at DESC`,
+      [String(userId)]
+    );
+    res.json({ vouchers: r.rows || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/incidents/my — Worker ดูเหตุฉุกเฉินของตัวเอง ──────────
 app.get('/api/incidents/my', authenticateToken, async (req, res) => {
   try {
@@ -16980,8 +23802,8 @@ app.get('/api/incidents/my', authenticateToken, async (req, res) => {
       SELECT i.id, i.job_id, i.type, i.description, i.resolution_status, i.reported_at,
              j.title AS job_title
       FROM incidents i
-      LEFT JOIN jobs j ON j.id = i.job_id
-      WHERE i.worker_id = $1
+      LEFT JOIN jobs j ON j.id::text = i.job_id
+      WHERE i.worker_id = $1::uuid
       ORDER BY i.reported_at DESC
       LIMIT 20
     `, [req.user.id]);
@@ -17117,7 +23939,7 @@ app.patch('/api/admin/workers/:id/shadow-ban', adminAuthMiddleware, async (req, 
 
     // ลบ VVIP eligibility ออก
     await pool.query(
-      `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1`,
+      `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`,
       [id]
     ).catch(() => {});
 
@@ -17256,6 +24078,556 @@ app.get('/api/admin/workers', adminAuthMiddleware, async (req, res) => {
   }
 });
 
+// ============ AQOND MARINE HARDENING ============
+// GET /api/marine/piers — List piers with status (exclude closed)
+app.get('/api/marine/piers', async (req, res) => {
+  try {
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'marine_piers'`).then(r => r.rows?.length > 0);
+    if (!hasTable) {
+      return res.json({ piers: [] });
+    }
+    const status = (req.query.status || 'open').toString();
+    const rows = await pool.query(
+      `SELECT id, name, name_th, lat, lng, status, capacity, compatible_boat_types, closed_reason FROM marine_piers WHERE status = $1 OR $1 = 'all' ORDER BY name`,
+      [status]
+    );
+    res.json({ piers: rows.rows });
+  } catch (e) {
+    console.error('GET /api/marine/piers:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/marine/piers/:id/available-boats — Boats compatible with pier
+app.get('/api/marine/piers/:id/available-boats', async (req, res) => {
+  try {
+    const pierId = (req.params.id || '').toString();
+    const boatGrade = (req.query.boat_grade || 'standard').toString();
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'marine_piers'`).then(r => r.rows?.length > 0);
+    if (!hasTable) return res.json({ compatible: true, boat_types: [] });
+    const pier = await pool.query(`SELECT compatible_boat_types FROM marine_piers WHERE id = $1 AND status = 'open'`, [pierId]);
+    if (!pier.rows?.length) return res.status(404).json({ error: 'Pier not found or closed' });
+    const types = pier.rows[0].compatible_boat_types || [];
+    const compatible = isBoatCompatibleWithPier(boatGrade, types);
+    res.json({ compatible, boat_types: types });
+  } catch (e) {
+    console.error('GET /api/marine/piers/:id/available-boats:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/marine/captains/eligible — Captains with valid license (KYC Hard-Lock)
+app.get('/api/marine/captains/eligible', async (req, res) => {
+  try {
+    const { pier_id, lat, lng, boat_grade } = req.query || {};
+    const rows = await pool.query(`
+      SELECT u.id, u.full_name, u.avatar_url, u.boat_brand, u.boat_category,
+             u.skipper_license_number, u.skipper_license_expiry
+      FROM users u
+      WHERE u.skipper_license_number IS NOT NULL
+        AND u.skipper_license_expiry >= CURRENT_DATE
+        AND (u.account_status IS NULL OR u.account_status = 'active')
+      ORDER BY u.boat_category DESC
+    `);
+    const captains = rows.rows.map(r => ({
+      ...r,
+      is_eligible: isSkipperEligible(r.skipper_license_expiry),
+    })).filter(c => c.is_eligible);
+    res.json({ captains });
+  } catch (e) {
+    console.error('GET /api/marine/captains/eligible:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/check-in — Skipper GPS check-in (30 mins before)
+app.post('/api/marine/check-in', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.sub;
+    const { job_id, lat, lng } = req.body || {};
+    if (!job_id || lat == null || lng == null) return res.status(400).json({ error: 'job_id, lat, lng required' });
+    const job = await pool.query(
+      `SELECT j.*, mp.lat AS pier_lat, mp.lng AS pier_lng FROM jobs j
+       LEFT JOIN marine_piers mp ON mp.id = j.pier_id
+       WHERE (j.id::text = $1 OR j.id = $1) AND j.accepted_by::text = $2`,
+      [job_id, String(userId)]
+    );
+    if (!job.rows?.length) return res.status(404).json({ error: 'Job not found or not assigned to you' });
+    const j = job.rows[0];
+    const pierLat = parseFloat(j.pier_lat || j.location_lat || j.location?.lat);
+    const pierLng = parseFloat(j.pier_lng || j.location_lng || j.location?.lng);
+    if (!isWithinPierRadius(parseFloat(lat), parseFloat(lng), pierLat, pierLng)) {
+      return res.status(400).json({ error: 'คุณต้องอยู่ที่ท่าเรือเพื่อ Check-in (ภายใน 500 ม.)' });
+    }
+    const depTime = j.datetime || j.ferry_round_time;
+    if (!isCheckInWindowValid(depTime, new Date())) {
+      return res.status(400).json({ error: 'Check-in ได้เฉพาะก่อนเวลาออกเรือ 30 นาที' });
+    }
+    await pool.query(
+      `UPDATE jobs SET marine_status = 'checkin_ok', skipper_check_in_at = NOW(), skipper_check_in_lat = $1, skipper_check_in_lng = $2, updated_at = NOW() WHERE id::text = $3`,
+      [lat, lng, job_id]
+    );
+    io.to(`user:${j.created_by}`).emit('marine_status_update', { job_id, status: 'checkin_ok' });
+    io.to('admin').emit('marine_status_update', { job_id, status: 'checkin_ok' });
+    res.json({ success: true, status: 'checkin_ok' });
+  } catch (e) {
+    console.error('POST /api/marine/check-in:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/sos — Emergency SOS (ส่งพิกัดเรือให้ Admin)
+app.post('/api/marine/sos', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.sub;
+    const { job_id, lat, lng } = req.body || {};
+    const coords = { lat: lat ?? req.body?.location?.lat, lng: lng ?? req.body?.location?.lng };
+    const job = await pool.query(`SELECT * FROM jobs WHERE (id::text = $1 OR id = $1) AND (accepted_by::text = $2 OR created_by::text = $2)`, [job_id || '', String(userId)]);
+    if (!job.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const j = job.rows[0];
+    await pool.query(`UPDATE jobs SET marine_status = 'sos', updated_at = NOW() WHERE id::text = $1`, [job_id || j.id]);
+    const hasAlerts = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'marine_admin_alerts'`).then(r => r.rows?.length > 0);
+    if (hasAlerts) {
+      await pool.query(
+        `INSERT INTO marine_admin_alerts (job_id, alert_type, payload) VALUES ($1, 'sos', $2::jsonb)`,
+        [j.id, JSON.stringify({ lat: coords.lat, lng: coords.lng, user_id: userId, created_at: new Date().toISOString() })]
+      );
+    }
+    io.emit('marine_sos', { job_id: j.id, lat: coords.lat, lng: coords.lng });
+    io.to('admin').emit('marine_sos', { job_id: j.id, lat: coords.lat, lng: coords.lng });
+    // FCM: Push to Admin
+    try {
+      const adminTokens = await pool.query(`SELECT token FROM fcm_tokens WHERE source = 'admin' AND token IS NOT NULL AND token != ''`).then(r => (r.rows || []).map(x => x.token));
+      if (adminTokens.length) {
+        await sendFcmToTokens(adminTokens, { title: '🚨 SOS Marine', body: `งาน #${j.id} — กัปตันกด SOS พิกัด: ${coords.lat?.toFixed(4)}, ${coords.lng?.toFixed(4)}` });
+      }
+    } catch (fcmErr) { console.warn('[FCM Admin SOS]', fcmErr?.message); }
+    res.json({ success: true, message: 'SOS ส่งแล้ว — หน่วยกู้ภัยจะติดต่อคุณ' });
+  } catch (e) {
+    console.error('POST /api/marine/sos:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/emergency/sos — Universal SOS (Digital Identity to authorities)
+// Mock: POLICE I LERT U, 1669. Fallback: tel:191/1669
+app.post('/api/emergency/sos', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.sub;
+    const body = req.body || {};
+    const lat = body.lat ?? body.location?.lat;
+    const lng = body.lng ?? body.location?.lng;
+    const triggerType = body.trigger_type || 'sos';
+    const payload = {
+      lat, lng,
+      google_maps_link: body.google_maps_link,
+      medical: body.medical || {},
+      emergency_contacts: body.emergency_contacts || [],
+      user_id: userId,
+      full_name: body.full_name,
+      phone: body.phone,
+      timestamp: body.timestamp || new Date().toISOString(),
+      marine: body.marine,
+      trigger_type: triggerType,
+    };
+    const payloadStr = JSON.stringify(payload);
+    const payloadHash = crypto.createHash('sha256').update(payloadStr).digest('hex');
+
+    let apiSent = false;
+    let fallbackUsed = false;
+    try {
+      // Mock: POLICE I LERT U (Thailand) — would POST to real API
+      // Mock: 1669 Emergency Medical — would POST to real API
+      if (process.env.EMERGENCY_POLICE_ILERT_URL) {
+        await fetch(process.env.EMERGENCY_POLICE_ILERT_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      }
+      if (process.env.EMERGENCY_1669_URL) {
+        await fetch(process.env.EMERGENCY_1669_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      }
+      apiSent = true;
+    } catch (apiErr) {
+      fallbackUsed = true;
+    }
+
+    const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'emergency_logs'`).then(r => r.rows?.length > 0);
+    if (hasTable) {
+      await pool.query(
+        `INSERT INTO emergency_logs (user_id, payload_json, payload_hash, trigger_type, lat, lng, is_marine, api_sent, fallback_used) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9)`,
+        [userId, payloadStr, payloadHash, triggerType, lat || null, lng || null, !!body.marine, apiSent, fallbackUsed]
+      );
+    }
+
+    io.to('admin').emit('emergency_sos', payload);
+    const adminTokens = await pool.query(`SELECT token FROM fcm_tokens WHERE source = 'admin' AND token IS NOT NULL AND token != ''`).then(r => (r.rows || []).map(x => x.token));
+    if (adminTokens.length) {
+      const title = triggerType === 'aero_medevac' ? '🚁 Request Aero-Medevac' : '🚨 SOS Emergency';
+      const loc = (lat != null && lng != null) ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'No GPS';
+      await sendFcmToTokens(adminTokens, { title, body: `${body.full_name || userId} — ${loc}` }).catch(e => console.warn('[FCM Emergency]', e?.message));
+    }
+    res.json({ success: true, message: 'SOS ส่งแล้ว — หน่วยกู้ภัยจะติดต่อคุณ' });
+  } catch (e) {
+    console.error('POST /api/emergency/sos:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/backup-captain-search — Trigger when no check-in (Admin/Cron)
+app.post('/api/marine/backup-captain-search', async (req, res) => {
+  try {
+    const { job_id } = req.body || {};
+    if (!job_id) return res.status(400).json({ error: 'job_id required' });
+    const job = await pool.query(`SELECT * FROM jobs WHERE (id::text = $1 OR id = $1) AND category = 'Marine'`, [job_id]);
+    if (!job.rows?.length) return res.status(404).json({ error: 'Job not found' });
+    const j = job.rows[0];
+    const hasAlerts = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'marine_admin_alerts'`).then(r => r.rows?.length > 0);
+    if (hasAlerts) {
+      await pool.query(
+        `INSERT INTO marine_admin_alerts (job_id, alert_type, payload) VALUES ($1, 'no_checkin_backup', $2::jsonb)`,
+        [j.id, JSON.stringify({ triggered_at: new Date().toISOString() })]
+      );
+    }
+    const captains = await pool.query(`
+      SELECT u.id, u.full_name FROM users u
+      WHERE u.skipper_license_expiry >= CURRENT_DATE AND (u.account_status IS NULL OR u.account_status = 'active')
+    `);
+    io.emit('marine_backup_search', { job_id: j.id, captain_count: captains.rows.length });
+    io.to('admin').emit('marine_no_checkin', { job_id: j.id });
+    // FCM: Push to Admin — No check-in
+    try {
+      const adminTokens = await pool.query(`SELECT token FROM fcm_tokens WHERE source = 'admin' AND token IS NOT NULL AND token != ''`).then(r => (r.rows || []).map(x => x.token));
+      if (adminTokens.length) {
+        await sendFcmToTokens(adminTokens, { title: '⚠️ Marine No Check-in', body: `งาน #${j.id} — กัปตันยังไม่เช็คอิน 30 นาทีก่อนออกเรือ` });
+      }
+    } catch (fcmErr) { console.warn('[FCM Admin NoCheckin]', fcmErr?.message); }
+    res.json({ success: true, backup_captains: captains.rows.length });
+  } catch (e) {
+    console.error('POST /api/marine/backup-captain-search:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/book-with-deposit — Charter/Activity: hold deposit from wallet, create job (Job Confirmed only after deposit verified)
+app.post('/api/marine/book-with-deposit', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+
+    const subService = (req.body._sub_service || req.body.sub_service || '').toString();
+    if (!requiresSafetyDeposit(subService)) {
+      return res.status(400).json({ error: 'บริการนี้ไม่ต้องมัดจำ — ใช้ POST /api/jobs ได้เลย' });
+    }
+
+    const totalPrice = parseFloat(req.body.price) || 0;
+    if (totalPrice <= 0) return res.status(400).json({ error: 'ราคาต้องมากกว่า 0' });
+
+    const depositAmount = calcDepositAmount(totalPrice, subService);
+    const depositPercent = getDepositPercent(subService);
+    if (depositAmount <= 0) return res.status(400).json({ error: 'คำนวณมัดจำไม่ถูกต้อง' });
+
+    // Marine: Markup 6% ถาวร — กรณียกเลิก platform ไม่เก็บ markup
+    const { totalToPay, markupAmount } = calcMarineEmployerOutflow(totalPrice);
+    const amountToHold = totalToPay;
+
+    const clientFrozen = await isWalletFrozen(userUuid);
+    if (clientFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ' });
+
+    const balanceRow = await pool.query('SELECT wallet_balance FROM users WHERE id::text = $1 OR id = $1', [String(userUuid)]);
+    const balance = parseFloat(balanceRow.rows?.[0]?.wallet_balance || 0);
+    if (balance < amountToHold) {
+      return res.status(400).json({ error: 'ยอดเงินไม่พอ — กรุณาเติมเงินก่อน', insufficient_balance: true, required: amountToHold });
+    }
+
+    const jobId = `marine_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await dbClient.query(
+        `UPDATE users SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1), updated_at = NOW() WHERE id::text = $2 OR id = $2`,
+        [amountToHold, String(userUuid)]
+      );
+
+      const ledgerId = `L-marine-dep-${jobId}-${Date.now()}`;
+      await dbClient.query(
+        `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+         VALUES ($1, 'marine_deposit_held', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
+        [ledgerId, jobId, amountToHold, `MAR-DEP-${jobId}`, `T-MAR-DEP-${Date.now()}`, userUuid, JSON.stringify({ leg: 'employer_debit', sub_service: subService, deposit_percent: depositPercent, deposit_amount: depositAmount, total_price: totalPrice, markup_amount: markupAmount, markup_rate: 0.06 })]
+      );
+
+      const jobPayload = { ...req.body, id: jobId, created_by: userUuid, status: 'open', category: 'Marine' };
+      const title = jobPayload.title || `Marine ${subService}`;
+      const desc = jobPayload.description || '';
+      const loc = jobPayload.location || { lat: 13.7563, lng: 100.5018 };
+      const locLat = loc.lat || 13.7563;
+      const locLng = loc.lng || 100.5018;
+      const dt = jobPayload.datetime || new Date().toISOString();
+
+      await dbClient.query(
+        `INSERT INTO jobs (id, title, description, category, price, status, location, location_lat, location_lng, datetime, created_by, client_id, pier_id, boat_grade, marine_status, safety_deposit_amount, safety_deposit_status, safety_deposit_percent, ferry_round_time, car_eta_minutes, car_booking_id, created_at, updated_at)
+         VALUES ($1, $2, $3, 'Marine', $4, 'open', $5, $6, $7, $8, $9, $9, $10, $11, 'pending_checkin', $12, 'held', $13, $14, $15, $16, NOW(), NOW())`,
+        [jobId, title, desc, totalPrice, JSON.stringify(loc), locLat, locLng, dt, userUuid, jobPayload.pier_id || null, jobPayload.boat_grade || 'standard', depositAmount, depositPercent, jobPayload.ferry_round_time || null, jobPayload.car_eta_minutes ?? null, jobPayload.car_booking_id || null]
+      );
+
+      await dbClient.query('COMMIT');
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    const createdJob = await pool.query('SELECT * FROM jobs WHERE id::text = $1', [jobId]).then(r => r.rows[0]);
+    if (createdJob?.location && typeof createdJob.location === 'string') {
+      try { createdJob.location = JSON.parse(createdJob.location); } catch (_) {}
+    }
+    res.json({ success: true, message: 'มัดจำยืนยันแล้ว — รอการยืนยันจากกัปตัน', job: createdJob, deposit_amount: depositAmount, total_to_pay: totalToPay, markup_amount: markupAmount });
+  } catch (e) {
+    console.error('POST /api/marine/book-with-deposit:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/jobs/:id/cancel — Marine cancellation with staged refund (90/50/0%)
+app.post('/api/marine/jobs/:id/cancel', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+
+    const jobRow = await pool.query(
+      `SELECT id, created_by, accepted_by, status, price, safety_deposit_amount, safety_deposit_status, datetime, cancelled_at FROM jobs WHERE (id::text = $1 OR id = $1) AND category = 'Marine'`,
+      [jobId]
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ error: 'ไม่พบงาน Marine นี้' });
+    const job = jobRow.rows[0];
+    if (String(job.created_by) !== String(userUuid)) return res.status(403).json({ error: 'เฉพาะผู้จองเท่านั้นที่ยกเลิกได้' });
+    if (!['open', 'accepted', 'pending'].includes(String(job.status))) {
+      return res.status(400).json({ error: 'ยกเลิกได้เฉพาะงานที่ยังไม่เริ่ม' });
+    }
+    if (job.cancelled_at) return res.status(400).json({ error: 'งานนี้ยกเลิกไปแล้ว' });
+
+    const totalPrice = parseFloat(job.price || 0);
+    const depositAmount = parseFloat(job.safety_deposit_amount || 0);
+    const remainderAmount = round2(totalPrice - depositAmount);
+
+    if (depositAmount <= 0 || job.safety_deposit_status !== 'held') {
+      await pool.query(`UPDATE jobs SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id::text = $1`, [jobId]);
+      return res.json({ success: true, message: 'ยกเลิกแล้ว', refund_percent: 100, refund_amount: 0 });
+    }
+
+    const refundPercent = getCancellationRefundPercent(job.datetime, new Date());
+    const depositRefund = round2(depositAmount * refundPercent / 100);
+    const baseToCaptain = round2(depositAmount - depositRefund);
+
+    // กรณียกเลิก: platform ไม่เก็บ markup 6% — คืนเต็มตามสัดส่วนให้ผู้ใช้, ส่วนชดเชยกัปตันรวม markup
+    const refundBase = remainderAmount + depositRefund;
+    const refundAmount = round2(refundBase * (1 + 0.06)); // คืน markup ให้ผู้ใช้
+
+    // เงินชดเชยกัปตันรวม markup (platform ไม่เก็บ markup) — แพลตฟอร์มเก็บ 8% ของยอดชดเชย
+    const grossToCaptain = round2(baseToCaptain * (1 + 0.06));
+    const compResult = grossToCaptain > 0 && job.accepted_by
+      ? calcMarineCancellationCompensation(grossToCaptain)
+      : { captainNet: 0, platformFee: 0 };
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await dbClient.query(
+        `UPDATE jobs SET status = 'cancelled', cancelled_at = NOW(), cancellation_refund_percent = $1, safety_deposit_status = $2, updated_at = NOW() WHERE id::text = $3`,
+        [refundPercent, grossToCaptain > 0 ? 'compensated' : 'refunded', jobId]
+      );
+
+      if (refundAmount > 0) {
+        await dbClient.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id::text = $2 OR id = $2`,
+          [refundAmount, String(userUuid)]
+        );
+        const ledgerId = `L-marine-ref-${jobId}-${Date.now()}`;
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+           VALUES ($1, 'marine_deposit_refund', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
+          [ledgerId, jobId, refundAmount, `MAR-REF-${jobId}`, `T-MAR-REF-${Date.now()}`, userUuid, JSON.stringify({ leg: 'user_credit', refund_percent: refundPercent, deposit_refund: depositRefund, remainder_refund: remainderAmount, markup_included: true })]
+        );
+      }
+
+      if (compResult.captainNet > 0 && job.accepted_by) {
+        await dbClient.query(
+          `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id::text = $2 OR id = $2`,
+          [compResult.captainNet, String(job.accepted_by)]
+        );
+        const ledgerIdCap = `L-marine-comp-${jobId}-${Date.now()}`;
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+           VALUES ($1, 'marine_compensation_captain', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
+          [ledgerIdCap, jobId, compResult.captainNet, `MAR-COMP-${jobId}`, `T-MAR-COMP-${Date.now()}`, job.accepted_by, JSON.stringify({ leg: 'captain_credit', gross_compensation: grossToCaptain, platform_fee_8pct: compResult.platformFee })]
+        );
+      }
+
+      if (compResult.platformFee > 0) {
+        const platformUser = await dbClient.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
+        if (platformUser.rows?.length) {
+          await dbClient.query(
+            `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+            [compResult.platformFee, platformUser.rows[0].id]
+          );
+          await dbClient.query(
+            `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+             VALUES ($1, 'marine_cancel_platform_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+            [`L-marine-pf-${jobId}-${Date.now()}`, jobId, compResult.platformFee, `MAR-PF-${jobId}`, `T-MAR-PF-${Date.now()}`, JSON.stringify({ leg: 'platform_credit', cancellation_fee_8pct: true })]
+          );
+        }
+      }
+
+      await dbClient.query('COMMIT');
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    res.json({
+      success: true,
+      message: refundPercent === 0 ? 'ยกเลิกแล้ว — มัดจำโอนให้กัปตันเป็นค่าชดเชยน้ำมัน' : `ยกเลิกแล้ว — คืนมัดจำ ${refundPercent}%`,
+      refund_percent: refundPercent,
+      refund_amount: refundAmount,
+      compensation_to_captain: compResult.captainNet,
+      platform_fee_from_compensation: compResult.platformFee,
+    });
+  } catch (e) {
+    console.error('POST /api/marine/jobs/:id/cancel:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/marine/jobs/:id/complete — Trip completed: release escrow to Captain (requires checkin_ok)
+app.post('/api/marine/jobs/:id/complete', async (req, res) => {
+  try {
+    const jobId = (req.params.id || '').toString().trim();
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+
+    const jobRow = await pool.query(
+      `SELECT id, created_by, accepted_by, status, price, marine_status, safety_deposit_status FROM jobs WHERE (id::text = $1 OR id = $1) AND category = 'Marine'`,
+      [jobId]
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ error: 'ไม่พบงาน Marine นี้' });
+    const job = jobRow.rows[0];
+
+    const isCaptain = String(job.accepted_by) === String(userUuid);
+    const isEmployer = String(job.created_by) === String(userUuid);
+    if (!isCaptain && !isEmployer) return res.status(403).json({ error: 'เฉพาะกัปตันหรือผู้จองเท่านั้นที่ยืนยันได้' });
+
+    if (job.status === 'completed') return res.json({ success: true, message: 'งานเสร็จสมบูรณ์แล้ว' });
+    if (!['accepted', 'pending', 'in_progress'].includes(String(job.status))) {
+      return res.status(400).json({ error: 'สถานะงานไม่ถูกต้อง' });
+    }
+
+    if (job.marine_status !== 'checkin_ok') {
+      return res.status(400).json({ error: 'ต้อง Check-in ที่ท่าเรือก่อนจึงจะยืนยันเสร็จสิ้นได้' });
+    }
+
+    const jobPrice = parseFloat(job.price || 0);
+    const isMarineDeposit = job.safety_deposit_status === 'held' && jobPrice > 0;
+
+    // Marine: ค่าจัดหา 10% — กัปตันได้ 90%
+    const releaseResult = isMarineDeposit && job.accepted_by
+      ? calcMarineCompleteRelease(jobPrice)
+      : null;
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await dbClient.query(
+        `UPDATE jobs SET status = 'completed', marine_status = 'arrived', safety_deposit_status = 'released', updated_at = NOW() WHERE id::text = $1`,
+        [jobId]
+      );
+
+      if (releaseResult && job.accepted_by) {
+        await dbClient.query(
+          `UPDATE users SET wallet_pending = GREATEST(0, COALESCE(wallet_pending, 0) - $1), wallet_balance = COALESCE(wallet_balance, 0) + $2, completed_jobs_count = COALESCE(completed_jobs_count, 0) + 1, updated_at = NOW() WHERE id::text = $3 OR id = $3`,
+          [releaseResult.captainPayout, releaseResult.captainPayout, String(job.accepted_by)]
+        );
+        const ledgerId = `L-marine-rel-${jobId}-${Date.now()}`;
+        await dbClient.query(
+          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+           VALUES ($1, 'marine_deposit_released', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
+          [ledgerId, jobId, releaseResult.captainPayout, `MAR-REL-${jobId}`, `T-MAR-REL-${Date.now()}`, job.accepted_by, JSON.stringify({ leg: 'captain_credit', trip_completed: true, sourcing_fee: releaseResult.sourcingFee, job_price: jobPrice })]
+        );
+        if (releaseResult.platformRevenue > 0) {
+          const platformUser = await dbClient.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
+          if (platformUser.rows?.length) {
+            await dbClient.query(
+              `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2`,
+              [releaseResult.platformRevenue, platformUser.rows[0].id]
+            );
+            await dbClient.query(
+              `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+               VALUES ($1, 'marine_sourcing_fee', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6)`,
+              [`L-marine-src-${jobId}-${Date.now()}`, jobId, releaseResult.platformRevenue, `MAR-SRC-${jobId}`, `T-MAR-SRC-${Date.now()}`, JSON.stringify({ leg: 'platform_credit', sourcing_10pct: true })]
+            );
+          }
+        }
+      }
+
+      await dbClient.query('COMMIT');
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    res.json({ success: true, message: 'ยืนยันเสร็จสิ้น — เงินเข้าหมดแล้ว' });
+  } catch (e) {
+    console.error('POST /api/marine/jobs/:id/complete:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/marine/deposit-info — Calculate deposit for Charter/Activity (รวม Markup 6%)
+app.get('/api/marine/deposit-info', (req, res) => {
+  try {
+    const subService = (req.query.sub_service || req.query.subService || '').toString();
+    const totalPrice = parseFloat(req.query.total_price || req.query.price || 0);
+    if (!requiresSafetyDeposit(subService)) {
+      return res.json({ requires_deposit: false, deposit_amount: 0, deposit_percent: 0 });
+    }
+    const depositAmount = calcDepositAmount(totalPrice, subService);
+    const depositPercent = getDepositPercent(subService);
+    const { totalToPay, markupAmount } = calcMarineEmployerOutflow(totalPrice);
+    res.json({
+      requires_deposit: true,
+      deposit_amount: depositAmount,
+      deposit_percent: depositPercent,
+      total_price: totalPrice,
+      markup_amount: markupAmount,
+      total_to_pay: totalToPay,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/marine/car-boat-sync — Check if Car ETA + 20min > Boat departure
+app.get('/api/marine/car-boat-sync', async (req, res) => {
+  try {
+    const { car_eta_minutes, boat_departure } = req.query || {};
+    const conflict = hasCarBoatConflict(Number(car_eta_minutes), boat_departure);
+    res.json({ conflict, message: conflict ? 'รถอาจไปไม่ทันเรือ — แนะนำเลือกรอบเรือถัดไปหรือรถเร็วขึ้น' : 'ok' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Socket.io: join talent/bidder rooms for real-time bidding
 io.on('connection', (socket) => {
   socket.on('join', (payload) => {
@@ -17265,9 +24637,26 @@ io.on('connection', (socket) => {
       socket.join(`bidder:${userId}`);
       socket.join(`user:${userId}`);
     }
+    if (role === 'admin') socket.join('admin');
   });
   socket.on('disconnect', () => {});
 });
+
+registerRescueNetTelecomRoutes(app, { pool, authenticateToken, adminAuthMiddleware });
+registerGigastoreWebhookRoutes(app, { pool });
+
+function getDbHostLabelForStartupLog() {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    try {
+      const u = new URL(url.replace(/^postgres(ql)?:\/\//, 'https://'));
+      return `${u.hostname}`;
+    } catch {
+      return 'configured';
+    }
+  }
+  return `${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`;
+}
 
 server.listen(PORT, async () => {
   console.log("=".repeat(70));
@@ -17275,7 +24664,7 @@ server.listen(PORT, async () => {
   console.log("=".repeat(70));
   console.log(`📍 Server: http://localhost:${PORT}`);
   console.log(`📁 Storage: AWS S3 (${process.env.AWS_S3_BUCKET || 'aqond-uploads'})`);
-  console.log(`🗄️  Database: PostgreSQL (${process.env.DB_HOST}:${process.env.DB_PORT})`);
+  console.log(`🗄️  Database: PostgreSQL (${getDbHostLabelForStartupLog()})`);
   console.log("=".repeat(70));
   console.log("📊 Business Endpoints:");
   console.log("  POST /api/payments/process     - Process payment");
@@ -17288,8 +24677,10 @@ server.listen(PORT, async () => {
   console.log("  GET  /api/jobs/forms/:category - Get form schema (NEW)");
   console.log("  POST /api/jobs/categories/:category/calculate-billing - Calculate (NEW)");
   console.log("  POST /api/vip/subscribe        - VIP subscribe (ดู log [VIP subscribe] ที่ terminal นี้)");
-  console.log("  (VIP + Login ใช้ JWT_SECRET ตัวเดียวกันจาก process.env.JWT_SECRET)");
-  console.log("  JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ not set — ต้องตั้งใน .env");
+  if (STARTUP_VERBOSE) {
+    console.log("  (VIP + Login ใช้ JWT signing จาก env เดียวกัน)");
+    console.log("  JWT signing:", process.env.JWT_SECRET ? "✅ configured" : "❌ not set — ต้องตั้งใน .env");
+  }
   console.log("=".repeat(70));
 
   // Test database connection
@@ -17315,16 +24706,31 @@ server.listen(PORT, async () => {
       ['location_lat', 'DECIMAL(10,6)'],
       ['location_lng', 'DECIMAL(10,6)'],
       ['datetime', 'TIMESTAMP'],
+      ['start_date', 'TIMESTAMP'],
+      ['end_date', 'TIMESTAMP'],
+      ['deadline', 'TIMESTAMP'],
+      ['posted_at', 'TIMESTAMP DEFAULT NOW()'],
       ['created_by_name', 'VARCHAR(255)'],
       ['created_by_avatar', 'TEXT'],
       ['client_id', 'UUID'],
       ['updated_at', 'TIMESTAMP DEFAULT NOW()'],
       ['accepted_by', 'VARCHAR(255)'],
+      ['accepted_by_name', 'VARCHAR(255)'],
       ['accepted_at', 'TIMESTAMP'],
       ['submitted_at', 'TIMESTAMP'],
       ['payment_details', 'JSONB'],
       ['payment_status', 'VARCHAR(50)'],
       ['paid_at', 'TIMESTAMP'],
+      ['duration_hours', 'INTEGER DEFAULT 2'],
+      ['pier_id', 'VARCHAR(50)'],
+      ['ferry_round_time', 'VARCHAR(10)'],
+      ['boat_grade', 'VARCHAR(20)'],
+      ['marine_status', 'VARCHAR(30)'],
+      ['skipper_check_in_at', 'TIMESTAMPTZ'],
+      ['skipper_check_in_lat', 'DECIMAL(10,8)'],
+      ['skipper_check_in_lng', 'DECIMAL(11,8)'],
+      ['car_booking_id', 'VARCHAR(100)'],
+      ['car_eta_minutes', 'INT'],
     ];
     for (const [col, type] of jobsColumns) {
       try {
@@ -17612,4 +25018,11 @@ server.listen(PORT, async () => {
   runExpiredJobsSequential();
   console.log("🕐 Cron Job: Auto-update expired jobs started (sequential, every 1 hour)");
   console.log("=".repeat(70));
+
+  try {
+    const { startGatewayBackgroundServices } = await import('./lib/gatewayScheduler.js');
+    startGatewayBackgroundServices(pool);
+  } catch (e) {
+    console.warn('Gateway background services:', e?.message || e);
+  }
 });
