@@ -1,13 +1,51 @@
 /**
  * Phase 4: Admin dashboard API client.
  * All requests use JWT (Bearer). No admin API without authentication.
- * Production: hardcode https://api.aqond.com เพื่อไม่ให้ build พลาด (เคยเกิด request ไป admin.aqond.com แทน)
+ * - Dev: base = "" → ใช้ Vite proxy ไปที่ VITE_ADMIN_API_URL (vite.config)
+ * - Prod: VITE_ADMIN_API_URL ตอน build ถ้ามี — ไม่มี fallback เป็น https://api.aqond.com
+ *   (กันเคส build ลืม env แล้ว request ไป localhost โดยไม่ตั้งใจ)
  */
+import type { AdminUser, ManualSettlementRecord, PersonalSettlementAccount } from "../types";
+
 const PRODUCTION_API = "https://api.aqond.com";
-export const ADMIN_API_BASE =
-  typeof import.meta !== "undefined" && (import.meta as any).env?.DEV
-    ? "" // ใช้ proxy ในโหมด dev
-    : PRODUCTION_API;
+
+/** ถ้า production build ฝัง VITE_ADMIN_API_URL เป็น localhost (หลง copy .env dev) — ห้ามใช้ */
+function isLocalhostApiUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "::1";
+  } catch {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url.trim());
+  }
+}
+
+function resolveAdminApiBase(): string {
+  if (typeof import.meta === "undefined") return PRODUCTION_API;
+  const env = (import.meta as any).env;
+  if (env?.DEV) return "";
+  const u = env?.VITE_ADMIN_API_URL;
+  if (typeof u === "string" && u.trim()) {
+    const trimmed = u.replace(/\/$/, "");
+    if (env?.PROD && isLocalhostApiUrl(trimmed)) {
+      console.warn(
+        "[adminApi] VITE_ADMIN_API_URL is localhost in production build — using",
+        PRODUCTION_API
+      );
+      return PRODUCTION_API;
+    }
+    return trimmed;
+  }
+  return PRODUCTION_API;
+}
+
+export const ADMIN_API_BASE = resolveAdminApiBase();
+
+/** Origin สำหรับ Socket.IO (ไม่รวม path /api) */
+export function getAdminSocketOrigin(): string {
+  if (typeof window === "undefined") return "";
+  const base = ADMIN_API_BASE?.replace(/\/$/, "") || "";
+  return base || window.location.origin;
+}
 
 const ADMIN_TOKEN_KEY = "nexus_admin_token";
 
@@ -41,6 +79,11 @@ export function getAdminToken(): string | null {
   return null;
 }
 
+/** จาก Error ที่ throw จาก request() — รองรับ backend { error, message } */
+export function getAdminApiErrorCode(e: unknown): string | undefined {
+  return (e as Error & { code?: string })?.code;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -51,7 +94,8 @@ async function request<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (_token) headers["Authorization"] = `Bearer ${_token}`;
+  const tok = getAdminToken();
+  if (tok) headers["Authorization"] = `Bearer ${tok}`;
 
   const timeoutMs = options?.timeoutMs ?? 0;
   const controller = timeoutMs > 0 ? new AbortController() : null;
@@ -67,7 +111,7 @@ async function request<T>(
     });
     const text = await res.text();
     if (!res.ok) {
-      let err: { error?: string; details?: string } = {};
+      let err: { error?: string; details?: string; message?: string; code?: string } = {};
       try {
         if (text.startsWith("{")) err = JSON.parse(text);
         else if (text.startsWith("<")) err = { error: `Server returned HTML (${res.status}). Check API URL.` };
@@ -75,9 +119,19 @@ async function request<T>(
       } catch {
         err = { error: res.statusText || `HTTP ${res.status}` };
       }
-      const msg = err.details ? `${err.error || res.statusText}: ${err.details}` : (err.error || res.statusText || `HTTP ${res.status}`);
-      const e = new Error(msg) as Error & { status?: number };
+      const msg = err.details
+        ? `${err.error || res.statusText}: ${err.details}`
+        : err.message && String(err.message).trim()
+          ? [err.error, err.message].filter(Boolean).join(": ")
+          : (err.error || res.statusText || `HTTP ${res.status}`);
+      const e = new Error(msg) as Error & { status?: number; code?: string };
       e.status = res.status;
+      e.code =
+        typeof err.code === "string"
+          ? err.code
+          : typeof err.error === "string" && err.error.includes("_")
+            ? err.error
+            : undefined;
       throw e;
     }
     if (res.status === 204) return undefined as T;
@@ -107,12 +161,67 @@ async function request<T>(
   }
 }
 
-export interface AdminLoginResponse {
+export interface AdminLoginUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  avatar_url?: string | null;
+  permissions?: string[];
+}
+
+function founderAvatarPublicPath(): string {
+  const b = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
+  return b.endsWith("/") ? `${b}founder-avatar.png` : `${b}/founder-avatar.png`;
+}
+
+/** LoginView + App — restore session หลังรีเฟรช (token อยู่ localStorage แต่ React state หาย) */
+export function mapLoginUserToAdminUser(u: AdminLoginUser): AdminUser {
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env || {};
+  const envUrl = env.VITE_ADMIN_AVATAR_URL;
+  const avatar = u.avatar_url ? u.avatar_url : envUrl ? envUrl : founderAvatarPublicPath();
+  const nameOverride = env.VITE_ADMIN_DISPLAY_NAME?.trim();
+  const name = nameOverride || u.name || u.email;
+  return {
+    id: u.id,
+    email: u.email,
+    name,
+    role: u.role as AdminUser["role"],
+    avatar,
+    permissions: Array.isArray(u.permissions) ? u.permissions.map(String) : [],
+  };
+}
+
+export async function fetchAdminSession(): Promise<{ user: AdminLoginUser }> {
+  return request<{ user: AdminLoginUser }>("GET", "/api/auth/admin-session");
+}
+
+/** ล็อกอินสำเร็จ (ไม่บังคับ MFA ใน env) */
+export interface AdminLoginSuccess {
   access_token: string;
   token_type: string;
   expires_in: number;
-  user: { id: string; email: string; name: string; role: string };
+  user: AdminLoginUser;
 }
+
+/** รอรหัส 6 หลักจาก Authenticator */
+export interface AdminLoginMfaRequired {
+  mfa_required: true;
+  mfa_token: string;
+  user: AdminLoginUser;
+}
+
+/** ยังไม่ลงทะเบียน TOTP — สแกน QR แล้วยืนยัน */
+export interface AdminLoginMfaSetupRequired {
+  mfa_setup_required: true;
+  mfa_token: string;
+  user: AdminLoginUser;
+}
+
+export type AdminLoginResponse =
+  | AdminLoginSuccess
+  | AdminLoginMfaRequired
+  | AdminLoginMfaSetupRequired;
 
 export function adminLogin(
   email: string,
@@ -121,6 +230,66 @@ export function adminLogin(
   return request<AdminLoginResponse>("POST", "/api/auth/admin-login", {
     email,
     password,
+  });
+}
+
+// MFA ใช้ body แทน Bearer — ไม่แนบ Authorization
+async function requestNoAuth<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const url = path.startsWith("http") ? path : `${ADMIN_API_BASE}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let err: { error?: string; details?: string } = {};
+    try {
+      if (text.startsWith("{")) err = JSON.parse(text);
+      else err = { error: text.slice(0, 200) };
+    } catch {
+      err = { error: res.statusText || `HTTP ${res.status}` };
+    }
+    const msg = err.details ? `${err.error || res.statusText}: ${err.details}` : (err.error || res.statusText || `HTTP ${res.status}`);
+    const e = new Error(msg) as Error & { status?: number };
+    e.status = res.status;
+    throw e;
+  }
+  if (!text || !text.trim()) {
+    throw new Error(`Empty response (${res.status})`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Invalid JSON from ${url}`);
+  }
+}
+
+export interface AdminMfaSetupStartResponse {
+  qr_data_url: string;
+  otpauth_url: string;
+}
+
+export function adminMfaSetupStart(mfaToken: string): Promise<AdminMfaSetupStartResponse> {
+  return requestNoAuth<AdminMfaSetupStartResponse>("POST", "/api/auth/admin-mfa/setup-start", {
+    mfa_token: mfaToken,
+  });
+}
+
+export function adminMfaSetupFinish(
+  mfaToken: string,
+  code: string
+): Promise<AdminLoginSuccess> {
+  return requestNoAuth<AdminLoginSuccess>("POST", "/api/auth/admin-mfa/setup-finish", {
+    mfa_token: mfaToken,
+    code,
+  });
+}
+
+export function adminMfaVerify(mfaToken: string, code: string): Promise<AdminLoginSuccess> {
+  return requestNoAuth<AdminLoginSuccess>("POST", "/api/auth/admin-mfa/verify", {
+    mfa_token: mfaToken,
+    code,
   });
 }
 
@@ -303,7 +472,9 @@ export interface StaffMember {
   id: string;
   full_name: string;
   email: string;
-  role: "super_admin" | "moderator" | "support";
+  /** อีเมลติดต่อ/แจ้งเตือน — ถ้าไม่มีให้ใช้ email ล็อกอิน */
+  contact_email?: string | null;
+  role: "super_admin" | "admin" | "moderator" | "support";
   department: string;
   status: "active" | "inactive";
   last_login: string | null;
@@ -323,10 +494,13 @@ export function getStaff(search?: string): Promise<StaffResponse> {
 
 export function createStaff(data: {
   full_name: string;
+  /** อีเมลล็อกอิน Admin Panel */
   email: string;
-  role?: "super_admin" | "moderator" | "support";
+  /** อีเมลติดต่อ/แจ้งเตือน (ไม่บังคับ — ถ้าว่างใช้อีเมลล็อกอินแทน) */
+  contact_email?: string;
+  role?: "super_admin" | "admin" | "moderator" | "support";
   department?: string;
-  /** Required when role=super_admin — สร้าง users+user_roles เพื่อให้ล็อกอิน Admin ได้ */
+  /** บังคับเมื่อ role=super_admin หรือ admin — สร้าง users+user_roles */
   password?: string;
 }): Promise<StaffMember> {
   return request<StaffMember>("POST", "/api/admin/staff", data);
@@ -346,9 +520,28 @@ export function updateStaffPermissions(
   return request("PATCH", `/api/admin/staff/${encodeURIComponent(id)}/permissions`, { permissions });
 }
 
+/** Super Admin — ส่งอีเมลถึงผู้ใช้จาก email/contact_email ใน DB */
+export function postAdminEmailBroadcast(body: {
+  subject: string;
+  text: string;
+  preview?: boolean;
+}): Promise<{
+  preview?: boolean;
+  recipient_count?: number;
+  max_recipients?: number;
+  sample?: string[];
+  success?: boolean;
+  sent?: number;
+  failed?: number;
+  failure_sample?: Array<{ to: string; error?: string }>;
+}> {
+  return request("POST", "/api/admin/communications/email-broadcast", body);
+}
+
 export interface AdminUserRow {
   id: string;
   email: string;
+  contact_email?: string | null;
   phone?: string;
   full_name?: string;
   kyc_status?: string;
@@ -366,6 +559,9 @@ export interface AdminUserRow {
   adviser_granted_at?: string | null;
   adviser_suspended_at?: string | null;
   adviser_suspended_reason?: string | null;
+  /** Closed beta cohort (migration 149) */
+  is_beta_tester?: boolean;
+  beta_tester_number?: number;
 }
 
 export interface AdminUsersResponse {
@@ -381,6 +577,8 @@ export function getAdminUsers(params?: {
   status?: string;
   kyc_status?: string;
   vip?: boolean;
+  /** Only closed-beta testers */
+  beta_tester?: boolean;
 }): Promise<AdminUsersResponse> {
   const sp = new URLSearchParams();
   if (params?.search) sp.set("search", params.search);
@@ -390,11 +588,42 @@ export function getAdminUsers(params?: {
   if (params?.status) sp.set("status", params.status);
   if (params?.kyc_status) sp.set("kyc_status", params.kyc_status);
   if (params?.vip === true) sp.set("vip", "1");
+  if (params?.beta_tester === true) sp.set("beta_tester", "1");
   const q = sp.toString();
   return request<AdminUsersResponse>(
     "GET",
     "/api/admin/users" + (q ? "?" + q : "")
   );
+}
+
+export interface LandingPageLeadRow {
+  id: string;
+  created_at: string;
+  source: string;
+  full_name: string | null;
+  contact: string;
+  interest_service: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  national_id: string | null;
+  date_of_birth: string | null;
+  address: string | null;
+  kyc_started: boolean;
+}
+
+export function getAdminLandingLeads(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  leads: LandingPageLeadRow[];
+  pagination: { limit: number; offset: number; total: number };
+  warning?: string;
+}> {
+  const sp = new URLSearchParams();
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  const q = sp.toString();
+  return request("GET", "/api/admin/landing-leads" + (q ? "?" + q : ""));
 }
 
 export interface AdminUserDetail {
@@ -556,18 +785,20 @@ export function getAdminUserLmsSummary(
   return request("GET", `/api/admin/users/${encodeURIComponent(userId)}/lms-summary`);
 }
 
-/** Manual wallet Credit/Debit with audit */
+/** Manual wallet Credit/Debit with audit — debit ต้องส่ง reason_code + evidence_ref (ledger id ของรายการผิด) */
 export function adminWalletAdjust(
   userId: string,
   direction: "credit" | "debit",
   amount: number,
-  reason: string
+  reason: string,
+  debitAudit?: { reason_code: string; evidence_ref: string }
 ): Promise<{ success: boolean; user_id: string; direction: string; amount: number; balance_after: number }> {
-  return request("POST", `/api/admin/users/${encodeURIComponent(userId)}/wallet-adjust`, {
-    direction,
-    amount,
-    reason,
-  });
+  const body: Record<string, unknown> = { direction, amount, reason };
+  if (direction === "debit" && debitAudit) {
+    body.reason_code = debitAudit.reason_code;
+    body.evidence_ref = debitAudit.evidence_ref;
+  }
+  return request("POST", `/api/admin/users/${encodeURIComponent(userId)}/wallet-adjust`, body);
 }
 
 // App role (user / provider) — เปลี่ยนจากผู้รับงานเป็น user หรือกลับกัน
@@ -664,6 +895,18 @@ export function getKycDetail(userId: string): Promise<KycDetailResponse> {
   );
 }
 
+export interface KycOverviewResponse {
+  countsByKycStatus: Record<string, number>;
+  pendingReviewUsers: number;
+  resubmissionRequiredUsers: number;
+  rejectedUsers: number;
+  resubmissionDeadlineOverdue: number;
+}
+
+export function getKycOverview(): Promise<KycOverviewResponse> {
+  return request<KycOverviewResponse>("GET", "/api/admin/kyc/overview");
+}
+
 // User Payout Requests (อนุมัติ/ปฏิเสธคำขอถอน)
 export interface AdminPayoutRow {
   id: string;
@@ -682,13 +925,28 @@ export interface AdminPayoutRow {
   membership_tier?: string;
   kyc_status?: string;
   rating?: number;
+  /** Tier A payout reconciliation (migration 155) */
+  reconciliation_status?: string;
+  reconciliation_details?: Record<string, unknown>;
+  slip_hash?: string | null;
+  reconciled_at?: string | null;
+  /** Payso (Pay Solutions) PromptPay */
+  payso_transaction_id?: string | null;
+  payso_reference_id?: string | null;
+  withdrawal_fee?: number | null;
+  /** สำรองเมื่อ PaySo ล่ม — โอนมือ + สลิป */
+  paid_manually?: boolean;
+  paid_manually_slip_url?: string | null;
+  paid_manually_at?: string | null;
+  paid_manually_by?: string | null;
 }
 
 export interface AdminPayoutsResponse {
   payouts: AdminPayoutRow[];
 }
 
-export interface OmiseBalanceResponse {
+/** ยอดจาก PAYMENT_GATEWAY_* (Paysolution / HTTP adapter / ฯลฯ) — ไม่ผูกกับ Omise โดยตรง */
+export interface PayoutGatewayBalanceResponse {
   available: number;
   pending: number;
   total: number;
@@ -696,7 +954,11 @@ export interface OmiseBalanceResponse {
   total_pending_payouts: number;
   safety_gap: number;
   error?: string;
+  payment_gateway_provider?: string;
 }
+
+/** @deprecated ใช้ PayoutGatewayBalanceResponse */
+export type OmiseBalanceResponse = PayoutGatewayBalanceResponse;
 
 export function getAdminPayouts(params?: { status?: string; limit?: number }): Promise<AdminPayoutsResponse> {
   const sp = new URLSearchParams();
@@ -709,12 +971,137 @@ export function getAdminPayouts(params?: { status?: string; limit?: number }): P
 export function patchAdminPayout(
   id: string,
   body: { status: "approved" | "rejected"; admin_notes?: string; transaction_id?: string }
-): Promise<{ success: boolean; message: string; payout: { id: string; status: string; processed_at: string | null; transaction_id: string | null; admin_notes: string | null } | null }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  payout: {
+    id: string;
+    status: string;
+    processed_at: string | null;
+    transaction_id: string | null;
+    admin_notes: string | null;
+    reconciliation_status?: string | null;
+    reconciliation_details?: unknown;
+    slip_hash?: string | null;
+    reconciled_at?: string | null;
+  } | null;
+}> {
   return request("PATCH", `/api/admin/payouts/${encodeURIComponent(id)}`, body);
 }
 
+/** โอนมือ + สลิป (สำรองเมื่อ PaySo ล่ม) — POST /api/admin/payouts/:id/approve-manual */
+export function postAdminPayoutApproveManual(
+  id: string,
+  body: { slip_url: string; admin_notes?: string; transaction_id?: string }
+): Promise<{ success: boolean; message?: string }> {
+  return request("POST", `/api/admin/payouts/${encodeURIComponent(id)}/approve-manual`, body);
+}
+
+export interface PayoutReconciliationOverviewItem {
+  id: string;
+  user_id: string;
+  user_name: string | null;
+  amount: number;
+  status: string;
+  reconciliation_status: string;
+  reconciliation_details: Record<string, unknown>;
+  slip_hash: string | null;
+  slip_url: string | null;
+  reconciled_at: string | null;
+  created_at: string | null;
+  processed_at: string | null;
+  payso_transaction_id?: string | null;
+  payso_reference_id?: string | null;
+}
+
+export function getPayoutReconciliationOverview(params?: {
+  limit?: number;
+  reconciliation_status?: string;
+}): Promise<{ items: PayoutReconciliationOverviewItem[] }> {
+  const sp = new URLSearchParams();
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.reconciliation_status) sp.set("reconciliation_status", params.reconciliation_status);
+  const q = sp.toString();
+  return request("GET", "/api/admin/payouts/reconciliation/overview" + (q ? "?" + q : ""));
+}
+
+/** Payso None-UI PromptPay — requires PAYSO_ENABLED=1 and migration 157 */
+export function postAdminPaysoPromptPay(id: string): Promise<{
+  success: boolean;
+  payso_reference_id: string;
+  payso_transaction_id: string | null;
+  data?: Record<string, unknown>;
+}> {
+  return request("POST", `/api/admin/payouts/${encodeURIComponent(id)}/payso-promptpay`);
+}
+
+export function postAdminPayoutReconcile(
+  id: string,
+  body: { reason: string }
+): Promise<{
+  success: boolean;
+  status: string;
+  details: Record<string, unknown>;
+  slip_hash: string | null;
+}> {
+  return request("POST", `/api/admin/payouts/${encodeURIComponent(id)}/reconcile`, body);
+}
+
+/** Dashboard cards — Bangkok calendar day (ICT / UTC+7) */
+export function getPayoutReconciliationSummary(params?: { date?: string }): Promise<{
+  report_date: string;
+  timezone: string;
+  total_volume_reconciled_pass_thb: number;
+  pending_exceptions: number;
+  ledger_variance_thb: number;
+  report_id: string;
+}> {
+  const sp = new URLSearchParams();
+  if (params?.date) sp.set("date", params.date);
+  const q = sp.toString();
+  return request("GET", "/api/admin/payouts/reconciliation/summary" + (q ? "?" + q : ""));
+}
+
+/** SUPER_ADMIN only — override amount / bank_details when reconciliation locked; backend records audit log */
+export function putAdminPayoutSensitive(
+  id: string,
+  body: { reason: string; amount?: number; bank_details?: Record<string, unknown> }
+): Promise<{ success: boolean; reconciliation: Record<string, unknown>; amount: number; bank_details: Record<string, unknown> }> {
+  return request("PUT", `/api/admin/payouts/${encodeURIComponent(id)}/sensitive`, body);
+}
+
+/** Download daily audit CSV/PDF (browser) */
+export async function downloadPayoutReconciliationDailyReport(
+  date: string,
+  format: "csv" | "pdf"
+): Promise<void> {
+  const path =
+    "/api/admin/payouts/reconciliation/daily-report?" +
+    new URLSearchParams({ date, format }).toString();
+  const url = path.startsWith("http") ? path : `${ADMIN_API_BASE}${path}`;
+  const headers: Record<string, string> = {};
+  const t = getAdminToken();
+  if (t) headers["Authorization"] = `Bearer ${t}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text.slice(0, 300) || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `payout-reconciliation-${date}.${format === "pdf" ? "pdf" : "csv"}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export function getPayoutGatewayBalance(): Promise<PayoutGatewayBalanceResponse> {
+  return request<PayoutGatewayBalanceResponse>("GET", "/api/admin/payments/gateway-balance");
+}
+
+/** @deprecated ใช้ getPayoutGatewayBalance — backend alias เดิมยังรองรับ */
 export function getOmiseBalance(): Promise<OmiseBalanceResponse> {
-  return request<OmiseBalanceResponse>("GET", "/api/admin/omise/balance");
+  return getPayoutGatewayBalance();
 }
 
 export interface PayoutStatsResponse {
@@ -736,12 +1123,32 @@ export function runAutoPayout(): Promise<{ success: boolean; processed: number; 
   return request("POST", "/api/admin/payouts/run-auto-payout");
 }
 
+export interface TemporaryPayoutAccountSummary {
+  label: string;
+  bank_name: string;
+  account_holder_name: string;
+  account_number_masked: string;
+  has_prompt_pay: boolean;
+  updated_at: string | null;
+}
+
 export interface PayoutConfigResponse {
+  /** Payso PromptPay None-UI payout (PAYSO_ENABLED=1) */
+  payso_payout_enabled?: boolean;
   auto_release_enabled: boolean;
   auto_release_hours: number;
-  auto_payout_omise_enabled: boolean;
+  /** โอนอัตโนมัติผ่าน API ของ payment gateway (Paysolution ฯลฯ) เมื่อเปิดใน .env */
+  auto_payout_gateway_transfer_enabled: boolean;
+  payment_gateway_provider?: string;
   job_limit: number;
   request_limit: number;
+  gateway_configured: boolean;
+  /** บัญชีรับชั่วคราว (Personal Settlement) สำหรับโอนด้วยมือ / รอ gateway */
+  temporary_payout_account?: TemporaryPayoutAccountSummary | null;
+  payout_rail_hint?: string;
+  /** legacy — เทียบเท่า auto_payout_gateway_transfer_enabled */
+  auto_payout_omise_enabled: boolean;
+  /** legacy — เทียบเท่า gateway_configured */
   omise_configured: boolean;
   hint?: string;
 }
@@ -777,6 +1184,25 @@ export function rejectKyc(
   );
 }
 
+export function requestKycResubmit(
+  userId: string,
+  body: {
+    instruction: string;
+    deadline?: string | null;
+    required_steps?: string[];
+  }
+): Promise<{ success: boolean; kyc_status: string }> {
+  return request(
+    "POST",
+    `/api/admin/kyc/${encodeURIComponent(userId)}/request-resubmit`,
+    {
+      instruction: body.instruction,
+      deadline: body.deadline ?? null,
+      required_steps: body.required_steps || [],
+    }
+  );
+}
+
 // Phase 4C: Financial Dashboard (read-only)
 export interface FinancialDashboardResponse {
   total_wallets: number;
@@ -789,6 +1215,11 @@ export interface FinancialDashboardResponse {
   }>;
   reconciliation_runs: Array<Record<string, unknown>>;
   vip_admin_fund_balance?: number;
+  wallet_deposit_channels?: Array<{
+    source_type: string;
+    entry_count: number;
+    net_amount: number;
+  }>;
 }
 
 export function getFinancialDashboard(params?: {
@@ -805,6 +1236,34 @@ export function getFinancialDashboard(params?: {
     "GET",
     "/api/admin/financial/dashboard" + (q ? "?" + q : "")
   );
+}
+
+/** GET/PATCH /api/admin/finance/runtime-config — ปิดบัญชีรับชั่วคราว + เกตเวย์สำรอง (system_settings) */
+export interface FinanceBackupGatewayEntry {
+  enabled: boolean;
+  display_name: string;
+  merchant_id_env?: string;
+  notes?: string;
+}
+
+export interface FinanceRuntimeConfig {
+  personal_settlement_manual_enabled: boolean;
+  backup_gateways: {
+    twoc2p: FinanceBackupGatewayEntry;
+    gb_prime_pay: FinanceBackupGatewayEntry;
+  };
+}
+
+export function getFinanceRuntimeConfig(): Promise<FinanceRuntimeConfig> {
+  return request<FinanceRuntimeConfig>("GET", "/api/admin/finance/runtime-config");
+}
+
+export function patchFinanceRuntimeConfig(
+  body: Partial<Pick<FinanceRuntimeConfig, "personal_settlement_manual_enabled">> & {
+    backup_gateways?: Partial<FinanceRuntimeConfig["backup_gateways"]>;
+  }
+): Promise<FinanceRuntimeConfig> {
+  return request<FinanceRuntimeConfig>("PATCH", "/api/admin/finance/runtime-config", body);
 }
 
 // GET /api/admin/financial/summary — รายรับวันนี้ + หนี้สิน + แยกตามประเภท
@@ -1071,6 +1530,18 @@ export interface FinancialControlSettingsResponse {
     handling_fee_percent?: number;
     payment_markup_percent?: number;
   };
+  /** VIP subscription — priceMonthly THB, quotaPerMonth, discountPercent (merge with backend defaults) */
+  vip_tiers?: {
+    silver?: { priceMonthly?: number; quotaPerMonth?: number; discountPercent?: number };
+    gold?: { priceMonthly?: number; quotaPerMonth?: number; discountPercent?: number };
+    platinum?: { priceMonthly?: number; quotaPerMonth?: number; discountPercent?: number };
+  };
+  /** ใบรับรองรายได้ + ช่วง min–max (THB) — sync กับ GET /api/payouts/settings */
+  misc_fees?: {
+    certified_statement_fee_thb?: number;
+    certified_statement_fee_min_thb?: number;
+    certified_statement_fee_max_thb?: number;
+  };
   updated_at?: string | null;
 }
 
@@ -1090,6 +1561,8 @@ export function patchFinancialControlSettings(body: {
     handling_fee_percent?: number;
     payment_markup_percent?: number;
   };
+  vip_tiers?: FinancialControlSettingsResponse["vip_tiers"];
+  misc_fees?: FinancialControlSettingsResponse["misc_fees"];
 }): Promise<FinancialControlSettingsResponse & { message?: string }> {
   return request("PATCH", "/api/admin/financial/control-settings", body);
 }
@@ -1211,15 +1684,18 @@ export function getHighRiskUsers(opts?: { limit?: number; offset?: number }): Pr
 }
 
 // Tax & Compliance: Export Center + QR Audit
+/** internal-ledger: excludeDemo=true → ?exclude_demo=1 (ไม่รวมแถว demo; default ไม่ส่ง = ทั้งหมด) */
 export async function downloadExport(
   type: "official-revenue" | "internal-ledger" | "payout-recon",
   from?: string,
-  to?: string
+  to?: string,
+  opts?: { excludeDemo?: boolean }
 ): Promise<void> {
   const base = ADMIN_API_BASE;
   const params = new URLSearchParams();
   if (from) params.set("from", from);
   if (to) params.set("to", to);
+  if (type === "internal-ledger" && opts?.excludeDemo) params.set("exclude_demo", "1");
   const q = params.toString();
   const url = `${base}/api/admin/financial/export/${type}${q ? "?" + q : ""}`;
   const token = getAdminToken();
@@ -1236,13 +1712,21 @@ export async function downloadExport(
   URL.revokeObjectURL(a.href);
 }
 
-export function getAuditByQr(q: string): Promise<{
+export function getAuditByQr(
+  q: string,
+  opts?: { strictProduction?: boolean }
+): Promise<{
   query: string;
+  strict_production?: boolean;
+  reporting_note?: string | null;
   ledger: Array<{ id: string; tax_ref_id?: string; event_type: string; amount: number; bill_no?: string; transaction_no?: string; user_id?: string; provider_id?: string; created_at: string }>;
   statements: Array<{ id: string; user_id: string; period_from: string; period_to: string; fee_amount: number; status: string; qr_verification_code?: string }>;
   audit_trail: Array<{ id: number; actor_type: string; actor_id?: string; action: string; entity_type: string; entity_id: string; state_after?: unknown; reason?: string; created_at: string }>;
 }> {
-  return request("GET", "/api/admin/financial/audit-by-qr?q=" + encodeURIComponent(q));
+  const sp = new URLSearchParams();
+  sp.set("q", q);
+  if (opts?.strictProduction) sp.set("strict_production", "1");
+  return request("GET", "/api/admin/financial/audit-by-qr?" + sp.toString());
 }
 
 // ============ Insurance Vault (Liability 60/40) ============
@@ -1313,14 +1797,16 @@ export interface PaymentLedgerEntry {
   created_at: string | null;
 }
 
-export function getPaymentLedger(params?: { limit?: number; job_id?: string }): Promise<{
+export function getPaymentLedger(params?: { limit?: number; job_id?: string; excludeDemo?: boolean }): Promise<{
   source: string;
+  exclude_demo?: boolean;
   count: number;
   entries: PaymentLedgerEntry[];
 }> {
   const sp = new URLSearchParams();
   if (params?.limit != null) sp.set("limit", String(params.limit));
   if (params?.job_id) sp.set("job_id", params.job_id);
+  if (params?.excludeDemo) sp.set("exclude_demo", "1");
   const q = sp.toString();
   return request("GET", "/api/admin/payment-ledger" + (q ? "?" + q : ""));
 }
@@ -1363,7 +1849,7 @@ export function sendBroadcastNotification(body: {
   title: string;
   message: string;
   target?: string;
-}): Promise<{ id: string; sentAt: string }> {
+}): Promise<{ id: string; sentAt: string; fcm?: { success: number; failed: number } }> {
   return request("POST", "/api/admin/notifications/broadcast", body);
 }
 
@@ -1716,6 +2202,13 @@ export interface SupportTicketRow {
   invited_provider_name?: string | null;
   attachments?: Array<{ url: string; type?: string; addedAt?: string }>;
   ai_summary?: string | null;
+  assignedToAdminId?: string | null;
+  assignedToName?: string | null;
+  waitingOn?: string;
+  firstAdminReplyAt?: string | null;
+  slaDueAt?: string | null;
+  isEmergency?: boolean;
+  emergencyKind?: string | null;
 }
 
 export interface SupportMessageRow {
@@ -1855,6 +2348,18 @@ export function setSupportTicketAiMode(
   return request("PATCH", `/api/admin/support/tickets/${ticketId}`, { aiMode });
 }
 
+export function patchSupportTicket(
+  ticketId: string,
+  body: {
+    status?: string;
+    aiMode?: boolean;
+    waitingOn?: string;
+    assignToMe?: boolean;
+  }
+): Promise<{ ticket: SupportTicketRow }> {
+  return request("PATCH", `/api/admin/support/tickets/${ticketId}`, body);
+}
+
 export function getSupportAiSuggestion(ticketId: string): Promise<{
   suggestion: string;
   source?: 'faq_match' | 'ai_generated';
@@ -1904,16 +2409,32 @@ export function promoteKnowledgeDraft(id: string): Promise<{
 }
 
 // ============ Mobile App Config (ตั้งค่า Mobile App) ============
+export interface MobileAppRemote {
+  paymentNoticeTh: string;
+  paymentNoticeEn: string;
+  transportNoticeTh: string;
+  transportNoticeEn: string;
+  promoNoticeTh: string;
+  promoNoticeEn: string;
+  showPromoFundBalance: boolean;
+  complianceSupportEmail: string;
+}
+
 export interface MobileAppConfig {
   iosMinVersion: string;
   androidMinVersion: string;
   welcomeMessage: string;
+  forceUpdateMessage: string;
+  iosStoreUrl: string;
+  playStoreUrl: string;
   pushNotificationEnabled: boolean;
+  remote: MobileAppRemote;
   featureFlags: {
     enableSignups: boolean;
     enablePayments: boolean;
     enableJobPosting: boolean;
     enableChat: boolean;
+    enablePromoVouchers: boolean;
     maintenanceMode: boolean;
   };
 }
@@ -1926,9 +2447,87 @@ export function patchMobileConfig(body: Partial<MobileAppConfig>): Promise<{ con
   return request("PATCH", "/api/admin/mobile-config", body);
 }
 
+/** เป้าหมายร่วมบน Home — system_settings.community_challenge */
+export interface CommunityChallengeConfig {
+  enabled: boolean;
+  titleTh: string;
+  titleEn: string;
+  subtitleTh: string;
+  subtitleEn: string;
+  onlineWindowMinutes: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  targetOnlineUsers: number;
+  targetJobsPosted: number;
+  targetHires: number;
+  targetCompleted: number;
+  rewardTitleTh: string;
+  rewardTitleEn: string;
+  rewardDescriptionTh: string;
+  rewardDescriptionEn: string;
+  employerNoteTh: string;
+  employerNoteEn: string;
+  providerNoteTh: string;
+  providerNoteEn: string;
+}
+
+export interface CommunityChallengeSnapshot {
+  config: CommunityChallengeConfig;
+  stats: Record<string, unknown>;
+  updatedAt?: string | null;
+}
+
+export function getCommunityChallenge(): Promise<CommunityChallengeSnapshot> {
+  return request("GET", "/api/admin/community-challenge");
+}
+
+export function patchCommunityChallenge(
+  body: Partial<CommunityChallengeConfig>
+): Promise<CommunityChallengeSnapshot & { updatedAt: string }> {
+  return request("PATCH", "/api/admin/community-challenge", body);
+}
+
 /** Payso / Ksher / Stripe + MDR snapshot (อ่านจาก ENV บน API) */
 export function getPaymentProviderGate(): Promise<Record<string, unknown>> {
   return request("GET", "/api/admin/payment-provider-gate");
+}
+
+/** สลับ local gateway / match markup แบบเรียลไทม์ (persist ที่ backend/data) — ไม่ต้องรีสตาร์ท Node */
+export interface PatchPaymentProviderGateBody {
+  localGateway?: "payso" | "ksher";
+  /** 0–50 (percent), e.g. 5 for 5% */
+  matchMarkupPercent?: number;
+  matchMarkupRateDecimal?: number;
+  /** true = ปิด QR เติมเงิน PaySo สำหรับผู้ใช้มือถือ (โอนสลิปยังใช้ได้) */
+  paysoQrDepositBlocked?: boolean;
+  reset?: boolean;
+  clear?: boolean;
+}
+
+export function patchPaymentProviderGate(
+  body: PatchPaymentProviderGateBody
+): Promise<Record<string, unknown>> {
+  return request("PATCH", "/api/admin/payment-provider-gate", body);
+}
+
+/** Transport Hub — local distance pricing (system_settings) */
+export interface DistancePricingSettings {
+  base_fare_thb: number;
+  price_per_km_thb: number;
+  minimum_fare_thb: number;
+  markup_rate?: number;
+  markup_percent?: number;
+  updated_at?: string | null;
+}
+
+export function getDistancePricingSettings(): Promise<DistancePricingSettings> {
+  return request("GET", "/api/admin/settings/pricing");
+}
+
+export function patchDistancePricingSettings(
+  body: Partial<Pick<DistancePricingSettings, "base_fare_thb" | "price_per_km_thb" | "minimum_fare_thb">>
+): Promise<DistancePricingSettings> {
+  return request("PATCH", "/api/admin/settings/pricing", body);
 }
 
 /** บันทึก gateway: ยอดเต็ม / MDR / กำไรประมาณ (ต้องมีตาราง payment_transaction_logs) */
@@ -2025,6 +2624,8 @@ export function createBanner(body: {
   promoCode?: string;
   discountMaxBaht?: number;
   discountDescription?: string;
+  promoClaimsEnabled?: boolean;
+  [key: string]: unknown;
 }): Promise<{ banner: import("../types").AppBanner }> {
   return request("POST", "/api/admin/banners", body);
 }
@@ -2042,6 +2643,8 @@ export function updateBanner(
     promoCode: string;
     discountMaxBaht: number;
     discountDescription: string;
+    promoClaimsEnabled: boolean;
+    [key: string]: unknown;
   }>
 ): Promise<{ banner: import("../types").AppBanner }> {
   return request("PATCH", `/api/admin/banners/${encodeURIComponent(id)}`, body);
@@ -2741,3 +3344,453 @@ export interface RescueNetStatsResponse {
 export function getRescueNetStats(): Promise<RescueNetStatsResponse> {
   return request("GET", "/api/admin/telecom/rescue-net-stats");
 }
+
+// ============ Personal settlement (บัญชีชั่วคราว — migration 153) ============
+
+export async function getPersonalSettlementAccountApi(): Promise<{
+  account: PersonalSettlementAccount | null;
+}> {
+  return request("GET", "/api/admin/personal-settlement/account");
+}
+
+export async function putPersonalSettlementAccountApi(
+  body: Omit<PersonalSettlementAccount, "id" | "updatedAt">
+): Promise<{ account: PersonalSettlementAccount }> {
+  return request("PUT", "/api/admin/personal-settlement/account", {
+    label: body.label,
+    bankName: body.bankName,
+    accountHolderName: body.accountHolderName,
+    accountNumber: body.accountNumber,
+    promptPayId: body.promptPayId,
+    preferredMobileBankApps: body.preferredMobileBankApps,
+    notes: body.notes,
+  });
+}
+
+export async function getPersonalSettlementRecordsApi(params?: {
+  direction?: "INBOUND" | "OUTBOUND";
+  limit?: number;
+}): Promise<{ records: ManualSettlementRecord[] }> {
+  const sp = new URLSearchParams();
+  if (params?.direction) sp.set("direction", params.direction);
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  const q = sp.toString();
+  return request("GET", "/api/admin/personal-settlement/records" + (q ? "?" + q : ""));
+}
+
+export async function postPersonalSettlementRecordApi(
+  body: Omit<ManualSettlementRecord, "id" | "createdAt"> & { idempotencyKey?: string }
+): Promise<{ record: ManualSettlementRecord }> {
+  return request("POST", "/api/admin/personal-settlement/records", {
+    direction: body.direction,
+    channel: body.channel,
+    amount: body.amount,
+    currency: body.currency,
+    referenceLabel: body.referenceLabel,
+    bankReference: body.bankReference,
+    transferAt: body.transferAt,
+    status: body.status,
+    notes: body.notes,
+    slipUrl: body.slipUrl,
+    idempotencyKey: body.idempotencyKey,
+    createdBy: body.createdBy,
+  });
+}
+
+export async function patchPersonalSettlementRecordApi(
+  id: string,
+  patch: Partial<Pick<ManualSettlementRecord, "status" | "notes" | "slipUrl" | "bankReference">>
+): Promise<{ record: ManualSettlementRecord }> {
+  return request("PATCH", `/api/admin/personal-settlement/records/${encodeURIComponent(id)}`, {
+    status: patch.status,
+    notes: patch.notes,
+    slipUrl: patch.slipUrl,
+    bankReference: patch.bankReference,
+  });
+}
+
+/** อัปโหลดสลิป → S3 (multipart field name: file) */
+export async function uploadPersonalSettlementSlip(file: File): Promise<{ url: string; key?: string }> {
+  const base = typeof import.meta !== "undefined" && (import.meta as any).env?.DEV ? "" : ADMIN_API_BASE;
+  const url = `${base}/api/admin/personal-settlement/upload-slip`;
+  const token = getAdminToken();
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text.slice(0, 300);
+    try {
+      const j = JSON.parse(text);
+      msg = j.error || j.message || msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  return JSON.parse(text) as { url: string; key?: string };
+}
+
+export interface WalletLiquiditySummary {
+  /** ผลรวม wallet_balance ผู้ใช้ (เครดิตดิจิทัลในแอป) */
+  total_user_credit_thb: number;
+  /** manual verified (ledger MANUAL+RECEIVED) + PaySo RECEIVED net − ยอดถอนที่อนุมัติแล้ว */
+  actual_cash_reserve_thb: number;
+  actual_cash_in_bank_approx_thb: number;
+  pending_payouts_total_thb: number;
+  /** true เมื่อ actual_cash_reserve_thb < pending_payouts_total_thb */
+  critical_warning_cash_reserve_below_pending?: boolean;
+  /** รายได้ค่าธรรมเนียมถอนที่เก็บได้ (ledger อนุมัติแล้ว) */
+  withdrawal_fee_collected_thb?: number;
+  /** ค่าเข้า ~1% จาก PaySo deposits (gross − net ใน ledger) */
+  payso_deposit_entry_fees_thb?: number;
+  /** ประมาณการ: fee รวม − entry fees (ยังไม่หักต้นทุนโอนจริง) */
+  realized_profit_estimate_thb?: number;
+  system_total_user_wallet_balance_thb: number;
+  breakdown: {
+    /** สุทธิจาก wallet_transactions MANUAL + RECEIVED (สอดคล้องสลิปอนุมัติใน ledger) */
+    manual_verified_net_thb: number;
+    /** @deprecated ใช้ manual_verified_net_thb */
+    manual_approved_gross_thb?: number;
+    payso_settled_net_to_users_thb: number;
+    payso_pending_settlement_net_thb: number;
+    manual_ledger_net_thb: number;
+    total_approved_payouts_thb: number;
+    /** รวมจาก ledger event_type = admin_debit (User Management) */
+    admin_debit_total_thb?: number;
+    /** รวมจาก ledger event_type = admin_credit */
+    admin_credit_total_thb?: number;
+  };
+  note?: string;
+}
+
+/** เงินสดโดยประมาณ vs ยอดเครดิตรวมในกระเป๋าผู้ใช้ (Hybrid deposit + settlement) */
+export async function getWalletLiquiditySummary(): Promise<WalletLiquiditySummary> {
+  return request<WalletLiquiditySummary>("GET", "/api/admin/wallet/liquidity-summary");
+}
+
+export interface DiscountPromoFundMovement {
+  at: string;
+  amount_thb: number;
+  note: string;
+  admin_id?: string | null;
+  kind: string;
+}
+
+export interface DiscountPromoFundResponse {
+  balance_thb: number;
+  movements: DiscountPromoFundMovement[];
+  updated_at?: string | null;
+  help_th?: string;
+}
+
+export async function getDiscountPromoFund(): Promise<DiscountPromoFundResponse> {
+  return request<DiscountPromoFundResponse>("GET", "/api/admin/financial/discount-fund");
+}
+
+export async function creditDiscountPromoFund(
+  amountThb: number,
+  note: string
+): Promise<{
+  balance_thb: number;
+  movement: DiscountPromoFundMovement;
+  movements: DiscountPromoFundMovement[];
+}> {
+  return request("POST", "/api/admin/financial/discount-fund/credit", {
+    amount_thb: amountThb,
+    note: note.trim(),
+  });
+}
+
+export interface DailyReconcileRow {
+  id: string;
+  user_id: string | null;
+  bank_ref_id: string | null;
+  amount_thb: number;
+  approved_by: string | null;
+  approved_at_bkk: string;
+  reviewed_at: string | null;
+  ledger_id: string | null;
+  user_email: string | null;
+  transaction_hash: string | null;
+}
+
+export async function getDailyReconcile(date: string): Promise<{
+  report_date: string;
+  timezone: string;
+  count: number;
+  rows: DailyReconcileRow[];
+  note?: string;
+}> {
+  return request("GET", `/api/admin/reports/daily-reconcile?date=${encodeURIComponent(date)}`);
+}
+
+/** ดาวน์โหลด CSV (UTF-8 BOM) — ใช้ token เดียวกับ admin API */
+export async function downloadDailyReconcileCsv(date: string): Promise<void> {
+  const path = `/api/admin/reports/daily-reconcile?date=${encodeURIComponent(date)}&format=csv`;
+  const url = path.startsWith("http") ? path : `${ADMIN_API_BASE}${path}`;
+  const tok = getAdminToken();
+  const res = await fetch(url, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
+  if (!res.ok) {
+    const t = await res.text();
+    let msg = t.slice(0, 300);
+    try {
+      const j = JSON.parse(t);
+      msg = j.error || j.message || msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `daily-reconcile-${date}.csv`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+export interface SettlementProjectionDay {
+  available_on: string;
+  total_thb: number;
+  row_count: number;
+}
+
+export interface SettlementProjection {
+  horizon_days: number;
+  timezone: string;
+  payso_settlement_pipeline_locked_thb: number;
+  payso_settlement_pipeline_row_count: number;
+  not_withdrawable_total_locked_thb: number;
+  not_withdrawable_row_count: number;
+  cash_flow_projection: SettlementProjectionDay[];
+  note?: string;
+}
+
+export async function getSettlementProjection(days = 14): Promise<SettlementProjection> {
+  return request<SettlementProjection>(
+    "GET",
+    `/api/admin/wallet/settlement-projection?days=${encodeURIComponent(String(days))}`
+  );
+}
+
+/** รายการเติมเงินแบบโอน + สลิป (รอแอดมิน) — POST /api/wallet/deposit/manual */
+export interface AdminManualDepositRow {
+  id: string;
+  user_id: string;
+  amount: string | number;
+  slip_url: string;
+  /** SHA-256 ของไฟล์ — กันส่งสลิปเดิมซ้ำ (backend migration 163) */
+  slip_sha256?: string | null;
+  /** เลขอ้างอิงธนาคาร — ตั้งเมื่ออนุมัติ (migration 165) */
+  bank_ref_id?: string | null;
+  status: string;
+  created_at?: string;
+  reviewed_at?: string | null;
+  /** JSON string { code, message, internal_note? } — เวอร์ชันผู้ใช้เห็นที่ message */
+  rejection_reason?: string | null;
+  reviewed_by?: string | null;
+  user_email?: string | null;
+}
+
+export interface AdminWalletDepositChargeRow {
+  charge_id: string;
+  user_id: string;
+  amount: string | number;
+  currency?: string;
+  status: string;
+  source_type: string;
+  slip_url?: string | null;
+  ledger_id?: string | null;
+  created_at?: string | null;
+  completed_at?: string | null;
+  user_email?: string | null;
+}
+
+export interface AdminWalletDepositChargeDetail {
+  charge: {
+    charge_id: string;
+    user_id: string;
+    user_email?: string | null;
+    amount: number;
+    currency: string;
+    status: string;
+    source_type: string;
+    ledger_id?: string | null;
+    created_at?: string | null;
+    completed_at?: string | null;
+  };
+  ledger?: {
+    id: string;
+    event_type: string;
+    gateway?: string | null;
+    amount?: number;
+    net_amount?: number | null;
+    gateway_fee_amount?: number | null;
+    platform_margin_amount?: number | null;
+    status?: string | null;
+    bill_no?: string | null;
+    transaction_no?: string | null;
+    created_at?: string | null;
+  } | null;
+  webhook_logs: Array<{
+    id: string;
+    provider: string;
+    event_status?: string | null;
+    http_status?: number | null;
+    signature_valid?: boolean | null;
+    bypass_unsigned?: boolean;
+    amount?: number | null;
+    transaction_id?: string | null;
+    payload_json?: Record<string, unknown>;
+    processing_result?: Record<string, unknown>;
+    created_at?: string | null;
+  }>;
+  audit_trail: Array<{
+    id: number;
+    actor_type?: string | null;
+    actor_id?: string | null;
+    action?: string | null;
+    reason?: string | null;
+    state_after?: unknown;
+    created_at?: string | null;
+  }>;
+  timeline: Array<{
+    at?: string | null;
+    source: "charge" | "webhook" | "audit";
+    title: string;
+    payload?: Record<string, unknown>;
+  }>;
+}
+
+export async function getAdminManualDeposits(
+  status?: string
+): Promise<{ rows: AdminManualDepositRow[] }> {
+  const q =
+    status && status !== "all" ? `?status=${encodeURIComponent(status)}` : "";
+  return request<{ rows: AdminManualDepositRow[] }>("GET", `/api/admin/manual-deposits${q}`);
+}
+
+export async function getAdminWalletDepositCharges(params?: {
+  source_type?: string;
+  status?: string;
+  limit?: number;
+}): Promise<{ rows: AdminWalletDepositChargeRow[] }> {
+  const sp = new URLSearchParams();
+  if (params?.source_type && params.source_type !== "all") sp.set("source_type", params.source_type);
+  if (params?.status && params.status !== "all") sp.set("status", params.status);
+  if (params?.limit && Number.isFinite(params.limit)) sp.set("limit", String(params.limit));
+  const q = sp.toString() ? `?${sp.toString()}` : "";
+  return request<{ rows: AdminWalletDepositChargeRow[] }>("GET", `/api/admin/wallet-deposit-charges${q}`);
+}
+
+export async function getAdminWalletDepositChargeDetail(chargeId: string): Promise<AdminWalletDepositChargeDetail> {
+  return request("GET", `/api/admin/wallet-deposit-charges/${encodeURIComponent(chargeId)}/detail`);
+}
+
+export async function postAdminReconcilePaysoCharge(chargeId: string): Promise<{
+  charge_id: string;
+  status: string;
+  completed_at?: string | null;
+  ledger_id?: string | null;
+  reconcile?: unknown;
+}> {
+  return request("POST", `/api/admin/wallet-deposit-charges/${encodeURIComponent(chargeId)}/reconcile-payso`);
+}
+
+export async function postAdminReconcilePaysoBatch(limit = 100): Promise<{
+  requested_limit: number;
+  total: number;
+  success_count: number;
+  still_pending_count: number;
+  error_count: number;
+  items: Array<{
+    charge_id: string;
+    status: string;
+    completed_at?: string | null;
+    ledger_id?: string | null;
+    reconcile?: unknown;
+  }>;
+}> {
+  return request("POST", "/api/admin/wallet-deposit-charges/reconcile-payso-batch", { limit });
+}
+
+export async function postAdminManualDepositApprove(
+  id: string,
+  body: { bank_ref_id: string }
+): Promise<{ ok?: boolean; error?: string }> {
+  return request<{ ok?: boolean; error?: string }>(
+    "POST",
+    `/api/admin/manual-deposits/${encodeURIComponent(id)}/approve`,
+    body
+  );
+}
+
+export async function postAdminManualDepositReject(
+  id: string,
+  body: { reason_code: string; note?: string }
+): Promise<{ ok?: boolean; error?: string; code?: string }> {
+  return request<{ ok?: boolean; error?: string; code?: string }>(
+    "POST",
+    `/api/admin/manual-deposits/${encodeURIComponent(id)}/reject`,
+    body
+  );
+}
+
+export async function downloadWalletDepositChargesCsv(params?: {
+  source_type?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+}): Promise<void> {
+  const base = ADMIN_API_BASE;
+  const sp = new URLSearchParams();
+  if (params?.source_type && params.source_type !== "all") sp.set("source_type", params.source_type);
+  if (params?.status && params.status !== "all") sp.set("status", params.status);
+  if (params?.from) sp.set("from", params.from);
+  if (params?.to) sp.set("to", params.to);
+  const q = sp.toString();
+  const url = `${base}/api/admin/wallet-deposit-charges/export.csv${q ? `?${q}` : ""}`;
+  const token = getAdminToken();
+  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const filename = match?.[1] || `wallet_deposit_charges_${new Date().toISOString().slice(0, 10)}.csv`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export async function downloadManualDepositsCsv(params?: {
+  status?: string;
+}): Promise<void> {
+  const base = ADMIN_API_BASE;
+  const q = params?.status && params.status !== "all" ? `?status=${encodeURIComponent(params.status)}` : "";
+  const url = `${base}/api/admin/manual-deposits/export.csv${q}`;
+  const token = getAdminToken();
+  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new Error(await res.text().catch(() => "Export failed"));
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const filename = match?.[1] || `manual_deposits_${new Date().toISOString().slice(0, 10)}.csv`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** Low-level JSON client (Bearer + prod base URL) — ใช้โดย financialService และ adminApi */
+export { request as adminJsonRequest };

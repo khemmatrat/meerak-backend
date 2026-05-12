@@ -17,6 +17,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import os from 'os';
 import v8 from 'node:v8';
+import fs from 'node:fs';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createAuditService } from './auditService.js';
@@ -63,6 +64,17 @@ import {
   getLocalGatewayFromEnv,
 } from './lib/paymentProviderGate.js';
 import { handlePaymentsConfirmWebhook } from './lib/paymentsWebhookConfirm.js';
+import { setSignatureVerifier } from './lib/paymentWebhookWorker.js';
+import { createPaymentWebhookSignatureVerifierCallback } from './lib/paymentWebhookSecurity.js';
+import {
+  assertJobPayableMatchStatus,
+  consumePaymentCreationBudget,
+  lockedCreateOrReuseMatchJobGatewayPayment,
+  normalizeClientReferenceId,
+  paymentCreateRateLimitedBody,
+  resolveEmployerAccessToMatchJob,
+  toPaymentGatewayClientShape,
+} from './lib/paymentCreationGuard.js';
 import { sanitizeTransportContract } from './lib/transportContractValidation.js';
 import {
   calculateIntercityFee,
@@ -112,6 +124,15 @@ import {
   getBrandAdviserProfilePayload,
   insertBrandAdviserAudit,
 } from './lib/brandAdviser.js';
+import { attachWalletManualDepositRoutes } from './lib/walletManualDepositRoutes.js';
+import { isPaysoEnabledFromEnv } from './lib/paysoEnvFlag.js';
+import {
+  createPaysoWalletDepositCharge,
+  queryPaysoWalletDepositStatus,
+  verifyPaysoWebhookSignature,
+  parsePaysoWebhookPayload,
+} from './services/paysoService.js';
+import { creditWalletDepositFromPayso } from './lib/walletDepositHybrid.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // โหลด .env: ลอง backend/.env ก่อน แล้วค่อย root .env (ถ้ามี)
@@ -191,10 +212,101 @@ async function deleteJobMeetCodeEntry(jobId) {
   }
 }
 
+function safeJsonObject(value) {
+  if (!value) return {};
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_) {
+    return {};
+  }
+}
+
+async function appendFinancialDepositAudit({
+  actorType = 'system',
+  actorId = null,
+  action,
+  entityType = 'wallet_deposit_charge',
+  entityId,
+  reason = null,
+  correlationId = null,
+  externalRef = null,
+  stateAfter = null,
+}) {
+  try {
+    if (!action || !entityType || !entityId) return;
+    await pool.query(
+      `INSERT INTO financial_audit_log
+       (actor_type, actor_id, action, entity_type, entity_id, reason, correlation_id, external_ref, state_after)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        actorType,
+        actorId,
+        String(action),
+        String(entityType),
+        String(entityId),
+        reason ? String(reason) : null,
+        correlationId ? String(correlationId) : null,
+        externalRef ? String(externalRef) : null,
+        stateAfter ? safeJsonObject(stateAfter) : null,
+      ]
+    );
+  } catch (_) {
+    // Financial audit trace is best-effort and must not break payment flow.
+  }
+}
+
+async function appendWalletDepositWebhookLog({
+  provider = 'payso',
+  chargeId = null,
+  referenceId = null,
+  transactionId = null,
+  userId = null,
+  sourceType = null,
+  amount = null,
+  eventStatus = null,
+  httpStatus = null,
+  signatureValid = null,
+  bypassUnsigned = false,
+  headers = null,
+  payload = null,
+  rawBody = null,
+  processingResult = null,
+}) {
+  try {
+    await pool.query(
+      `INSERT INTO wallet_deposit_webhook_logs
+       (provider, charge_id, reference_id, transaction_id, user_id, source_type, amount, event_status, http_status, signature_valid, bypass_unsigned, headers_json, payload_json, raw_body, processing_result)
+       VALUES ($1, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)`,
+      [
+        provider,
+        chargeId || null,
+        referenceId || null,
+        transactionId || null,
+        userId || null,
+        sourceType || null,
+        Number.isFinite(Number(amount)) ? Number(amount) : null,
+        eventStatus || null,
+        Number.isFinite(Number(httpStatus)) ? Number(httpStatus) : null,
+        typeof signatureValid === 'boolean' ? signatureValid : null,
+        bypassUnsigned === true,
+        JSON.stringify(safeJsonObject(headers)),
+        JSON.stringify(safeJsonObject(payload)),
+        typeof rawBody === 'string' ? rawBody.slice(0, 8000) : null,
+        JSON.stringify(safeJsonObject(processingResult)),
+      ]
+    );
+  } catch (_) {
+    // Webhook log persistence is best-effort.
+  }
+}
+
 // Payment webhook — raw body for HMAC verification (register before express.json())
 app.post('/api/webhooks/checkout', express.raw({ type: 'application/json' }), (req, res, next) => {
   const raw = req.body;
   if (Buffer.isBuffer(raw)) req.rawBody = raw;
+  // #region agent log
+  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H12",location:"backend/server.js:/api/webhooks/checkout",message:"legacy checkout webhook endpoint hit",data:{hasRawBody:Buffer.isBuffer(req.body),contentType:req.headers?.["content-type"]||null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   next();
 }, (req, res) => {
   const handler = req.app.get('paymentWebhookHandler');
@@ -215,6 +327,226 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
   }
 });
 
+// PaySo specific webhook intake (wallet topup)
+app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) => {
+  try {
+    const rawBody = Buffer.isBuffer(req.body)
+      ? req.body
+      : Buffer.from(
+          typeof req.body === 'string'
+            ? req.body
+            : JSON.stringify(req.body || {}),
+          'utf8'
+        );
+    const hasSecret = String(process.env.PAYSO_WEBHOOK_SECRET || '').trim().length > 0;
+    const signatureOk = verifyPaysoWebhookSignature(rawBody, req.headers || {});
+    const hasSigHeader =
+      !!req.headers?.['x-payso-signature'] ||
+      !!req.headers?.['x-signature'] ||
+      !!req.headers?.['x-hub-signature-256'];
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H17",location:"backend/server.js:/api/webhooks/payso:entry",message:"payso webhook entry observed",data:{hasSecret,signatureOk,contentType:req.headers?.["content-type"]||null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    let payload = null;
+    try {
+      payload = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+      const s = rawBody.toString('utf8');
+      const sp = new URLSearchParams(s);
+      if ([...sp.keys()].length === 0) {
+        return res.status(400).json({ error: 'invalid_payload' });
+      }
+      payload = Object.fromEntries(sp.entries());
+    }
+    const allowUnsignedManual = String(process.env.PAYSO_WEBHOOK_ALLOW_UNSIGNED_MANUAL || '').trim() === '1';
+    const contentType = String(req.headers?.['content-type'] || '').toLowerCase();
+    const isFormEncoded = contentType.includes('application/x-www-form-urlencoded');
+    const merchantMatches =
+      String(payload?.merchantid || payload?.merchantID || '').trim() ===
+      String(process.env.PAYSO_MERCHANT_ID || '').trim();
+    const hasRef = !!String(payload?.refno || payload?.referenceNo || payload?.reference_id || '').trim();
+    const bypassUnsigned = allowUnsignedManual && !hasSigHeader && isFormEncoded && merchantMatches && hasRef;
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H21",location:"backend/server.js:/api/webhooks/payso:signature-gate",message:"signature gate decision for payso webhook",data:{hasSecret,signatureOk,hasSigHeader,allowUnsignedManual,isFormEncoded,merchantMatches,hasRef,bypassUnsigned},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    let normalized = null;
+    const persistAndRespond = async (statusCode, body, extra = {}) => {
+      await appendWalletDepositWebhookLog({
+        provider: 'payso',
+        chargeId: extra.chargeId || normalized?.reference_id || payload?.refno || null,
+        referenceId: normalized?.reference_id || payload?.refno || null,
+        transactionId: normalized?.transaction_id || payload?.transaction_id || null,
+        userId: extra.userId || null,
+        sourceType: extra.sourceType || null,
+        amount: extra.amount ?? payload?.total ?? payload?.amount ?? null,
+        eventStatus: extra.eventStatus || normalized?.status || null,
+        httpStatus: statusCode,
+        signatureValid: signatureOk,
+        bypassUnsigned,
+        headers: req.headers || {},
+        payload: payload || {},
+        rawBody: rawBody.toString('utf8'),
+        processingResult: {
+          ...safeJsonObject(extra.processingResult),
+          response: body,
+        },
+      });
+      return res.status(statusCode).json(body);
+    };
+    if (hasSecret && !signatureOk && !bypassUnsigned) {
+      await appendFinancialDepositAudit({
+        actorType: 'webhook',
+        action: 'PAYSO_WEBHOOK_REJECTED',
+        entityType: 'wallet_deposit_webhook',
+        entityId: String(normalized?.reference_id || payload?.refno || `payso-${Date.now()}`),
+        reason: 'invalid_signature',
+        stateAfter: { hasSecret, signatureOk, bypassUnsigned },
+      });
+      return persistAndRespond(403, { error: 'invalid_signature' }, {
+        processingResult: { reason: 'invalid_signature' },
+      });
+    }
+    normalized = parsePaysoWebhookPayload(payload);
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H20",location:"backend/server.js:/api/webhooks/payso:parsed",message:"parsed payso webhook payload",data:{reference_id:normalized?.reference_id||null,status:normalized?.status||null,transaction_id:normalized?.transaction_id||null,payload_keys:Object.keys(payload||{}).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (!normalized?.reference_id) {
+      return persistAndRespond(200, { ok: true, ignored: 'missing_reference_id' }, {
+        processingResult: { ignored: 'missing_reference_id' },
+      });
+    }
+    await appendFinancialDepositAudit({
+      actorType: 'webhook',
+      action: 'PAYSO_WEBHOOK_RECEIVED',
+      entityType: 'wallet_deposit_charge',
+      entityId: String(normalized.reference_id),
+      correlationId: String(normalized.reference_id),
+      reason: 'incoming_payso_webhook',
+      stateAfter: {
+        status: normalized?.status || null,
+        transaction_id: normalized?.transaction_id || null,
+        signature_ok: signatureOk,
+        bypass_unsigned: bypassUnsigned,
+      },
+    });
+    const st = String(normalized.status || '').toLowerCase();
+    const successStates = new Set(['success', 'successful', 'succeeded', 'paid', 'completed', 'complete', 'settled']);
+    const hasExplicitSuccess = successStates.has(st);
+    const hasExplicitFailure = ['failed', 'cancel', 'cancelled', 'expired', 'void'].includes(st);
+    const amountFromPayload = Number(payload?.total ?? payload?.amount ?? payload?.total_amount ?? NaN);
+    if (hasExplicitFailure) {
+      await appendFinancialDepositAudit({
+        actorType: 'webhook',
+        action: 'PAYSO_WEBHOOK_IGNORED',
+        entityType: 'wallet_deposit_charge',
+        entityId: String(normalized.reference_id),
+        correlationId: String(normalized.reference_id),
+        reason: 'failure_status',
+        stateAfter: { status: st || null },
+      });
+      return persistAndRespond(200, { ok: true, ignored: 'failure_status', status: st || null }, {
+        chargeId: normalized.reference_id,
+        eventStatus: st || null,
+        processingResult: { ignored: 'failure_status' },
+      });
+    }
+    const row = await pool.query(
+      `SELECT charge_id, user_id, amount, status
+       FROM wallet_deposit_charges
+       WHERE charge_id = $1 AND COALESCE(source_type, 'promptpay') IN ('payso','ksher')
+       LIMIT 1`,
+      [String(normalized.reference_id)]
+    ).catch(() => ({ rows: [] }));
+    const rec = row.rows?.[0];
+    if (!rec) {
+      return persistAndRespond(200, { ok: true, ignored: 'charge_not_found' }, {
+        chargeId: normalized.reference_id,
+        eventStatus: st || null,
+        processingResult: { ignored: 'charge_not_found' },
+      });
+    }
+    if (!hasExplicitSuccess) {
+      const amountMatches =
+        Number.isFinite(amountFromPayload) &&
+        Math.abs(amountFromPayload - Number(rec.amount || 0)) <= 0.02;
+      // #region agent log
+      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H19",location:"backend/server.js:/api/webhooks/payso:implicit-success-check",message:"payso webhook missing explicit status; evaluate by ref+amount",data:{charge_id:rec.charge_id,status_raw:st||null,amount_from_payload:Number.isFinite(amountFromPayload)?amountFromPayload:null,amount_expected:Number(rec.amount||0),amount_matches:amountMatches},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (!amountMatches) {
+        await appendFinancialDepositAudit({
+          actorType: 'webhook',
+          action: 'PAYSO_WEBHOOK_IGNORED',
+          entityType: 'wallet_deposit_charge',
+          entityId: String(rec.charge_id),
+          correlationId: String(rec.charge_id),
+          reason: 'status_missing_and_amount_mismatch',
+          stateAfter: { status: st || null, amount_from_payload: amountFromPayload, amount_expected: Number(rec.amount || 0) },
+        });
+        return persistAndRespond(200, { ok: true, ignored: 'status_missing_and_amount_mismatch', status: st || null }, {
+          chargeId: rec.charge_id,
+          userId: rec.user_id,
+          sourceType: 'payso',
+          amount: Number(rec.amount || 0),
+          eventStatus: st || null,
+          processingResult: { ignored: 'status_missing_and_amount_mismatch' },
+        });
+      }
+    }
+    if (String(rec.status || '').toLowerCase() === 'success') {
+      return persistAndRespond(200, { ok: true, duplicate: true, charge_id: rec.charge_id }, {
+        chargeId: rec.charge_id,
+        userId: rec.user_id,
+        sourceType: 'payso',
+        amount: Number(rec.amount || 0),
+        eventStatus: st || 'success',
+        processingResult: { duplicate: true },
+      });
+    }
+    const credited = await creditWalletDepositFromPayso(pool, {
+      userId: rec.user_id,
+      chargeId: rec.charge_id,
+      grossAmount: Number(rec.amount),
+      transactionNoSuffix: String(normalized.transaction_id || Date.now()),
+    });
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H18",location:"backend/server.js:/api/webhooks/payso:credited",message:"payso webhook credited wallet",data:{charge_id:rec.charge_id,ledger_id:credited?.ledgerId||null,duplicate:credited?.duplicate===true},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    await appendFinancialDepositAudit({
+      actorType: 'webhook',
+      action: 'PAYSO_WEBHOOK_CREDITED',
+      entityType: 'wallet_deposit_charge',
+      entityId: String(rec.charge_id),
+      correlationId: String(rec.charge_id),
+      reason: credited?.duplicate === true ? 'duplicate_credit_ignored' : 'wallet_credit_applied',
+      stateAfter: {
+        ledger_id: credited?.ledgerId || null,
+        duplicate: credited?.duplicate === true,
+        status: 'success',
+      },
+    });
+    return persistAndRespond(200, { ok: true, charge_id: rec.charge_id, ledger_id: credited?.ledgerId || null, duplicate: credited?.duplicate === true }, {
+      chargeId: rec.charge_id,
+      userId: rec.user_id,
+      sourceType: 'payso',
+      amount: Number(rec.amount || 0),
+      eventStatus: 'success',
+      processingResult: { credited: true, ledger_id: credited?.ledgerId || null, duplicate: credited?.duplicate === true },
+    });
+  } catch (e) {
+    console.error('[payso webhook] error:', e);
+    await appendWalletDepositWebhookLog({
+      provider: 'payso',
+      eventStatus: 'error',
+      httpStatus: 500,
+      headers: req.headers || {},
+      payload: {},
+      rawBody: Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '',
+      processingResult: { error: String(e?.message || e) },
+    });
+    return res.status(500).json({ error: 'payso_webhook_failed' });
+  }
+});
+
 // Payso / Ksher (หรือ processor เดียวกัน) — ยืนยันยอดสำเร็จ; ใช้ PAYMENT_WEBHOOK_SECRET หรือ PAYMENT_GATEWAY_WEBHOOK_SECRET
 app.post(
   '/api/payments/webhook',
@@ -227,7 +559,19 @@ app.post(
     const pgPool = req.app.get('pool');
     if (!pgPool) return res.status(503).json({ error: 'server_not_ready' });
     try {
+      // #region agent log
+      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H13",location:"backend/server.js:/api/payments/webhook:entry",message:"payments webhook request arrived",data:{hasRawBody:!!req.rawBody,contentType:req.headers?.["content-type"]||null,hasXWebhookSignature:!!req.headers?.["x-webhook-signature"],hasXPaymentSignature:!!req.headers?.["x-payment-signature"]},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      console.log('[DBG-H13] /api/payments/webhook entry', {
+        contentType: req.headers?.['content-type'] || null,
+        hasRawBody: !!req.rawBody,
+        hasXWebhookSignature: !!req.headers?.['x-webhook-signature'],
+        hasXPaymentSignature: !!req.headers?.['x-payment-signature'],
+      });
       const out = await handlePaymentsConfirmWebhook(req, pgPool);
+      // #region agent log
+      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H7",location:"backend/server.js:/api/payments/webhook",message:"payments webhook intake result",data:{status:out?.status,queued:out?.body?.queued,duplicate:out?.body?.duplicate,event_id:out?.body?.event_id || null,idempotency_key:out?.body?.idempotency_key || null,failure_code:out?.body?.failure_code || null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return res.status(out.status).json(out.body);
     } catch (e) {
       console.error('[payments webhook]', e);
@@ -1430,6 +1774,9 @@ const pool = new Pool({
   password: dbPassword != null && dbPassword !== '' ? String(dbPassword) : '',
 });
 app.set('pool', pool); // for blocked-IP middleware
+
+// Task 3: register payment webhook HMAC verifier for payment_webhook_jobs worker (paymentCoreConfirm Step 1).
+setSignatureVerifier(createPaymentWebhookSignatureVerifierCallback());
 
 const auditService = createAuditService(pool);
 
@@ -3080,6 +3427,88 @@ app.post('/api/payments/create-intent', authenticateToken, paymentLimiter, async
     if (msg === 'job_not_found') return res.status(404).json({ error: 'Job not found' });
     if (msg === 'amount_too_small') return res.status(400).json({ error: 'Amount too small' });
     return res.status(500).json({ error: 'Failed to create payment intent', details: process.env.NODE_ENV === 'development' ? msg : undefined });
+  }
+});
+
+// POST /api/payment-gateway/create — match-job gateway row (local/PaySo path) + Task 17 rate limit (consumePaymentCreationBudget)
+app.post('/api/payment-gateway/create', authenticateToken, paymentLimiter, async (req, res) => {
+  const pgPool = req.app.get('pool');
+  if (!pgPool) return res.status(503).json({ error: 'server_not_ready' });
+  const jobId = String(req.body?.jobId || req.body?.job_id || '').trim();
+  const traceId =
+    String(req.body?.trace_id || req.headers['x-trace-id'] || '').trim() || crypto.randomUUID();
+  const actorKey = `user:${String(req.user?.id || '').trim()}`;
+  try {
+    const budget = await consumePaymentCreationBudget(pgPool, {
+      actorUserKey: actorKey,
+      windowSec: 60,
+      maxBurst: 5,
+    });
+    if (!budget.ok) {
+      const bod = paymentCreateRateLimitedBody(traceId, 60);
+      return res.status(429).json(bod);
+    }
+
+    if (!jobId) return res.status(400).json({ error: 'jobId required' });
+
+    const discountAmount = Math.max(0, Number(req.body.discountAmount ?? req.body.discount) || 0);
+    const hasInsurance =
+      req.body.has_insurance === true ||
+      req.body.has_insurance === 'true' ||
+      req.body.hasInsurance === true ||
+      req.body.hasInsurance === 'true';
+    const maturityVoucherId = req.body.maturityVoucherId || req.body.maturity_voucher_id || null;
+    const userId = req.user?.id;
+
+    const { buildMatchJobPaymentContext } = await import('./lib/stripeMatchJobPayment.js');
+    const ctx = await buildMatchJobPaymentContext(pgPool, jobId, {
+      userId,
+      effectiveDiscount: discountAmount,
+      hasInsurance,
+      maturityVoucherId,
+    });
+    const { job: ctxJob, finalPrice } = ctx;
+    const employerId = await resolveEmployerAccessToMatchJob(pgPool, ctxJob, userId);
+    assertJobPayableMatchStatus(ctxJob);
+
+    const cref = normalizeClientReferenceId(req.body?.client_reference_id ?? req.body?.clientReferenceId);
+    const gatewayUi = String(req.body?.gateway_ui || req.body?.gatewayUi || 'promptpay').trim() || 'promptpay';
+    const paymentChannel = String(
+      req.body?.payment_channel || req.body?.paymentChannel || 'promptpay',
+    ).trim() || 'promptpay';
+
+    const out = await lockedCreateOrReuseMatchJobGatewayPayment(pgPool, {
+      job: ctxJob,
+      employerId,
+      normalizedClientReference: cref.value,
+      amountThb: round2(finalPrice),
+      gatewayUi,
+      traceId,
+      paymentChannel,
+    });
+
+    const shaped = toPaymentGatewayClientShape(out.gwRow, {
+      amountThb: round2(finalPrice),
+      gatewayLabel: gatewayUi,
+      clientReferenceId: cref.value,
+      traceId,
+      ux: out.ux,
+      reused_duplicate_active: !!out.reused,
+    });
+    return res.json(shaped);
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    console.error('POST /api/payment-gateway/create:', msg);
+    if (msg === 'forbidden_not_employer') return res.status(403).json({ error: 'Not allowed to pay for this job' });
+    if (msg === 'invalid_job_status') {
+      return res.status(400).json({ error: 'Invalid job status for payment', code: 'invalid_job_status' });
+    }
+    if (msg === 'job_not_found') return res.status(404).json({ error: 'Job not found' });
+    if (msg === 'user_not_found') return res.status(400).json({ error: 'user_not_found' });
+    return res.status(500).json({
+      error: 'Failed to create payment gateway row',
+      details: process.env.NODE_ENV === 'development' ? msg : undefined,
+    });
   }
 });
 
@@ -8384,6 +8813,16 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
 
 // ✅ Admin Login (email + password) — ปิด rate limit ชั่วคราว เพื่อให้ Admin เข้าบ้านได้ (ไม่เคยล็อกอินเลยเพราะลิมิต 10 ครั้ง/15 นาที ต่อ IP ถึงก่อน)
 // ถ้าต้องการเปิดกลับ: เอา middleware ด้านล่างกลับมา แล้วใช้ RATE_LIMIT_ADMIN_LOGIN_IP (100/นาที)
+/** user_roles ที่ออก JWT แอดมินได้ — ต้องสอดคล้องกับ rbac migrations (153/154/172) และ adminAuthMiddleware */
+const ADMIN_PANEL_JWT_ROLES = new Set([
+  'ADMIN',
+  'AUDITOR',
+  'SUPER_ADMIN',
+  'STAFF_KYC',
+  'ACCOUNTANT',
+  'SUPPORT',
+  'DEVELOPER',
+]);
 app.get('/api/auth/admin-login', (req, res) => {
   res.status(405).json({ error: 'Method Not Allowed', message: 'Use POST with { email, password } in JSON body' });
 });
@@ -8398,10 +8837,24 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required in production' });
     }
 
-    const userResult = await pool.query(
-      `SELECT id, email, full_name, password, password_hash FROM users WHERE email = $1`,
-      [email.trim().toLowerCase()]
-    );
+    let userResult;
+    try {
+      userResult = await pool.query(
+        `SELECT id, email, full_name, password, password_hash, firebase_uid,
+                COALESCE(NULLIF(trim(role::text), ''), 'user') AS users_table_role
+         FROM users WHERE email = $1`,
+        [email.trim().toLowerCase()]
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        userResult = await pool.query(
+          `SELECT id, email, full_name, password, password_hash, firebase_uid FROM users WHERE email = $1`,
+          [email.trim().toLowerCase()]
+        );
+      } else {
+        throw e;
+      }
+    }
     const ip = getClientIp(req);
     if (userResult.rows.length === 0) {
       auditService.log('unknown', 'admin_login_failed', { entityName: 'auth', entityId: email.trim() || 'empty' }, { status: 'Failed', ipAddress: ip });
@@ -8415,19 +8868,44 @@ app.post('/api/auth/admin-login', async (req, res) => {
     }
 
     let role = 'USER';
+    let debugUrRowCount = 0;
+    let debugUrRawRole = null;
+    let debugUrMatchKeys = [];
     try {
+      const idKeys = [String(user.id)];
+      if (user.firebase_uid) idKeys.push(String(user.firebase_uid));
+      debugUrMatchKeys = idKeys;
       const roleResult = await pool.query(
-        `SELECT role FROM user_roles WHERE user_id = $1`,
-        [String(user.id)]
+        `SELECT role FROM user_roles
+         WHERE user_id = ANY($1::text[])
+         ORDER BY CASE role
+           WHEN 'SUPER_ADMIN' THEN 0
+           WHEN 'ADMIN' THEN 1
+           WHEN 'DEVELOPER' THEN 2
+           WHEN 'STAFF_KYC' THEN 3
+           WHEN 'ACCOUNTANT' THEN 4
+           WHEN 'SUPPORT' THEN 5
+           WHEN 'AUDITOR' THEN 6
+           ELSE 9 END, role
+         LIMIT 1`,
+        [idKeys]
       );
+      debugUrRowCount = roleResult.rows.length;
       if (roleResult.rows.length > 0) {
         const r = roleResult.rows[0].role;
-        if (r === 'ADMIN' || r === 'AUDITOR') role = r;
+        debugUrRawRole = r;
+        if (ADMIN_PANEL_JWT_ROLES.has(r)) role = r;
       }
     } catch (e) {
       console.warn('user_roles table missing or error:', e.message);
     }
-    if (role !== 'ADMIN' && role !== 'AUDITOR') {
+    if (!ADMIN_PANEL_JWT_ROLES.has(role) && user.users_table_role != null) {
+      const lt = String(user.users_table_role).trim().toLowerCase().replace(/-/g, '_');
+      if (lt === 'super_admin') role = 'SUPER_ADMIN';
+      else if (lt === 'admin') role = 'ADMIN';
+      else if (lt === 'auditor') role = 'AUDITOR';
+    }
+    if (!ADMIN_PANEL_JWT_ROLES.has(role)) {
       auditService.log(String(user.id), 'admin_login_denied', { entityName: 'auth', entityId: user.email }, { status: 'Failed', ipAddress: ip });
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -8470,7 +8948,7 @@ function adminAuthMiddleware(req, res, next) {
   const token = auth.replace('Bearer ', '');
   try {
     const payload = jwt.verify(token, JWT_SECRET_ADMIN);
-    if (payload.role !== 'ADMIN' && payload.role !== 'AUDITOR') {
+    if (!ADMIN_PANEL_JWT_ROLES.has(payload.role)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     req.adminUser = { id: payload.sub, role: payload.role, email: payload.email };
@@ -8479,6 +8957,163 @@ function adminAuthMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+const FINANCE_RUNTIME_CONFIG_KEY = 'finance_runtime_config';
+const DEFAULT_FINANCE_RUNTIME_CONFIG = Object.freeze({
+  personal_settlement_manual_enabled: true,
+  backup_gateways: {
+    twoc2p: {
+      enabled: false,
+      display_name: '2C2P',
+      merchant_id_env: 'TWOC2P_MERCHANT_ID',
+      notes: '',
+    },
+    gb_prime_pay: {
+      enabled: false,
+      display_name: 'GB Prime Pay',
+      merchant_id_env: 'GBPRIMEPAY_MERCHANT_ID',
+      notes: '',
+    },
+  },
+});
+
+function normalizeFinanceRuntimeConfig(raw) {
+  const base = JSON.parse(JSON.stringify(DEFAULT_FINANCE_RUNTIME_CONFIG));
+  if (!raw || typeof raw !== 'object') return base;
+  if (typeof raw.personal_settlement_manual_enabled === 'boolean') {
+    base.personal_settlement_manual_enabled = raw.personal_settlement_manual_enabled;
+  }
+  if (raw.backup_gateways && typeof raw.backup_gateways === 'object') {
+    for (const k of ['twoc2p', 'gb_prime_pay']) {
+      if (raw.backup_gateways[k] && typeof raw.backup_gateways[k] === 'object') {
+        const g = raw.backup_gateways[k];
+        const tgt = base.backup_gateways[k];
+        if (typeof g.enabled === 'boolean') tgt.enabled = g.enabled;
+        if (typeof g.display_name === 'string') tgt.display_name = g.display_name;
+        if (typeof g.merchant_id_env === 'string') tgt.merchant_id_env = g.merchant_id_env;
+        if (typeof g.notes === 'string') tgt.notes = g.notes;
+      }
+    }
+  }
+  return base;
+}
+
+/** เรียกหลังรีเฟรช — admin panel เก็บ JWT ใน localStorage แล้วต้องคืนข้อมูล user เดิมของ login */
+app.get('/api/auth/admin-session', async (req, res) => {
+  try {
+    if (!JWT_SECRET_ADMIN) {
+      return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required in production' });
+    }
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authorization required' });
+    }
+    const token = auth.slice(7).trim();
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET_ADMIN);
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    if (!ADMIN_PANEL_JWT_ROLES.has(payload.role)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    let name = payload.email;
+    try {
+      const ur = await pool.query(
+        `SELECT COALESCE(NULLIF(trim(u.full_name::text), ''), u.email) AS nm
+         FROM users u WHERE u.id::text = $1 LIMIT 1`,
+        [String(payload.sub)]
+      );
+      if (ur.rows?.[0]?.nm) name = ur.rows[0].nm;
+    } catch (_) {
+      /* optional name lookup */
+    }
+    const permissions = [];
+    res.json({
+      user: {
+        id: String(payload.sub),
+        email: payload.email,
+        name,
+        role: payload.role,
+        permissions,
+      },
+    });
+  } catch (e) {
+    console.error('GET /api/auth/admin-session:', e?.message || e);
+    res.status(500).json({ error: 'Session check failed' });
+  }
+});
+
+/** การเงินเรียลไทม์ (คีย์ใน system_settings — เก็บ JSON เป็น TEXT) — ให้ครบกับ nexus-admin-core FinanceRuntimeContext */
+app.get('/api/admin/finance/runtime-config', adminAuthMiddleware, async (req, res) => {
+  try {
+    const r = await pool
+      .query(`SELECT value FROM system_settings WHERE key = $1 LIMIT 1`, [FINANCE_RUNTIME_CONFIG_KEY])
+      .catch(() => ({ rows: [] }));
+    let parsed = null;
+    const raw = r?.rows?.[0]?.value;
+    if (raw != null) {
+      try {
+        parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      } catch (_) {
+        parsed = null;
+      }
+    }
+    res.json(normalizeFinanceRuntimeConfig(parsed));
+  } catch (e) {
+    console.error('GET /api/admin/finance/runtime-config:', e?.message || e);
+    res.status(500).json({ error: 'Failed to load finance runtime config' });
+  }
+});
+
+app.patch('/api/admin/finance/runtime-config', adminAuthMiddleware, async (req, res) => {
+  try {
+    const role = req.adminUser?.role;
+    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only ADMIN/SUPER_ADMIN can update finance runtime config' });
+    }
+    const r = await pool
+      .query(`SELECT value FROM system_settings WHERE key = $1 LIMIT 1`, [FINANCE_RUNTIME_CONFIG_KEY])
+      .catch(() => ({ rows: [] }));
+    let parsed = null;
+    const rawPrev = r?.rows?.[0]?.value;
+    if (rawPrev != null) {
+      try {
+        parsed = typeof rawPrev === 'string' ? JSON.parse(rawPrev) : rawPrev;
+      } catch (_) {
+        parsed = null;
+      }
+    }
+    const merged = normalizeFinanceRuntimeConfig(parsed);
+    const body = req.body || {};
+    if (typeof body.personal_settlement_manual_enabled === 'boolean') {
+      merged.personal_settlement_manual_enabled = body.personal_settlement_manual_enabled;
+    }
+    if (body.backup_gateways && typeof body.backup_gateways === 'object') {
+      for (const k of ['twoc2p', 'gb_prime_pay']) {
+        if (body.backup_gateways[k] && typeof body.backup_gateways[k] === 'object') {
+          const g = body.backup_gateways[k];
+          const tgt = merged.backup_gateways[k];
+          if (typeof g.enabled === 'boolean') tgt.enabled = g.enabled;
+          if (typeof g.display_name === 'string') tgt.display_name = g.display_name;
+          if (typeof g.merchant_id_env === 'string') tgt.merchant_id_env = g.merchant_id_env;
+          if (typeof g.notes === 'string') tgt.notes = g.notes;
+        }
+      }
+    }
+    const jsonOut = JSON.stringify(merged);
+    await pool.query(
+      `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [FINANCE_RUNTIME_CONFIG_KEY, jsonOut]
+    );
+    res.json(merged);
+  } catch (e) {
+    console.error('PATCH /api/admin/finance/runtime-config:', e?.message || e);
+    res.status(500).json({ error: 'Failed to update finance runtime config' });
+  }
+});
 
 // ✅ Admin Change Password (ต้องยืนยันรหัสผ่านเดิมก่อน — OTP Phase 2: Firebase Phone Auth)
 app.patch('/api/admin/auth/change-password', adminAuthMiddleware, async (req, res) => {
@@ -12036,6 +12671,9 @@ app.get('/api/admin/financial/audit', adminAuthMiddleware, async (req, res) => {
       const status = (r.status || 'completed').toLowerCase() === 'completed' ? 'COMPLETED' : (r.status || 'pending').toLowerCase() === 'pending' ? 'PENDING' : 'FAILED';
 
       const displayAmount = (r.net_amount != null ? parseFloat(r.net_amount) : amount) || amount;
+      const sourceType = eventType === 'wallet_deposit'
+        ? String(r?.metadata?.source_type || r?.gateway || 'unknown')
+        : null;
       return {
         id: String(r.id),
         userId: (r.user_id || r.provider_id) ? String(r.user_id || r.provider_id) : '',
@@ -12048,7 +12686,7 @@ app.get('/api/admin/financial/audit', adminAuthMiddleware, async (req, res) => {
         status,
         fraudScore: amount >= 200000 ? 75 : amount >= 50000 ? 50 : 10,
         timestamp: r.created_at ? new Date(r.created_at).toISOString() : undefined,
-        note: eventType,
+        note: sourceType ? `${eventType}:${sourceType}` : eventType,
         metadata: r.metadata || undefined,
       };
     });
@@ -12585,7 +13223,7 @@ app.get('/api/admin/financial/dashboard', adminAuthMiddleware, async (req, res) 
     fromDate.setDate(fromDate.getDate() - days);
     const fromStr = fromDate.toISOString().slice(0, 10);
 
-    const [walletsRes, balancesRes, ledgerRes, reconRes, vipFundRes] = await Promise.all([
+    const [walletsRes, balancesRes, ledgerRes, reconRes, vipFundRes, walletDepositChannelsRes] = await Promise.all([
       pool.query(`SELECT COUNT(*)::int AS total FROM wallets`).catch(() => ({ rows: [{ total: 0 }] })),
       pool.query(`SELECT COALESCE(SUM(balance), 0) AS total FROM wallets`).catch(() => ({ rows: [{ total: 0 }] })),
       pool.query(`
@@ -12616,6 +13254,14 @@ app.get('/api/admin/financial/dashboard', adminAuthMiddleware, async (req, res) 
           return { rows: [{ total: 0 }] };
         }
       })(),
+      pool.query(
+        `SELECT COALESCE(metadata->>'source_type', gateway, 'unknown') AS source_type, COUNT(*)::int AS entry_count, COALESCE(SUM(COALESCE(net_amount, amount)), 0) AS net_amount
+         FROM payment_ledger_audit
+         WHERE event_type = 'wallet_deposit' AND created_at >= $1::date
+         GROUP BY COALESCE(metadata->>'source_type', gateway, 'unknown')
+         ORDER BY source_type`,
+        [fromStr]
+      ).catch(() => ({ rows: [] })),
     ]);
 
     const total_wallets = parseInt(walletsRes.rows?.[0]?.total) || 0;
@@ -12637,6 +13283,11 @@ app.get('/api/admin/financial/dashboard', adminAuthMiddleware, async (req, res) 
       created_at: r.created_at,
     }));
     const vip_admin_fund_balance = parseFloat(vipFundRes.rows?.[0]?.total) || 0;
+    const wallet_deposit_channels = (walletDepositChannelsRes.rows || []).map((r) => ({
+      source_type: r.source_type || 'unknown',
+      entry_count: parseInt(r.entry_count) || 0,
+      net_amount: parseFloat(r.net_amount) || 0,
+    }));
 
     res.json({
       total_wallets,
@@ -12644,6 +13295,7 @@ app.get('/api/admin/financial/dashboard', adminAuthMiddleware, async (req, res) 
       ledger_volume,
       reconciliation_runs,
       vip_admin_fund_balance,
+      wallet_deposit_channels,
     });
   } catch (err) {
     console.error('GET /api/admin/financial/dashboard error:', err);
@@ -12653,6 +13305,7 @@ app.get('/api/admin/financial/dashboard', adminAuthMiddleware, async (req, res) 
       ledger_volume: [],
       reconciliation_runs: [],
       vip_admin_fund_balance: 0,
+      wallet_deposit_channels: [],
     });
   }
 });
@@ -14737,16 +15390,37 @@ app.get('/api/notifications/latest', async (req, res) => {
       let dbItems = [];
       if (userUuid) {
         const dbRows = await pool.query(
-          `SELECT id, title, message, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+          `SELECT id, type, title, message, data, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
           [userUuid, limit]
         ).catch(() => ({ rows: [] }));
-        dbItems = (dbRows.rows || []).map((r) => ({
-          id: String(r.id),
-          targetUserId: String(userUuid),
-          title: r.title || '',
-          message: r.message || '',
-          sentAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
-        }));
+        dbItems = (dbRows.rows || []).map((r) => {
+          let jobId = null;
+          let dataObj = null;
+          try {
+            const raw = r.data;
+            dataObj =
+              typeof raw === 'string'
+                ? JSON.parse(raw || '{}')
+                : raw && typeof raw === 'object'
+                  ? raw
+                  : {};
+            if (dataObj && dataObj.job_id != null) jobId = String(dataObj.job_id).trim() || null;
+            else if (dataObj && dataObj.jobId != null) jobId = String(dataObj.jobId).trim() || null;
+          } catch (_) {
+            dataObj = {};
+          }
+          return {
+            id: String(r.id),
+            targetUserId: String(userUuid),
+            title: r.title || '',
+            message: r.message || '',
+            sentAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+            source: 'postgres',
+            notificationType: String(r.type || 'system'),
+            jobId,
+            data: dataObj,
+          };
+        });
       }
       list = [...userItems, ...dbItems, ...broadcastItems]
         .sort((a, b) => new Date(b.sentAt || b.created_at) - new Date(a.sentAt || a.created_at))
@@ -18202,8 +18876,8 @@ app.get('/api/wallet/deposit/preview', (req, res) => {
   }
 });
 
-// POST /api/wallet/deposit — create processor charge; webhook credits wallet + ledger when paid
-app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
+/** Shared handler: POST /api/wallet/deposit และ POST /api/wallet/deposit/payso (M0 contract — logic เดียวกัน) */
+async function handleWalletDepositCreateRequest(req, res) {
   try {
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) {
@@ -18215,10 +18889,6 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     }
     const userFrozen = await isWalletFrozen(userUuid);
     if (userFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถเติมเงินได้ กรุณาติดต่อฝ่ายสนับสนุน' });
-    let secretKey = getPaymentGatewaySecretKey();
-    if (!secretKey || secretKey.includes('xxxxx')) {
-      return res.status(503).json({ error: 'Payment gateway ยังไม่ได้ตั้งค่า — ใส่ PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST ใน .env' });
-    }
     const { amount, payment_method, return_uri, card } = req.body || {};
     const amountNum = Math.round(Number(amount) * 100) / 100;
     if (!(amountNum >= 1)) return res.status(400).json({ error: 'กรุณาระบุจำนวนเงิน (ขั้นต่ำ 1 บาท)' });
@@ -18226,10 +18896,92 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     const method = (payment_method || 'promptpay').toLowerCase();
     const returnUrl = return_uri || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile`;
 
+    const persistPendingDepositCharge = async (chargeId, sourceTypeForFee) => {
+      try {
+        await pool.query(
+          `INSERT INTO wallet_deposit_charges (charge_id, user_id, amount, currency, status, source_type) VALUES ($1, $2, $3, 'THB', 'pending', $4)`,
+          [chargeId, userUuid, amountNum, sourceTypeForFee]
+        );
+      } catch (e) {
+        if (e.code === '42703') {
+          await pool.query(
+            `INSERT INTO wallet_deposit_charges (charge_id, user_id, amount, currency, status) VALUES ($1, $2, $3, 'THB', 'pending')`,
+            [chargeId, userUuid, amountNum]
+          );
+        } else {
+          if (e.code === '42P01') throw new Error('ตาราง wallet_deposit_charges ยังไม่มี กรุณารัน migration 029');
+          throw e;
+        }
+      }
+      await appendFinancialDepositAudit({
+        actorType: 'user',
+        actorId: String(userUuid),
+        action: 'WALLET_DEPOSIT_CHARGE_CREATED',
+        entityType: 'wallet_deposit_charge',
+        entityId: String(chargeId),
+        correlationId: String(chargeId),
+        externalRef: String(chargeId),
+        reason: `source_type=${String(sourceTypeForFee || 'promptpay')}`,
+        stateAfter: {
+          amount: amountNum,
+          currency: 'THB',
+          status: 'pending',
+          source_type: String(sourceTypeForFee || 'promptpay'),
+        },
+      });
+    };
+
+    /** PaySo wallet QR — ไม่ต้องใช้ PAYMENT_GATEWAY_SECRET_KEY (Omise-compatible) */
+    let paysoAttemptError = null;
+    if (method === 'promptpay' && isPaysoEnabledFromEnv()) {
+      let customerEmail = 'noreply@aqond.local';
+      try {
+        const er = await pool.query('SELECT email FROM users WHERE id = $1::uuid LIMIT 1', [userUuid]);
+        const em = er.rows?.[0]?.email;
+        if (em && String(em).trim()) customerEmail = String(em).trim();
+      } catch (_) {
+        /* use default email for PaySo query params */
+      }
+      const pr = await createPaysoWalletDepositCharge({ amountThb: amountNum, userUuid, customerEmail });
+      if (pr.ok && pr.qr_code_url) {
+        const chargeId = pr.payso_reference_id;
+        await persistPendingDepositCharge(chargeId, 'payso');
+        schedulePaysoAutoReconcile({
+          chargeId,
+          userId: userUuid,
+          amount: amountNum,
+          sourceType: 'payso',
+        });
+        return res.status(201).json({
+          charge_id: chargeId,
+          status: 'pending',
+          amount: amountNum,
+          currency: 'THB',
+          authorization_uri: null,
+          qr_code_url: pr.qr_code_url,
+          payment_id: chargeId,
+          source_type: 'payso',
+        });
+      }
+      if (pr.ok && !pr.qr_code_url) {
+        return res.status(502).json({ error: 'PaySo ไม่คืน QR — ตรวจสอบการตอบกลับจากผู้ให้บริการ' });
+      }
+      paysoAttemptError = pr.error || `payso_deposit_http_${pr.statusCode || 0}`;
+    }
+
+    let secretKey = getPaymentGatewaySecretKey();
+    if (!secretKey || secretKey.includes('xxxxx')) {
+      const msg =
+        paysoAttemptError != null
+          ? `สร้าง QR ผ่าน PaySo ไม่สำเร็จ (${paysoAttemptError}) และยังไม่มี PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST สำรอง (Omise-compatible)`
+          : 'Payment gateway ยังไม่ได้ตั้งค่า — ใส่ PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST ใน .env';
+      return res.status(503).json({ error: msg });
+    }
+
     let charge;
 
     const paymentClient = new PaymentHttpClient(secretKey);
-    
+
     if (method === 'promptpay') {
       const source = await paymentClient.createPromptPaySource(amountSatang, 'thb');
       charge = await paymentClient.createCharge({
@@ -18252,6 +19004,16 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
         return_uri: returnUrl,
         metadata: { user_id: String(userUuid), source: 'wallet_deposit', phone: phoneNumber }
       });
+    } else if (method === 'mobile_banking') {
+      const bankCode = String(req.body?.bank_code || req.body?.bank || 'scb').trim().toLowerCase();
+      const source = await paymentClient.createInternetBankingSource(amountSatang, bankCode, 'thb');
+      charge = await paymentClient.createCharge({
+        amount: amountSatang,
+        currency: 'thb',
+        source: source.id,
+        return_uri: returnUrl,
+        metadata: { user_id: String(userUuid), source: 'wallet_deposit', bank_code: bankCode }
+      });
     } else if (method === 'card' && card) {
       charge = await paymentClient.createCharge({
         amount: amountSatang,
@@ -18263,26 +19025,11 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     }
 
     if (!charge) {
-      return res.status(400).json({ error: 'รองรับ payment_method: promptpay หรือ card (ส่ง card token)' });
+      return res.status(400).json({ error: 'รองรับ payment_method: promptpay, truemoney, mobile_banking หรือ card (ส่ง card token)' });
     }
 
     const chargeId = charge.id;
-    try {
-      await pool.query(
-        `INSERT INTO wallet_deposit_charges (charge_id, user_id, amount, currency, status, source_type) VALUES ($1, $2, $3, 'THB', 'pending', $4)`,
-        [chargeId, userUuid, amountNum, method]
-      );
-    } catch (e) {
-      if (e.code === '42703') {
-        await pool.query(
-          `INSERT INTO wallet_deposit_charges (charge_id, user_id, amount, currency, status) VALUES ($1, $2, $3, 'THB', 'pending')`,
-          [chargeId, userUuid, amountNum]
-        );
-      } else {
-        if (e.code === '42P01') throw new Error('ตาราง wallet_deposit_charges ยังไม่มี กรุณารัน migration 029');
-        throw e;
-      }
-    }
+    await persistPendingDepositCharge(chargeId, method);
 
     const authorizationUri = charge.authorize_uri || charge.authorization_uri || null;
 
@@ -18301,7 +19048,7 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
         }
       }
     }
-    
+
     return res.status(201).json({
       charge_id: chargeId,
       status: (charge.status || 'pending').toLowerCase(),
@@ -18333,7 +19080,12 @@ app.post('/api/wallet/deposit', paymentLimiter, async (req, res) => {
     const errMsg = err?.message || err?.response?.data?.message || err?.response?.data?.error || 'Failed to create deposit charge';
     return res.status(500).json({ error: String(errMsg) });
   }
-});
+}
+
+// POST /api/wallet/deposit — create processor charge; webhook credits wallet + ledger when paid
+app.post('/api/wallet/deposit', paymentLimiter, handleWalletDepositCreateRequest);
+// POST /api/wallet/deposit/payso — M0: alias เดียวกับ deposit (mobile contract)
+app.post('/api/wallet/deposit/payso', paymentLimiter, handleWalletDepositCreateRequest);
 
 // POST /api/wallet/topup — เติมเงินผ่านโอนบัญชี (manual confirmation)
 // เมื่อผู้ใช้กดยืนยันว่าโอนแล้ว → credit wallet + บันทึก ledger
@@ -18400,6 +19152,172 @@ app.post('/api/wallet/topup', paymentLimiter, async (req, res) => {
   }
 });
 
+const paysoChargeStatusCheckCooldownMs = 8000;
+const paysoChargeStatusLastCheckedAt = new Map();
+const paysoAutoReconcileTimers = new Map();
+
+function schedulePaysoAutoReconcile({
+  chargeId,
+  userId,
+  amount,
+  sourceType = 'payso',
+  maxAttempts = 80,
+  intervalMs = 8000,
+}) {
+  const key = String(chargeId || '').trim();
+  if (!key) return;
+  if (paysoAutoReconcileTimers.has(key)) return;
+  let attempts = 0;
+
+  const stop = () => {
+    const h = paysoAutoReconcileTimers.get(key);
+    if (h) clearTimeout(h);
+    paysoAutoReconcileTimers.delete(key);
+  };
+
+  const tick = async () => {
+    attempts += 1;
+    try {
+      const row = await pool.query(
+        `SELECT status
+         FROM wallet_deposit_charges
+         WHERE charge_id = $1
+         LIMIT 1`,
+        [key]
+      ).catch(() => ({ rows: [] }));
+      const statusNow = String(row.rows?.[0]?.status || '').toLowerCase();
+      if (statusNow === 'success') {
+        stop();
+        return;
+      }
+      const rec = await reconcilePaysoChargeIfPaid({
+        chargeId: key,
+        userId,
+        amount,
+        sourceType,
+        trigger: 'auto',
+      });
+      if (rec?.paid || rec?.creditError || attempts >= maxAttempts) {
+        stop();
+        return;
+      }
+    } catch (_) {
+      if (attempts >= maxAttempts) {
+        stop();
+        return;
+      }
+    }
+    const timer = setTimeout(tick, intervalMs);
+    paysoAutoReconcileTimers.set(key, timer);
+  };
+
+  const timer = setTimeout(tick, 4000);
+  paysoAutoReconcileTimers.set(key, timer);
+}
+
+async function reconcilePaysoChargeIfPaid({
+  chargeId,
+  userId,
+  amount,
+  sourceType,
+  trigger = 'poll',
+}) {
+  const src = String(sourceType || '').toLowerCase();
+  if (src !== 'payso' && src !== 'ksher') {
+    return { checked: false, reason: 'not_payso_source' };
+  }
+  const now = Date.now();
+  const key = String(chargeId || '').trim();
+  const last = Number(paysoChargeStatusLastCheckedAt.get(key) || 0);
+  if (trigger !== 'admin' && now - last < paysoChargeStatusCheckCooldownMs) {
+    return { checked: false, reason: 'cooldown' };
+  }
+  paysoChargeStatusLastCheckedAt.set(key, now);
+  // #region agent log
+  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H14",location:"backend/server.js:reconcilePaysoChargeIfPaid:check-start",message:"start reconcile check against payso status api",data:{chargeId:key,trigger,sourceType:src},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  const q = await queryPaysoWalletDepositStatus({ referenceId: key });
+  // #region agent log
+  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H15",location:"backend/server.js:reconcilePaysoChargeIfPaid:check-result",message:"payso status api result",data:{chargeId:key,ok:q?.ok===true,statusCode:q?.statusCode||0,paid:q?.paid===true,status:q?.status||null,error:q?.error||null,trigger},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  console.log('[DBG-H15] payso status query result', {
+    chargeId: key,
+    trigger,
+    ok: q?.ok === true,
+    statusCode: q?.statusCode || 0,
+    method: q?.method || null,
+    path: q?.path || null,
+    config_warning: q?.config_warning || null,
+    paid: q?.paid === true,
+    status: q?.status || null,
+    error: q?.error || null,
+  });
+  await appendFinancialDepositAudit({
+    actorType: 'system',
+    action: 'PAYSO_STATUS_CHECKED',
+    entityType: 'wallet_deposit_charge',
+    entityId: String(key),
+    correlationId: String(key),
+    reason: `trigger=${trigger}`,
+    stateAfter: {
+      paid: q?.paid === true,
+      status: q?.status || null,
+      statusCode: q?.statusCode || null,
+      method: q?.method || null,
+      path: q?.path || null,
+      error: q?.error || null,
+      config_warning: q?.config_warning || null,
+    },
+  });
+  if (!q?.paid) {
+    return {
+      checked: true,
+      paid: false,
+      gatewayStatus: q?.status || null,
+      query: q,
+      explain: `status_check_not_paid:${String(q?.status || q?.error || 'unknown')}`,
+    };
+  }
+  const credited = await creditWalletDepositFromPayso(pool, {
+    userId: String(userId),
+    chargeId: key,
+    grossAmount: Number(amount),
+    transactionNoSuffix: String(q?.transaction_id || Date.now()),
+  }).catch((e) => ({ error: e }));
+  if (credited?.error) {
+    return {
+      checked: true,
+      paid: true,
+      creditError: String(credited.error?.message || credited.error),
+      explain: 'status_paid_but_credit_failed',
+    };
+  }
+  // #region agent log
+  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H16",location:"backend/server.js:reconcilePaysoChargeIfPaid:credited",message:"creditWalletDepositFromPayso applied",data:{chargeId:key,duplicate:credited?.duplicate===true,ledgerId:credited?.ledgerId||null,creditAmount:credited?.creditAmount??null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  console.log('[DBG-H16] payso credit applied', {
+    chargeId: key,
+    duplicate: credited?.duplicate === true,
+    ledgerId: credited?.ledgerId || null,
+    creditAmount: credited?.creditAmount ?? null,
+  });
+  await appendFinancialDepositAudit({
+    actorType: 'system',
+    action: 'WALLET_DEPOSIT_CREDIT_APPLIED',
+    entityType: 'wallet_deposit_charge',
+    entityId: String(key),
+    correlationId: String(key),
+    reason: credited?.duplicate === true ? 'duplicate_credit_ignored' : `credit_from_${trigger}`,
+    stateAfter: {
+      paid: true,
+      duplicate: credited?.duplicate === true,
+      ledger_id: credited?.ledgerId || null,
+      credit_amount: credited?.creditAmount ?? null,
+    },
+  });
+  return { checked: true, paid: true, credited, explain: credited?.duplicate === true ? 'already_credited' : 'credit_applied' };
+}
+
 // GET /api/wallet/deposit/status/:chargeId — ตรวจสอบสถานะการเติมเงิน (Pending/Success)
 app.get('/api/wallet/deposit/status/:chargeId', async (req, res) => {
   try {
@@ -18409,11 +19327,33 @@ app.get('/api/wallet/deposit/status/:chargeId', async (req, res) => {
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
     const chargeId = String(req.params.chargeId || '').trim();
     const row = await pool.query(
-      'SELECT charge_id, user_id, amount, status, created_at, completed_at FROM wallet_deposit_charges WHERE charge_id = $1 AND user_id = $2',
+      'SELECT charge_id, user_id, amount, status, created_at, completed_at, COALESCE(source_type, \'promptpay\') AS source_type FROM wallet_deposit_charges WHERE charge_id = $1 AND user_id = $2',
       [chargeId, userUuid]
     ).catch(() => ({ rows: [] }));
     if (!row.rows?.length) return res.status(404).json({ error: 'ไม่พบรายการเติมเงินนี้' });
-    const r = row.rows[0];
+    let r = row.rows[0];
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H8",location:"backend/server.js:/api/wallet/deposit/status/:chargeId",message:"deposit status polled from db row",data:{charge_id:r.charge_id,status:r.status,completed_at:r.completed_at ? new Date(r.completed_at).toISOString() : null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    console.log('[DBG-H8] deposit status row', { charge_id: r.charge_id, status: r.status, completed_at: r.completed_at || null });
+    let reconcileMeta = null;
+    if (String(r.status || '').toLowerCase() !== 'success' && String(r.source_type || '').toLowerCase() === 'payso') {
+      const rec = await reconcilePaysoChargeIfPaid({
+        chargeId: r.charge_id,
+        userId: r.user_id,
+        amount: r.amount,
+        sourceType: r.source_type,
+        trigger: 'poll',
+      });
+      reconcileMeta = rec || null;
+      if (rec?.paid) {
+        const rr = await pool.query(
+          'SELECT charge_id, amount, status, created_at, completed_at FROM wallet_deposit_charges WHERE charge_id = $1 AND user_id = $2',
+          [r.charge_id, userUuid]
+        ).catch(() => ({ rows: [] }));
+        if (rr.rows?.[0]) r = rr.rows[0];
+      }
+    }
     
     return res.json({
       charge_id: r.charge_id,
@@ -18421,11 +19361,172 @@ app.get('/api/wallet/deposit/status/:chargeId', async (req, res) => {
       status: r.status === 'successful' ? 'success' : r.status,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
       completed_at: r.completed_at ? new Date(r.completed_at).toISOString() : null,
+      reconcile: reconcileMeta,
     });
   } catch (err) {
     console.error('GET /api/wallet/deposit/status error:', err);
     return res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/admin/wallet-deposit-charges/:chargeId/reconcile-payso', adminAuthMiddleware, async (req, res) => {
+  try {
+    const chargeId = String(req.params.chargeId || '').trim();
+    if (!chargeId) return res.status(400).json({ error: 'missing_charge_id' });
+    const row = await pool.query(
+      `SELECT charge_id, user_id, amount, status, COALESCE(source_type, 'promptpay') AS source_type, completed_at, ledger_id
+       FROM wallet_deposit_charges
+       WHERE charge_id = $1
+       LIMIT 1`,
+      [chargeId]
+    ).catch(() => ({ rows: [] }));
+    const rec = row.rows?.[0];
+    if (!rec) return res.status(404).json({ error: 'charge_not_found' });
+    const out = await reconcilePaysoChargeIfPaid({
+      chargeId: rec.charge_id,
+      userId: rec.user_id,
+      amount: rec.amount,
+      sourceType: rec.source_type,
+      trigger: 'admin',
+    });
+    const fresh = await pool.query(
+      `SELECT charge_id, status, completed_at, ledger_id
+       FROM wallet_deposit_charges
+       WHERE charge_id = $1
+       LIMIT 1`,
+      [chargeId]
+    ).catch(() => ({ rows: [] }));
+    const r2 = fresh.rows?.[0] || rec;
+    return res.json({
+      charge_id: r2.charge_id,
+      status: String(r2.status || ''),
+      completed_at: r2.completed_at ? new Date(r2.completed_at).toISOString() : null,
+      ledger_id: r2.ledger_id || null,
+      reconcile: out || null,
+    });
+  } catch (err) {
+    console.error('POST /api/admin/wallet-deposit-charges/:chargeId/reconcile-payso error:', err);
+    return res.status(500).json({ error: err?.message || 'reconcile_failed' });
+  }
+});
+
+app.post('/api/admin/wallet-deposit-charges/reconcile-payso-batch', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limitRaw = Number(req.body?.limit ?? req.query?.limit ?? 100);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 500) : 100;
+    const rows = await pool.query(
+      `SELECT charge_id, user_id, amount, status, COALESCE(source_type, 'promptpay') AS source_type
+       FROM wallet_deposit_charges
+       WHERE COALESCE(source_type, 'promptpay') IN ('payso','ksher')
+         AND LOWER(COALESCE(status, 'pending')) = 'pending'
+       ORDER BY created_at ASC
+       LIMIT $1`,
+      [limit]
+    ).then((r) => r.rows || []).catch(() => []);
+
+    let successCount = 0;
+    let stillPendingCount = 0;
+    let errorCount = 0;
+    const items = [];
+
+    for (const rec of rows) {
+      const out = await reconcilePaysoChargeIfPaid({
+        chargeId: rec.charge_id,
+        userId: rec.user_id,
+        amount: rec.amount,
+        sourceType: rec.source_type,
+        trigger: 'admin',
+      });
+      const fresh = await pool.query(
+        `SELECT charge_id, status, completed_at, ledger_id
+         FROM wallet_deposit_charges
+         WHERE charge_id = $1
+         LIMIT 1`,
+        [rec.charge_id]
+      ).then((r) => r.rows?.[0] || null).catch(() => null);
+      const finalStatus = String(fresh?.status || rec.status || '').toLowerCase();
+      if (finalStatus === 'success') successCount += 1;
+      else stillPendingCount += 1;
+      if (out?.creditError || (out?.query && out?.query?.error)) errorCount += 1;
+
+      items.push({
+        charge_id: rec.charge_id,
+        status: finalStatus || 'pending',
+        completed_at: fresh?.completed_at ? new Date(fresh.completed_at).toISOString() : null,
+        ledger_id: fresh?.ledger_id || null,
+        reconcile: out || null,
+      });
+    }
+
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H22",location:"backend/server.js:/api/admin/wallet-deposit-charges/reconcile-payso-batch",message:"batch reconcile executed",data:{requested_limit:limit,input_count:rows.length,success_count:successCount,still_pending_count:stillPendingCount,error_count:errorCount},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
+    return res.json({
+      requested_limit: limit,
+      total: rows.length,
+      success_count: successCount,
+      still_pending_count: stillPendingCount,
+      error_count: errorCount,
+      items,
+    });
+  } catch (err) {
+    console.error('POST /api/admin/wallet-deposit-charges/reconcile-payso-batch error:', err);
+    return res.status(500).json({ error: err?.message || 'reconcile_batch_failed' });
+  }
+});
+
+// POST /api/wallet/deposit-slip — อัปโหลดสลิปหลังชำระ PromptPay/บัตร (ผูก charge_id + บันทึก slip_url)
+app.post('/api/wallet/deposit-slip', paymentLimiter, uploadMulter.single('file'), async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    if (!req.file) return res.status(400).json({ error: 'ไม่มีไฟล์' });
+    const chargeId = String(req.body?.charge_id || '').trim();
+    if (!chargeId) return res.status(400).json({ error: 'ต้องระบุ charge_id' });
+    const owned = await pool.query(
+      'SELECT charge_id FROM wallet_deposit_charges WHERE charge_id = $1 AND user_id = $2::uuid',
+      [chargeId, userUuid]
+    ).catch(() => ({ rows: [] }));
+    if (!owned.rows?.length) return res.status(404).json({ error: 'ไม่พบรายการเติมเงินหรือไม่ใช่ของคุณ' });
+
+    const ext = req.file.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.jpg';
+    const result = await uploadToS3(req.file.buffer, {
+      folder: 'wallet_deposit_slips',
+      key: `wallet_deposit_slips/${chargeId}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}${ext}`,
+      contentType: req.file.mimetype || 'application/octet-stream',
+      resourceType: 'auto',
+    });
+    const slipUrl = result.secure_url;
+    try {
+      await pool.query(
+        'UPDATE wallet_deposit_charges SET slip_url = $1 WHERE charge_id = $2 AND user_id = $3::uuid',
+        [slipUrl, chargeId, userUuid]
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        console.warn('wallet_deposit_charges.slip_url column missing — migration 154_wallet_deposit_slip_url.sql');
+      } else {
+        throw e;
+      }
+    }
+    return res.json({ success: true, url: slipUrl });
+  } catch (err) {
+    console.error('POST /api/wallet/deposit-slip error:', err);
+    return res.status(500).json({ error: err.message || 'อัปโหลดสลิปล้มเหลว' });
+  }
+});
+
+attachWalletManualDepositRoutes(app, {
+  pool,
+  paymentLimiter,
+  uploadMulter,
+  resolveAdvanceJobUserId,
+  resolveUserIdToUuid,
+  isWalletFrozen,
+  adminAuthMiddleware,
 });
 
 // GET /api/wallet/transactions — ประวัติการเคลื่อนไหวกระเป๋า (จาก payment_ledger_audit) สำหรับผู้ใช้ที่ล็อกอิน
@@ -18445,6 +19546,18 @@ app.get('/api/wallet/transactions', async (req, res) => {
       [String(userUuid), limit]
     );
     const rows = result.rows || [];
+    const pendingChargeRows = await pool.query(
+      `SELECT charge_id, amount, currency, status, created_at, COALESCE(source_type, 'promptpay') AS source_type
+       FROM wallet_deposit_charges
+       WHERE user_id = $1::uuid AND LOWER(COALESCE(status, 'pending')) <> 'success'
+       ORDER BY created_at DESC
+       LIMIT 30`,
+      [String(userUuid)]
+    ).then((r) => r.rows || []).catch(() => []);
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H10",location:"backend/server.js:/api/wallet/transactions",message:"wallet transactions source counts",data:{ledger_rows:rows.length,pending_charge_rows:pendingChargeRows.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    console.log('[DBG-H10] wallet transactions sources', { ledger_rows: rows.length, pending_charge_rows: pendingChargeRows.length });
     const coachFeeRows = rows.filter((r) => r.event_type === 'coach_training_fee' && r.provider_id && String(r.provider_id) === String(userUuid));
     const traineeIds = [...new Set(coachFeeRows.map((r) => (r.metadata || {}).trainee_id).filter(Boolean))];
     const traineeNames = {};
@@ -18476,7 +19589,7 @@ app.get('/api/wallet/transactions', async (req, res) => {
       } catch (_) {}
     }
 
-    const transactions = rows.map((r) => {
+    const ledgerTransactions = rows.map((r) => {
       const meta = r.metadata || {};
       const isCredit = r.provider_id && String(r.provider_id) === String(userUuid) && (r.event_type === 'escrow_released' || (r.event_type === 'escrow_held' && meta.leg === 'provider_net') || r.event_type === 'wallet_tip' || r.event_type === 'talent_booking_payout');
       const isDebit = r.user_id && String(r.user_id) === String(userUuid);
@@ -18589,7 +19702,27 @@ app.get('/api/wallet/transactions', async (req, res) => {
       else if (tipsAmount > 0 && (r.event_type === 'escrow_held' && meta.leg === 'provider_net')) out.tips_amount = tipsAmount;
       return out;
     }).filter(Boolean);
-    return res.json({ transactions });
+    const pendingChargeTransactions = pendingChargeRows.map((c) => {
+      const rawStatus = String(c.status || 'pending').toLowerCase();
+      const normalizedStatus = rawStatus === 'successful' ? 'success' : rawStatus;
+      return {
+        id: `depchg-${String(c.charge_id)}`,
+        payment_id: String(c.charge_id),
+        event_type: 'wallet_deposit',
+        amount: Number(c.amount || 0),
+        gross_amount: Number(c.amount || 0),
+        net_amount: Number(c.amount || 0),
+        currency: c.currency || 'THB',
+        direction: 'in',
+        status: normalizedStatus,
+        description: `เติมเงินรอดำเนินการ (${String(c.source_type || 'payso').toUpperCase()})`,
+        created_at: c.created_at,
+      };
+    });
+    const merged = [...ledgerTransactions, ...pendingChargeTransactions]
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      .slice(0, limit);
+    return res.json({ transactions: merged });
   } catch (err) {
     console.error('GET /api/wallet/transactions error:', err);
     return res.status(500).json({ error: err.message, transactions: [] });

@@ -22,8 +22,10 @@ import {
 import {
   getFinancialDashboard,
   getFinancialAudit,
+  getPlatformRevenues,
   getAdminToken,
 } from "../services/adminApi";
+import { getRevenueFourBumps, type RevenueFourBumpsResponse } from "../services/financialService";
 import type {
   FinancialDashboardResponse,
   FinancialAuditTransactionRow,
@@ -33,24 +35,32 @@ import { InsuranceManager } from "./InsuranceManager";
 import { CommissionRevenue } from "./CommissionRevenue";
 import { RealTimeExpenses } from "./RealTimeExpenses";
 import { MarketCapManager } from "./MarketCapManager";
+import { FinancialControlSettings } from "./FinancialControlSettings";
+import { FeeStructurePanel } from "./FeeStructurePanel";
 
 type TabId =
   | "overview"
   | "transactions"
+  | "revenue-insights"
   | "job-guarantee"
   | "insurance"
   | "commission"
   | "expenses"
-  | "market-cap";
+  | "market-cap"
+  | "fee-structure"
+  | "control-settings";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "ภาพรวม" },
   { id: "transactions", label: "ธุรกรรม" },
+  { id: "revenue-insights", label: "Revenue Insights (Margin)" },
   { id: "job-guarantee", label: "เงินประกันงาน" },
   { id: "insurance", label: "คลังประกัน (60/40)" },
   { id: "commission", label: "ค่าคอมมิชชั่น" },
   { id: "expenses", label: "ค่าใช้จ่าย" },
   { id: "market-cap", label: "หุ้นส่วน & Market Cap" },
+  { id: "fee-structure", label: "Fee Structure (LOCKED)" },
+  { id: "control-settings", label: "Control Settings" },
 ];
 
 const PAGE_SIZE = 10;
@@ -68,7 +78,18 @@ export const FinancialDashboardView: React.FC = () => {
   const [txTypeFilter, setTxTypeFilter] = useState("");
   const [txStatusFilter, setTxStatusFilter] = useState("");
   const [txSearch, setTxSearch] = useState("");
+  const [revenueData, setRevenueData] = useState<{
+    total_margin_thb: number;
+    revenue_a_commission?: number;
+    revenue_b_deposit_margin?: number;
+    revenue_c_withdrawal_margin?: number;
+    by_source: Record<string, number>;
+    recent: Array<{ id: string; transaction_id: string; source_type: string; amount: number; gross_amount: number; created_at: string | null }>;
+    days: number;
+  } | null>(null);
+  const [revenueRange, setRevenueRange] = useState<"today" | "week" | "month">("month");
   const useBackend = !!getAdminToken();
+  const [fourBumps, setFourBumps] = useState<RevenueFourBumpsResponse | null>(null);
 
   const fetchData = async () => {
     if (!useBackend) {
@@ -77,11 +98,13 @@ export const FinancialDashboardView: React.FC = () => {
     }
     setLoading(true);
     try {
-      const [res, audit] = await Promise.all([
+      const [res, audit, bumps] = await Promise.all([
         getFinancialDashboard({ days }).catch(() => null),
         getFinancialAudit({ limit: 200 }).catch(() => null),
+        getRevenueFourBumps().catch(() => null),
       ]);
       setData(res || null);
+      setFourBumps(bumps || null);
       setAuditData(
         audit
           ? {
@@ -98,11 +121,25 @@ export const FinancialDashboardView: React.FC = () => {
     setLoading(false);
   };
 
+  const fetchRevenueData = async () => {
+    try {
+      const res = await getPlatformRevenues(revenueRange);
+      setRevenueData(res);
+    } catch {
+      setRevenueData(null);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [useBackend, days]);
 
+  useEffect(() => {
+    if (tab === "revenue-insights" && useBackend) fetchRevenueData();
+  }, [tab, useBackend, revenueRange]);
+
   const totalRevenue = auditData?.platform_balance ?? data?.total_balances ?? 0;
+  const vipAdminFundBalance = data?.vip_admin_fund_balance ?? 0;
   const totalExpenses = 0;
   const grossProfit = totalRevenue;
   const netProfit = totalRevenue - totalExpenses;
@@ -205,6 +242,12 @@ export const FinancialDashboardView: React.FC = () => {
             รายการธุรกรรมล่าสุด
           </button>
           <button
+            onClick={() => setTab("revenue-insights")}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-lg text-sm font-medium"
+          >
+            Revenue Insights (Margin)
+          </button>
+          <button
             onClick={() => setTab("job-guarantee")}
             className="flex items-center gap-2 px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-sm font-medium"
           >
@@ -234,6 +277,18 @@ export const FinancialDashboardView: React.FC = () => {
           >
             หุ้นส่วน & Market Cap
           </button>
+          <button
+            onClick={() => setTab("fee-structure")}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-sm font-medium"
+          >
+            Fee Structure (LOCKED)
+          </button>
+          <button
+            onClick={() => setTab("control-settings")}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-sm font-medium"
+          >
+            Control Settings
+          </button>
         </div>
       </div>
 
@@ -254,6 +309,20 @@ export const FinancialDashboardView: React.FC = () => {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {tab === "revenue-insights" && (
+            <>
+              <label className="text-sm text-slate-600">ช่วงเวลา</label>
+              <select
+                value={revenueRange}
+                onChange={(e) => setRevenueRange(e.target.value as "today" | "week" | "month")}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+              >
+                <option value="today">วันนี้</option>
+                <option value="week">7 วัน</option>
+                <option value="month">30 วัน</option>
+              </select>
+            </>
+          )}
           {(tab === "overview" || tab === "transactions") && (
             <>
               <label className="text-sm text-slate-600">ช่วงเวลา</label>
@@ -283,11 +352,87 @@ export const FinancialDashboardView: React.FC = () => {
         </div>
       </div>
 
+      {tab === "revenue-insights" && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Income Categorization (Revenue A/B/C)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-xs text-blue-600 uppercase font-medium">Revenue A — Commission</p>
+                <p className="text-2xl font-bold text-blue-800">฿{(revenueData?.revenue_a_commission ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-slate-500 mt-1">ค่าคอมมิชชั่นงาน, Booking fee, VIP</p>
+              </div>
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <p className="text-xs text-amber-600 uppercase font-medium">Revenue B — Deposit Margin</p>
+                <p className="text-2xl font-bold text-amber-800">฿{(revenueData?.revenue_b_deposit_margin ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-slate-500 mt-1">ส่วนต่างเติมเงิน TrueMoney/Card</p>
+              </div>
+              <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
+                <p className="text-xs text-emerald-600 uppercase font-medium">Revenue C — Withdrawal Margin</p>
+                <p className="text-2xl font-bold text-emerald-800">฿{(revenueData?.revenue_c_withdrawal_margin ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-slate-500 mt-1">ส่วนต่างค่าถอน (35-30, 50-30)</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-500 mt-3">ช่วง {revenueData?.days ?? 30} วันล่าสุด</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Total Fee Margin (B+C)</h3>
+            <p className="text-3xl font-bold text-emerald-600">
+              ฿{(revenueData?.total_margin_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+          {revenueData?.by_source && Object.keys(revenueData.by_source).length > 0 && (
+            <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">By Source</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(revenueData.by_source).map(([k, v]) => (
+                  <div key={k} className="p-3 bg-slate-50 rounded-lg">
+                    <p className="text-xs text-slate-500 uppercase">{k.replace(/_/g, " ")}</p>
+                    <p className="font-bold text-slate-800">฿{Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Recent Revenue Events</h3>
+            <div className="max-h-64 overflow-y-auto">
+              {revenueData?.recent?.length ? (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Source</th>
+                      <th className="px-3 py-2 text-right">Margin</th>
+                      <th className="px-3 py-2 text-right">Gross</th>
+                      <th className="px-3 py-2 text-left">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {revenueData.recent.map((r) => (
+                      <tr key={r.id}>
+                        <td className="px-3 py-2">{r.source_type?.replace(/_/g, " ")}</td>
+                        <td className="px-3 py-2 text-right font-medium">฿{r.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2 text-right text-slate-500">฿{r.gross_amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2 text-slate-500 text-xs">{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-slate-500 py-4">ยังไม่มีข้อมูล — กำไรจากค่าธรรมเนียมจะแสดงเมื่อมีการถอน (margin 5/20 บาท) หรือเติมผ่าน TrueMoney/Card</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === "job-guarantee" && <JobGuaranteeSystem />}
       {tab === "insurance" && <InsuranceManager />}
       {tab === "commission" && <CommissionRevenue />}
       {tab === "expenses" && <RealTimeExpenses />}
       {tab === "market-cap" && <MarketCapManager />}
+      {tab === "fee-structure" && <FeeStructurePanel />}
+      {tab === "control-settings" && <FinancialControlSettings />}
 
       {tab === "overview" && (
         <>
@@ -297,7 +442,7 @@ export const FinancialDashboardView: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
@@ -312,6 +457,10 @@ export const FinancialDashboardView: React.FC = () => {
                     {Number(totalRevenue).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                     })}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+                    จาก ledger แพลตฟอร์ม (ค่าธรรมเนียม/คอมมิชชั่น ฯลฯ) —{" "}
+                    <strong>ไม่รวม</strong>เงินเติมเครดิตผู้ใช้ (wallet_deposit)
                   </p>
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
@@ -329,6 +478,7 @@ export const FinancialDashboardView: React.FC = () => {
                       minimumFractionDigits: 2,
                     })}
                   </p>
+                  <p className="text-[11px] text-slate-500 mt-2">เท่ากับรายได้รวมเมื่อยังไม่หักค่าใช้จ่ายในหน้านี้</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex items-center gap-3 mb-2">
@@ -375,6 +525,98 @@ export const FinancialDashboardView: React.FC = () => {
                     {profitMargin}%
                   </p>
                 </div>
+                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+                      <DollarSign size={20} />
+                    </div>
+                    <span className="text-sm font-medium text-slate-500">
+                      VIP Admin Fund
+                    </span>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">
+                    ฿{Number(vipAdminFundBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    12.5% จาก gross profit VIP
+                  </p>
+                </div>
+              </div>
+
+              {data?.wallet_deposit_channels?.length ? (
+                <div className="mt-6 bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                    <h3 className="font-bold text-slate-800">Wallet Deposit by Channel</h3>
+                    <p className="text-xs text-slate-500 mt-1">ใช้ตรวจสอบยอดเครดิตจาก PaySo/Card/TrueMoney/Mobile Banking/Manual</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-semibold">Channel</th>
+                          <th className="px-4 py-2 text-right font-semibold">Entries</th>
+                          <th className="px-4 py-2 text-right font-semibold">Net Wallet Credit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {data.wallet_deposit_channels.map((r) => (
+                          <tr key={r.source_type}>
+                            <td className="px-4 py-2 uppercase">{r.source_type}</td>
+                            <td className="px-4 py-2 text-right">{r.entry_count}</td>
+                            <td className="px-4 py-2 text-right font-medium">฿{Number(r.net_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 4 เด้งรายได้ — สรุปจาก payment_ledger_audit (metadata) */}
+              <div className="mt-6 bg-white rounded-xl border border-indigo-100 shadow-sm p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-1">รายได้แยก 4 เด้ง (Ledger)</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Markup (employer) · Handling 8% · Commission (VIP tier) · ค่าธรรมเนียมถอน — ยอดรวมสะสมจาก audit (ไม่รวมแถว demo)
+                </p>
+                {fourBumps ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
+                      <p className="text-[11px] font-semibold uppercase text-indigo-600">① Markup</p>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        ฿{fourBumps.markup_payment_employer.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
+                      <p className="text-[11px] font-semibold uppercase text-amber-700">② Handling</p>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        ฿{fourBumps.handling_fee_from_job.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
+                      <p className="text-[11px] font-semibold uppercase text-emerald-700">③ Commission</p>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        ฿{fourBumps.commission_vip_tier.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
+                      <p className="text-[11px] font-semibold uppercase text-violet-700">④ Withdrawal fee</p>
+                      <p className="text-xl font-bold text-slate-900 mt-1">
+                        ฿{fourBumps.withdrawal_fees.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">ไม่สามารถโหลดสรุป 4 เด้งได้</p>
+                )}
+                {fourBumps?.mapping_note && (
+                  <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">{fourBumps.mapping_note}</p>
+                )}
+                <p className="text-[11px] text-slate-600 mt-4">
+                  <strong>ความสอดคล้องยอด Talent:</strong> ตอนจ่ายงาน Match / Advance ระบบเพิ่ม{" "}
+                  <code className="bg-slate-100 px-1 rounded">wallet_pending</code> ด้วย{" "}
+                  <code className="bg-slate-100 px-1 rounded">provider_receive / talentNet</code> หลังหัก handling + commission
+                  แล้ว (ดู <code className="bg-slate-100 px-1 rounded">payment_details</code> ในงาน)
+                </p>
               </div>
 
               {/* Grid 2x2: Quick links to modules */}
