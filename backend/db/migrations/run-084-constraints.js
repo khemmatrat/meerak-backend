@@ -35,7 +35,8 @@ async function run() {
           'no_show_refund', 'no_show_fine',
           'referral_bonus', 'referral_budget_exhausted',
           'withdrawal_fee_income',
-          'admin_credit', 'admin_debit'
+          'admin_credit', 'admin_debit',
+          'insurance_replacement_payout', 'platform_stability_reserve', 'reroute_replacement_payout'
         ));
     `);
     console.log('✅ event_type constraint updated');

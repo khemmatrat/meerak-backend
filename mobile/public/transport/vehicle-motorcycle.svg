@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 56" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="mc-frame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#71717a"/>
+      <stop offset="100%" stop-color="#3f3f46"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="58" cy="46" rx="11" ry="5" fill="#1f2937" opacity=".32"/>
+  <ellipse cx="16" cy="46" rx="11" ry="5" fill="#1f2937" opacity=".32"/>
+  <circle cx="16" cy="40" r="9.5" fill="#27272a" stroke="#18181b" stroke-width="1.2"/>
+  <circle cx="58" cy="40" r="9.5" fill="#27272a" stroke="#18181b" stroke-width="1.2"/>
+  <circle cx="16" cy="40" r="3.8" fill="#52525b"/>
+  <circle cx="58" cy="40" r="3.8" fill="#52525b"/>
+  <path fill="url(#mc-frame)" d="m18 38 10-14h16l14 14-8 10H26l-8-10Z"/>
+  <path fill="#52525b" d="m28 24 22 2 4 14H30l-6-14Z"/>
+  <path fill="#fafafa" d="m32 18 16 2 2 12H30l4-14Z"/>
+  <path stroke="#a1a1aa" stroke-width="1.2" stroke-linecap="round" d="M22 40 44 26"/>
+  <circle cx="40" cy="30" r="3" fill="#eab308" stroke="#ca8a04" stroke-width="0.75"/>
+</svg>

@@ -1,0 +1,29 @@
+{
+  "employer": {
+    "phone": "0812345601",
+    "email": "tester.employer@aqond.com",
+    "password": "Aa123456!",
+    "full_name": "Demo Employer (Apple Review)",
+    "role": "user",
+    "firebase_uid": "apple-demo-employer"
+  },
+  "talent": {
+    "phone": "0812345602",
+    "email": "tester.talent@aqond.com",
+    "password": "Aa123456!",
+    "full_name": "Demo Talent (Apple Review)",
+    "role": "provider",
+    "provider_status": "VERIFIED_PROVIDER",
+    "firebase_uid": "apple-demo-talent"
+  },
+  "demoJob": {
+    "title": "Demo Job for App Store Review",
+    "description": "Sample job for testing the Private Chat and Deal flow. This is a demo-only job.",
+    "scope": "Complete the demo task as instructed.",
+    "category": "Design",
+    "min_budget": 1500,
+    "max_budget": 2500,
+    "duration_days": 3,
+    "deal_amount": 2000
+  }
+}

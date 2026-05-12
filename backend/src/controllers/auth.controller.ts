@@ -48,14 +48,14 @@ export const authController = {
         }
       );
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         user: newUser,
         message: 'Registration successful',
       });
     } catch (error) {
       console.error('Registration error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Registration failed',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -98,14 +98,14 @@ export const authController = {
         );
       }
 
-      res.json({
+      return res.json({
         success: true,
         user,
         message: 'Login successful',
       });
     } catch (error) {
       console.error('Login error:', error);
-      res.status(401).json({ 
+      return res.status(401).json({ 
         error: 'Login failed',
         message: error instanceof Error ? error.message : 'Invalid token'
       });
@@ -143,14 +143,14 @@ export const authController = {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         user,
         token: decodedToken,
       });
     } catch (error) {
       console.error('Verify error:', error);
-      res.status(401).json({ 
+      return res.status(401).json({ 
         error: 'Verification failed',
         message: error instanceof Error ? error.message : 'Invalid token'
       });
@@ -173,13 +173,13 @@ export const authController = {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      res.json({
+      return res.json({
         success: true,
         user,
       });
     } catch (error) {
       console.error('Get me error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch user data',
         message: error instanceof Error ? error.message : 'Unknown error'
       });

@@ -3,6 +3,11 @@
  * ใช้การตั้งค่า DB จาก root .env เท่านั้น (DB_HOST, DB_PORT, DB_DATABASE, DB_USER, DB_PASSWORD)
  * หรือ DATABASE_URL เมื่อใช้ --use-url
  *
+ * Production (Neon / managed Postgres):
+ * - ต้องการ SSL: โฮสต์ที่ไม่ใช่ localhost จะเปิด ssl.rejectUnauthorized (ยกเว้นตั้ง DATABASE_SSL_DISABLE=1)
+ * - ถ้าใบรับรองมีปัญหา: PGSSLMODE=no-verify หรือ NODE_TLS_REJECT_UNAUTHORIZED=0 (ไม่แนะนำใน prod จริง)
+ * - Timeout: DB_CONNECTION_TIMEOUT_MS (default 60000 ms)
+ *
  * วิธีใช้ (จาก root โปรเจกต์): npm run migrate -- 017 018
  * หรือจาก backend: node scripts/run-migration.js 017 018
  */
@@ -17,7 +22,8 @@ const backendDir = join(__dirname, "..");
 const rootDir = join(backendDir, "..");
 const migrationsDir = join(backendDir, "db", "migrations");
 
-// โหลด .env จาก root โปรเจกต์เท่านั้น (ใช้ตัวเดียวกับ server.js)
+// โหลด .env: backend ก่อน แล้ว root (ถ้ามี) ทับ — รองรับโปรเจกต์ที่ไม่มี .env ที่ root
+dotenv.config({ path: join(backendDir, ".env") });
 dotenv.config({ path: join(rootDir, ".env") });
 
 const argv = process.argv.slice(2);
@@ -33,56 +39,136 @@ if (args.length === 0) {
 }
 
 const useUrl = (useUrlFlag || process.env.USE_DATABASE_URL === "1") && process.env.DATABASE_URL;
-const poolConfig = useUrl
-  ? { connectionString: process.env.DATABASE_URL }
-  : {
+
+/** Neon / managed Postgres มักต้องใช้ SSL; localhost ไม่ใช้ */
+function buildPoolConfig() {
+  const timeoutMs = Math.min(
+    Math.max(parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || "60000", 10) || 60000, 5000),
+    120000
+  );
+  if (!useUrl) {
+    return {
       host: process.env.DB_HOST || "localhost",
       port: parseInt(process.env.DB_PORT || "5432", 10),
       database: process.env.DB_DATABASE || "meera_db",
       user: process.env.DB_USER || "meera",
       password: process.env.DB_PASSWORD || "meera123",
+      connectionTimeoutMillis: timeoutMs,
+      max: 5,
     };
+  }
+  const connectionString = process.env.DATABASE_URL;
+  const sslExplicitOff = process.env.DATABASE_SSL_DISABLE === "1" || process.env.DATABASE_SSL_DISABLE === "true";
+  let ssl = false;
+  if (!sslExplicitOff && connectionString) {
+    try {
+      const href = connectionString.replace(/^postgres(ql)?:\/\//, "https://");
+      const u = new URL(href);
+      const host = u.hostname;
+      const isLocal =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host.endsWith(".local");
+      if (!isLocal) {
+        const noVerify = process.env.PGSSLMODE === "no-verify" || process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0";
+        ssl = { rejectUnauthorized: !noVerify };
+      }
+    } catch {
+      ssl = { rejectUnauthorized: process.env.PGSSLMODE !== "no-verify" };
+    }
+  }
+  return {
+    connectionString,
+    ssl,
+    connectionTimeoutMillis: timeoutMs,
+    max: 5,
+  };
+}
+
+const poolConfig = buildPoolConfig();
+
 if (useUrl) {
   const raw = process.env.DATABASE_URL;
   const href = (raw || "").replace(/^postgres(ql)?:\/\//, "https://");
-  const host = href ? new URL(href).hostname : "DATABASE_URL";
-  console.log("Using DATABASE_URL (e.g. Neon):", host);
+  let host = "DATABASE_URL";
+  try {
+    host = new URL(href).hostname;
+  } catch {
+    /* ignore */
+  }
+  console.log("Using DATABASE_URL host:", host, "| SSL:", poolConfig.ssl ? "on" : "off", "| connect timeout ms:", poolConfig.connectionTimeoutMillis);
 } else {
   const dbUser = process.env.DB_USER || "meera";
-  console.log("Using DB (same as backend):", process.env.DB_HOST || "localhost", process.env.DB_DATABASE || "meera_db", "user:", dbUser);
+  console.log("Using DB (same as backend):", process.env.DB_HOST || "localhost", process.env.DB_DATABASE || "meera_db", "user:", dbUser, "| connect timeout ms:", poolConfig.connectionTimeoutMillis);
 }
 
 const pool = new pg.Pool(poolConfig);
 
-/** Split SQL by semicolons, respecting $$ ... $$ blocks */
+/** Split SQL by semicolons, respecting $$ ... $$ blocks, strings, and -- comments */
 function splitStatements(sql) {
   const out = [];
   let cur = "";
   let i = 0;
   let inDollar = false;
+  let inLineComment = false;
+  let inString = false;
+  let stringChar = null;
   while (i < sql.length) {
-    if (sql.slice(i, i + 2) === "$$" && !inDollar) {
+    const c = sql[i];
+    const c2 = sql.slice(i, i + 2);
+
+    if (inLineComment) {
+      if (c === "\n") inLineComment = false;
+      cur += c;
+      i++;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\" && i + 1 < sql.length) {
+        cur += c + sql[i + 1];
+        i += 2;
+        continue;
+      }
+      if (c === stringChar) inString = false;
+      cur += c;
+      i++;
+      continue;
+    }
+    if (!inDollar && (c2 === "--" || (c === "-" && sql[i + 1] === "-"))) {
+      inLineComment = true;
+      cur += c;
+      i++;
+      continue;
+    }
+    if (!inDollar && (c === "'" || c === '"')) {
+      inString = true;
+      stringChar = c;
+      cur += c;
+      i++;
+      continue;
+    }
+    if (c2 === "$$" && !inDollar) {
       inDollar = true;
       cur += "$$";
       i += 2;
       continue;
     }
-    if (inDollar && sql.slice(i, i + 2) === "$$") {
+    if (inDollar && c2 === "$$") {
       inDollar = false;
       cur += "$$";
       i += 2;
       continue;
     }
-    if (!inDollar && sql[i] === ";") {
+    if (!inDollar && c === ";") {
       const s = (cur + ";").trim();
-      // Skip only if statement is purely comments/whitespace (leading comments are OK)
       const noLeadingComments = s.replace(/^\s*--[^\n]*\n?/gm, "").trim();
       if (s && noLeadingComments) out.push(s);
       cur = "";
       i++;
       continue;
     }
-    cur += sql[i];
+    cur += c;
     i++;
   }
   const tail = cur.trim();
@@ -104,9 +190,10 @@ async function runMigration(num) {
     return false;
   }
   const dbUser = process.env.DB_USER || (poolConfig.user ?? "meera");
+  const dbName = poolConfig.database || process.env.DB_DATABASE || "(database from URL)";
   // 054 ต้องรันด้วย postgres เท่านั้น (GRANT ให้ meera)
   if (num === "054" && String(dbUser).toLowerCase() !== "postgres") {
-    console.warn(`⚠️  Migration 054 ต้องรันด้วย postgres: psql -U postgres -d ${poolConfig.database} -f ${path}`);
+    console.warn(`⚠️  Migration 054 ต้องรันด้วย postgres: psql -U postgres -d ${dbName} -f ${path}`);
     return false;
   }
   const sql = readFileSync(path, "utf8");

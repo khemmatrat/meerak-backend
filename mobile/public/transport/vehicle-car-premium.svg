@@ -1,0 +1,29 @@
+ย<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="pm-body" x1="0%" y1="0%" x2="100%" y2="70%">
+      <stop offset="0%" stop-color="#52525b"/>
+      <stop offset="40%" stop-color="#27272a"/>
+      <stop offset="100%" stop-color="#18181b"/>
+    </linearGradient>
+    <linearGradient id="pm-glass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="pm-chrome" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#cbd5e1"/>
+      <stop offset="50%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="25" cy="52" rx="10" ry="5" fill="#000" opacity=".4"/>
+  <ellipse cx="66" cy="52" rx="10" ry="5" fill="#000" opacity=".4"/>
+  <path fill="url(#pm-body)" d="M12 37 29 23l41-6 14 17-3 11H13l-1-8Z"/>
+  <path fill="#3f3f46" d="m29 23 41-6 3 17-46 13-10-21Z"/>
+  <path fill="url(#pm-glass)" d="m34 26 34-6 13 13-43 13-11-17Z"/>
+  <path fill="url(#pm-chrome)" opacity=".85" d="m38 38 30-8 8 12-39 13-9-17Z"/>
+  <path stroke="#52525b" stroke-width="1" stroke-linejoin="round" d="M12 37 29 23l41-6 14 17-3 11H13l-1-8Z" fill="none"/>
+  <circle cx="25" cy="46" r="5.5" fill="#27272a" stroke="#18181b" stroke-width="1"/>
+  <circle cx="66" cy="46" r="5.5" fill="#27272a" stroke="#18181b" stroke-width="1"/>
+  <ellipse cx="25" cy="46" rx="2" ry="2.6" fill="#71717a"/>
+  <ellipse cx="66" cy="46" rx="2" ry="2.6" fill="#71717a"/>
+</svg>

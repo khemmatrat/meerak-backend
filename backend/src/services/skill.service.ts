@@ -11,10 +11,10 @@ interface RedisClient {
 // Lazy import redisClient to avoid circular dependency
 let redisClient: RedisClient | null = null;
 
-async function getRedisClient(): Promise<RedisClient> {
+async function getRedisClient(): Promise<RedisClient | null> {
   if (!redisClient) {
     const { redisClient: rc } = await import('../index');
-    redisClient = rc as any;
+    redisClient = rc as unknown as RedisClient | null;
   }
   return redisClient;
 }
@@ -68,8 +68,10 @@ export class SkillService {
     // Clear cache
     try {
       const rc = await getRedisClient();
-      await rc.del(`user:skills:${userId}`);
-      await rc.del(`user:profile:${userId}`);
+      if (rc) {
+        await rc.del(`user:skills:${userId}`);
+        await rc.del(`user:profile:${userId}`);
+      }
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
     }
@@ -85,9 +87,9 @@ export class SkillService {
     const cacheKey = `user:skills:${userId}`;
     try {
       const rc = await getRedisClient();
-      const cached = await rc.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
+      if (rc) {
+        const cached = await rc.get(cacheKey);
+        if (cached) return JSON.parse(cached);
       }
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
@@ -103,7 +105,12 @@ export class SkillService {
     const skills = result.rows.map(this.mapToSkill);
 
     // Cache for 5 minutes
-    await redisClient.setEx(cacheKey, 300, JSON.stringify(skills));
+    try {
+      const rc = await getRedisClient();
+      if (rc) await rc.setEx(cacheKey, 300, JSON.stringify(skills));
+    } catch (e) {
+      console.warn('Redis cache unavailable:', e);
+    }
 
     return skills;
   }
@@ -124,8 +131,10 @@ export class SkillService {
     // Clear cache
     try {
       const rc = await getRedisClient();
-      await rc.del(`user:skills:${userId}`);
-      await rc.del(`user:profile:${userId}`);
+      if (rc) {
+        await rc.del(`user:skills:${userId}`);
+        await rc.del(`user:profile:${userId}`);
+      }
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
     }
@@ -191,8 +200,10 @@ export class SkillService {
     // Clear cache
     try {
       const rc = await getRedisClient();
-      await rc.del(`user:skills:${userId}`);
-      await rc.del(`user:profile:${userId}`);
+      if (rc) {
+        await rc.del(`user:skills:${userId}`);
+        await rc.del(`user:profile:${userId}`);
+      }
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
     }
@@ -233,8 +244,15 @@ export class SkillService {
     const certification = this.mapToCertification(result.rows[0]);
 
     // Clear cache
-    await redisClient.del(`user:certifications:${userId}`);
-    await redisClient.del(`user:profile:${userId}`);
+    try {
+      const rc = await getRedisClient();
+      if (rc) {
+        await rc.del(`user:certifications:${userId}`);
+        await rc.del(`user:profile:${userId}`);
+      }
+    } catch (e) {
+      console.warn('Redis cache unavailable:', e);
+    }
 
     return certification;
   }
@@ -247,9 +265,9 @@ export class SkillService {
     const cacheKey = `user:certifications:${userId}`;
     try {
       const rc = await getRedisClient();
-      const cached = await rc.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
+      if (rc) {
+        const cached = await rc.get(cacheKey);
+        if (cached) return JSON.parse(cached);
       }
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
@@ -267,7 +285,7 @@ export class SkillService {
     // Cache for 5 minutes
     try {
       const rc = await getRedisClient();
-      await rc.setEx(cacheKey, 300, JSON.stringify(certifications));
+      if (rc) await rc.setEx(cacheKey, 300, JSON.stringify(certifications));
     } catch (error) {
       console.warn('Redis cache unavailable:', error);
     }
@@ -289,8 +307,15 @@ export class SkillService {
     }
 
     // Clear cache
-    await redisClient.del(`user:certifications:${userId}`);
-    await redisClient.del(`user:profile:${userId}`);
+    try {
+      const rc = await getRedisClient();
+      if (rc) {
+        await rc.del(`user:certifications:${userId}`);
+        await rc.del(`user:profile:${userId}`);
+      }
+    } catch (e) {
+      console.warn('Redis cache unavailable:', e);
+    }
   }
 
   /**

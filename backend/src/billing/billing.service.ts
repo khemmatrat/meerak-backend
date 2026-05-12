@@ -35,16 +35,16 @@ export class BillingService {
 
     switch (categoryType) {
       case 'maid':
-        result = this.maidBilling.calculate(categoryDetails, basePrice);
+        result = this.maidBilling.calculate(categoryDetails as any, basePrice);
         break;
       case 'detective':
-        result = this.detectiveBilling.calculate(categoryDetails, basePrice);
+        result = this.detectiveBilling.calculate(categoryDetails as any, basePrice);
         break;
       case 'logistics':
-        result = this.logisticsBilling.calculate(categoryDetails, basePrice);
+        result = this.logisticsBilling.calculate(categoryDetails as any, basePrice);
         break;
       case 'ac_cleaning':
-        result = this.acCleaningBilling.calculate(categoryDetails, basePrice);
+        result = this.acCleaningBilling.calculate(categoryDetails as any, basePrice);
         break;
       default:
         throw new Error(`Unsupported category type: ${categoryType}`);

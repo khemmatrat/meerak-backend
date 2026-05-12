@@ -3,7 +3,7 @@
 -- =================================================================================
 -- 1. platform_revenues — เก็บกำไรจากค่าธรรมเนียม (withdrawal fee margin, deposit margin)
 -- 2. payment_ledger_audit — คอลัมน์ gateway_fee_amount, platform_margin_amount, net_amount
--- 3. reconcile_alerts — แจ้งเตือนเมื่อ platform_balance กับ Omise ไม่ตรง
+-- 3. reconcile_alerts — แจ้งเตือนเมื่อ platform_balance กับยอดจาก payment processor ไม่ตรง
 -- =================================================================================
 
 -- 1. Platform Revenues (processing income, withdrawal fee margin)
@@ -32,7 +32,7 @@ COMMENT ON TABLE platform_revenues IS 'กำไรจากค่าธรร�
 ALTER TABLE payment_ledger_audit ADD COLUMN IF NOT EXISTS gateway_fee_amount NUMERIC(18,2);
 ALTER TABLE payment_ledger_audit ADD COLUMN IF NOT EXISTS platform_margin_amount NUMERIC(18,2);
 ALTER TABLE payment_ledger_audit ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2);
-COMMENT ON COLUMN payment_ledger_audit.gateway_fee_amount IS 'ค่าธรรมเนียม Omise ที่หักจากรายการ';
+COMMENT ON COLUMN payment_ledger_audit.gateway_fee_amount IS 'ค่าธรรมเนียมผู้ให้บริการชำระเงินที่หักจากรายการ';
 COMMENT ON COLUMN payment_ledger_audit.platform_margin_amount IS 'กำไรส่วนต่างของแพลตฟอร์ม';
 COMMENT ON COLUMN payment_ledger_audit.net_amount IS 'ยอดสุทธิที่ได้รับ/โอนจริง';
 
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS reconcile_alerts (
 
 CREATE INDEX IF NOT EXISTS idx_reconcile_alerts_created ON reconcile_alerts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reconcile_alerts_resolved ON reconcile_alerts(resolved) WHERE resolved = FALSE;
-COMMENT ON TABLE reconcile_alerts IS 'แจ้งเตือนเมื่อ platform_balance กับ Omise ไม่ตรงเกิน threshold';
+COMMENT ON TABLE reconcile_alerts IS 'แจ้งเตือนเมื่อ platform_balance กับยอดจาก payment processor ไม่ตรงเกิน threshold';
 
 -- 5. wallet_deposit_charges: เก็บ source_type สำหรับคำนวณ fee
 ALTER TABLE wallet_deposit_charges ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'promptpay';

@@ -1,0 +1,706 @@
+/**
+ * AQOND Theme System — ONE source of truth
+ * Variable switching via html[data-theme]. NO overwrites, NO legacy.
+ * Standard = NO data-theme (TOTAL RESET). VIP = data-theme="vip-*"
+ * WCAG AA: Dark on Light / Light on Dark. NO white text on white.
+ */
+
+/* ========== TOTAL RESET — Standard Theme (NO VIP attributes) ========== */
+/* When data-theme is absent or "standard", EVERY variable is explicitly reset.
+   NO inheritance from previous VIP. NO white text on white background. */
+
+:root {
+  --aqond-bg-primary: #ffffff;
+  --aqond-bg-secondary: #f8fafc;
+  --aqond-text-primary: #0f172a;
+  --aqond-text-secondary: #64748b;
+  --aqond-accent: #065f46;
+  --aqond-accent-border: rgba(6, 95, 70, 0.3);
+  --aqond-border-subtle: #e2e8f0;
+  --aqond-nav-bg: #ffffff;
+  --aqond-card-bg: #ffffff;
+  --aqond-card-border: #e2e8f0;
+  --aqond-font-heading: 'Inter', 'Sarabun', system-ui, sans-serif;
+}
+
+/* Standard: explicit reset — overrides any lingering VIP values */
+html:not([data-theme]),
+html[data-theme="standard"] {
+  --aqond-bg-primary: #ffffff !important;
+  --aqond-bg-secondary: #f8fafc !important;
+  --aqond-text-primary: #0f172a !important;
+  --aqond-text-secondary: #64748b !important;
+  --aqond-accent: #065f46 !important;
+  --aqond-accent-border: rgba(6, 95, 70, 0.3) !important;
+  --aqond-border-subtle: #e2e8f0 !important;
+  --aqond-nav-bg: #ffffff !important;
+  --aqond-card-bg: #ffffff !important;
+  --aqond-card-border: #e2e8f0 !important;
+  --aqond-font-heading: 'Inter', 'Sarabun', system-ui, sans-serif !important;
+}
+
+/* Standard: body, root, main — White/Slate-50 bg, Slate-900 text. NO LEAK. */
+html:not([data-theme]) body,
+html:not([data-theme]) #root,
+html:not([data-theme]) main,
+html:not([data-theme]) main > div,
+html[data-theme="standard"] body,
+html[data-theme="standard"] #root,
+html[data-theme="standard"] main,
+html[data-theme="standard"] main > div {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Standard: nav — white bg, DARK text. Override any text-slate-* that would be white. */
+html:not([data-theme]) .nav-glass,
+html[data-theme="standard"] .nav-glass {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+html:not([data-theme]) .nav-glass .text-slate-100,
+html:not([data-theme]) .nav-glass .text-slate-200,
+html:not([data-theme]) .nav-glass .text-slate-300,
+html:not([data-theme]) .nav-glass .text-slate-400,
+html:not([data-theme]) .nav-glass .font-bold,
+html[data-theme="standard"] .nav-glass .text-slate-100,
+html[data-theme="standard"] .nav-glass .text-slate-200,
+html[data-theme="standard"] .nav-glass .text-slate-300,
+html[data-theme="standard"] .nav-glass .text-slate-400,
+html[data-theme="standard"] .nav-glass .font-bold {
+  color: #0f172a !important;
+}
+
+/* Standard: bottom nav */
+html:not([data-theme]) .nav-bottom-glass,
+html[data-theme="standard"] .nav-bottom-glass {
+  background: #ffffff !important;
+  border-top: 1px solid #e2e8f0 !important;
+}
+html:not([data-theme]) .nav-bottom-glass .text-slate-400,
+html:not([data-theme]) .nav-bottom-glass .text-slate-500,
+html[data-theme="standard"] .nav-bottom-glass .text-slate-400,
+html[data-theme="standard"] .nav-bottom-glass .text-slate-500 {
+  color: #64748b !important;
+}
+/* แท็บที่เลือก (active) — ไม่ให้เป็นสีขาวบนพื้นขาว */
+html:not([data-theme]) .nav-bottom-glass a.text-white,
+html[data-theme="standard"] .nav-bottom-glass a.text-white {
+  color: #047857 !important;
+  font-weight: 600;
+}
+
+/* Standard: GLOBAL text override — any element that could have white text from VIP */
+html:not([data-theme]) .text-slate-50,
+html:not([data-theme]) .text-slate-100,
+html:not([data-theme]) .text-slate-200,
+html:not([data-theme]) .text-slate-300,
+html:not([data-theme]) .text-slate-400,
+html[data-theme="standard"] .text-slate-50,
+html[data-theme="standard"] .text-slate-100,
+html[data-theme="standard"] .text-slate-200,
+html[data-theme="standard"] .text-slate-300,
+html[data-theme="standard"] .text-slate-400 {
+  color: #0f172a !important;
+}
+html:not([data-theme]) .text-slate-500,
+html[data-theme="standard"] .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Standard: Typography — Inter/Sarabun ONLY. NO Playfair Display. */
+html:not([data-theme]) body,
+html:not([data-theme]) h1, html:not([data-theme]) h2, html:not([data-theme]) h3,
+html:not([data-theme]) .font-platinum-heading,
+html[data-theme="standard"] body,
+html[data-theme="standard"] h1, html[data-theme="standard"] h2, html[data-theme="standard"] h3,
+html[data-theme="standard"] .font-platinum-heading {
+  font-family: 'Inter', 'Sarabun', system-ui, sans-serif !important;
+}
+
+/* Standard: Settings modal — white bg, DARK text */
+html:not([data-theme]) .settings-modal-content,
+html:not([data-theme]) .settings-page .bg-white,
+html[data-theme="standard"] .settings-modal-content,
+html[data-theme="standard"] .settings-page .bg-white {
+  background: #ffffff !important;
+}
+html:not([data-theme]) .settings-modal-content h3,
+html:not([data-theme]) .settings-modal-content .text-gray-800,
+html:not([data-theme]) .settings-modal-content .text-gray-900,
+html:not([data-theme]) .settings-modal-content .text-gray-700,
+html:not([data-theme]) .settings-modal-content .text-gray-600,
+html:not([data-theme]) .settings-modal-content .text-gray-500,
+html:not([data-theme]) .settings-modal-content label,
+html:not([data-theme]) .settings-page .bg-white h3,
+html:not([data-theme]) .settings-page .bg-white .text-gray-500,
+html[data-theme="standard"] .settings-modal-content h3,
+html[data-theme="standard"] .settings-modal-content .text-gray-800,
+html[data-theme="standard"] .settings-modal-content .text-gray-900,
+html[data-theme="standard"] .settings-modal-content .text-gray-700,
+html[data-theme="standard"] .settings-modal-content .text-gray-600,
+html[data-theme="standard"] .settings-modal-content .text-gray-500,
+html[data-theme="standard"] .settings-modal-content label,
+html[data-theme="standard"] .settings-page .bg-white h3,
+html[data-theme="standard"] .settings-page .bg-white .text-gray-500 {
+  color: #111827 !important;
+}
+html:not([data-theme]) .settings-modal-content input,
+html:not([data-theme]) .settings-modal-content textarea,
+html:not([data-theme]) .settings-modal-content select,
+html[data-theme="standard"] .settings-modal-content input,
+html[data-theme="standard"] .settings-modal-content textarea,
+html[data-theme="standard"] .settings-modal-content select {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+/* Standard: cards, luxury-card — white bg, dark text */
+html:not([data-theme]) .bg-white,
+html:not([data-theme]) .luxury-card,
+html:not([data-theme]) .premium-card,
+html[data-theme="standard"] .bg-white,
+html[data-theme="standard"] .luxury-card,
+html[data-theme="standard"] .premium-card {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* ========== Standard: Job Details page ONLY (scoped) ========== */
+html:not([data-theme]) .job-detail-page,
+html[data-theme="standard"] .job-detail-page {
+  background: #f8fafc !important;
+  background-image: none !important;
+}
+html:not([data-theme]) .job-detail-main-card,
+html[data-theme="standard"] .job-detail-main-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
+}
+html:not([data-theme]) .job-detail-main-card .job-detail-info-card,
+html[data-theme="standard"] .job-detail-main-card .job-detail-info-card {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html:not([data-theme]) .job-detail-main-card .job-detail-info-card .text-gray-500,
+html:not([data-theme]) .job-detail-main-card .job-detail-info-card .text-gray-700,
+html[data-theme="standard"] .job-detail-main-card .job-detail-info-card .text-gray-500,
+html[data-theme="standard"] .job-detail-main-card .job-detail-info-card .text-gray-700 {
+  color: #475569 !important;
+}
+html:not([data-theme]) .job-detail-main-card .job-detail-info-card .text-gray-900,
+html[data-theme="standard"] .job-detail-main-card .job-detail-info-card .text-gray-900 {
+  color: #0f172a !important;
+}
+/* Header (emerald gradient) — keep white text on green */
+html:not([data-theme]) .job-detail-main-card > div[class*="from-emerald"] h1,
+html:not([data-theme]) .job-detail-main-card > div.text-white h1,
+html:not([data-theme]) .job-detail-main-card > div[class*="from-emerald"] .font-bold,
+html:not([data-theme]) .job-detail-main-card > div[class*="from-emerald"] .text-3xl,
+html:not([data-theme]) .job-detail-main-card > div.text-white .font-bold,
+html:not([data-theme]) .job-detail-main-card > div.text-white .text-3xl,
+html[data-theme="standard"] .job-detail-main-card > div[class*="from-emerald"] h1,
+html[data-theme="standard"] .job-detail-main-card > div.text-white h1,
+html[data-theme="standard"] .job-detail-main-card > div[class*="from-emerald"] .font-bold,
+html[data-theme="standard"] .job-detail-main-card > div[class*="from-emerald"] .text-3xl,
+html[data-theme="standard"] .job-detail-main-card > div.text-white .font-bold,
+html[data-theme="standard"] .job-detail-main-card > div.text-white .text-3xl {
+  color: #ffffff !important;
+}
+/* Chat section — Chat with Owner ต้องเข้มชัด (ไม่จาง) */
+html:not([data-theme]) .job-detail-chat .bg-white,
+html:not([data-theme]) .job-detail-chat .bg-gray-50,
+html[data-theme="standard"] .job-detail-chat .bg-white,
+html[data-theme="standard"] .job-detail-chat .bg-gray-50 {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+html:not([data-theme]) .job-detail-chat-header,
+html[data-theme="standard"] .job-detail-chat-header {
+  background: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html:not([data-theme]) .job-detail-chat h3,
+html:not([data-theme]) .job-detail-chat .job-detail-chat-title,
+html:not([data-theme]) .job-detail-chat .font-bold,
+html:not([data-theme]) .job-detail-chat .text-gray-800,
+html[data-theme="standard"] .job-detail-chat h3,
+html[data-theme="standard"] .job-detail-chat .job-detail-chat-title,
+html[data-theme="standard"] .job-detail-chat .font-bold,
+html[data-theme="standard"] .job-detail-chat .text-gray-800 {
+  color: #0f172a !important;
+}
+html:not([data-theme]) .job-detail-chat .text-gray-400,
+html:not([data-theme]) .job-detail-chat .text-gray-500,
+html[data-theme="standard"] .job-detail-chat .text-gray-400,
+html[data-theme="standard"] .job-detail-chat .text-gray-500 {
+  color: #334155 !important;
+}
+html:not([data-theme]) .job-detail-chat input,
+html[data-theme="standard"] .job-detail-chat input {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+/* Job info: เนื้อหา Need to deliver documents, Unknown User — ให้เข้มไม่จาง */
+html:not([data-theme]) .job-detail-main-card .text-gray-500,
+html[data-theme="standard"] .job-detail-main-card .text-gray-500 {
+  color: #475569 !important;
+}
+html:not([data-theme]) .job-detail-main-card .text-gray-700,
+html[data-theme="standard"] .job-detail-main-card .text-gray-700 {
+  color: #334155 !important;
+}
+html:not([data-theme]) .job-detail-main-card .text-description,
+html[data-theme="standard"] .job-detail-main-card .text-description {
+  color: #1e293b !important;
+}
+
+/* Standard: notification dropdown, toasts — white bg, dark text */
+html:not([data-theme]) .layout-notif-dropdown .text-slate-100,
+html:not([data-theme]) .layout-notif-dropdown .text-slate-200,
+html:not([data-theme]) .layout-notif-dropdown .text-slate-300,
+html:not([data-theme]) .layout-notif-dropdown .text-slate-400,
+html:not([data-theme]) .layout-notif-dropdown .text-slate-500,
+html[data-theme="standard"] .layout-notif-dropdown .text-slate-100,
+html[data-theme="standard"] .layout-notif-dropdown .text-slate-200,
+html[data-theme="standard"] .layout-notif-dropdown .text-slate-300,
+html[data-theme="standard"] .layout-notif-dropdown .text-slate-400,
+html[data-theme="standard"] .layout-notif-dropdown .text-slate-500 {
+  color: #0f172a !important;
+}
+html:not([data-theme]) .fixed.z-\[100\] .text-slate-100,
+html[data-theme="standard"] .fixed.z-\[100\] .text-slate-100 {
+  color: #0f172a !important;
+}
+
+/* ========== VIP Variables (only when data-theme is set) ========== */
+
+/* VIP Gold: Champagne Cream + Deep Bronze (4.5:1+ contrast) */
+html[data-theme="vip-gold"] {
+  --aqond-bg-primary: #FDFBF7;
+  --aqond-bg-secondary: #ffffff;
+  --aqond-text-primary: #4A3721;
+  --aqond-text-secondary: #64748b;
+  --aqond-accent: #065f46;
+  --aqond-accent-border: rgba(184, 134, 11, 0.35);
+  --aqond-border-subtle: rgba(184, 134, 11, 0.2);
+  --aqond-nav-bg: rgba(253, 251, 247, 0.95);
+  --aqond-card-bg: #ffffff;
+  --aqond-card-border: rgba(184, 134, 11, 0.2);
+}
+
+/* VIP Silver: Deep Charcoal + White text */
+html[data-theme="vip-silver"] {
+  --aqond-bg-primary: #1e293b;
+  --aqond-bg-secondary: rgba(51, 65, 85, 0.6);
+  --aqond-text-primary: #ffffff;
+  --aqond-text-secondary: #cbd5e1;
+  --aqond-accent: #94a3b8;
+  --aqond-accent-border: rgba(148, 163, 184, 0.35);
+  --aqond-border-subtle: rgba(148, 163, 184, 0.25);
+  --aqond-nav-bg: rgba(30, 41, 59, 0.92);
+  --aqond-card-bg: rgba(51, 65, 85, 0.6);
+  --aqond-card-border: rgba(148, 163, 184, 0.25);
+}
+
+/* VIP Platinum: Soft Graphite + Slate-900 */
+html[data-theme="vip-platinum"] {
+  --aqond-bg-primary: #F8F9FA;
+  --aqond-bg-secondary: #ffffff;
+  --aqond-text-primary: #0f172a;
+  --aqond-text-secondary: #64748b;
+  --aqond-accent: #64748b;
+  --aqond-accent-border: rgba(148, 163, 184, 0.4);
+  --aqond-border-subtle: rgba(148, 163, 184, 0.3);
+  --aqond-nav-bg: rgba(248, 249, 250, 0.95);
+  --aqond-card-bg: #ffffff;
+  --aqond-card-border: rgba(148, 163, 184, 0.3);
+}
+
+/* ========== TRANSITIONS ========== */
+html,
+html body,
+html #root,
+html .nav-glass,
+html .nav-bottom-glass,
+html main,
+html main > div {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ========== VIP GOLD — Champagne Cream + Deep Bronze ========== */
+html[data-theme="vip-gold"],
+html[data-theme="vip-gold"] body,
+html[data-theme="vip-gold"] #root {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-gold"] main,
+html[data-theme="vip-gold"] main > div {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-gold"] .nav-glass {
+  background: var(--aqond-nav-bg) !important;
+  border-bottom: 1px solid var(--aqond-accent-border) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+}
+
+html[data-theme="vip-gold"] .nav-glass .text-slate-100,
+html[data-theme="vip-gold"] .nav-glass .text-slate-200,
+html[data-theme="vip-gold"] .nav-glass .text-slate-400,
+html[data-theme="vip-gold"] .nav-glass .font-bold {
+  color: #4A3721 !important;
+}
+
+html[data-theme="vip-gold"] .nav-bottom-glass {
+  background: rgba(253, 251, 247, 0.98) !important;
+  border-top: 1px solid var(--aqond-accent-border) !important;
+}
+
+html[data-theme="vip-gold"] .nav-bottom-glass .text-slate-400,
+html[data-theme="vip-gold"] .nav-bottom-glass .text-slate-500 {
+  color: var(--aqond-text-secondary) !important;
+}
+/* Gold: เฉพาะข้อความรอง (description) ที่มองไม่ค่อยเห็น → สีทองอ่อน หัวข้อยังเป็นสีเข้ม */
+html[data-theme="vip-gold"] .luxury-card .text-slate-100,
+html[data-theme="vip-gold"] .luxury-card .text-slate-200,
+html[data-theme="vip-gold"] .luxury-card .text-slate-300 {
+  color: #4A3721 !important;
+}
+html[data-theme="vip-gold"] .luxury-card .text-slate-400,
+html[data-theme="vip-gold"] .luxury-card .text-slate-500 {
+  color: #B8860B !important;
+}
+
+html[data-theme="vip-gold"] .nav-bottom-glass .text-emerald-600 {
+  color: var(--aqond-accent) !important;
+}
+
+html[data-theme="vip-gold"] .bg-white,
+html[data-theme="vip-gold"] .vip-surface,
+html[data-theme="vip-gold"] .luxury-card,
+html[data-theme="vip-gold"] .premium-card {
+  background: var(--aqond-card-bg) !important;
+  border: 1px solid var(--aqond-card-border) !important;
+  color: #4A3721 !important;
+}
+
+html[data-theme="vip-gold"] .text-gray-900,
+html[data-theme="vip-gold"] .text-gray-800 { color: #4A3721 !important; }
+html[data-theme="vip-gold"] .text-gray-700,
+html[data-theme="vip-gold"] .text-gray-500 { color: #64748b !important; }
+
+html[data-theme="vip-gold"] .number-wallet-gold,
+html[data-theme="vip-gold"] .number-wallet.number-wallet-gold {
+  color: #4A3721 !important;
+  text-shadow: none !important;
+}
+html[data-theme="vip-gold"] .view-all-gold {
+  background: none !important;
+  -webkit-text-fill-color: #4A3721 !important;
+  color: #4A3721 !important;
+}
+
+/* ========== VIP SILVER — Deep Charcoal + Light Text ========== */
+html[data-theme="vip-silver"],
+html[data-theme="vip-silver"] body,
+html[data-theme="vip-silver"] #root {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-silver"] main,
+html[data-theme="vip-silver"] main > div {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-silver"] .nav-glass {
+  background: var(--aqond-nav-bg) !important;
+  border-bottom: 1px solid var(--aqond-accent-border) !important;
+}
+
+html[data-theme="vip-silver"] .nav-glass .text-slate-100,
+html[data-theme="vip-silver"] .nav-glass .text-slate-200,
+html[data-theme="vip-silver"] .nav-glass .text-slate-400,
+html[data-theme="vip-silver"] .nav-glass .font-bold {
+  color: #ffffff !important;
+}
+
+html[data-theme="vip-silver"] .nav-bottom-glass {
+  background: rgba(30, 41, 59, 0.95) !important;
+  border-top: 1px solid var(--aqond-accent-border) !important;
+}
+
+html[data-theme="vip-silver"] .nav-bottom-glass .text-slate-400,
+html[data-theme="vip-silver"] .nav-bottom-glass .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="vip-silver"] .bg-white,
+html[data-theme="vip-silver"] .vip-surface,
+html[data-theme="vip-silver"] .luxury-card,
+html[data-theme="vip-silver"] .premium-card {
+  background: var(--aqond-card-bg) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--aqond-card-border) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="vip-silver"] .text-gray-900,
+html[data-theme="vip-silver"] .text-gray-800,
+html[data-theme="vip-silver"] .text-gray-600 { color: #ffffff !important; }
+html[data-theme="vip-silver"] .text-gray-700,
+html[data-theme="vip-silver"] .text-gray-500 { color: #cbd5e1 !important; }
+/* Profile: เบอร์โทร อีเมล bio และข้อความอื่น — สีขาว */
+html[data-theme="vip-silver"] .profile-page .text-gray-600,
+html[data-theme="vip-silver"] .profile-page .text-gray-500,
+html[data-theme="vip-silver"] .profile-page .text-gray-400,
+html[data-theme="vip-silver"] .profile-page .text-slate-100,
+html[data-theme="vip-silver"] .profile-page .text-slate-200,
+html[data-theme="vip-silver"] .profile-page .text-slate-300,
+html[data-theme="vip-silver"] .profile-page .text-slate-400,
+html[data-theme="vip-silver"] .profile-page .text-slate-500,
+html[data-theme="vip-silver"] .profile-page .text-slate-600 { color: #ffffff !important; }
+
+/* Connection tab: ข้อความทั้งหมดเป็นสีขาว (Silver theme) — ใช้ element เพื่อให้ครอบคลุม */
+html[data-theme="vip-silver"] .profile-page .connection-tab h3,
+html[data-theme="vip-silver"] .profile-page .connection-tab h4,
+html[data-theme="vip-silver"] .profile-page .connection-tab p,
+html[data-theme="vip-silver"] .profile-page .connection-tab label,
+html[data-theme="vip-silver"] .profile-page .connection-tab code,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-100,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-200,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-300,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-400,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-500,
+html[data-theme="vip-silver"] .profile-page .connection-tab .text-slate-600 {
+  color: #ffffff !important;
+}
+
+/* ปฏิทิน: งานที่รับ/จ้างแล้ว รายการจอง ช่วงเวลาว่าง — สีขาว + พื้นเข้ม */
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium .rounded-3xl,
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium > div:first-of-type {
+  background: rgba(51, 65, 85, 0.92) !important;
+  border-color: rgba(192, 192, 192, 0.35) !important;
+}
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium .text-slate-500,
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium .text-slate-600,
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium .text-slate-700,
+html[data-theme="vip-silver"] .profile-page .profile-calendar-premium h2 { color: #ffffff !important; }
+
+/* Modal ปฏิทิน (Popover/Drawer): พื้นขาว — ฟอนต์ต้องเป็นสีเข้ม อ่านได้ (override profile-page) */
+html[data-theme="vip-silver"] .calendar-popover .text-slate-800,
+html[data-theme="vip-silver"] .calendar-popover .text-slate-600,
+html[data-theme="vip-silver"] .calendar-popover .text-slate-500,
+html[data-theme="vip-silver"] .calendar-popover .text-slate-400,
+html[data-theme="vip-silver"] .calendar-popover h3,
+html[data-theme="vip-silver"] .calendar-popover p {
+  color: #1e293b !important;
+}
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer .text-slate-800,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer .text-slate-600,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer .text-slate-500,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer .text-slate-400,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer h3,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer p,
+html[data-theme="vip-silver"] .profile-page .calendar-date-drawer .calendar-drawer-empty {
+  color: #1e293b !important;
+}
+
+/* Wallet tab: ยังไม่มีประวัติ, เดือน/ปี, กรอง, เอกสารภาษี — สีขาว */
+html[data-theme="vip-silver"] .profile-page select {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: rgba(51, 65, 85, 0.9) !important;
+  border-color: rgba(192, 192, 192, 0.45) !important;
+}
+html[data-theme="vip-silver"] .profile-page select option {
+  color: #0f172a !important;
+  background: #ffffff !important;
+}
+html[data-theme="vip-silver"] .profile-page button.bg-slate-100,
+html[data-theme="vip-silver"] .profile-page .bg-slate-100 {
+  color: #ffffff !important;
+  background: rgba(51, 65, 85, 0.8) !important;
+  border-color: rgba(192, 192, 192, 0.4) !important;
+}
+html[data-theme="vip-silver"] .profile-page .bg-gray-50 {
+  background: rgba(51, 65, 85, 0.6) !important;
+  color: #ffffff !important;
+}
+
+/* ========== VIP PLATINUM — Soft Graphite + Slate-900 ========== */
+html[data-theme="vip-platinum"],
+html[data-theme="vip-platinum"] body,
+html[data-theme="vip-platinum"] #root {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-platinum"] main,
+html[data-theme="vip-platinum"] main > div {
+  background: var(--aqond-bg-primary) !important;
+  color: var(--aqond-text-primary) !important;
+}
+
+html[data-theme="vip-platinum"] .nav-glass {
+  background: var(--aqond-nav-bg) !important;
+  border-bottom: 1px solid var(--aqond-accent-border) !important;
+}
+
+html[data-theme="vip-platinum"] .nav-glass .text-slate-100,
+html[data-theme="vip-platinum"] .nav-glass .text-slate-200,
+html[data-theme="vip-platinum"] .nav-glass .text-slate-400,
+html[data-theme="vip-platinum"] .nav-glass .font-bold {
+  color: #0f172a !important;
+}
+
+html[data-theme="vip-platinum"] .nav-bottom-glass {
+  background: rgba(248, 249, 250, 0.98) !important;
+  border-top: 1px solid var(--aqond-accent-border) !important;
+}
+
+html[data-theme="vip-platinum"] .nav-bottom-glass .text-slate-400,
+html[data-theme="vip-platinum"] .nav-bottom-glass .text-slate-500 {
+  color: #64748b !important;
+}
+
+html[data-theme="vip-platinum"] .bg-white,
+html[data-theme="vip-platinum"] .vip-surface,
+html[data-theme="vip-platinum"] .luxury-card,
+html[data-theme="vip-platinum"] .premium-card,
+html[data-theme="vip-platinum"] .vip-platinum-card {
+  background: var(--aqond-card-bg) !important;
+  border: 1px solid var(--aqond-card-border) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="vip-platinum"] .text-gray-900,
+html[data-theme="vip-platinum"] .text-gray-800,
+html[data-theme="vip-platinum"] .text-gray-700,
+html[data-theme="vip-platinum"] .text-gray-600 {
+  color: #0f172a !important;
+}
+html[data-theme="vip-platinum"] .text-gray-500 {
+  color: #64748b !important;
+}
+
+/* Gold + Platinum: "Hello, Name!" — สีเหลืองทอง อ่านได้บนพื้นอ่อน */
+html[data-theme="vip-gold"] .home-header .home-greeting,
+html[data-theme="vip-gold"] .home-header h1,
+html[data-theme="vip-platinum"] .home-header .home-greeting,
+html[data-theme="vip-platinum"] .home-header h1 {
+  color: #B8860B !important;
+}
+/* Standard (พื้นอ่อน): เหมือนกัน */
+html:not([data-theme]) .home-header .home-greeting,
+html:not([data-theme]) .home-header h1,
+html[data-theme="standard"] .home-header .home-greeting,
+html[data-theme="standard"] .home-header h1 {
+  color: #B8860B !important;
+}
+/* คำอธิบายด้านล่าง — สีเข้ม */
+html[data-theme="vip-gold"] .home-header .text-slate-400,
+html[data-theme="vip-platinum"] .home-header .text-slate-400 {
+  color: #0f172a !important;
+}
+
+/* ========== VIPThemeProvider wrapper — inherit from html ========== */
+.vip-theme-gold,
+.vip-theme-silver,
+.vip-theme-platinum {
+  background: inherit !important;
+  color: inherit !important;
+}
+
+/* ========== Solid Buttons (no gradients) — Luxury 1px border ========== */
+.btn-gold-exclusive {
+  background: #B8860B !important;
+  color: #0c0d0f !important;
+  font-weight: 700;
+  border: 1px solid rgba(184, 134, 11, 0.6) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.btn-gold-exclusive:hover {
+  background: #9a7209 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+.btn-silver-exclusive {
+  background: #64748b !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  border: 1px solid rgba(148, 163, 184, 0.5) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.btn-silver-exclusive:hover {
+  background: #475569 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+.btn-gold-black {
+  background: #B8860B !important;
+  color: #0c0d0f !important;
+  font-weight: 700;
+  border: 1px solid rgba(184, 134, 11, 0.6) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.btn-gold-black:hover {
+  background: #9a7209 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Settings modal: always white bg + dark text (WCAG) for Gold/Silver */
+html[data-theme="vip-gold"] .settings-modal-content,
+html[data-theme="vip-silver"] .settings-modal-content {
+  background: #ffffff !important;
+}
+html[data-theme="vip-gold"] .settings-modal-content h3,
+html[data-theme="vip-gold"] .settings-modal-content .text-gray-800,
+html[data-theme="vip-gold"] .settings-modal-content .text-gray-900,
+html[data-theme="vip-silver"] .settings-modal-content h3,
+html[data-theme="vip-silver"] .settings-modal-content .text-gray-800,
+html[data-theme="vip-silver"] .settings-modal-content .text-gray-900 {
+  color: #111827 !important;
+}
+html[data-theme="vip-gold"] .settings-modal-content .text-gray-500,
+html[data-theme="vip-gold"] .settings-modal-content .text-gray-600,
+html[data-theme="vip-gold"] .settings-modal-content .text-gray-700,
+html[data-theme="vip-silver"] .settings-modal-content .text-gray-500,
+html[data-theme="vip-silver"] .settings-modal-content .text-gray-600,
+html[data-theme="vip-silver"] .settings-modal-content .text-gray-700 {
+  color: #374151 !important;
+}
+
+/* Silver: หน้า Settings — หัวข้อ Section (ACCOUNT, POWER TO THE USER ฯลฯ) เป็น gray-800 */
+html[data-theme="vip-silver"] .settings-page .bg-white {
+  background: #ffffff !important;
+}
+html[data-theme="vip-silver"] .settings-page .bg-gray-50 {
+  background: #f9fafb !important;
+}
+html[data-theme="vip-silver"] .settings-page .bg-white h3,
+html[data-theme="vip-silver"] .settings-page .bg-gray-50 h3 {
+  color: #1f2937 !important;
+}
+
+/* Transport Hub — Custom map markers (override Leaflet defaults) */
+.leaflet-marker-icon.custom-pickup-marker,
+.leaflet-marker-icon.custom-dest-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* VideoBrandOverlay — บังคับข้อความ aqond เป็นสีขาว (override ทุก theme) */
+.video-brand-overlay-watermark .video-brand-overlay-text,
+.video-brand-overlay-endcard .video-brand-overlay-text {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}

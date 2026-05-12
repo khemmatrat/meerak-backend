@@ -16,9 +16,12 @@ Flow: อัปโหลด → Queue (Bull) → ffmpeg ติดลายน้
 2. วาง logo.png ที่ backend/assets/logo.png
    (คัดลอกจาก public/logo.png)
 
-3. Docker: Backend ใช้ Dockerfile ที่มี ffmpeg แล้ว
-   docker-compose -f docker-compose.golive.yml build backend
-   docker-compose -f docker-compose.golive.yml up -d
+3. ffmpeg (optional): ถ้าไม่มี ffmpeg ระบบจะอัปโหลดวิดีโอต้นฉบับโดยไม่ติดลายน้ำ
+   - Windows: choco install ffmpeg หรือดาวน์โหลดจาก https://ffmpeg.org
+   - Mac: brew install ffmpeg
+   - Linux: apt install ffmpeg
+   - Docker: Backend ใช้ Dockerfile ที่มี ffmpeg แล้ว
+     docker-compose -f docker-compose.golive.yml build backend
 
 4. ต้องมี Redis (สำหรับ Bull queue)
    - docker-compose.golive.yml มี redis service อยู่แล้ว

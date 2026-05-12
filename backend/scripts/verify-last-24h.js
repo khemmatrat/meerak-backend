@@ -6,7 +6,7 @@
  * วิธีใช้:
  *   node backend/scripts/verify-last-24h.js
  *
- * ENV: OMISE_SECRET_KEY, LINE_NOTIFY_TOKEN, ALERT_EMAIL_TO (สำหรับแจ้งเตือน)
+ * ENV: PAYMENT_GATEWAY_SECRET_KEY, LINE_NOTIFY_TOKEN, ALERT_EMAIL_TO (สำหรับแจ้งเตือน)
  */
 import { runReconcileAndClose } from './reconcile-cron.js';
 import pg from 'pg';

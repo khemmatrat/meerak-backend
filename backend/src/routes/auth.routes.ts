@@ -1,16 +1,14 @@
-// backend/src/routes/auth.routes.ts
-import { Router } from 'express';
-import { authController } from '../controllers/auth.controller';
-import { authenticate } from '../middleware/auth';
+/**
+ * Auth routes. Phase 4: admin dashboard login issues JWT (role from user_roles).
+ */
+import express from "express";
+import { adminAuthController } from "../controllers/admin.auth.controller";
 
-const router = Router();
+const router = express.Router();
 
-// Public routes
-router.post('/register', authController.register);
-router.post('/login', authController.login);
-router.post('/verify', authController.verify);
-
-// Protected routes (require authentication)
-router.get('/me', authenticate, authController.me);
+router.post(
+  "/admin-login",
+  adminAuthController.adminLogin.bind(adminAuthController),
+);
 
 export default router;

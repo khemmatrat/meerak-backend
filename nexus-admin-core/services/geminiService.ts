@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AnalyticsData, MobileUser, SystemLog } from '../types';
 
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
     console.error("API Key not found in environment variables");
     return null;
@@ -43,7 +43,7 @@ export const generateDashboardInsight = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
     });
     return response.text || "No insight generated.";
@@ -59,7 +59,7 @@ export const analyzeLogEntry = async (logEntry: string): Promise<string> => {
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: `Explain this server log entry in simple Thai terms and suggest a fix if it is an error: "${logEntry}"`,
     });
     return response.text || "No explanation available.";

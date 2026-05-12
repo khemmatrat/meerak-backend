@@ -1,19 +1,20 @@
-// src/types/payment.types.ts - Phase 3: Payment Gateway Types (Backend)
+// src/types/payment.types.ts — ช่องทางชำระเงิน (PromptPay / Stripe / e-wallet)
+export const PROCESSING_FEE_THB = 4;
 
 export enum PaymentGateway {
-  PROMPTPAY = 'promptpay',
-  STRIPE = 'stripe',
-  TRUEMONEY = 'truemoney'
+  PROMPTPAY = "promptpay",
+  STRIPE = "stripe",
+  TRUEMONEY = "truemoney",
 }
 
 export enum PaymentStatus {
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  EXPIRED = 'expired',
-  CANCELLED = 'cancelled',
-  REFUNDED = 'refunded'
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed",
+  FAILED = "failed",
+  EXPIRED = "expired",
+  CANCELLED = "cancelled",
+  REFUNDED = "refunded",
 }
 
 // PromptPay Payment Types
@@ -44,7 +45,7 @@ export interface StripePayment {
   payment_intent_id: string;
   client_secret: string;
   amount: number;
-  currency: 'thb';
+  currency: "thb";
   status: PaymentStatus;
   card_last4?: string;
   card_brand?: string;
@@ -80,11 +81,11 @@ export interface TrueMoneyCreateRequest {
   metadata?: Record<string, any>;
 }
 
-// Generic Payment Request
+// Generic Payment Request (gateway optional)
 export interface PaymentRequest {
   job_id: string;
   amount: number;
-  gateway: PaymentGateway;
+  gateway?: PaymentGateway;
   metadata?: {
     user_id: string;
     user_name: string;
@@ -151,6 +152,6 @@ export interface RefundResponse {
   refund_id: string;
   payment_id: string;
   amount: number;
-  status: 'pending' | 'completed' | 'failed';
+  status: "pending" | "completed" | "failed";
   error?: string;
 }

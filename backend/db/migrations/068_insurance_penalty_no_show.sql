@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS insurance_config (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO insurance_config (key, value_json) VALUES
+INSERT INTO insurance_config (key, value_json, updated_at) VALUES
   ('percent_min', '10', NOW()),
   ('percent_max', '25', NOW()),
   ('fixed_min_thb', '19', NOW()),
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS no_show_penalty_config (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO no_show_penalty_config (key, value_json) VALUES
+INSERT INTO no_show_penalty_config (key, value_json, updated_at) VALUES
   ('refund_client_percent', '100', NOW()),
   ('fine_partner_percent_min', '20', NOW()),
   ('fine_partner_percent_max', '30', NOW())

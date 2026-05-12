@@ -14,12 +14,23 @@ import {
   Phone,
   Mail,
   DollarSign,
+  CreditCard,
   Activity,
   ChevronLeft,
   ChevronRight,
   FileCheck,
   ScrollText,
   AlertTriangle,
+  Zap,
+  LogIn,
+  Monitor,
+  StickyNote,
+  BookOpen,
+  Plus,
+  Minus,
+  Award,
+  Expand,
+  FileText,
 } from "lucide-react";
 import { db } from "../firebaseConfig";
 import { DataService } from "../services/realtimeService";
@@ -33,17 +44,42 @@ import {
   suspendAdminUser,
   banAdminUser,
   reactivateAdminUser,
+  walletFreezeAdminUser,
   forceLogoutAdminUser,
   updateAdminUserAppRole,
   approveUserAsProvider,
   setUserVip,
+  emergencySuspendUser,
+  createImpersonationToken,
+  getAdminUserLoginSessions,
+  getAdminUserNotes,
+  addAdminUserNote,
+  getAdminUserLmsSummary,
+  adminWalletAdjust,
+  grantBrandAdviserAdminUser,
+  revokeBrandAdviserAdminUser,
+  getKycDetail,
 } from "../services/adminApi";
-import type { AdminUserRow, AdminUserLedgerEntry } from "../services/adminApi";
+import type { AdminUserRow, AdminUserLedgerEntry, KycDetailResponse } from "../services/adminApi";
 import type { AuditLogRow } from "../services/adminApi";
 import { MobileUser } from "../types";
+import { LandingLeadsPanel } from "./LandingLeadsPanel";
 
 type BackendRole = "USER" | "ADMIN" | "AUDITOR";
 const PAGE_SIZE = 20;
+
+function parseKycVehiclesJson(raw: unknown): any[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) ? p : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 interface UserManagementViewProps {
   currentUserRole?: string;
@@ -70,6 +106,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [statusFilter, setStatusFilter] = useState("");
   const [kycFilter, setKycFilter] = useState("");
   const [vipFilter, setVipFilter] = useState(false);
+  const [betaTesterFilter, setBetaTesterFilter] = useState(false);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({
     limit: PAGE_SIZE,
@@ -86,6 +123,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const useBackendForUsers = canSwitchSource
     ? dataSource === "backend"
     : useBackend && !db;
+
+  /** แท็บย่อยในโหมด Backend: รายชื่อผู้ใช้แอป vs ลีดจาก Landing */
+  const [umPrimaryTab, setUmPrimaryTab] = useState<"users" | "landing">(
+    "users"
+  );
 
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
@@ -109,6 +151,21 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [showAppRoleModal, setShowAppRoleModal] = useState(false);
   const [appRole, setAppRole] = useState<"user" | "provider">("user");
 
+  const [detailLoginSessions, setDetailLoginSessions] = useState<Array<{ ip_address: string | null; user_agent: string; created_at: string | null }>>([]);
+  const [detailDeviceHopping, setDetailDeviceHopping] = useState(false);
+  const [detailNotes, setDetailNotes] = useState<Array<{ id: string; admin_name: string; note: string; created_at: string | null }>>([]);
+  const [detailLmsSummary, setDetailLmsSummary] = useState<{ avg_grade: number | null; training_status: string } | null>(null);
+  const [detailKyc, setDetailKyc] = useState<KycDetailResponse | null>(null);
+  const [detailKycLoading, setDetailKycLoading] = useState(false);
+  const [kycLightbox, setKycLightbox] = useState<{ url: string; label: string; type: "image" | "video" } | null>(null);
+  const [showWalletAdjustModal, setShowWalletAdjustModal] = useState(false);
+  const [walletAdjustDirection, setWalletAdjustDirection] = useState<"credit" | "debit">("credit");
+  const [walletAdjustAmount, setWalletAdjustAmount] = useState("");
+  const [walletAdjustReason, setWalletAdjustReason] = useState("");
+  const [walletAdjustReasonCode, setWalletAdjustReasonCode] = useState("");
+  const [walletAdjustEvidenceRef, setWalletAdjustEvidenceRef] = useState("");
+  const [newNote, setNewNote] = useState("");
+
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{
     type: "error" | "success" | "info";
@@ -121,8 +178,29 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     },
     []
   );
-  const isAdmin = currentUserRole === "ADMIN";
+  /** ตรงกับ adminAccountAction ฝั่ง API — ADMIN + SUPER_ADMIN (ไม่ใช้แค่ ADMIN เพื่อกันกดปุ่มแล้วไม่เกิดอะไร) */
+  const canManageAccountActions =
+    currentUserRole === "ADMIN" || currentUserRole === "SUPER_ADMIN";
   const isAuditor = currentUserRole === "AUDITOR";
+
+  const KYC_DOC_LABELS: Record<string, string> = {
+    id_card_front_url: "บัตรประชาชน (หน้า)",
+    id_card_back_url: "บัตรประชาชน (หลัง)",
+    selfie_photo_url: "รูปถ่ายใบหน้า",
+    driving_license_front_url: "ใบขับขี่ (หน้า)",
+    driving_license_back_url: "ใบขับขี่ (หลัง)",
+    selfie_video_url: "วิดีโอ Selfie",
+  };
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setKycLightbox(null);
+    };
+    if (kycLightbox) {
+      window.addEventListener("keydown", onEsc);
+      return () => window.removeEventListener("keydown", onEsc);
+    }
+  }, [kycLightbox]);
 
   const fetchUsers = useCallback(
     async (pageNum = page, searchOverride?: string) => {
@@ -142,6 +220,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             status: statusFilter || undefined,
             kyc_status: kycFilter || undefined,
             vip: vipFilter || undefined,
+            beta_tester: betaTesterFilter || undefined,
           });
           setUsers(res.users);
           setPagination(res.pagination);
@@ -175,12 +254,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       statusFilter,
       kycFilter,
       vipFilter,
+      betaTesterFilter,
     ]
   );
 
   useEffect(() => {
     fetchUsers(page);
-  }, [page, roleFilter, statusFilter, kycFilter, vipFilter, dataSource]);
+  }, [page, roleFilter, statusFilter, kycFilter, vipFilter, betaTesterFilter, dataSource]);
 
   /** เปิด User Detail modal จาก userId (ใช้เมื่อโฟกัสจาก Audit Logs) */
   const openUserDetailById = useCallback(
@@ -189,8 +269,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setDetailLedger([]);
       setDetailLedgerTotals({ total_credit: 0, total_debit: 0 });
       setDetailAudit([]);
+      setDetailLoginSessions([]);
+      setDetailDeviceHopping(false);
+      setDetailNotes([]);
+      setDetailLmsSummary(null);
+      setDetailKyc(null);
+      setDetailKycLoading(true);
       try {
-        const [res, ledgerRes, auditRes] = await Promise.all([
+        const [res, ledgerRes, auditRes, sessionsRes, notesRes, lmsRes, kycRes] = await Promise.all([
           getAdminUser(userId),
           getAdminUserLedger(userId, 10).catch(() => ({
             entries: [],
@@ -202,6 +288,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             entity_id: userId,
             limit: 20,
           }).catch(() => ({ logs: [], count: 0 })),
+          getAdminUserLoginSessions(userId, 5).catch(() => ({ sessions: [], device_hopping_24h: false })),
+          getAdminUserNotes(userId).catch(() => ({ notes: [] })),
+          getAdminUserLmsSummary(userId).catch(() => null),
+          getKycDetail(userId).catch(() => null),
         ]);
         const u = (res.user as any) || {};
         setSelectedUser({
@@ -212,6 +302,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           role: u.role,
           backend_role: u.backend_role,
           wallet_balance: u.wallet_balance,
+          wallet_frozen: u.wallet_frozen,
           currency: u.currency || "THB",
           kyc_level: u.kyc_level,
           kyc_status: u.kyc_status,
@@ -225,6 +316,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           is_vip: u.is_vip,
           banned_until: u.banned_until,
           ban_reason: u.ban_reason,
+          bank_accounts: u.bank_accounts || [],
+          is_brand_adviser: u.is_brand_adviser,
+          adviser_status: u.adviser_status,
+          adviser_reputation_score: u.adviser_reputation_score,
+          adviser_public_slug: u.adviser_public_slug,
+          adviser_public_profile_enabled: u.adviser_public_profile_enabled,
+          adviser_granted_at: u.adviser_granted_at,
+          adviser_suspended_at: u.adviser_suspended_at,
+          adviser_suspended_reason: u.adviser_suspended_reason,
         });
         setDetailLedger(ledgerRes.entries || []);
         setDetailLedgerTotals({
@@ -232,6 +332,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           total_debit: ledgerRes.total_debit ?? 0,
         });
         setDetailAudit((auditRes as { logs: AuditLogRow[] }).logs || []);
+        setDetailLoginSessions((sessionsRes as { sessions: typeof detailLoginSessions }).sessions || []);
+        setDetailDeviceHopping((sessionsRes as { device_hopping_24h: boolean }).device_hopping_24h || false);
+        setDetailNotes((notesRes as { notes: typeof detailNotes }).notes || []);
+        setDetailLmsSummary(lmsRes && typeof lmsRes === "object" && "avg_grade" in lmsRes ? lmsRes : null);
+        setDetailKyc(kycRes && typeof kycRes === "object" && "documents" in kycRes ? (kycRes as KycDetailResponse) : null);
         setShowDetailsModal(true);
       } catch (err: any) {
         console.error("Failed to load user for focus:", err);
@@ -243,6 +348,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         }
       } finally {
         setDetailLoading(false);
+        setDetailKycLoading(false);
       }
     },
     [showToast]
@@ -349,9 +455,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setDetailLedger([]);
     setDetailLedgerTotals({ total_credit: 0, total_debit: 0 });
     setDetailAudit([]);
+    setDetailLoginSessions([]);
+    setDetailDeviceHopping(false);
+    setDetailNotes([]);
+    setDetailLmsSummary(null);
+    setDetailKyc(null);
+    setDetailKycLoading(true);
     try {
       if (useBackendForUsers) {
-        const [res, ledgerRes, auditRes] = await Promise.all([
+        const [res, ledgerRes, auditRes, sessionsRes, notesRes, lmsRes, kycRes] = await Promise.all([
           getAdminUser(user.id),
           getAdminUserLedger(user.id, 10).catch(() => ({
             entries: [],
@@ -363,6 +475,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             entity_id: user.id,
             limit: 20,
           }).catch(() => ({ logs: [], count: 0 })),
+          getAdminUserLoginSessions(user.id, 5).catch(() => ({ sessions: [], device_hopping_24h: false })),
+          getAdminUserNotes(user.id).catch(() => ({ notes: [] })),
+          getAdminUserLmsSummary(user.id).catch(() => null),
+          getKycDetail(user.id).catch(() => null),
         ]);
         const u = res.user as any;
         setSelectedUser({
@@ -373,6 +489,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           role: u.role,
           backend_role: u.backend_role,
           wallet_balance: u.wallet_balance,
+          wallet_frozen: u.wallet_frozen,
           currency: u.currency || "THB",
           kyc_level: u.kyc_level,
           kyc_status: u.kyc_status,
@@ -386,6 +503,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           is_vip: u.is_vip,
           banned_until: u.banned_until,
           ban_reason: u.ban_reason,
+          bank_accounts: u.bank_accounts || [],
+          is_brand_adviser: u.is_brand_adviser,
+          adviser_status: u.adviser_status,
+          adviser_reputation_score: u.adviser_reputation_score,
+          adviser_public_slug: u.adviser_public_slug,
+          adviser_public_profile_enabled: u.adviser_public_profile_enabled,
+          adviser_granted_at: u.adviser_granted_at,
+          adviser_suspended_at: u.adviser_suspended_at,
+          adviser_suspended_reason: u.adviser_suspended_reason,
         });
         setDetailLedger(ledgerRes.entries || []);
         setDetailLedgerTotals({
@@ -393,19 +519,142 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           total_debit: ledgerRes.total_debit ?? 0,
         });
         setDetailAudit((auditRes as { logs: AuditLogRow[] }).logs || []);
+        setDetailLoginSessions((sessionsRes as { sessions: typeof detailLoginSessions }).sessions || []);
+        setDetailDeviceHopping((sessionsRes as { device_hopping_24h: boolean }).device_hopping_24h || false);
+        setDetailNotes((notesRes as { notes: typeof detailNotes }).notes || []);
+        setDetailLmsSummary(lmsRes && typeof lmsRes === "object" && "avg_grade" in lmsRes ? lmsRes : null);
+        setDetailKyc(kycRes && typeof kycRes === "object" && "documents" in kycRes ? (kycRes as KycDetailResponse) : null);
       } else {
         const details = await DataService.getUserDetails(user.id);
         setSelectedUser(details);
       }
       setShowDetailsModal(true);
     } catch (error: any) {
-      alert(`❌ Failed to load user details: ${error?.message || error}`);
+      showToast(`โหลดรายละเอียดไม่สำเร็จ: ${error?.message || error}`, "error");
     }
     setDetailLoading(false);
+    setDetailKycLoading(false);
+  };
+
+  const handleEmergencySuspend = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    if (!confirm(`⚠️ Emergency Suspend: แบนถาวร + ระงับเงิน + บังคับออกจากระบบ\n\nผู้ใช้: ${selectedUser.name}\n\nดำเนินการต่อ?`)) return;
+    setProcessing(true);
+    try {
+      await emergencySuspendUser(selectedUser.id, actionReason.trim() || "Emergency Suspend by admin");
+      setShowDetailsModal(false);
+      fetchUsers(page);
+      showToast("Emergency Suspend สำเร็จ", "success");
+    } catch (e: any) {
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleGrantBrandAdviser = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    if (!confirm("มอบสิทธิ์ Brand Adviser (ยกเว้นค่าคอมแพลตฟอร์มเมื่อโปรแกรมเปิด) ให้ผู้ใช้นี้?")) return;
+    setProcessing(true);
+    try {
+      await grantBrandAdviserAdminUser(selectedUser.id, actionReason.trim() || undefined);
+      showToast("มอบสิทธิ์ Brand Adviser แล้ว", "success");
+      await openUserDetailById(selectedUser.id);
+      fetchUsers(page);
+    } catch (e: any) {
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleRevokeBrandAdviser = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    if (!confirm("ถอดสิทธิ์ Brand Adviser จากผู้ใช้นี้? (บันทึก audit)")) return;
+    setProcessing(true);
+    try {
+      await revokeBrandAdviserAdminUser(selectedUser.id, actionReason.trim() || undefined);
+      showToast("ถอดสิทธิ์ Brand Adviser แล้ว", "success");
+      await openUserDetailById(selectedUser.id);
+      fetchUsers(page);
+    } catch (e: any) {
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleLoginAsUser = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    setProcessing(true);
+    try {
+      const { token } = await createImpersonationToken(selectedUser.id, 15);
+      const baseUrl = (import.meta as any).env?.VITE_APP_URL || "https://app.aqond.com" || window.location.origin.replace("admin", "app");
+      const url = `${baseUrl}/impersonate?token=${encodeURIComponent(token)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+      showToast("เปิดหน้าต่างใหม่ — ใช้ Token 15 นาที", "success");
+    } catch (e: any) {
+      showToast(e?.message || "สร้าง Token ไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleAddNote = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions || !newNote.trim()) return;
+    setProcessing(true);
+    try {
+      await addAdminUserNote(selectedUser.id, newNote.trim());
+      setDetailNotes((prev) => [{ id: "", admin_name: "—", note: newNote.trim(), created_at: new Date().toISOString() }, ...prev]);
+      setNewNote("");
+      showToast("บันทึกโน้ตแล้ว", "success");
+    } catch (e: any) {
+      showToast(e?.message || "บันทึกไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleWalletAdjust = async () => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    const amt = parseFloat(walletAdjustAmount);
+    const reason = walletAdjustReason.trim();
+    if (!Number.isFinite(amt) || amt <= 0 || !reason) {
+      showToast("กรุณาระบุจำนวนและสาเหตุ", "error");
+      return;
+    }
+    if (walletAdjustDirection === "debit") {
+      const rc = walletAdjustReasonCode.trim();
+      const ev = walletAdjustEvidenceRef.trim();
+      if (!rc || !ev) {
+        showToast("การหักเงิน (Debit) ต้องระบุ reason_code และ evidence_ref (เลข ledger รายการผิด)", "error");
+        return;
+      }
+    }
+    setProcessing(true);
+    try {
+      const res = await adminWalletAdjust(
+        selectedUser.id,
+        walletAdjustDirection,
+        amt,
+        reason,
+        walletAdjustDirection === "debit"
+          ? {
+              reason_code: walletAdjustReasonCode.trim(),
+              evidence_ref: walletAdjustEvidenceRef.trim(),
+            }
+          : undefined,
+      );
+      setSelectedUser((u: any) => (u ? { ...u, wallet_balance: res.balance_after } : u));
+      setShowWalletAdjustModal(false);
+      setWalletAdjustAmount("");
+      setWalletAdjustReason("");
+      setWalletAdjustReasonCode("");
+      setWalletAdjustEvidenceRef("");
+      showToast(`${walletAdjustDirection === "credit" ? "เติม" : "หัก"} ฿${amt.toLocaleString()} สำเร็จ`, "success");
+    } catch (e: any) {
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
+    }
+    setProcessing(false);
   };
 
   const handleSuspend = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     const reason = actionReason.trim() || "Suspended by admin";
     if (!confirm(`Suspend user ${selectedUser.name}?\nReason: ${reason}`))
       return;
@@ -415,12 +664,12 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setShowDetailsModal(false);
       fetchUsers(page);
     } catch (e: any) {
-      alert(e?.message || "Failed to suspend");
+      showToast(e?.message || "Failed to suspend", "error");
     }
     setProcessing(false);
   };
   const handleBan = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     const reason = actionReason.trim() || "Banned by admin";
     const days = Math.max(0, parseInt(banDays, 10) || 0);
     const msg = days > 0
@@ -434,25 +683,25 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       fetchUsers(page);
       showToast(days > 0 ? `แบน ${days} วัน สำเร็จ` : "แบนถาวรสำเร็จ", "success");
     } catch (e: any) {
-      alert(e?.message || "Failed to ban");
+      showToast(e?.message || "Failed to ban", "error");
     }
     setProcessing(false);
   };
   const handleApproveProvider = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
-    if (!confirm(`อนุญาติให้ ${selectedUser.name} เป็นผู้รับงาน (Verified Provider) ใช่หรือไม่?`)) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    if (!confirm(`อนุมัติให้ ${selectedUser.name} เป็นผู้รับงาน (Verified Provider) ใช่หรือไม่?`)) return;
     setProcessing(true);
     try {
       await approveUserAsProvider(selectedUser.id);
       setSelectedUser((u: any) => (u ? { ...u, provider_status: "VERIFIED_PROVIDER", provider_verified_at: new Date().toISOString() } : u));
       showToast("ตั้งเป็น Verified Provider แล้ว", "success");
     } catch (e: any) {
-      alert(e?.message || "Failed to approve provider");
+      showToast(e?.message || "Failed to approve provider", "error");
     }
     setProcessing(false);
   };
   const handleChangeAppRole = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     setProcessing(true);
     try {
       await updateAdminUserAppRole(selectedUser.id, appRole);
@@ -460,24 +709,24 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setShowAppRoleModal(false);
       showToast(`เปลี่ยนสถานะเป็น ${appRole === "provider" ? "ผู้รับงาน" : "ผู้ใช้"} แล้ว`, "success");
     } catch (e: any) {
-      alert(e?.message || "Failed to change app role");
+      showToast(e?.message || "Failed to change app role", "error");
     }
     setProcessing(false);
   };
   const handleSetVip = async (isVip: boolean) => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     setProcessing(true);
     try {
       await setUserVip(selectedUser.id, isVip);
       setSelectedUser((u: any) => (u ? { ...u, is_vip: isVip } : u));
       showToast(isVip ? "ตั้งเป็น VIP แล้ว" : "ยกเลิก VIP แล้ว", "success");
     } catch (e: any) {
-      alert(e?.message || "Failed to update VIP");
+      showToast(e?.message || "Failed to update VIP", "error");
     }
     setProcessing(false);
   };
   const handleReactivate = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     if (!confirm(`Reactivate user ${selectedUser.name}?`)) return;
     setProcessing(true);
     try {
@@ -488,23 +737,36 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setShowDetailsModal(false);
       fetchUsers(page);
     } catch (e: any) {
-      alert(e?.message || "Failed to reactivate");
+      showToast(e?.message || "Failed to reactivate", "error");
+    }
+    setProcessing(false);
+  };
+
+  const handleWalletFreeze = async (frozen: boolean) => {
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
+    const action = frozen ? "ระงับเงิน" : "ปลดระงับเงิน";
+    if (!confirm(`${action} ของ ${selectedUser.name}?`)) return;
+    setProcessing(true);
+    try {
+      await walletFreezeAdminUser(selectedUser.id, frozen);
+      setSelectedUser((u: any) => (u ? { ...u, wallet_frozen: frozen } : u));
+      showToast(frozen ? "ระงับเงินแล้ว" : "ปลดระงับเงินแล้ว", "success");
+    } catch (e: any) {
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
     }
     setProcessing(false);
   };
   const handleForceLogout = async () => {
-    if (!selectedUser || !useBackendForUsers || !isAdmin) return;
+    if (!selectedUser || !useBackendForUsers || !canManageAccountActions) return;
     const reason = actionReason.trim() || "Force logout by admin";
-    if (!confirm(`Force logout user ${selectedUser.name}?\nReason: ${reason}`))
+    if (!confirm(`Force logout user ${selectedUser.name}?\nReason: ${reason}\n\nผู้ใช้จะถูกบังคับออกจากระบบทันที — โทเค็นเดิมจะใช้ไม่ได้`))
       return;
     setProcessing(true);
     try {
       await forceLogoutAdminUser(selectedUser.id, reason);
-      alert(
-        "Audit logged. Invalidate tokens in your auth layer if applicable."
-      );
+      showToast("Force logout สำเร็จ — โทเค็นของผู้ใช้ถูกยกเลิกแล้ว", "success");
     } catch (e: any) {
-      alert(e?.message || "Failed");
+      showToast(e?.message || "ดำเนินการไม่สำเร็จ", "error");
     }
     setProcessing(false);
   };
@@ -634,6 +896,37 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         </p>
       </div>
 
+      {useBackendForUsers && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setUmPrimaryTab("users")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              umPrimaryTab === "users"
+                ? "bg-indigo-600 text-white shadow"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            ผู้ใช้แอป (Backend)
+          </button>
+          <button
+            type="button"
+            onClick={() => setUmPrimaryTab("landing")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              umPrimaryTab === "landing"
+                ? "bg-indigo-600 text-white shadow"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            ลงทะเบียน Landing
+          </button>
+        </div>
+      )}
+
+      {useBackendForUsers && umPrimaryTab === "landing" ? (
+        <LandingLeadsPanel />
+      ) : (
+        <>
       {/* Profile summary — ห้ามลบ: Total user, Providers, Online, Banned */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg border border-slate-200">
@@ -828,6 +1121,18 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 />
                 <span className="text-slate-600">VIP เท่านั้น</span>
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={betaTesterFilter}
+                  onChange={(e) => {
+                    setBetaTesterFilter(e.target.checked);
+                    setPage(1);
+                  }}
+                  className="rounded border-slate-300"
+                />
+                <span className="text-slate-600">ทีมทดสอบ (Beta) เท่านั้น</span>
+              </label>
             </div>
           )}
         </div>
@@ -929,6 +1234,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               VIP
                             </span>
                           )}
+                          {useBackendForUsers && (user as AdminUserRow).is_beta_tester && (
+                            <span
+                              className="px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-800"
+                              title={`Beta tester #${(user as AdminUserRow).beta_tester_number ?? "?"}`}
+                            >
+                              Beta #
+                              {(user as AdminUserRow).beta_tester_number ?? "?"}
+                            </span>
+                          )}
                         </div>
                       </td>
                       {useBackendForUsers && (
@@ -947,9 +1261,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                             />
                             <span className="font-bold text-emerald-600">
                               ฿
-                              {(
-                                user as MobileUser
-                              ).wallet_balance?.toLocaleString() || 0}
+                              {(user as any).wallet_balance?.toLocaleString() || 0}
                             </span>
                           </div>
                         </td>
@@ -1072,6 +1384,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Role Change Modal */}
       {showRoleModal && selectedUser && (
@@ -1099,6 +1413,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   selectedUser.email}
               </p>
               <p className="text-xs text-slate-500">{selectedUser.email}</p>
+              {selectedUser.contact_email &&
+                String(selectedUser.contact_email).trim() !== String(selectedUser.email || "").trim() && (
+                  <p className="text-xs text-indigo-600 mt-1">อีเมลติดต่อ: {selectedUser.contact_email}</p>
+                )}
             </div>
 
             <div className="space-y-3 mb-6">
@@ -1377,19 +1695,108 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   </div>
                 </section>
 
-                {/* Wallet summary (read-only) */}
+                {/* Brand Adviser */}
+                {useBackendForUsers && (
+                  <section className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                      <Award size={16} className="text-amber-600" /> Brand Adviser
+                    </h4>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="font-bold text-slate-900">
+                          {selectedUser.is_brand_adviser
+                            ? `สถานะ: ${selectedUser.adviser_status || "—"}`
+                            : "ยังไม่ได้รับสิทธิ์"}
+                        </span>
+                        {selectedUser.is_brand_adviser && selectedUser.adviser_reputation_score != null && (
+                          <span className="text-sm text-slate-600">
+                            Reputation: {Number(selectedUser.adviser_reputation_score).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      {selectedUser.adviser_granted_at && (
+                        <p className="text-xs text-slate-600">
+                          มอบสิทธิ์: {new Date(selectedUser.adviser_granted_at).toLocaleString()}
+                        </p>
+                      )}
+                      {selectedUser.adviser_suspended_at && (
+                        <p className="text-xs text-amber-800">
+                          พัก/ถอดล่าสุด: {new Date(selectedUser.adviser_suspended_at).toLocaleString()}
+                          {selectedUser.adviser_suspended_reason
+                            ? ` — ${selectedUser.adviser_suspended_reason}`
+                            : ""}
+                        </p>
+                      )}
+                      {canManageAccountActions && (
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          <button
+                            type="button"
+                            disabled={processing || !!selectedUser.is_brand_adviser}
+                            onClick={handleGrantBrandAdviser}
+                            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            มอบสิทธิ์ BA
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processing || !selectedUser.is_brand_adviser}
+                            onClick={handleRevokeBrandAdviser}
+                            className="px-3 py-1.5 rounded-lg text-sm font-medium border border-amber-800 text-amber-900 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            ถอดสิทธิ์ BA
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-500 pt-1">
+                        ใช้ช่อง Reason (Account actions) ด้านล่างเป็นเหตุผล audit ได้
+                      </p>
+                    </div>
+                  </section>
+                )}
+
+                {/* Wallet summary (read-only) + Wallet Freeze */}
                 <section className="mb-6">
                   <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
                     <Wallet size={16} /> Wallet
                   </h4>
                   <div className="bg-emerald-50 p-4 rounded-lg mb-3">
-                    <p className="text-xs text-emerald-700">Balance</p>
-                    <p className="font-bold text-2xl text-emerald-900">
-                      ฿{selectedUser.wallet_balance?.toLocaleString() ?? 0}{" "}
-                      <span className="text-sm font-normal text-slate-600">
-                        {selectedUser.currency || "THB"}
-                      </span>
-                    </p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs text-emerald-700">Balance</p>
+                        <p className="font-bold text-2xl text-emerald-900">
+                          ฿{selectedUser.wallet_balance?.toLocaleString() ?? 0}{" "}
+                          <span className="text-sm font-normal text-slate-600">
+                            {selectedUser.currency || "THB"}
+                          </span>
+                        </p>
+                      </div>
+                      {useBackendForUsers && (
+                        <div className="flex flex-col items-end gap-1">
+                          {selectedUser.wallet_frozen ? (
+                            <span className="px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-700">
+                              ระงับเงิน
+                            </span>
+                          ) : null}
+                          {selectedUser.account_status === "banned" || selectedUser.account_status === "suspended" ? (
+                            <span className="px-2 py-1 rounded text-xs text-slate-500">
+                              (วอลเล็ตถูกระงับอัตโนมัติเมื่อแบน/ระงับบัญชี)
+                            </span>
+                          ) : canManageAccountActions && (
+                            <button
+                              onClick={() => handleWalletFreeze(!selectedUser.wallet_frozen)}
+                              disabled={processing}
+                              className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                selectedUser.wallet_frozen
+                                  ? "bg-green-100 text-green-800 hover:bg-green-200"
+                                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              } disabled:opacity-50`}
+                            >
+                              {selectedUser.wallet_frozen ? "ปลดระงับเงิน" : "ระงับเงิน"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {useBackend &&
                     (detailLedgerTotals.total_credit > 0 ||
@@ -1443,6 +1850,32 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   )}
                 </section>
 
+                {/* ช่องทางรับเงิน (Bank Accounts / Payment Channels) */}
+                <section className="mb-6">
+                  <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                    <DollarSign size={16} /> ช่องทางรับเงิน
+                  </h4>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    {selectedUser.bank_accounts && Array.isArray(selectedUser.bank_accounts) && selectedUser.bank_accounts.length > 0 ? (
+                      <ul className="divide-y divide-slate-100">
+                        {selectedUser.bank_accounts.map((acc: any, idx: number) => (
+                          <li key={acc.id || idx} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50/50">
+                            <div>
+                              <p className="font-medium text-slate-900">
+                                {acc.provider_name || acc.bank_name || "—"} {acc.type && acc.type !== "bank" ? `(${acc.type})` : ""}
+                              </p>
+                              <p className="text-sm font-mono text-slate-600">{acc.account_number || "—"}</p>
+                              <p className="text-xs text-slate-500">{acc.account_name || "—"}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="px-4 py-4 text-slate-500 text-sm">ยังไม่มีช่องทางรับเงิน</p>
+                    )}
+                  </div>
+                </section>
+
                 {/* KYC summary + link to KYC Review + rejection reason placeholder */}
                 <section className="mb-6">
                   <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
@@ -1477,11 +1910,255 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       </button>
                     )}
                   </div>
+                  {useBackendForUsers && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-white">
+                      <p className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-2">
+                        <Eye size={14} /> เอกสาร KYC (ล่าสุด) — คลิกเพื่อดูขนาดเต็ม
+                      </p>
+                      {detailKycLoading ? (
+                        <div className="flex items-center justify-center py-6 text-slate-400">
+                          <Loader2 size={18} className="animate-spin" />
+                        </div>
+                      ) : (detailKyc?.documents?.length || 0) > 0 ? (
+                        <>
+                          {(() => {
+                            const latest = (detailKyc!.documents as any[])[0];
+                            if (!latest) return null;
+                            const addr = latest.address;
+                            const vehicles = parseKycVehiclesJson(latest.vehicles_json);
+                            const hasAddr = typeof addr === "string" && addr.trim();
+                            if (!hasAddr && vehicles.length === 0) return null;
+                            return (
+                              <div className="mb-4 space-y-3">
+                                {hasAddr && (
+                                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-sm">
+                                    <p className="text-xs font-bold text-slate-500 mb-1">ที่อยู่ (จากใบสมัครล่าสุด)</p>
+                                    <p className="text-slate-800 whitespace-pre-wrap">{String(addr).trim()}</p>
+                                  </div>
+                                )}
+                                {vehicles.length > 0 && (
+                                  <div className="p-3 rounded-lg bg-amber-50/90 border border-amber-100 text-sm">
+                                    <p className="text-xs font-bold text-amber-900 mb-2">ทะเบียนรถ / ข้อมูลเล่ม</p>
+                                    <ul className="space-y-2 text-slate-800">
+                                      {vehicles.map((v: any, idx: number) => (
+                                        <li key={idx}>
+                                          <span className="font-medium">คันที่ {idx + 1}:</span>{" "}
+                                          {[v.license_plate, v.vehicle_province].filter(Boolean).join(" ")}
+                                          {v.vehicle_brand
+                                            ? ` — ${v.vehicle_brand}${v.vehicle_model ? ` ${v.vehicle_model}` : ""}`
+                                            : ""}
+                                          {v.owner_name ? ` · เจ้าของ: ${v.owner_name}` : ""}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {(detailKyc!.documents as any[]).flatMap((d: any) => {
+                            const keys = [
+                              "id_card_front_url",
+                              "id_card_back_url",
+                              "selfie_photo_url",
+                              "driving_license_front_url",
+                              "driving_license_back_url",
+                              "selfie_video_url",
+                            ];
+                            const items: Array<{ url: string; label: string; type: "image" | "video" }> = [];
+                            keys.forEach((key) => {
+                              const url = d?.[key];
+                              if (url && typeof url === "string") {
+                                items.push({
+                                  url,
+                                  label: KYC_DOC_LABELS[key] || key,
+                                  type: key.includes("video") ? "video" : "image",
+                                });
+                              }
+                            });
+                            parseKycVehiclesJson(d?.vehicles_json).forEach((v: any, idx: number) => {
+                              const url = v?.registration_book_photo_url;
+                              if (url && typeof url === "string") {
+                                items.push({
+                                  url,
+                                  label: `เล่มทะเบียน (คันที่ ${idx + 1})`,
+                                  type: "image",
+                                });
+                              }
+                            });
+                            return items.map((item) => (
+                              <div
+                                key={`${d?.id || "doc"}-${item.url}`}
+                                className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50 cursor-pointer hover:border-indigo-400 hover:shadow transition-all"
+                                onClick={() => setKycLightbox(item)}
+                                title="คลิกเพื่อดูขนาดเต็ม"
+                              >
+                                <div className="aspect-[3/4] flex items-center justify-center">
+                                  {item.type === "video" ? (
+                                    <div className="w-full h-full flex flex-col items-center justify-center p-2 bg-slate-100">
+                                      <FileText size={28} className="text-indigo-500 mb-1" />
+                                      <span className="text-xs text-slate-600 truncate w-full text-center">
+                                        วิดีโอ
+                                      </span>
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-xs text-indigo-600 mt-1 hover:underline"
+                                      >
+                                        เปิดในแท็บใหม่
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <img
+                                      src={item.url}
+                                      alt={item.label}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src =
+                                          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3Ctext x='50' y='50' fill='%2394a3b8' text-anchor='middle' dy='.3em' font-size='12'%3Eโหลดไม่สำเร็จ%3C/text%3E%3C/svg%3E";
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/25 transition-colors">
+                                  <Expand size={22} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                                <div className="p-2 bg-white/85 text-xs font-medium text-slate-700 truncate">
+                                  {item.label}
+                                </div>
+                              </div>
+                            ));
+                          })}
+                        </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-500">ยังไม่มีเอกสาร KYC สำหรับผู้ใช้นี้</p>
+                      )}
+                    </div>
+                  )}
                 </section>
+
+                {/* Security Tracking — Last 5 IP + User-Agent + Device Hopping */}
+                {useBackendForUsers && (detailLoginSessions.length > 0 || detailDeviceHopping) && (
+                  <section className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                      <Monitor size={16} /> Security Tracking
+                    </h4>
+                    {detailDeviceHopping && (
+                      <div className="mb-3 px-4 py-2 rounded-lg bg-red-100 text-red-800 text-sm font-bold flex items-center gap-2">
+                        <AlertTriangle size={18} /> High Risk: Device Hopping — มากกว่า 3 IP ใน 24 ชม.
+                      </div>
+                    )}
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <p className="text-xs font-bold text-slate-500 px-3 py-2 bg-slate-50">Last 5 logins (IP + User-Agent)</p>
+                      <ul className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                        {detailLoginSessions.map((s, i) => (
+                          <li key={i} className="px-3 py-2 text-sm">
+                            <span className="font-mono text-slate-600">{s.ip_address || "—"}</span>
+                            <span className="text-slate-400 ml-2 truncate block" title={s.user_agent}>{s.user_agent || "—"}</span>
+                            {s.created_at && <span className="text-xs text-slate-400">{new Date(s.created_at).toLocaleString()}</span>}
+                          </li>
+                        ))}
+                        {detailLoginSessions.length === 0 && <li className="px-3 py-2 text-slate-400 text-sm">No login sessions recorded</li>}
+                      </ul>
+                    </div>
+                  </section>
+                )}
+
+                {/* Internal CRM Notes */}
+                {useBackendForUsers && canManageAccountActions && (
+                  <section className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                      <StickyNote size={16} /> Internal CRM Notes
+                    </h4>
+                    <div className="space-y-2 mb-3">
+                      <textarea
+                        value={newNote}
+                        onChange={(e) => setNewNote(e.target.value)}
+                        placeholder="เพิ่มโน้ตส่วนตัว..."
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                        rows={2}
+                      />
+                      <button
+                        onClick={handleAddNote}
+                        disabled={processing || !newNote.trim()}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
+                      >
+                        <Plus size={16} /> Add Note
+                      </button>
+                    </div>
+                    <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-32 overflow-y-auto">
+                      {detailNotes.map((n) => (
+                        <li key={n.id} className="px-3 py-2 text-sm">
+                          <p className="text-slate-700">{n.note}</p>
+                          <p className="text-xs text-slate-400">{n.admin_name} — {n.created_at ? new Date(n.created_at).toLocaleString() : ""}</p>
+                        </li>
+                      ))}
+                      {detailNotes.length === 0 && <li className="px-3 py-2 text-slate-400 text-sm">No notes yet</li>}
+                    </ul>
+                  </section>
+                )}
+
+                {/* LMS & Quality Sync */}
+                {useBackendForUsers && detailLmsSummary && (
+                  <section className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                      <BookOpen size={16} /> LMS & Competency
+                    </h4>
+                    <div className="flex flex-wrap gap-4">
+                      <div className="bg-blue-50 px-4 py-2 rounded-lg">
+                        <p className="text-xs text-blue-700">Avg Grade</p>
+                        <p className="font-bold text-blue-900">{detailLmsSummary.avg_grade != null ? detailLmsSummary.avg_grade.toFixed(1) : "—"}</p>
+                      </div>
+                      <div className="bg-emerald-50 px-4 py-2 rounded-lg">
+                        <p className="text-xs text-emerald-700">Training Status</p>
+                        <p className="font-bold text-emerald-900">{detailLmsSummary.training_status || "—"}</p>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* Financial Actions — Credit/Debit with audit */}
+                {useBackendForUsers && canManageAccountActions && (
+                  <section className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-600 uppercase mb-3 flex items-center gap-2">
+                      <Wallet size={16} /> Financial Actions
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-2">เติม/หักเงินด้วยเหตุผล (บันทึกใน payment_ledger_audit)</p>
+                    <button
+                      onClick={() => {
+                        setWalletAdjustDirection("credit");
+                        setWalletAdjustAmount("");
+                        setWalletAdjustReason("");
+                        setShowWalletAdjustModal(true);
+                      }}
+                      disabled={processing}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-lg text-sm font-medium hover:bg-emerald-200 disabled:opacity-50"
+                    >
+                      <Plus size={16} /> Credit
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWalletAdjustDirection("debit");
+                        setWalletAdjustAmount("");
+                        setWalletAdjustReason("");
+                        setShowWalletAdjustModal(true);
+                      }}
+                      disabled={processing}
+                      className="ml-2 flex items-center gap-2 px-4 py-2 bg-red-100 text-red-800 rounded-lg text-sm font-medium hover:bg-red-200 disabled:opacity-50"
+                    >
+                      <Minus size={16} /> Debit
+                    </button>
+                  </section>
+                )}
 
                 {/* Risk flags */}
                 {(selectedUser.account_status === "banned" ||
                   selectedUser.account_status === "suspended" ||
+                  selectedUser.wallet_frozen ||
                   (selectedUser.kyc_status || selectedUser.kyc_level) ===
                     "rejected") && (
                   <section className="mb-6">
@@ -1505,6 +2182,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       )}
                       {selectedUser.account_status === "suspended" && (
                         <li className="text-amber-600">Account suspended</li>
+                      )}
+                      {selectedUser.wallet_frozen &&
+                        selectedUser.account_status !== "banned" &&
+                        selectedUser.account_status !== "suspended" && (
+                        <li className="text-amber-600">วอลเล็ตถูกระงับ (Platform Safety)</li>
                       )}
                       {(selectedUser.kyc_status || selectedUser.kyc_level) ===
                         "rejected" && (
@@ -1535,7 +2217,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   </section>
                 )}
 
-                {/* Provider status + Approve as Provider (แก้บั๊กที่ทำแบบทดสอบผ่านแต่สถานะไม่ขึ้น) */}
+                {/* Provider status — บันทึกสถานะ Verified เมื่อผู้ใช้ผ่านเกณฑ์แล้วแต่ DB ยังไม่อัปเดต */}
                 {useBackendForUsers && selectedUser && (selectedUser.role === "provider" || selectedUser.role === "PROVIDER") && (
                   <section className="mb-6">
                     <h4 className="text-sm font-bold text-slate-600 uppercase mb-3">สถานะผู้รับงาน (Provider)</h4>
@@ -1547,21 +2229,29 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           ? "รอทำแบบทดสอบ"
                           : selectedUser.provider_status || "UNVERIFIED"}
                       </span>
-                      {selectedUser.provider_status !== "VERIFIED_PROVIDER" && (
+                      {selectedUser.provider_status !== "VERIFIED_PROVIDER" &&
+                        canManageAccountActions && (
                         <button
+                          type="button"
                           onClick={handleApproveProvider}
                           disabled={processing}
                           className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          อนุญาติให้เป็นผู้รับงาน (ผ่านแบบทดสอบแล้วแต่ติดบั๊ก)
+                          บันทึกสถานะ Verified Provider
                         </button>
+                      )}
+                      {selectedUser.provider_status !== "VERIFIED_PROVIDER" &&
+                        !canManageAccountActions && (
+                        <span className="text-sm text-slate-500">
+                          อนุมัติผู้รับงานได้เฉพาะบัญชี Admin หรือ Super Admin
+                        </span>
                       )}
                     </div>
                   </section>
                 )}
 
                 {/* App role (เปลี่ยนจากผู้รับงานเป็น user หรือกลับกัน) */}
-                {useBackendForUsers && isAdmin && selectedUser && (
+                {useBackendForUsers && canManageAccountActions && selectedUser && (
                   <section className="mb-6">
                     <h4 className="text-sm font-bold text-slate-600 uppercase mb-3">สถานะในแอป (User / ผู้รับงาน)</h4>
                     <p className="text-sm text-slate-600 mb-2">ปัจจุบัน: {selectedUser.role === "provider" || selectedUser.role === "PROVIDER" ? "ผู้รับงาน (Provider)" : "ผู้ใช้ (User)"}</p>
@@ -1579,7 +2269,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 )}
 
                 {/* VIP */}
-                {useBackendForUsers && isAdmin && selectedUser && (
+                {useBackendForUsers && canManageAccountActions && selectedUser && (
                   <section className="mb-6">
                     <h4 className="text-sm font-bold text-slate-600 uppercase mb-3">VIP</h4>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1596,11 +2286,29 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 )}
 
                 {/* Account Control (ADMIN only; confirm dialogs) */}
-                {useBackendForUsers && isAdmin && (
+                {useBackendForUsers && canManageAccountActions && (
                   <section className="mb-6">
                     <h4 className="text-sm font-bold text-slate-600 uppercase mb-3">
                       Account control
                     </h4>
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={handleEmergencySuspend}
+                        disabled={processing}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                        title="Ban + Wallet Freeze + Force Logout"
+                      >
+                        <Zap size={16} /> Emergency Suspend
+                      </button>
+                      <button
+                        onClick={handleLoginAsUser}
+                        disabled={processing}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-800 rounded-lg text-sm font-medium hover:bg-indigo-200 disabled:opacity-50"
+                        title="Login as User (Shadow Mode)"
+                      >
+                        <LogIn size={16} /> Login as User
+                      </button>
+                    </div>
                     <div className="mb-3">
                       <label className="block text-xs text-slate-500 mb-1">
                         สาเหตุ (สำหรับแบน/ระงับ)
@@ -1668,7 +2376,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 )}
 
                 <div className="flex gap-3">
-                  {useBackendForUsers && isAdmin && (
+                  {useBackendForUsers && canManageAccountActions && (
                     <button
                       onClick={() => {
                         setSelectedUser(selectedUser);
@@ -1718,6 +2426,140 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 ยกเลิก
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Wallet Adjust (Credit/Debit) */}
+      {showWalletAdjustModal && selectedUser && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h4 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+              <Wallet size={20} /> {walletAdjustDirection === "credit" ? "Credit" : "Debit"} Funds
+            </h4>
+            <p className="text-sm text-slate-600 mb-4">
+              ผู้ใช้: <strong>{selectedUser.name}</strong> — ยอดปัจจุบัน: ฿{selectedUser.wallet_balance?.toLocaleString() ?? 0}
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs text-slate-500 mb-1">จำนวน (THB) *</label>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={walletAdjustAmount}
+                onChange={(e) => setWalletAdjustAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs text-slate-500 mb-1">สาเหตุ (บังคับสำหรับ audit) *</label>
+              <input
+                type="text"
+                value={walletAdjustReason}
+                onChange={(e) => setWalletAdjustReason(e.target.value)}
+                placeholder="e.g. Refund, Adjustment, Correction"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              />
+            </div>
+            {walletAdjustDirection === "debit" && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-500 mb-1">reason_code * (เช่น DUPLICATE_CREDIT, WRONG_AMOUNT)</label>
+                  <input
+                    type="text"
+                    value={walletAdjustReasonCode}
+                    onChange={(e) => setWalletAdjustReasonCode(e.target.value)}
+                    placeholder="รหัสสาเหตุมาตรฐาน"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-500 mb-1">evidence_ref * (payment_ledger_audit.id ของรายการผิด)</label>
+                  <input
+                    type="text"
+                    value={walletAdjustEvidenceRef}
+                    onChange={(e) => setWalletAdjustEvidenceRef(e.target.value)}
+                    placeholder="L-deposit-manual-… หรือ id จาก Financial Audit"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
+                  />
+                </div>
+              </>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleWalletAdjust}
+                disabled={
+                  processing ||
+                  !walletAdjustAmount ||
+                  !walletAdjustReason.trim() ||
+                  (walletAdjustDirection === "debit" &&
+                    (!walletAdjustReasonCode.trim() || !walletAdjustEvidenceRef.trim()))
+                }
+                className={`flex-1 py-2 font-medium rounded-lg disabled:opacity-50 ${
+                  walletAdjustDirection === "credit"
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-red-600 text-white hover:bg-red-700"
+                }`}
+              >
+                {processing ? <Loader2 className="animate-spin mx-auto" size={18} /> : (walletAdjustDirection === "credit" ? "Credit" : "Debit")}
+              </button>
+              <button
+                onClick={() => setShowWalletAdjustModal(false)}
+                disabled={processing}
+                className="flex-1 py-2 bg-slate-200 text-slate-800 font-medium rounded-lg hover:bg-slate-300"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KYC Lightbox — ดูเอกสารขนาดเต็มจาก User Details */}
+      {kycLightbox && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setKycLightbox(null)}
+        >
+          <button
+            onClick={() => setKycLightbox(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white p-2 z-10"
+          >
+            <X size={32} />
+          </button>
+          <div
+            className="relative max-w-[95vw] max-h-[95vh] flex flex-col items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {kycLightbox.type === "video" ? (
+              <div className="bg-slate-900 rounded-xl p-4 max-w-2xl w-full">
+                <p className="text-white font-medium mb-2">{kycLightbox.label}</p>
+                <video
+                  src={kycLightbox.url}
+                  controls
+                  autoPlay
+                  className="w-full rounded-lg"
+                />
+                <a
+                  href={kycLightbox.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 text-sm mt-2 inline-block hover:underline"
+                >
+                  เปิดในแท็บใหม่ →
+                </a>
+              </div>
+            ) : (
+              <img
+                src={kycLightbox.url}
+                alt={kycLightbox.label}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+              />
+            )}
+            <p className="mt-3 text-center text-white/90 text-sm">
+              {kycLightbox.label}
+            </p>
           </div>
         </div>
       )}

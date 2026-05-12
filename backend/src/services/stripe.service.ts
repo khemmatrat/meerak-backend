@@ -23,10 +23,7 @@ class StripeService {
       throw new Error('Stripe API key not configured');
     }
 
-    this.stripe = new Stripe(apiKey, {
-      apiVersion: '2024-12-18.acacia', // Use latest API version
-      typescript: true,
-    });
+    this.stripe = new Stripe(apiKey, { typescript: true });
   }
 
   /**
@@ -101,18 +98,23 @@ class StripeService {
    */
   async getPaymentDetails(paymentIntentId: string): Promise<StripePayment> {
     try {
-      const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+      const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId, {
+        expand: ['latest_charge'],
+      });
       
       // Get card details if available
       let cardLast4: string | undefined;
       let cardBrand: string | undefined;
+      let receiptUrl: string | undefined;
 
-      if (paymentIntent.charges && paymentIntent.charges.data.length > 0) {
-        const charge = paymentIntent.charges.data[0];
+      const latestCharge = paymentIntent.latest_charge;
+      if (latestCharge && typeof latestCharge === 'object' && 'payment_method_details' in latestCharge) {
+        const charge = latestCharge as { payment_method_details?: { card?: { last4?: string; brand?: string } }; receipt_url?: string };
         if (charge.payment_method_details?.card) {
           cardLast4 = charge.payment_method_details.card.last4;
           cardBrand = charge.payment_method_details.card.brand;
         }
+        receiptUrl = charge.receipt_url;
       }
 
       const payment: StripePayment = {
@@ -123,7 +125,7 @@ class StripeService {
         status: this.mapStripeStatus(paymentIntent.status),
         card_last4: cardLast4,
         card_brand: cardBrand,
-        receipt_url: paymentIntent.charges?.data[0]?.receipt_url || undefined,
+        receipt_url: receiptUrl,
         created_at: new Date(paymentIntent.created * 1000).toISOString(),
       };
 

@@ -65,7 +65,7 @@ export function useCommissionRevenue() {
   return { data, loading, error, refetch: fetchData };
 }
 
-export function useRealTimeExpenses(pollInterval = POLL_INTERVAL_MS) {
+export function useRealTimeExpenses(pollInterval = POLL_INTERVAL_MS, region?: string) {
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,14 +74,14 @@ export function useRealTimeExpenses(pollInterval = POLL_INTERVAL_MS) {
     setLoading(true);
     setError(null);
     try {
-      const res = await getRealTimeExpenses();
+      const res = await getRealTimeExpenses(region);
       setExpenses(res);
     } catch (e: any) {
       setError(e?.message || String(e));
       setExpenses([]);
     }
     setLoading(false);
-  }, []);
+  }, [region]);
 
   useEffect(() => {
     fetchData();

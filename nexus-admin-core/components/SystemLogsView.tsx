@@ -1,14 +1,48 @@
-import React, { useState } from 'react';
-import { Search, Filter, AlertTriangle, Info, XCircle, RefreshCw } from 'lucide-react';
-import { MOCK_LOGS } from '../constants';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, AlertTriangle, Info, XCircle, RefreshCw } from 'lucide-react';
 import { SystemLog } from '../types';
 import { analyzeLogEntry } from '../services/geminiService';
+import { getSystemLogs } from '../services/adminApi';
+
+function toDateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 export const SystemLogsView: React.FC = () => {
-  const [logs] = useState<SystemLog[]>(MOCK_LOGS);
+  const [logs, setLogs] = useState<SystemLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState<string>(() => toDateStr(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)));
+  const [toDate, setToDate] = useState<string>(() => toDateStr(new Date()));
+  const [actionFilter, setActionFilter] = useState<string>('');
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params: Parameters<typeof getSystemLogs>[0] = { limit: 200 };
+      if (fromDate) params.from_date = fromDate;
+      if (toDate) params.to_date = toDate;
+      if (actionFilter.trim()) params.action = actionFilter.trim();
+      const res = await getSystemLogs(params);
+      setLogs(res.logs || []);
+      setTotal(res.total ?? 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load system logs');
+      setLogs([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate, actionFilter]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
 
   const filteredLogs = logs.filter(log => {
     const matchesLevel = filterLevel === 'ALL' || log.level === filterLevel;
@@ -30,11 +64,16 @@ export const SystemLogsView: React.FC = () => {
       <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-50/50">
         <div className="flex items-center gap-2">
            <h2 className="font-bold text-slate-800">System Logs</h2>
-           <span className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs font-mono">{filteredLogs.length} entries</span>
+           <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-mono">
+               {total > 0 ? `${filteredLogs.length} / ${total}` : filteredLogs.length} entries
+             </span>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white" title="From" />
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white" title="To" />
+          <input type="text" placeholder="Action filter..." value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg w-28 bg-white" />
+          <div className="relative flex-1 sm:w-64 min-w-[120px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text" 
@@ -53,15 +92,31 @@ export const SystemLogsView: React.FC = () => {
             <option value="INFO">INFO</option>
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
           </select>
-          <button className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors">
-            <RefreshCw size={18} />
+          <button
+            onClick={fetchLogs}
+            disabled={loading}
+            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+            title="Refresh logs"
+          >
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
+      {/* Error */}
+      {error && (
+        <div className="mx-4 mt-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+          {error}
+        </div>
+      )}
+
       {/* Logs Table */}
       <div className="flex-1 overflow-auto bg-slate-900">
+        {loading && logs.length === 0 ? (
+          <div className="flex items-center justify-center h-48 text-slate-400">Loading logs...</div>
+        ) : (
         <table className="w-full text-left font-mono text-sm">
           <thead className="bg-slate-800 text-slate-400 sticky top-0 z-10">
             <tr>
@@ -80,10 +135,11 @@ export const SystemLogsView: React.FC = () => {
                   <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${
                     log.level === 'INFO' ? 'bg-blue-500/10 text-blue-400' :
                     log.level === 'WARNING' ? 'bg-amber-500/10 text-amber-400' :
-                    'bg-rose-500/10 text-rose-400'
+                    (log.level === 'ERROR' || log.level === 'CRITICAL') ? 'bg-rose-500/10 text-rose-400' :
+                    'bg-slate-500/10 text-slate-400'
                   }`}>
                     {log.level === 'INFO' && <Info size={10} />}
-                    {log.level === 'WARNING' && <AlertTriangle size={10} />}
+                    {(log.level === 'WARNING' || log.level === 'CRITICAL') && <AlertTriangle size={10} />}
                     {log.level === 'ERROR' && <XCircle size={10} />}
                     {log.level}
                   </span>
@@ -104,12 +160,13 @@ export const SystemLogsView: React.FC = () => {
             {filteredLogs.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                  No logs found matching your criteria
+                  {logs.length === 0 ? 'ยังไม่มี log — ข้อมูลจะแสดงเมื่อมี admin actions (KYC, role changes, payments, etc.)' : 'No logs found matching your criteria'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        )}
       </div>
     </div>
   );

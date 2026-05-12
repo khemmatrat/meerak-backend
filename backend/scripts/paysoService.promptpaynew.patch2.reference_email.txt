@@ -1,0 +1,30 @@
+Minimal follow-up patch (manual) to fix common PaySo "Parameter incomplete":
+
+Context: PaySo docs require query params and says:
+- referenceNo: Number, unique 12 digit
+- customerEmail: Email format
+
+Two common rejection causes:
+1) referenceNo starts with 0 (server treats as Number → loses digit count)
+2) fallback email uses .local domain (some validators reject)
+
+Apply in `backend/services/paysoService.js` inside `createPaysoWalletDepositCharge()` where we build query params.
+
+1) Change fallback email default:
+   Find:
+     const safeEmail = String(customerEmail || '').trim() || 'noreply@aqond.local';
+   Replace with (use a real domain you control):
+     const safeEmail = String(customerEmail || '').trim() || 'noreply@aqond.com';
+
+2) Ensure referenceNo does not start with 0:
+   Find query params block:
+     referenceNo: String(reference_id),
+   Replace with:
+     referenceNo: String(reference_id).replace(/^0/, '1'),
+
+3) Optional: log URL via logPayment (instead of console.log) so it always shows:
+   In logPayment('payso_deposit_auth_shape', { ... }) add:
+     target_url_preview: url,
+
+Then restart `node server.js` and try again.
+

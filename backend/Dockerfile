@@ -19,6 +19,9 @@ RUN npm ci --omit=dev
 # Copy source
 COPY . .
 
+# ล้ม build ถ้าซอร์สไม่ครบ (บน VPS ถ้าสังเกต context ~25KB แทนหลาย MB → โฟลเดอร์ backend-1.2 ว่างเกิน / ไม่มี lib/)
+RUN test -f lib/paysoEnvFlag.js || (echo >&2 "[Dockerfile] ไม่พบ lib/paysoEnvFlag.js — อัปโหลดทั้งเมกา meerak/backend/ รวม lib/ เข้า backend-1.2 ให้ครบแล้ว build ใหม่" && exit 1)
+
 EXPOSE 3001
 
 CMD ["node", "server.js"]

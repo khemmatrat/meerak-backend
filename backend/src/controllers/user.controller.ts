@@ -23,10 +23,10 @@ export const userController = {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      res.json(user);
+      return res.json(user);
     } catch (error) {
       console.error('Get profile error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch profile',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -49,10 +49,10 @@ export const userController = {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      res.json(user);
+      return res.json(user);
     } catch (error) {
       console.error('Get my profile error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch profile',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -78,14 +78,14 @@ export const userController = {
         location,
       });
 
-      res.json({
+      return res.json({
         success: true,
         user: updatedUser,
         message: 'Profile updated successfully',
       });
     } catch (error) {
       console.error('Update profile error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to update profile',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -103,10 +103,10 @@ export const userController = {
       }
 
       const summary = await walletService.getWalletSummary(req.user.id);
-      res.json(summary);
+      return res.json(summary);
     } catch (error) {
       console.error('Get wallet summary error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch wallet summary',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -136,14 +136,14 @@ export const userController = {
         metadata
       );
 
-      res.json({
+      return res.json({
         success: true,
         transaction,
         message: 'Deposit successful',
       });
     } catch (error) {
       console.error('Deposit error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to process deposit',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -173,14 +173,14 @@ export const userController = {
         metadata
       );
 
-      res.json({
+      return res.json({
         success: true,
         transaction,
         message: 'Withdrawal successful',
       });
     } catch (error) {
       console.error('Withdraw error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to process withdrawal',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -206,10 +206,10 @@ export const userController = {
         offset
       );
 
-      res.json(transactions);
+      return res.json(transactions);
     } catch (error) {
       console.error('Get transactions error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch transactions',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -227,10 +227,10 @@ export const userController = {
       }
 
       const skills = await skillService.getUserSkills(req.user.id);
-      res.json(skills);
+      return res.json(skills);
     } catch (error) {
       console.error('Get skills error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch skills',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -262,14 +262,14 @@ export const userController = {
         certification_id
       );
 
-      res.json({
+      return res.json({
         success: true,
         skill,
         message: 'Skill added successfully',
       });
     } catch (error) {
       console.error('Add skill error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to add skill',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -291,14 +291,14 @@ export const userController = {
 
       const skill = await skillService.updateSkill(skillId, req.user.id, updates);
 
-      res.json({
+      return res.json({
         success: true,
         skill,
         message: 'Skill updated successfully',
       });
     } catch (error) {
       console.error('Update skill error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to update skill',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -319,13 +319,13 @@ export const userController = {
 
       await skillService.removeSkill(skillId, req.user.id);
 
-      res.json({
+      return res.json({
         success: true,
         message: 'Skill removed successfully',
       });
     } catch (error) {
       console.error('Remove skill error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to remove skill',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -343,10 +343,10 @@ export const userController = {
       }
 
       const certifications = await skillService.getUserCertifications(req.user.id);
-      res.json(certifications);
+      return res.json(certifications);
     } catch (error) {
       console.error('Get certifications error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to fetch certifications',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -388,14 +388,14 @@ export const userController = {
         expiry_date ? new Date(expiry_date) : undefined
       );
 
-      res.json({
+      return res.json({
         success: true,
         certification,
         message: 'Certification added successfully',
       });
     } catch (error) {
       console.error('Add certification error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to add certification',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -416,13 +416,13 @@ export const userController = {
 
       await skillService.removeCertification(certificationId, req.user.id);
 
-      res.json({
+      return res.json({
         success: true,
         message: 'Certification removed successfully',
       });
     } catch (error) {
       console.error('Remove certification error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: 'Failed to remove certification',
         message: error instanceof Error ? error.message : 'Unknown error'
       });

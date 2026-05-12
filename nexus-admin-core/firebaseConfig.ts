@@ -1,4 +1,4 @@
-// ✅ Nexus Admin: use backend JWT when VITE_ADMIN_API_URL is set (no Firebase Auth iframe).
+// ✅ aqond Admin: use backend JWT when VITE_ADMIN_API_URL is set (no Firebase Auth iframe).
 // Firestore (db) is always initialized so User Management can list users from the app (Firebase).
 // Only Auth/Functions are skipped when using backend login to avoid "API key not valid" from Identity Toolkit.
 import { initializeApp } from "firebase/app";
@@ -32,11 +32,11 @@ try {
     auth = getAuth(app);
     functions = getFunctions(app);
     console.log(
-      "✅ Firebase (App + Firestore + Auth) initialized in Nexus Admin Core"
+      "✅ Firebase (App + Firestore + Auth) initialized in aqond Admin Core"
     );
   } else {
     console.log(
-      "✅ Nexus Admin: backend login — Firestore (db) enabled for User Management, Auth skipped"
+      "✅ aqond Admin: backend login — Firestore (db) enabled for User Management, Auth skipped"
     );
   }
 } catch (error) {

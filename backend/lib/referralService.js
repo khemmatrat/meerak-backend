@@ -2,7 +2,13 @@
  * Referral Service — แนะนำเพื่อน (configurable %)
  * จ่าย % ของ Gross Job Value ให้ referrer เมื่อ referee ทำงานจบภายใน 7 วัน นับจากงานแรก
  * Budget-aware: Circuit Breaker — ไม่จ่ายถ้างบ marketing_budgets ไม่พอ
+ * Brand Adviser (active): ไม่จ่ายเงินสด referral — สะสม reputation แทน (lib/brandAdviser.js)
  */
+
+import {
+  shouldSkipCashReferralForReferrer,
+  awardReferralReputationForSkippedReferral,
+} from './brandAdviser.js';
 
 const DEFAULT_REFERRAL_RATE = 0.015;
 
@@ -135,6 +141,18 @@ async function processReferralPayout(pool, refereeId, jobId, grossAmount, jobCom
     const commissionAmount = Math.round(grossAmount * rate * 100) / 100;
     if (commissionAmount <= 0) return;
 
+    const skipCashReferral = await shouldSkipCashReferralForReferrer(pool, referrerId);
+    if (skipCashReferral) {
+      await awardReferralReputationForSkippedReferral(pool, {
+        referrerId,
+        refereeId,
+        jobId,
+        grossAmount,
+        commissionAmountWouldBe: commissionAmount,
+      });
+      return;
+    }
+
     const exists = await pool.query(
       'SELECT 1 FROM referral_earnings WHERE job_id = $1 AND referrer_id = $2',
       [jobId, referrerId]
@@ -171,7 +189,9 @@ async function processReferralPayout(pool, refereeId, jobId, grossAmount, jobCom
       }
 
       await client.query(
-        `UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`,
+        `UPDATE users SET wallet_balance = wallet_balance + $1,
+           wallet_balance_withdrawable = COALESCE(wallet_balance_withdrawable, 0) + $1,
+           updated_at = NOW() WHERE id = $2`,
         [commissionAmount, referrerId]
       );
 
@@ -299,7 +319,9 @@ async function processPendingPayouts(pool, limit = 50) {
           [row.commission_amount, budget.id]
         );
         await client.query(
-          `UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`,
+          `UPDATE users SET wallet_balance = wallet_balance + $1,
+             wallet_balance_withdrawable = COALESCE(wallet_balance_withdrawable, 0) + $1,
+             updated_at = NOW() WHERE id = $2`,
           [row.commission_amount, row.referrer_id]
         );
         const ledgerId = `L-REF-${row.job_id}-${row.referrer_id}-${Date.now()}`;

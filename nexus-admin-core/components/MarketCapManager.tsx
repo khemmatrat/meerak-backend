@@ -1,8 +1,9 @@
 /**
  * MarketCapManager — การจัดการมูลค่าบริษัทและการลงทุน
  * Market Cap • ตารางนักลงทุนและ % การถือหุ้น • มูลค่าหุ้น • เงินลงทุน • การเติบโต
+ * เชื่อม Backend: GET/POST/PATCH/DELETE /api/admin/financial/market-cap, investors
  */
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   TrendingUp,
   Users,
@@ -12,16 +13,18 @@ import {
   Download,
   Loader2,
   Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
-
-export interface InvestorEntry {
-  id: string;
-  name: string;
-  shares: number;
-  invested_amount: number;
-  invested_at: string;
-  note?: string;
-}
+import { useMarketCap } from "../hooks/useFinancialData";
+import {
+  createInvestor,
+  updateInvestor,
+  deleteInvestor,
+  updateMarketCap,
+  type CreateInvestorInput,
+  type InvestorEntry,
+} from "../services/financialService";
 
 export interface MarketCapSnapshot {
   date: string;
@@ -29,56 +32,27 @@ export interface MarketCapSnapshot {
   total_shares: number;
 }
 
-const MOCK_INVESTORS: InvestorEntry[] = [
-  {
-    id: "inv-1",
-    name: "Founder",
-    shares: 6000,
-    invested_amount: 500000,
-    invested_at: "2023-01-01",
-  },
-  {
-    id: "inv-2",
-    name: "Angel A",
-    shares: 2000,
-    invested_amount: 200000,
-    invested_at: "2023-06-15",
-  },
-  {
-    id: "inv-3",
-    name: "Angel B",
-    shares: 1500,
-    invested_amount: 150000,
-    invested_at: "2024-01-10",
-  },
-  {
-    id: "inv-4",
-    name: "VC Seed",
-    shares: 500,
-    invested_amount: 100000,
-    invested_at: "2024-06-01",
-  },
-];
-
-const MOCK_GROWTH: MarketCapSnapshot[] = [
-  { date: "2023-Q1", market_cap: 500000, total_shares: 10000 },
-  { date: "2023-Q2", market_cap: 700000, total_shares: 10000 },
-  { date: "2023-Q3", market_cap: 900000, total_shares: 10000 },
-  { date: "2023-Q4", market_cap: 1100000, total_shares: 10000 },
-  { date: "2024-Q1", market_cap: 1400000, total_shares: 10000 },
-  { date: "2024-Q2", market_cap: 1800000, total_shares: 10000 },
-];
-
-const TOTAL_SHARES = 10000;
-
 export const MarketCapManager: React.FC = () => {
-  const [investors, setInvestors] = useState<InvestorEntry[]>(MOCK_INVESTORS);
-  const [growth, setGrowth] = useState<MarketCapSnapshot[]>(MOCK_GROWTH);
-  const [currentMarketCap, setCurrentMarketCap] = useState(1800000);
-  const [loading, setLoading] = useState(false);
+  const { data, loading, error, refetch } = useMarketCap();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showMarketCapForm, setShowMarketCapForm] = useState(false);
+  const [marketCapInput, setMarketCapInput] = useState<string>("");
+  const [formData, setFormData] = useState<Partial<CreateInvestorInput>>({
+    name: "",
+    shares: 0,
+    invested_amount: 0,
+    invested_at: new Date().toISOString().slice(0, 10),
+    note: "",
+    decision_power_percent: 0,
+  });
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const totalShares = TOTAL_SHARES;
-  const shareValue = totalShares > 0 ? currentMarketCap / totalShares : 0;
+  const investors = data?.investors ?? [];
+  const growth = data?.growth ?? [];
+  const currentMarketCap = data?.current_market_cap ?? 0;
+  const totalShares = (data?.total_shares ?? investors.reduce((s, i) => s + i.shares, 0)) || 10000;
+  const shareValue = data?.share_value ?? (totalShares > 0 ? currentMarketCap / totalShares : 0);
 
   const investorsWithOwnership = investors.map((inv) => ({
     ...inv,
@@ -93,31 +67,96 @@ export const MarketCapManager: React.FC = () => {
       ? ((totalReturn - totalInvested) / totalInvested) * 100
       : 0;
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      await new Promise((r) => setTimeout(r, 400));
-      setInvestors(MOCK_INVESTORS);
-      setGrowth(MOCK_GROWTH);
-      setCurrentMarketCap(1800000);
-    } catch (e) {
-      console.error(e);
+  const handleAddInvestor = async () => {
+    if (!formData.name?.trim()) {
+      setSubmitError("กรุณากรอกชื่อบริษัทหรือบุคคล");
+      return;
     }
-    setLoading(false);
+    setSubmitError(null);
+    try {
+      await createInvestor({
+        name: formData.name.trim(),
+        shares: Number(formData.shares) || 0,
+        invested_amount: Number(formData.invested_amount) || 0,
+        invested_at: formData.invested_at || new Date().toISOString().slice(0, 10),
+        note: formData.note?.trim() || undefined,
+        decision_power_percent: formData.decision_power_percent ?? 0,
+      });
+      setFormData({ name: "", shares: 0, invested_amount: 0, invested_at: new Date().toISOString().slice(0, 10), note: "", decision_power_percent: 0 });
+      setShowAddForm(false);
+      refetch();
+    } catch (e: unknown) {
+      setSubmitError((e as Error)?.message || "ไม่สามารถเพิ่มได้");
+    }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const handleUpdateInvestor = async (id: string) => {
+    setSubmitError(null);
+    try {
+      await updateInvestor(id, {
+        name: formData.name,
+        shares: formData.shares,
+        invested_amount: formData.invested_amount,
+        invested_at: formData.invested_at,
+        note: formData.note,
+        decision_power_percent: formData.decision_power_percent,
+      });
+      setEditingId(null);
+      setFormData({ name: "", shares: 0, invested_amount: 0, invested_at: "", note: "", decision_power_percent: 0 });
+      refetch();
+    } catch (e: unknown) {
+      setSubmitError((e as Error)?.message || "ไม่สามารถแก้ไขได้");
+    }
+  };
+
+  const handleDeleteInvestor = async (id: string) => {
+    if (!confirm("ต้องการลบหุ้นส่วนนี้?")) return;
+    setSubmitError(null);
+    try {
+      await deleteInvestor(id);
+      refetch();
+    } catch (e: unknown) {
+      setSubmitError((e as Error)?.message || "ไม่สามารถลบได้");
+    }
+  };
+
+  const handleUpdateMarketCap = async () => {
+    const mc = parseFloat(marketCapInput);
+    if (isNaN(mc) || mc < 0) {
+      setSubmitError("กรุณากรอกมูลค่าที่ถูกต้อง");
+      return;
+    }
+    setSubmitError(null);
+    try {
+      await updateMarketCap(mc);
+      setShowMarketCapForm(false);
+      setMarketCapInput("");
+      refetch();
+    } catch (e: unknown) {
+      setSubmitError((e as Error)?.message || "ไม่สามารถอัพเดตได้");
+    }
+  };
+
+  const startEdit = (inv: InvestorEntry) => {
+    setEditingId(inv.id);
+    setFormData({
+      name: inv.name,
+      shares: inv.shares,
+      invested_amount: inv.invested_amount,
+      invested_at: inv.invested_at,
+      note: inv.note || "",
+      decision_power_percent: inv.decision_power_percent ?? 0,
+    });
+  };
 
   const handleExport = () => {
-    const header = "Name,Shares,Ownership %,Invested,Share Value,Invested At\n";
+    const header = "Name,Shares,Ownership %,Invested,Share Value,Invested At,Decision Power %\n";
     const rows = investorsWithOwnership
       .map(
         (i) =>
           `${i.name},${i.shares},${i.ownership_percent.toFixed(2)}%,${
             i.invested_amount
-          },${i.share_value.toFixed(2)},${i.invested_at}`
+          },${i.share_value.toFixed(2)},${i.invested_at},${(i.decision_power_percent ?? 0).toFixed(1)}%`
       )
       .join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
@@ -139,15 +178,34 @@ export const MarketCapManager: React.FC = () => {
         </h2>
         <p className="text-violet-100 text-sm">
           Market Cap ปัจจุบัน • ตารางนักลงทุนและ % การถือหุ้น • มูลค่าหุ้น •
-          การเติบโตของบริษัท
+          การเติบโตของบริษัท — ตัวเลขมาจาก API เท่านั้น (ไม่มีค่า demo ใน UI)
         </p>
       </div>
 
+      {submitError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
+          {submitError}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h3 className="font-bold text-slate-800">มูลค่าบริษัทและการลงทุน</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {error && <span className="text-sm text-rose-600">{error}</span>}
           <button
-            onClick={fetchData}
+            onClick={() => setShowMarketCapForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-100 text-violet-700 rounded-lg text-sm font-medium hover:bg-violet-200"
+          >
+            อัพเดต Market Cap
+          </button>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+          >
+            <Plus size={16} /> เพิ่มหุ้นส่วน
+          </button>
+          <button
+            onClick={refetch}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
           >
@@ -166,6 +224,175 @@ export const MarketCapManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {showMarketCapForm && (
+        <div className="bg-white rounded-xl border border-violet-200 p-4">
+          <h4 className="font-bold text-slate-800 mb-2">อัพเดต Market Cap ปัจจุบัน</h4>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              value={marketCapInput}
+              onChange={(e) => setMarketCapInput(e.target.value)}
+              placeholder="มูลค่า (THB)"
+              className="border border-slate-200 rounded-lg px-3 py-2 w-40"
+            />
+            <button onClick={handleUpdateMarketCap} className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium">
+              บันทึก
+            </button>
+            <button onClick={() => { setShowMarketCapForm(false); setSubmitError(null); }} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showAddForm && (
+        <div className="bg-white rounded-xl border border-emerald-200 p-4 space-y-3">
+          <h4 className="font-bold text-slate-800">เพิ่มหุ้นส่วน/นักลงทุน</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">ชื่อบริษัทหรือบุคคล</label>
+              <input
+                type="text"
+                value={formData.name || ""}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="เช่น บริษัท ABC หรือ นายสมชาย"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">จำนวนหุ้น</label>
+              <input
+                type="number"
+                value={formData.shares ?? ""}
+                onChange={(e) => setFormData({ ...formData, shares: parseInt(e.target.value, 10) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">เงินลงทุน (THB)</label>
+              <input
+                type="number"
+                value={formData.invested_amount ?? ""}
+                onChange={(e) => setFormData({ ...formData, invested_amount: parseFloat(e.target.value) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">วันที่ลงทุน</label>
+              <input
+                type="date"
+                value={formData.invested_at || ""}
+                onChange={(e) => setFormData({ ...formData, invested_at: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">สัดส่วนอำนาจร่วมตัดสินใจ (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={formData.decision_power_percent ?? ""}
+                onChange={(e) => setFormData({ ...formData, decision_power_percent: parseFloat(e.target.value) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-slate-500 mb-1">หมายเหตุ</label>
+              <input
+                type="text"
+                value={formData.note || ""}
+                onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                placeholder="—"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleAddInvestor} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium">
+              บันทึก
+            </button>
+            <button onClick={() => { setShowAddForm(false); setSubmitError(null); }} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editingId && (
+        <div className="bg-white rounded-xl border border-indigo-200 p-4 space-y-3">
+          <h4 className="font-bold text-slate-800">แก้ไขหุ้นส่วน</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">ชื่อบริษัทหรือบุคคล</label>
+              <input
+                type="text"
+                value={formData.name || ""}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">จำนวนหุ้น</label>
+              <input
+                type="number"
+                value={formData.shares ?? ""}
+                onChange={(e) => setFormData({ ...formData, shares: parseInt(e.target.value, 10) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">เงินลงทุน (THB)</label>
+              <input
+                type="number"
+                value={formData.invested_amount ?? ""}
+                onChange={(e) => setFormData({ ...formData, invested_amount: parseFloat(e.target.value) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">วันที่ลงทุน</label>
+              <input
+                type="date"
+                value={formData.invested_at || ""}
+                onChange={(e) => setFormData({ ...formData, invested_at: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">สัดส่วนอำนาจร่วมตัดสินใจ (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={formData.decision_power_percent ?? ""}
+                onChange={(e) => setFormData({ ...formData, decision_power_percent: parseFloat(e.target.value) || 0 })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-slate-500 mb-1">หมายเหตุ</label>
+              <input
+                type="text"
+                value={formData.note || ""}
+                onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => editingId && handleUpdateInvestor(editingId)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">
+              บันทึก
+            </button>
+            <button onClick={() => { setEditingId(null); setSubmitError(null); }} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
@@ -233,20 +460,14 @@ export const MarketCapManager: React.FC = () => {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-6 py-3 text-left font-semibold">ชื่อ</th>
-                <th className="px-6 py-3 text-right font-semibold">หุ้น</th>
-                <th className="px-6 py-3 text-right font-semibold">
-                  % ถือหุ้น
-                </th>
-                <th className="px-6 py-3 text-right font-semibold">
-                  เงินลงทุน
-                </th>
-                <th className="px-6 py-3 text-right font-semibold">
-                  มูลค่าหุ้นปัจจุบัน
-                </th>
-                <th className="px-6 py-3 text-left font-semibold">
-                  วันที่ลงทุน
-                </th>
+                <th className="px-6 py-3 text-left font-semibold">ชื่อบริษัท/บุคคล</th>
+                <th className="px-6 py-3 text-right font-semibold">จำนวนหุ้น</th>
+                <th className="px-6 py-3 text-right font-semibold">% ถือหุ้น</th>
+                <th className="px-6 py-3 text-right font-semibold">เงินลงทุน</th>
+                <th className="px-6 py-3 text-right font-semibold">มูลค่าหุ้นปัจจุบัน</th>
+                <th className="px-6 py-3 text-left font-semibold">วันที่ลงทุน</th>
+                <th className="px-6 py-3 text-right font-semibold">สัดส่วนอำนาจร่วมตัดสินใจ</th>
+                <th className="px-6 py-3 text-right font-semibold">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -272,6 +493,25 @@ export const MarketCapManager: React.FC = () => {
                   </td>
                   <td className="px-6 py-3 text-slate-600">
                     {inv.invested_at}
+                  </td>
+                  <td className="px-6 py-3 text-right text-slate-600">
+                    {(inv.decision_power_percent ?? 0).toFixed(1)}%
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <button
+                      onClick={() => startEdit(inv)}
+                      className="p-1.5 text-slate-500 hover:text-indigo-600"
+                      title="แก้ไข"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteInvestor(inv.id)}
+                      className="p-1.5 text-slate-500 hover:text-rose-600 ml-1"
+                      title="ลบ"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}

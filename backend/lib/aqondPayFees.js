@@ -1,33 +1,64 @@
 /**
- * AqondPay Fee Logic — Double-Side VIP
- * Phase 2: Financial Core
+ * AqondPay Fee Logic — Dynamic Fee Structure by VIP Tier
  *
- * Client Side (Platform Fee): 8% General, 6% Silver, 5% Gold, 4% Platinum
- * Partner Match/Board (Commission): 24% Non-VIP, 18% Silver, 15% Gold, 12% Platinum
- * Partner Booking (Commission): 32% Non-VIP, 18% Silver, 15% Gold, 12% Platinum
+ * Wallet deposit (PaySo / Ksher QR): ค่าธรรมเนียมรวม = MDR ขาเข้า (ตาม gateway จาก Payment Provider Gate) + Match markup %
+ * (เดียวกับหน้า Admin Payment Provider Gate — getTransportMatchMarkupRate)
  *
- * Deposit (Wallet Top-up):
- * - total_fee: % ที่หักจากผู้ใช้ (รวม margin)
- * - gateway_cost: % ที่ Omise หักจากเรา
- * - PromptPay: 0% (แนะนำ — รับเต็มจำนวน), เรารับภาระ Omise 1.65%
- * - TrueMoney: 2.85% (gateway 2.65% + margin 0.2%)
- * - Credit Card: 3.95% (gateway 3.65% + margin 0.3%)
+ * Fee Structure (ตามที่เจ้านายสั่งเด็ดขาด):
+ * | Tier    | Sourcing | Booking (เฉพาะหมวด) | Bidding |
+ * |---------|----------|---------------------|---------|
+ * | Normal  | 8%       | 32%                 | 9.3%    |
+ * | Silver  | 8%       | 28%                 | 9.3%    |
+ * | Gold    | 6%       | 24%                 | 8.3%    |
+ * | Platinum| 6%       | 20%                 | 6.3%    |
+ *
+ * - Sourcing (ค่าจัดหา): ใช้ทุกประเภทงาน
+ * - Booking: เฉพาะ Slot-based Booking เท่านั้น
+ * - Bidding (ค่าบิดส่วนต่าง): ใช้กับ Match Board / Advance Jobs
+ *
+ * Deposit (Wallet Top-up): PromptPay 0%, TrueMoney 2.85%, Card 3.95%
  */
+
+import {
+  getInboundMdrDecimalForGatewayAndChannel,
+  getLocalGatewayFromEnv,
+  getTransportMatchMarkupRate,
+  LOCAL_GATEWAY_KSHER,
+} from './paymentProviderGate.js';
 
 const DEPOSIT_CONFIG = {
   promptpay: { total_fee: 0, gateway_cost: 0.0165 },
   truemoney: { total_fee: 0.0285, gateway_cost: 0.0265 },
-  card: { total_fee: 0.0395, gateway_cost: 0.0365 }
+  card: { total_fee: 0.0395, gateway_cost: 0.0365 },
+  bank_transfer: { total_fee: 0, gateway_cost: 0 },
+  /** legacy static — dynamic path uses paymentProviderGate below */
+  payso: { total_fee: 0.01, gateway_cost: 0.01 },
+  manual: { total_fee: 0, gateway_cost: 0 },
 };
 
-/**
- * คำนวณยอดเติมเงิน: net_to_wallet, gateway_fee, platform_margin
- * @param {number} grossAmount - จำนวนที่ผู้ใช้จ่าย (บาท)
- * @param {string} sourceType - promptpay | truemoney | card
- * @returns {{ net_to_wallet, gateway_fee_amount, platform_margin_amount }}
- */
 function calcDepositFeeBreakdown(grossAmount, sourceType) {
-  const cfg = DEPOSIT_CONFIG[(sourceType || 'promptpay').toLowerCase()] || DEPOSIT_CONFIG.promptpay;
+  const st = (sourceType || 'promptpay').toLowerCase();
+  /** PaySo / Ksher instant QR — MDR จริง + match markup จาก Gate (รวมถึง runtime PATCH) */
+  if (st === 'payso' || st === 'ksher') {
+    const gw = st === 'ksher' ? LOCAL_GATEWAY_KSHER : getLocalGatewayFromEnv();
+    const mdr = getInboundMdrDecimalForGatewayAndChannel(gw, 'promptpay');
+    const markup = getTransportMatchMarkupRate();
+    const totalFeeRate = Math.min(0.5, Math.max(0, Number(mdr) + Number(markup)));
+    const gatewayFeeAmount = Math.round(grossAmount * mdr * 100) / 100;
+    const totalFeeAmount = Math.round(grossAmount * totalFeeRate * 100) / 100;
+    const netToWallet = Math.round((grossAmount - totalFeeAmount) * 100) / 100;
+    const platformMarginAmount = Math.round((totalFeeAmount - gatewayFeeAmount) * 100) / 100;
+    return {
+      net_to_wallet: netToWallet,
+      gateway_fee_amount: gatewayFeeAmount,
+      platform_margin_amount: platformMarginAmount,
+      total_fee_amount: totalFeeAmount,
+      fee_model: 'gateway_mdr_plus_match_markup',
+      mdr_decimal: mdr,
+      markup_decimal: markup,
+    };
+  }
+  const cfg = DEPOSIT_CONFIG[st] || DEPOSIT_CONFIG.promptpay;
   const gatewayFeeAmount = Math.round(grossAmount * cfg.gateway_cost * 100) / 100;
   const totalFeeAmount = Math.round(grossAmount * cfg.total_fee * 100) / 100;
   const netToWallet = Math.round((grossAmount - totalFeeAmount) * 100) / 100;
@@ -36,10 +67,11 @@ function calcDepositFeeBreakdown(grossAmount, sourceType) {
     net_to_wallet: netToWallet,
     gateway_fee_amount: gatewayFeeAmount,
     platform_margin_amount: platformMarginAmount,
-    total_fee_amount: totalFeeAmount
+    total_fee_amount: totalFeeAmount,
   };
 }
 
+/** Client-side platform fee (legacy) */
 const PLATFORM_FEE = {
   none: 0.08,
   silver: 0.06,
@@ -47,19 +79,35 @@ const PLATFORM_FEE = {
   platinum: 0.04
 };
 
-const COMMISSION_MATCH_BOARD = {
-  none: 0.24,
-  silver: 0.18,
-  gold: 0.15,
-  platinum: 0.12
+/** Sourcing Fee (ค่าจัดหา): Normal/Silver=8%, Gold/Platinum=6% */
+const SOURCING_FEE = {
+  none: 0.08,
+  silver: 0.08,
+  gold: 0.06,
+  platinum: 0.06
 };
 
-const COMMISSION_BOOKING = {
+/** Booking Fee (เฉพาะหมวด Slot-based Booking): N=32%, S=28%, G=24%, P=20% */
+const BOOKING_FEE = {
   none: 0.32,
-  silver: 0.18,
-  gold: 0.15,
-  platinum: 0.12
+  silver: 0.28,
+  gold: 0.24,
+  platinum: 0.20
 };
+
+/** Bidding Fee (ค่าบิดส่วนต่าง): N/S=9.3%, G=8.3%, P=6.3% */
+const BIDDING_FEE = {
+  none: 0.093,
+  silver: 0.093,
+  gold: 0.083,
+  platinum: 0.063
+};
+
+/** Match Board / Advance Jobs: Sourcing + Bidding (legacy alias) */
+const COMMISSION_MATCH_BOARD = BIDDING_FEE;
+
+/** Booking: ใช้ BOOKING_FEE โดยตรง */
+const COMMISSION_BOOKING = BOOKING_FEE;
 
 const VIP_ADMIN_SIPHON_PERCENT = 12.5; // 12.5% of gross profit → vip_admin_fund
 
@@ -133,16 +181,43 @@ function calcVipAdminFundSiphon(grossProfit, vipTier) {
   return Math.round(siphon * 100) / 100;
 }
 
+/** Sourcing: N/S=8%, G/P=6% */
+function getSourcingFee(tier) {
+  return SOURCING_FEE[normalizeTier(tier)] ?? 0.08;
+}
+
+/** Booking: N=32%, S=28%, G=24%, P=20% (เฉพาะหมวด Slot-based) */
+function getBookingFee(tier) {
+  return BOOKING_FEE[normalizeTier(tier)] ?? 0.32;
+}
+
+/** Bidding: N/S=9.3%, G=8.3%, P=6.3% */
+function getBiddingFee(tier) {
+  return BIDDING_FEE[normalizeTier(tier)] ?? 0.093;
+}
+
+/** Match Board / Advance: Sourcing + Bidding */
+function getMatchBoardTotalFee(tier) {
+  return getSourcingFee(tier) + getBiddingFee(tier);
+}
+
 export {
   DEPOSIT_CONFIG,
   calcDepositFeeBreakdown,
   PLATFORM_FEE,
+  SOURCING_FEE,
+  BOOKING_FEE,
+  BIDDING_FEE,
   COMMISSION_MATCH_BOARD,
   COMMISSION_BOOKING,
   VIP_ADMIN_SIPHON_PERCENT,
   getPlatformFeeRate,
   getCommissionMatchBoard,
   getCommissionBooking,
+  getSourcingFee,
+  getBookingFee,
+  getBiddingFee,
+  getMatchBoardTotalFee,
   calcPlatformFee,
   calcCommissionMatchBoard,
   calcCommissionBooking,

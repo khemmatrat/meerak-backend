@@ -2,7 +2,7 @@
 -- 007: LEDGER (DOUBLE-ENTRY), RECONCILIATION, FINANCIAL AUDIT LOG
 -- =================================================================================
 -- Design: LEDGER_AUDIT_RECONCILIATION_DESIGN.txt
--- Use: Single source of truth for balance-affecting events; recon vs bank/TrueMoney; immutable audit.
+-- Use: Single source of truth for balance-affecting events, recon vs bank/TrueMoney, immutable audit.
 -- Prerequisite: reject_ledger_audit_update_delete() from 006_payment_ledger_audit.sql
 -- =================================================================================
 

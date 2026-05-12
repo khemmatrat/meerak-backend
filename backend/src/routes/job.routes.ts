@@ -122,11 +122,11 @@ router.get('/recommended', optionalAuthenticate, async (req, res) => {
     }
     
     console.log(`🎯 [RECOMMENDED JOBS] Returning ${jobs.length} jobs`);
-    res.json(jobs);
+    return res.json(jobs);
     
   } catch (error) {
     console.error('❌ [RECOMMENDED JOBS] Error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to fetch recommended jobs',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -198,7 +198,8 @@ router.get('/all', optionalAuthenticate, async (req, res) => {
         created_by_avatar: job.client_avatar || job.created_by_avatar,
         location: location,
         clientName: job.client_name || 'Client',
-        clientId: job.client_id
+        clientId: job.client_id,
+        isMock: false
       };
     });
     
@@ -213,20 +214,22 @@ router.get('/all', optionalAuthenticate, async (req, res) => {
         status: "open",
         datetime: new Date().toISOString(),
         created_at: new Date().toISOString(),
+        created_by: "mock",
         created_by_name: "Anna Employer",
         created_by_avatar: "https://i.pravatar.cc/150?u=anna",
         location: { lat: 13.736717, lng: 100.523186 },
         clientName: "Anna Employer",
+        clientId: undefined,
         isMock: true
       });
     }
     
     console.log(`📋 [ALL JOBS] Returning ${jobs.length} jobs`);
-    res.json(jobs);
+    return res.json(jobs);
     
   } catch (error) {
     console.error('❌ [ALL JOBS] Error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to fetch jobs',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -318,7 +321,7 @@ router.post('/', authenticate, async (req, res) => {
     
     console.log('✅ [CREATE JOB] Job created successfully:', jobId);
     
-    res.json({
+    return res.json({
       success: true,
       message: 'Job created successfully',
       job: {
@@ -342,7 +345,7 @@ router.post('/', authenticate, async (req, res) => {
       }
     }
     
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: errorMessage,
       details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : undefined
@@ -386,11 +389,11 @@ router.get('/:jobId', optionalAuthenticate, async (req, res) => {
     }
     
     console.log(`✅ Found job: ${job.title}`);
-    res.json(job);
+    return res.json(job);
     
   } catch (error) {
     console.error('❌ Get job error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to fetch job',
       jobId: req.params.jobId,
       message: error instanceof Error ? error.message : 'Unknown error'

@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 import { getAdminToken, getInternalGatewayPulse } from "../services/adminApi";
+import {
+  GatewayMemoryPressureDisplay,
+  type ProcessMemoryPulse,
+} from "./GatewayMemoryPressureDisplay";
 
 type HealthLevel = "green" | "yellow" | "red" | "unknown";
 
@@ -25,6 +29,7 @@ export const GatewayInternalHealthStrip: React.FC = () => {
   const [level, setLevel] = useState<HealthLevel>("unknown");
   const [reasons, setReasons] = useState<string[]>([]);
   const [detail, setDetail] = useState<string>("");
+  const [processMemory, setProcessMemory] = useState<ProcessMemoryPulse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -55,6 +60,7 @@ export const GatewayInternalHealthStrip: React.FC = () => {
       setLevel("unknown");
       setReasons(["pulse_request_failed"]);
       setDetail("");
+      setProcessMemory(null);
     } finally {
       setLoading(false);
     }
@@ -91,6 +97,9 @@ export const GatewayInternalHealthStrip: React.FC = () => {
         <p className="text-xs text-emerald-800">Ledger, webhook processor และ scheduler อยู่ในช่วงปกติ</p>
       ) : null}
       {detail ? <p className="text-xs text-slate-500 font-mono w-full sm:w-auto">{detail}</p> : null}
+      {processMemory ? (
+        <GatewayMemoryPressureDisplay pm={processMemory} variant="strip" />
+      ) : null}
     </div>
   );
 };

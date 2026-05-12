@@ -13,9 +13,9 @@ export const adminMiddleware = (
 
   // DEV MODE: mock ให้ user เป็น admin
   // ภายหลังค่อยเช็ค role จริงจาก DB / JWT
-  if (req.user.role && req.user.role !== 'admin') {
+  if (req.user.role && req.user.role !== 'ADMIN') {
     return res.status(403).json({ error: 'Admin access only' });
   }
 
-  next();
+  return next();
 };

@@ -3,6 +3,7 @@
  * - Double-entry ledger + state machine live in DB (migration 146).
  * - HMAC + nonce for signed calls; never log PAN/CVV (use masking helpers).
  */
+import v8 from 'node:v8';
 import {
   canTransition,
   sanitizeMetadata,
@@ -20,6 +21,17 @@ import { enqueueGatewayWebhook } from './gatewayWebhookOutbox.js';
 
 function getHmacSecret() {
   return (process.env.INTERNAL_GATEWAY_HMAC_SECRET || '').trim();
+}
+
+/** Align with server.js getMemoryPressurePct — heapUsed / V8 heap_size_limit */
+function getHeapPressurePercent() {
+  try {
+    const mem = process.memoryUsage();
+    const limit = v8.getHeapStatistics().heap_size_limit || 1;
+    return Math.round((mem.heapUsed / limit) * 100);
+  } catch {
+    return 0;
+  }
 }
 
 export function isInternalGatewayEnabled() {
@@ -253,7 +265,7 @@ export async function createGatewayTransaction(pool, input) {
       await client.query('COMMIT');
       return row;
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw e;
     } finally {
       client.release();
@@ -349,7 +361,7 @@ export async function transitionGatewayTransaction(pool, transactionId, newStatu
           payload: { gateway_transaction_id: id, status: to },
           idempotencyKey: `${id}:${to}`,
           correlationId: id,
-        }).catch(() => {});
+        }).catch(() => { });
       });
     }
     return { ok: true, status: to };
@@ -586,6 +598,14 @@ export async function getGatewayPulse(pool) {
 
   const hmacSecretConfigured = !!(process.env.INTERNAL_GATEWAY_HMAC_SECRET || '').trim();
 
+  const mem = process.memoryUsage();
+  const heapStats = v8.getHeapStatistics();
+  const heapLimit = heapStats.heap_size_limit || 1;
+  const heapPressurePct = getHeapPressurePercent();
+  const guardPct = Math.min(99, Math.max(50, parseInt(process.env.MEMORY_GUARD_PCT || '85', 10)));
+  const guardOff =
+    process.env.MEMORY_GUARD_DISABLED === '1' || process.env.MEMORY_GUARD_DISABLED === 'true';
+
   return {
     scheduler: hb,
     webhookOutboxPending,
@@ -601,6 +621,18 @@ export async function getGatewayPulse(pool) {
     systemHealth: {
       level: systemHealthLevel,
       reasons: [...new Set(reasons)],
+    },
+    /** Node process memory (same basis as cron memory guard + /api/admin/jobs/status) */
+    processMemory: {
+      heapPressurePercent: heapPressurePct,
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+      heapSizeLimitMb: Math.round(heapLimit / 1024 / 1024),
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+      memoryGuardPct: guardPct,
+      memoryGuardDisabled: guardOff,
+      /** true when heap pressure > 80% of V8 limit (informational) */
+      overEightyPercent: heapPressurePct > 80,
     },
     generatedAt: new Date().toISOString(),
   };

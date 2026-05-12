@@ -1,0 +1,548 @@
+/**
+ * themes-vip-exclusive.css
+ * Gold & Silver theme ONLY. No shared CSS with Standard or Platinum.
+ * All selectors must be under .theme-gold-exclusive / [data-vip-theme="gold"]
+ * or .theme-silver-exclusive / [data-vip-theme="silver"].
+ * Do NOT modify this file to affect Standard or Platinum.
+ */
+
+/* ========== GOLD EXCLUSIVE — Champagne gold, soft gold shadow, gold icons ========== */
+[data-vip-theme="gold"],
+.theme-gold-exclusive { }
+
+/* Body/Root: Gold — Royal Obsidian (Pure Obsidian Black) */
+body.theme-gold-exclusive,
+html.theme-gold-exclusive,
+body.theme-gold-exclusive #root { background: #0a0a0a !important; }
+
+/* Layout: root & main (Pure Obsidian Black base) */
+[data-vip-theme="gold"].min-h-screen,
+.theme-gold-exclusive.min-h-screen { background: #0a0a0a !important; }
+[data-vip-theme="gold"] main,
+.theme-gold-exclusive main { background: #0a0a0a !important; }
+[data-vip-theme="gold"] main > div,
+.theme-gold-exclusive main > div { background: #0a0a0a !important; }
+
+/* Navbar: gold accent, soft gold glow */
+[data-vip-theme="gold"] .nav-glass,
+.theme-gold-exclusive .nav-glass {
+  background: rgba(20, 18, 14, 0.92) !important;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.4) !important;
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+[data-vip-theme="gold"] .nav-glass .text-slate-100,
+[data-vip-theme="gold"] .nav-glass .text-slate-200,
+[data-vip-theme="gold"] .nav-glass .text-slate-400,
+.theme-gold-exclusive .nav-glass .text-slate-100,
+.theme-gold-exclusive .nav-glass .text-slate-200,
+.theme-gold-exclusive .nav-glass .text-slate-400 {
+  color: #fef3c7 !important;
+}
+[data-vip-theme="gold"] .nav-glass a.flex-shrink-0 > div.w-8.h-8,
+.theme-gold-exclusive .nav-glass a.flex-shrink-0 > div.w-8.h-8 {
+  background: linear-gradient(135deg, #D4AF37 0%, #F9E29C 50%, #B8860B 100%) !important;
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.5) !important;
+}
+[data-vip-theme="gold"] .nav-glass a.flex-shrink-0 > div.w-8.h-8 .text-white,
+.theme-gold-exclusive .nav-glass a.flex-shrink-0 > div.w-8.h-8 .text-white { color: #0c0d0f !important; }
+[data-vip-theme="gold"] .nav-glass a.flex-shrink-0 + span,
+[data-vip-theme="gold"] .nav-glass .font-bold.text-xl.tracking-tight,
+.theme-gold-exclusive .nav-glass a.flex-shrink-0 + span,
+.theme-gold-exclusive .nav-glass .font-bold.text-xl.tracking-tight { color: #fef3c7 !important; }
+
+/* Bottom nav: gold bar, gold icons */
+[data-vip-theme="gold"] .nav-bottom-glass,
+.theme-gold-exclusive .nav-bottom-glass {
+  background: rgba(20, 18, 14, 0.95) !important;
+  border-top: 1px solid rgba(212, 175, 55, 0.35) !important;
+  box-shadow: 0 -4px 20px rgba(251, 191, 36, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+[data-vip-theme="gold"] .nav-bottom-glass .text-slate-400,
+[data-vip-theme="gold"] .nav-bottom-glass .text-slate-500,
+.theme-gold-exclusive .nav-bottom-glass .text-slate-400,
+.theme-gold-exclusive .nav-bottom-glass .text-slate-500 { color: #d4a574 !important; }
+[data-vip-theme="gold"] .nav-bottom-glass .text-emerald-600,
+.theme-gold-exclusive .nav-bottom-glass .text-emerald-600 { color: #fbbf24 !important; }
+
+/* Gold button (Create Job, FAB): High-shine Gold gradient + drop-shadow */
+.btn-gold-exclusive {
+  background: linear-gradient(135deg, #D4AF37 0%, #F9E29C 45%, #B8860B 100%) !important;
+  color: #0c0d0f !important;
+  font-weight: 700;
+  border: none !important;
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.4));
+}
+.btn-gold-exclusive:hover {
+  filter: brightness(1.08) drop-shadow(0 0 8px rgba(212, 175, 55, 0.5));
+  box-shadow: 0 0 24px rgba(212, 175, 55, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+}
+.nav-bottom-glass .btn-gold-exclusive {
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  min-width: 2.75rem !important;
+  min-height: 2.75rem !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.5), 0 -2px 12px rgba(251, 191, 36, 0.2) !important;
+}
+
+/* Content: vip-theme-gold wrapper — Royal Obsidian */
+[data-vip-theme="gold"] .vip-theme-gold,
+.theme-gold-exclusive .vip-theme-gold {
+  background: #0a0a0a !important;
+  color: #FEFCE8;
+  min-height: 100%;
+}
+/* Gold: Golden Halo effect — Royal Obsidian */
+[data-vip-theme="gold"] .vip-theme-gold .vip-surface,
+[data-vip-theme="gold"] .vip-theme-gold .bg-white,
+.theme-gold-exclusive .vip-theme-gold .vip-surface,
+.theme-gold-exclusive .vip-theme-gold .bg-white {
+  background: rgba(20, 18, 14, 0.92) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  color: #FEFCE8 !important;
+}
+[data-vip-theme="gold"] .vip-theme-gold .luxury-card,
+[data-vip-theme="gold"] .vip-theme-gold .premium-card,
+.theme-gold-exclusive .vip-theme-gold .luxury-card,
+.theme-gold-exclusive .vip-theme-gold .premium-card {
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+[data-vip-theme="gold"] .vip-theme-gold .luxury-card::before,
+[data-vip-theme="gold"] .vip-theme-gold .premium-card::before,
+.theme-gold-exclusive .vip-theme-gold .luxury-card::before,
+.theme-gold-exclusive .vip-theme-gold .premium-card::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent) !important;
+}
+[data-vip-theme="gold"] .vip-theme-gold .text-gray-900,
+.theme-gold-exclusive .vip-theme-gold .text-gray-900 { color: #EAB308 !important; }
+[data-vip-theme="gold"] .vip-theme-gold .text-gray-800,
+.theme-gold-exclusive .vip-theme-gold .text-gray-800 { color: #EAB308 !important; }
+[data-vip-theme="gold"] .vip-theme-gold .text-gray-700,
+.theme-gold-exclusive .vip-theme-gold .text-gray-700 { color: #FEFCE8 !important; }
+[data-vip-theme="gold"] .vip-theme-gold .text-gray-500,
+.theme-gold-exclusive .vip-theme-gold .text-gray-500 { color: #FEFCE8 !important; }
+
+/* Gold: Job Detail — Royal Obsidian */
+[data-vip-theme="gold"] .job-detail-page,
+.theme-gold-exclusive .job-detail-page {
+  background: #0a0a0a !important;
+}
+[data-vip-theme="gold"] .job-detail-main-card,
+.theme-gold-exclusive .job-detail-main-card {
+  background: rgba(20, 18, 14, 0.95) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+[data-vip-theme="gold"] .job-detail-main-card .job-detail-info-card,
+.theme-gold-exclusive .job-detail-main-card .job-detail-info-card {
+  background: rgba(30, 27, 24, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.2) !important;
+  box-shadow: inset 0 0 8px rgba(212, 175, 55, 0.08) !important;
+}
+[data-vip-theme="gold"] .job-detail-main-card .job-detail-info-card .text-gray-500,
+[data-vip-theme="gold"] .job-detail-main-card .job-detail-info-card .text-gray-700,
+.theme-gold-exclusive .job-detail-main-card .job-detail-info-card .text-gray-500,
+.theme-gold-exclusive .job-detail-main-card .job-detail-info-card .text-gray-700 {
+  color: #FEFCE8 !important;
+}
+[data-vip-theme="gold"] .job-detail-main-card .job-detail-info-card .text-gray-900,
+.theme-gold-exclusive .job-detail-main-card .job-detail-info-card .text-gray-900 {
+  color: #EAB308 !important;
+}
+[data-vip-theme="gold"] .vip-theme-gold .number-wallet-gold,
+.theme-gold-exclusive .vip-theme-gold .number-wallet-gold {
+  color: #D4AF37 !important;
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.4) !important;
+}
+
+/* ========== SILVER EXCLUSIVE — Metallic silver, elegant premium borders ========== */
+[data-vip-theme="silver"],
+.theme-silver-exclusive { }
+
+/* Body/Root: Silver — Liquid Mercury (Deep Charcoal Slate) */
+body.theme-silver-exclusive,
+html.theme-silver-exclusive,
+body.theme-silver-exclusive #root { background: #1e293b !important; }
+
+/* Layout: root & main (Deep Charcoal Slate base) */
+[data-vip-theme="silver"].min-h-screen,
+.theme-silver-exclusive.min-h-screen { background: #1e293b !important; }
+[data-vip-theme="silver"] main,
+.theme-silver-exclusive main { background: #1e293b !important; }
+[data-vip-theme="silver"] main > div,
+.theme-silver-exclusive main > div { background: #1e293b !important; }
+
+/* Navbar: metallic border, no gold */
+[data-vip-theme="silver"] .nav-glass,
+.theme-silver-exclusive .nav-glass {
+  background: rgba(30, 41, 59, 0.92) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+[data-vip-theme="silver"] .nav-glass .text-slate-100,
+[data-vip-theme="silver"] .nav-glass .text-slate-200,
+[data-vip-theme="silver"] .nav-glass .text-slate-400,
+.theme-silver-exclusive .nav-glass .text-slate-100,
+.theme-silver-exclusive .nav-glass .text-slate-200,
+.theme-silver-exclusive .nav-glass .text-slate-400 {
+  color: #e2e8f0 !important;
+}
+[data-vip-theme="silver"] .nav-glass a.flex-shrink-0 > div.w-8.h-8,
+.theme-silver-exclusive .nav-glass a.flex-shrink-0 > div.w-8.h-8 {
+  background: linear-gradient(145deg, #94a3b8 0%, #64748b 50%, #475569 100%) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+[data-vip-theme="silver"] .nav-glass a.flex-shrink-0 + span,
+[data-vip-theme="silver"] .nav-glass .font-bold.text-xl.tracking-tight,
+.theme-silver-exclusive .nav-glass a.flex-shrink-0 + span,
+.theme-silver-exclusive .nav-glass .font-bold.text-xl.tracking-tight { color: #e2e8f0 !important; }
+
+/* Bottom nav: silver bar, elegant border */
+[data-vip-theme="silver"] .nav-bottom-glass,
+.theme-silver-exclusive .nav-bottom-glass {
+  background: rgba(30, 41, 59, 0.95) !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.35) !important;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+[data-vip-theme="silver"] .nav-bottom-glass .text-slate-400,
+[data-vip-theme="silver"] .nav-bottom-glass .text-slate-500,
+.theme-silver-exclusive .nav-bottom-glass .text-slate-400,
+.theme-silver-exclusive .nav-bottom-glass .text-slate-500 { color: #94a3b8 !important; }
+[data-vip-theme="silver"] .nav-bottom-glass .text-emerald-600,
+.theme-silver-exclusive .nav-bottom-glass .text-emerald-600 { color: #94a3b8 !important; }
+
+/* Silver button (Create Job, FAB): Metallic, elegant border */
+.btn-silver-exclusive {
+  background: linear-gradient(145deg, #cbd5e1 0%, #94a3b8 50%, #64748b 100%) !important;
+  color: #0f172a !important;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+.btn-silver-exclusive:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+}
+.nav-bottom-glass .btn-silver-exclusive {
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  min-width: 2.75rem !important;
+  min-height: 2.75rem !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Content: vip-theme-silver wrapper — Liquid Mercury */
+[data-vip-theme="silver"] .vip-theme-silver,
+.theme-silver-exclusive .vip-theme-silver {
+  background: #1e293b !important;
+  color: #F1F5F9;
+  min-height: 100%;
+}
+/* Silver: Frosted Silver glass — Liquid Mercury style */
+[data-vip-theme="silver"] .vip-theme-silver .vip-surface,
+[data-vip-theme="silver"] .vip-theme-silver .bg-white,
+.theme-silver-exclusive .vip-theme-silver .vip-surface,
+.theme-silver-exclusive .vip-theme-silver .bg-white {
+  background: rgba(30, 41, 59, 0.6) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(203, 213, 225, 0.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  color: #F1F5F9 !important;
+}
+[data-vip-theme="silver"] .vip-theme-silver .luxury-card,
+[data-vip-theme="silver"] .vip-theme-silver .premium-card,
+.theme-silver-exclusive .vip-theme-silver .luxury-card,
+.theme-silver-exclusive .vip-theme-silver .premium-card {
+  background: rgba(30, 41, 59, 0.6) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(203, 213, 225, 0.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+[data-vip-theme="silver"] .vip-theme-silver .luxury-card::before,
+[data-vip-theme="silver"] .vip-theme-silver .premium-card::before,
+.theme-silver-exclusive .vip-theme-silver .luxury-card::before,
+.theme-silver-exclusive .vip-theme-silver .premium-card::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent) !important;
+}
+[data-vip-theme="silver"] .vip-theme-silver .text-gray-900,
+.theme-silver-exclusive .vip-theme-silver .text-gray-900 { color: #F1F5F9 !important; }
+[data-vip-theme="silver"] .vip-theme-silver .text-gray-800,
+.theme-silver-exclusive .vip-theme-silver .text-gray-800 { color: #F1F5F9 !important; }
+[data-vip-theme="silver"] .vip-theme-silver .text-gray-700,
+.theme-silver-exclusive .vip-theme-silver .text-gray-700 { color: #e2e8f0 !important; }
+[data-vip-theme="silver"] .vip-theme-silver .text-gray-500,
+.theme-silver-exclusive .vip-theme-silver .text-gray-500 { color: #94A3B8 !important; }
+
+/* Silver: Job Detail — Liquid Mercury */
+[data-vip-theme="silver"] .job-detail-page,
+.theme-silver-exclusive .job-detail-page {
+  background: #1e293b !important;
+}
+[data-vip-theme="silver"] .job-detail-main-card,
+.theme-silver-exclusive .job-detail-main-card {
+  background: rgba(30, 41, 59, 0.7) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(203, 213, 225, 0.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+[data-vip-theme="silver"] .job-detail-main-card .job-detail-info-card,
+.theme-silver-exclusive .job-detail-main-card .job-detail-info-card {
+  background: rgba(51, 65, 85, 0.5) !important;
+  border: 1px solid rgba(203, 213, 225, 0.15) !important;
+}
+[data-vip-theme="silver"] .job-detail-main-card .job-detail-info-card .text-gray-500,
+[data-vip-theme="silver"] .job-detail-main-card .job-detail-info-card .text-gray-700,
+.theme-silver-exclusive .job-detail-main-card .job-detail-info-card .text-gray-500,
+.theme-silver-exclusive .job-detail-main-card .job-detail-info-card .text-gray-700 {
+  color: #94A3B8 !important;
+}
+[data-vip-theme="silver"] .job-detail-main-card .job-detail-info-card .text-gray-900,
+.theme-silver-exclusive .job-detail-main-card .job-detail-info-card .text-gray-900 {
+  color: #F1F5F9 !important;
+}
+
+/* ========== หน้า Settings เฉพาะ Gold & Silver — เฉพาะการ์ด section (ไม่รวม Modal). Modal พื้นขาว ตัวอักษรเข้ม (ไม่เกี่ยว Standard) ========== */
+.vip-theme-gold .settings-page .bg-white.rounded-xl h3,
+.vip-theme-gold .settings-page .bg-white.rounded-xl .text-gray-500,
+.vip-theme-gold .settings-page .bg-white.rounded-xl .bg-gray-50 h3,
+[data-vip-theme="gold"] .settings-page .bg-white.rounded-xl h3,
+[data-vip-theme="gold"] .settings-page .bg-white.rounded-xl .text-gray-500,
+.theme-gold-exclusive .settings-page .bg-white.rounded-xl h3,
+.theme-gold-exclusive .settings-page .bg-white.rounded-xl .text-gray-500 {
+  color: #fde68a !important;
+}
+.vip-theme-gold .settings-page .bg-white.rounded-xl .text-gray-700,
+[data-vip-theme="gold"] .settings-page .bg-white.rounded-xl .text-gray-700,
+.theme-gold-exclusive .settings-page .bg-white.rounded-xl .text-gray-700 {
+  color: #fcd34d !important;
+}
+.vip-theme-gold .settings-modal-content,
+[data-vip-theme="gold"] .settings-modal-content,
+.theme-gold-exclusive .settings-modal-content {
+  background: #ffffff !important;
+}
+.vip-theme-gold .settings-modal-content .bg-gray-50,
+[data-vip-theme="gold"] .settings-modal-content .bg-gray-50,
+.theme-gold-exclusive .settings-modal-content .bg-gray-50 {
+  background: #f9fafb !important;
+}
+.vip-theme-gold .settings-modal-content h3,
+.vip-theme-gold .settings-modal-content .text-gray-800,
+.vip-theme-gold .settings-modal-content .text-gray-900,
+[data-vip-theme="gold"] .settings-modal-content h3,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-800,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-900,
+.theme-gold-exclusive .settings-modal-content h3,
+.theme-gold-exclusive .settings-modal-content .text-gray-800,
+.theme-gold-exclusive .settings-modal-content .text-gray-900 {
+  color: #111827 !important;
+}
+.vip-theme-gold .settings-modal-content .text-gray-500,
+.vip-theme-gold .settings-modal-content .text-gray-600,
+.vip-theme-gold .settings-modal-content .text-gray-700,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-500,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-600,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-700,
+.theme-gold-exclusive .settings-modal-content .text-gray-500,
+.theme-gold-exclusive .settings-modal-content .text-gray-600,
+.theme-gold-exclusive .settings-modal-content .text-gray-700 {
+  color: #374151 !important;
+}
+.vip-theme-gold .settings-modal-content .text-gray-400,
+[data-vip-theme="gold"] .settings-modal-content .text-gray-400,
+.theme-gold-exclusive .settings-modal-content .text-gray-400 {
+  color: #6b7280 !important;
+}
+.vip-theme-gold .settings-modal-content .border-gray-100,
+.theme-gold-exclusive .settings-modal-content .border-gray-100 {
+  border-color: #e5e7eb !important;
+}
+
+.vip-theme-silver .settings-page .bg-white.rounded-xl h3,
+.vip-theme-silver .settings-page .bg-white.rounded-xl .text-gray-500,
+.vip-theme-silver .settings-page .bg-white.rounded-xl .bg-gray-50 h3,
+[data-vip-theme="silver"] .settings-page .bg-white.rounded-xl h3,
+[data-vip-theme="silver"] .settings-page .bg-white.rounded-xl .text-gray-500,
+.theme-silver-exclusive .settings-page .bg-white.rounded-xl h3,
+.theme-silver-exclusive .settings-page .bg-white.rounded-xl .text-gray-500 {
+  color: #e2e8f0 !important;
+}
+.vip-theme-silver .settings-page .bg-white.rounded-xl .text-gray-700,
+[data-vip-theme="silver"] .settings-page .bg-white.rounded-xl .text-gray-700,
+.theme-silver-exclusive .settings-page .bg-white.rounded-xl .text-gray-700 {
+  color: #cbd5e1 !important;
+}
+.vip-theme-silver .settings-modal-content,
+[data-vip-theme="silver"] .settings-modal-content,
+.theme-silver-exclusive .settings-modal-content {
+  background: #ffffff !important;
+}
+.vip-theme-silver .settings-modal-content .bg-gray-50,
+[data-vip-theme="silver"] .settings-modal-content .bg-gray-50,
+.theme-silver-exclusive .settings-modal-content .bg-gray-50 {
+  background: #f9fafb !important;
+}
+.vip-theme-silver .settings-modal-content h3,
+.vip-theme-silver .settings-modal-content .text-gray-800,
+.vip-theme-silver .settings-modal-content .text-gray-900,
+[data-vip-theme="silver"] .settings-modal-content h3,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-800,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-900,
+.theme-silver-exclusive .settings-modal-content h3,
+.theme-silver-exclusive .settings-modal-content .text-gray-800,
+.theme-silver-exclusive .settings-modal-content .text-gray-900 {
+  color: #111827 !important;
+}
+.vip-theme-silver .settings-modal-content .text-gray-500,
+.vip-theme-silver .settings-modal-content .text-gray-600,
+.vip-theme-silver .settings-modal-content .text-gray-700,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-500,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-600,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-700,
+.theme-silver-exclusive .settings-modal-content .text-gray-500,
+.theme-silver-exclusive .settings-modal-content .text-gray-600,
+.theme-silver-exclusive .settings-modal-content .text-gray-700 {
+  color: #374151 !important;
+}
+.vip-theme-silver .settings-modal-content .text-gray-400,
+[data-vip-theme="silver"] .settings-modal-content .text-gray-400,
+.theme-silver-exclusive .settings-modal-content .text-gray-400 {
+  color: #6b7280 !important;
+}
+.vip-theme-silver .settings-modal-content .border-gray-100,
+.theme-silver-exclusive .settings-modal-content .border-gray-100 {
+  border-color: #e5e7eb !important;
+}
+
+/* เฉพาะ Gold & Silver: ช่องทางรับเงิน — พื้นช่องพิมพ์เป็นสีสว่าง อ่านง่าย (ไม่ยุ่ง Platinum/Standard) */
+.vip-theme-gold .settings-modal-content .settings-add-payment-form input,
+.vip-theme-gold .settings-modal-content .settings-add-payment-form select,
+.vip-theme-gold .settings-modal-content .settings-add-payment-form .settings-payment-select,
+[data-vip-theme="gold"] .settings-modal-content .settings-add-payment-form input,
+[data-vip-theme="gold"] .settings-modal-content .settings-add-payment-form select,
+[data-vip-theme="gold"] .settings-modal-content .settings-add-payment-form .settings-payment-select,
+.theme-gold-exclusive .settings-modal-content .settings-add-payment-form input,
+.theme-gold-exclusive .settings-modal-content .settings-add-payment-form select,
+.theme-gold-exclusive .settings-modal-content .settings-add-payment-form .settings-payment-select {
+  background: #fefce8 !important;
+  background-color: #fefce8 !important;
+  border-color: #e5e7eb !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+.vip-theme-silver .settings-modal-content .settings-add-payment-form input,
+.vip-theme-silver .settings-modal-content .settings-add-payment-form select,
+.vip-theme-silver .settings-modal-content .settings-add-payment-form .settings-payment-select,
+[data-vip-theme="silver"] .settings-modal-content .settings-add-payment-form input,
+[data-vip-theme="silver"] .settings-modal-content .settings-add-payment-form select,
+[data-vip-theme="silver"] .settings-modal-content .settings-add-payment-form .settings-payment-select,
+.theme-silver-exclusive .settings-modal-content .settings-add-payment-form input,
+.theme-silver-exclusive .settings-modal-content .settings-add-payment-form select,
+.theme-silver-exclusive .settings-modal-content .settings-add-payment-form .settings-payment-select {
+  background: #f8fafc !important;
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+/* Gold & Silver: กล่องพิมพ์ (input/textarea) ตัวอักษรเข้ม อ่านง่าย (ไม่เกี่ยว Standard) */
+.vip-theme-gold input,
+.vip-theme-gold textarea,
+[data-vip-theme="gold"] input,
+[data-vip-theme="gold"] textarea,
+.theme-gold-exclusive input,
+.theme-gold-exclusive textarea {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+.vip-theme-gold input::placeholder,
+.vip-theme-gold textarea::placeholder,
+[data-vip-theme="gold"] input::placeholder,
+[data-vip-theme="gold"] textarea::placeholder,
+.theme-gold-exclusive input::placeholder,
+.theme-gold-exclusive textarea::placeholder {
+  color: #6b7280 !important;
+  opacity: 1;
+}
+.vip-theme-silver input,
+.vip-theme-silver textarea,
+[data-vip-theme="silver"] input,
+[data-vip-theme="silver"] textarea,
+.theme-silver-exclusive input,
+.theme-silver-exclusive textarea {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+.vip-theme-silver input::placeholder,
+.vip-theme-silver textarea::placeholder,
+[data-vip-theme="silver"] input::placeholder,
+[data-vip-theme="silver"] textarea::placeholder,
+.theme-silver-exclusive input::placeholder,
+.theme-silver-exclusive textarea::placeholder {
+  color: #6b7280 !important;
+  opacity: 1;
+}
+/* ========== VVIP EXCLUSIVE — Rose Quartz Pastel, Minimal Luxury Glow ========== */
+[data-vip-theme="vvip"],
+.theme-vvip-exclusive { }
+
+/* Body & Root: พื้นหลังชมพูขาวสว่างสะอาดตา */
+body.theme-vvip-exclusive,
+html.theme-vvip-exclusive,
+body.theme-vvip-exclusive #root { 
+  background: #FFF9F9 !important; /* ชมพูขาวจางๆ สะอาดตา */
+}
+
+/* Navbar: Rose Quartz Glass */
+[data-vip-theme="vvip"] .nav-glass,
+.theme-vvip-exclusive .nav-glass {
+  background: rgba(255, 249, 249, 0.9) !important;
+  border-bottom: 1px solid rgba(247, 209, 205, 0.6) !important;
+  box-shadow: 0 4px 15px rgba(247, 209, 205, 0.2) !important;
+}
+
+/* VVIP Badge Styling: นี่คือจุดที่เจ้านายเน้น (ชมพูละมุน ขอบขาวฟุ้ง) */
+.badge-vvip-exclusive {
+  background: #F7D1CD !important; /* ชมพูพาสเทลด้าน */
+  color: #AD1457 !important;    /* ตัวอักษรชมพูเข้ม */
+  border: 2px solid #FFFFFF !important; /* ขอบขาวตัดชัดเจน */
+  border-radius: 999px !important;
+  font-weight: 700 !important;
+  /* Effect ฟุ้งละมุน */
+  box-shadow: 
+    0 0 0 1px rgba(247, 209, 205, 0.3), 
+    0 0 15px rgba(247, 209, 205, 0.6) !important;
+  animation: vvip-soft-glow 3s infinite ease-in-out;
+}
+
+/* Animation ให้แสงฟุ้งขยับเบาๆ */
+@keyframes vvip-soft-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(247, 209, 205, 0.6); }
+  50% { box-shadow: 0 0 25px rgba(247, 209, 205, 0.8); }
+}
+
+/* Content Surface: การ์ดสีขาวนวล ขอบชมพูบางๆ */
+[data-vip-theme="vvip"] .vip-surface,
+.theme-vvip-exclusive .vip-surface {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(247, 209, 205, 0.4) !important;
+  box-shadow: 0 10px 25px rgba(247, 209, 205, 0.15) !important;
+  color: #5D4037 !important; /* น้ำตาลเข้มอ่อนๆ ให้อารมณ์ Minimal */
+}
+
+/* Button VVIP: ชมพูฟุ้ง */
+.btn-vvip-exclusive {
+  background: linear-gradient(135deg, #F7D1CD 0%, #FFC1CC 100%) !important;
+  color: #FFFFFF !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  border: 2px solid #FFFFFF !important;
+  box-shadow: 0 4px 15px rgba(247, 209, 205, 0.5) !important;
+}

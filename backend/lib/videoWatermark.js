@@ -53,7 +53,8 @@ function buildFfmpegArgs(inputPath, outputPath, logoPath) {
   }
 
   // End card: scale2ref ให้ ec ตรงกับ ref (original video dimensions)
-  const endCardFilter = `color=c=0x1e3a8a:s=720x1280:d=${END_CARD_DURATION_SEC},drawtext=text='${PLATFORM_NAME}':fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-30,drawtext=text='แพลตฟอร์มบริการมืออาชีพ':fontsize=20:fontcolor=white@0.8:x=(w-text_w)/2:y=(h-text_h)/2+30[ec];[ec][ref]scale2ref[ecs][ref];[main2][ecs]concat=n=2:v=1:a=0[outv]`;
+  // [ref2]null — consume ref output ของ scale2ref เพื่อไม่ให้ "output unconnected"
+  const endCardFilter = `color=c=0x1e3a8a:s=720x1280:d=${END_CARD_DURATION_SEC},drawtext=text='${PLATFORM_NAME}':fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-30,drawtext=text='แพลตฟอร์มบริการมืออาชีพ':fontsize=20:fontcolor=white@0.8:x=(w-text_w)/2:y=(h-text_h)/2+30[ec];[ec][ref]scale2ref[ecs][ref2];[ref2]null;[main2][ecs]concat=n=2:v=1:a=0[outv]`;
 
   const fullFilter = `${mainFilter};${endCardFilter}`;
 

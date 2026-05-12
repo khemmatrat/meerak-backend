@@ -13,10 +13,10 @@ interface RedisClient {
 // Lazy import redisClient to avoid circular dependency
 let redisClient: RedisClient | null = null;
 
-async function getRedisClient(): Promise<RedisClient> {
+async function getRedisClient(): Promise<RedisClient | null> {
   if (!redisClient) {
     const { redisClient: rc } = await import('../index');
-    redisClient = rc as any;
+    redisClient = rc as unknown as RedisClient | null;
   }
   return redisClient;
 }
@@ -89,8 +89,10 @@ export class UserService {
       // Clear cache
       try {
         const rc = await getRedisClient();
-        await rc.del(`user:profile:${user.id}`);
-        await rc.del(`user:profile:${firebaseUid}`);
+        if (rc) {
+          await rc.del(`user:profile:${user.id}`);
+          await rc.del(`user:profile:${firebaseUid}`);
+        }
       } catch (error) {
         console.warn('Redis cache unavailable:', error);
       }
@@ -109,9 +111,9 @@ export class UserService {
     const cacheKey = `user:profile:${identifier}`;
     try {
       const rc = await getRedisClient();
-      const cached = await rc.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
+      if (rc) {
+        const cached = await rc.get(cacheKey);
+        if (cached) return JSON.parse(cached);
       }
     } catch (error) {
       // Redis not available, continue without cache
@@ -177,7 +179,7 @@ export class UserService {
     // Cache for 5 minutes
     try {
       const rc = await getRedisClient();
-      await rc.setEx(cacheKey, 300, JSON.stringify(userProfile));
+      if (rc) await rc.setEx(cacheKey, 300, JSON.stringify(userProfile));
     } catch (error) {
       // Redis not available, continue without cache
       console.warn('Redis cache unavailable:', error);
@@ -211,6 +213,7 @@ export class UserService {
       // อัพเดทผ่าน shared database service
       const updatedUser = await sharedDb.createOrUpdateUser({
         firebase_uid: user.firebase_uid,
+        email: user.email ?? '',
         full_name: updates.full_name,
         phone: updates.phone,
         avatar_url: updates.avatar_url,
@@ -225,8 +228,10 @@ export class UserService {
       // Clear cache
       try {
         const rc = await getRedisClient();
-        await rc.del(`user:profile:${userId}`);
-        await rc.del(`user:profile:${user.firebase_uid}`);
+        if (rc) {
+          await rc.del(`user:profile:${userId}`);
+          await rc.del(`user:profile:${user.firebase_uid}`);
+        }
       } catch (error) {
         console.warn('Redis cache unavailable:', error);
       }
@@ -262,8 +267,10 @@ export class UserService {
       // Clear cache
       try {
         const rc = await getRedisClient();
-        await rc.del(`user:profile:${userId}`);
-        await rc.del(`user:profile:${user.firebase_uid}`);
+        if (rc) {
+          await rc.del(`user:profile:${userId}`);
+          await rc.del(`user:profile:${user.firebase_uid}`);
+        }
       } catch (error) {
         console.warn('Redis cache unavailable:', error);
       }

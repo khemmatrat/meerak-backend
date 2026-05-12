@@ -1,48 +1,82 @@
-
 <!DOCTYPE html>
 <html lang="th">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nexus Admin Core</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-      body {
-        font-family: 'Inter', 'Sarabun', sans-serif;
-      }
-      /* Custom Scrollbar for nicer UI */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #f1f5f9;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
-    </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-    "recharts": "https://aistudiocdn.com/recharts@^3.5.0"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- CSP: ลด XSS; ปรับ connect-src ถ้า API ไม่ใช่ api.aqond.com -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://api.aqond.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*; frame-ancestors 'self'; base-uri 'self';" />
+  <title>Aqond Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Google+Sans+Flex:opsz,wght@14..144,100..900&family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', 'Sarabun', sans-serif;
+    }
+
+    .cinzel-decorative-regular {
+      font-family: "Cinzel Decorative", serif;
+      font-weight: 400;
+      font-style: normal;
+    }
+
+    .cinzel-decorative-bold {
+      font-family: "Cinzel Decorative", serif;
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    .cinzel-decorative-black {
+      font-family: "Cinzel Decorative", serif;
+      font-weight: 900;
+      font-style: normal;
+    }
+
+    /* Logo: Google Sans Flex ExtraBold 800 — ตัวอักษรสีขาว ขอบน้ำเงินหนา เงาสีเทา 80° */
+    .logo-aqond-text {
+      font-family: "Google Sans Flex", sans-serif;
+      font-weight: 800;
+      /* ดันไป 800 เลยให้ดูมั่นคง */
+      letter-spacing: 0.5rem;
+      /* กำลังสวยสำหรับโลโก้ */
+      background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.5) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+      /* ตัดพวก Variation settings ที่ไม่ได้ใช้ออกเพื่อให้ Render ไวขึ้น */
+    }
+
+    /* Custom Scrollbar for nicer UI */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+  <!-- โหลด React/lucide/recharts ผ่าน Vite bundle (node_modules) — ห้ามใส่ import map ซ้ำกับ bundle -->
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-slate-50 text-slate-900 antialiased overflow-hidden">
-    <div id="root"></div>
+
+<body class="bg-slate-50 text-slate-900 antialiased overflow-hidden">
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

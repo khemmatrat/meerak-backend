@@ -79,11 +79,11 @@ export async function sendAlertEmail(opts) {
 
 /**
  * แจ้งเตือนเมื่อเกิด Reconcile Alert
- * @param {object} alert - { omise_balance_thb, platform_balance_thb, diff_thb }
+ * @param {object} alert - { gateway_reported_balance_thb, platform_balance_thb, diff_thb }
  */
 export async function notifyReconcileAlert(alert) {
   const msg = `🚨 [AQOND] Reconcile Alert — ยอดเงินไม่ตรง!\n` +
-    `Omise: ฿${Number(alert.omise_balance_thb || 0).toLocaleString()}\n` +
+    `Gateway: ฿${Number(alert.gateway_reported_balance_thb || 0).toLocaleString()}\n` +
     `Platform: ฿${Number(alert.platform_balance_thb || 0).toLocaleString()}\n` +
     `ต่าง: ฿${Number(alert.diff_thb || 0).toLocaleString()}\n` +
     `กรุณาตรวจสอบที่ Admin > Security Center`;

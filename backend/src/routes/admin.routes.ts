@@ -1,6 +1,7 @@
 // backend/src/routes/admin.routes.ts
 import { Router } from 'express';
 import { authenticateAdmin } from '../middleware/auth';
+import { getPool } from '../store';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ router.get('/stats', async (req, res) => {
       kycQueue
     ] = await Promise.all([
       // User Stats
-      db.query(`
+      getPool()!.query(`
         SELECT 
           COUNT(*) as total_users,
           COUNT(CASE WHEN created_at >= CURRENT_DATE THEN 1 END) as new_users_today,
@@ -31,7 +32,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // Revenue Stats
-      db.query(`
+      getPool()!.query(`
         SELECT 
           COALESCE(SUM(amount), 0) as total_revenue,
           COALESCE(SUM(CASE WHEN created_at >= CURRENT_DATE THEN amount END), 0) as revenue_today,
@@ -42,7 +43,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // Job Stats
-      db.query(`
+      getPool()!.query(`
         SELECT 
           COUNT(*) as total_jobs,
           COUNT(CASE WHEN status = 'open' THEN 1 END) as open_jobs,
@@ -52,7 +53,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // KYC Stats
-      db.query(`
+      getPool()!.query(`
         SELECT 
           COUNT(*) as total_kyc_submissions,
           COUNT(CASE WHEN kyc_status = 'verified' THEN 1 END) as kyc_approved,
@@ -66,7 +67,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // Recent Activities
-      db.query(`
+      getPool()!.query(`
         SELECT 
           id,
           user_id,
@@ -81,7 +82,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // Alerts
-      db.query(`
+      getPool()!.query(`
         SELECT 
           id,
           alert_type,
@@ -96,7 +97,7 @@ router.get('/stats', async (req, res) => {
       `),
       
       // KYC Queue
-      db.query(`
+      getPool()!.query(`
         SELECT 
           u.id,
           u.full_name,
@@ -119,7 +120,7 @@ router.get('/stats', async (req, res) => {
     ]);
     
     // Growth Chart Data (Last 30 days)
-    const growthData = await db.query(`
+    const growthData = await getPool()!.query(`
       WITH date_series AS (
         SELECT generate_series(
           CURRENT_DATE - INTERVAL '30 days',
@@ -141,7 +142,7 @@ router.get('/stats', async (req, res) => {
       ORDER BY ds.date
     `);
     
-    res.json({
+    return res.json({
       totalUsers: parseInt(userStats.rows[0].total_users),
       newUsersToday: parseInt(userStats.rows[0].new_users_today),
       verifiedUsers: parseInt(userStats.rows[0].verified_users),
@@ -170,20 +171,21 @@ router.get('/stats', async (req, res) => {
     
   } catch (error) {
     console.error('Admin stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch admin stats' });
+    return res.status(500).json({ error: 'Failed to fetch admin stats' });
   }
 });
 
 // POST /api/admin/kyc/verify
 router.post('/kyc/verify', async (req, res) => {
   const { userId, status, reason } = req.body;
-  const adminId = req.user.id;
+  const adminId = req.user?.id;
+  if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
   
-  await db.query('BEGIN');
+  await getPool()!.query('BEGIN');
   
   try {
     // Update user KYC status
-    await db.query(`
+    await getPool()!.query(`
       UPDATE users 
       SET 
         kyc_status = $1,
@@ -193,7 +195,7 @@ router.post('/kyc/verify', async (req, res) => {
     `, [status, userId]);
     
     // Update documents status
-    await db.query(`
+    await getPool()!.query(`
       UPDATE kyc_documents 
       SET 
         verification_status = $1,
@@ -204,37 +206,34 @@ router.post('/kyc/verify', async (req, res) => {
     `, [status, adminId, reason, userId]);
     
     // Log activity
-    await db.query(`
+    await getPool()!.query(`
       INSERT INTO admin_activity_logs 
       (admin_id, user_id, action_type, description)
       VALUES ($1, $2, 'kyc_verification', $3)
     `, [adminId, userId, `KYC ${status} for user ${userId}`]);
     
-    await db.query('COMMIT');
+    await getPool()!.query('COMMIT');
     
-    // Send notification to user
-    await queue.add('send-notification', {
-      userId,
-      type: 'kyc_update',
-      data: { status, reason }
-    });
+    // TODO: Send notification via queue when available
+    // await queue.add('send-notification', { userId, type: 'kyc_update', data: { status, reason } });
     
-    res.json({ success: true, message: `KYC ${status} successfully` });
+    return res.json({ success: true, message: `KYC ${status} successfully` });
     
   } catch (error) {
-    await db.query('ROLLBACK');
+    await getPool()!.query('ROLLBACK');
     console.error('KYC verification error:', error);
-    res.status(500).json({ error: 'Failed to verify KYC' });
+    return res.status(500).json({ error: 'Failed to verify KYC' });
   }
 });
 
 // GET /api/admin/users/search
 router.get('/users/search', async (req, res) => {
   const { query, page = 1, limit = 20 } = req.query;
+  const pageNum = parseInt(String(page ?? 1));
+  const limitNum = parseInt(String(limit ?? 20));
+  const offset = (pageNum - 1) * limitNum;
   
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  
-  const users = await db.query(`
+  const users = await getPool()!.query(`
     SELECT 
       id,
       email,
@@ -253,9 +252,9 @@ router.get('/users/search', async (req, res) => {
       id_card_number ILIKE $1
     ORDER BY created_at DESC
     LIMIT $2 OFFSET $3
-  `, [`%${query}%`, limit, offset]);
+  `, [`%${query}%`, limitNum, offset]);
   
-  const total = await db.query(`
+  const total = await getPool()!.query(`
     SELECT COUNT(*) FROM users
     WHERE 
       email ILIKE $1 OR
@@ -264,13 +263,13 @@ router.get('/users/search', async (req, res) => {
       id_card_number ILIKE $1
   `, [`%${query}%`]);
   
-  res.json({
+  return res.json({
     users: users.rows,
     pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: pageNum,
+      limit: limitNum,
       total: parseInt(total.rows[0].count),
-      totalPages: Math.ceil(parseInt(total.rows[0].count) / parseInt(limit))
+      totalPages: Math.ceil(parseInt(total.rows[0].count) / limitNum)
     }
   });
 });

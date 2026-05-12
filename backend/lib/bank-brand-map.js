@@ -1,6 +1,5 @@
 /**
- * Map Thai bank names (from user input) to Omise Recipient API brand codes.
- * @see https://docs.omise.co/supported-banks
+ * Map Thai bank names (from user input) to gateway bank brand codes (REST payout/recipient APIs).
  */
 const BANK_BRAND_MAP = {
   // Bangkok Bank
@@ -43,9 +42,9 @@ function normalizeBankName(name) {
 }
 
 /**
- * Resolve user bank name to Omise brand code.
+ * Resolve user bank name to a normalized brand code.
  * @param {string} bankName - e.g. "ธนาคารกรุงเทพ", "SCB", "กสิกรไทย"
- * @returns {string|null} Omise brand code (bbl, kbank, scb, etc.) or null if not found
+ * @returns {string|null} Brand code (bbl, kbank, scb, etc.) or null if not found
  */
 export function resolveBankBrand(bankName) {
   const normalized = normalizeBankName(bankName);

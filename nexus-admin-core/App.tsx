@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { MobileConfigView } from "./components/MobileConfigView";
+import { CommunityChallengeView } from "./components/CommunityChallengeView";
 import { UserTableView } from "./components/UserTableView";
 import { UserManagementView } from "./components/UserManagementView";
 import { PushNotificationView } from "./components/PushNotificationView";
+import { EmailBroadcastView } from "./components/EmailBroadcastView";
 import { ContentManagerView } from "./components/ContentManagerView";
 import { SystemLogsView } from "./components/SystemLogsView";
 import { SystemSettingsView } from "./components/SystemSettingsView";
@@ -23,6 +25,7 @@ import { DocumentationView } from "./components/DocumentationView";
 import { IntegrationHelpView } from "./components/IntegrationHelpView";
 import { LegalComplianceView } from "./components/LegalComplianceView";
 import { UserPayoutView } from "./components/UserPayoutView";
+import { PayoutReconciliationView } from "./components/PayoutReconciliationView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FinancialStrategyView } from "./components/FinancialStrategyView";
 import { StaffManagementView } from "./components/StaffManagementView";
@@ -37,19 +40,36 @@ import { RevenueDashboard } from "./components/RevenueDashboard";
 import { AuditLogsView } from "./components/AuditLogsView";
 import { TrainingCenterView } from "./components/TrainingCenterView";
 import { ReferralMonitorView } from "./components/ReferralMonitorView";
+import { BrandAdviserApplicationsView } from "./components/BrandAdviserApplicationsView";
 import { RescueNetView } from "./components/RescueNetView";
 import { TestingCenterView } from "./components/TestingCenterView";
 import { PaymentProviderGateView } from "./components/PaymentProviderGateView";
+import { FarePricingConsoleView } from "./components/FarePricingConsoleView";
+import { WalletLiquidityView } from "./components/WalletLiquidityView";
+import { ManualDepositsView } from "./components/ManualDepositsView";
+import { PersonalSettlementManualView } from "./components/PersonalSettlementManualView";
 import { AqondGatewayConsoleView } from "./components/AqondGatewayConsoleView";
+import { DirectorWelfareHubView } from "./components/DirectorWelfareHubView";
 import { LoginView } from "./components/LoginView";
+import { FinanceRuntimeSettingsView } from "./components/FinanceRuntimeSettingsView";
+import { FinanceRuntimeProvider } from "./context/FinanceRuntimeContext";
 import { CrisisAlertBanner } from "./components/CrisisAlertBanner";
-import { Bell, Search, LogOut } from "lucide-react";
+import { Bell, Loader2, LogOut, Menu, Search } from "lucide-react";
+import { MobileQuickActionsFab } from "./components/MobileQuickActionsFab";
+import { AccessDeniedView } from "./components/AccessDeniedView";
 import { AdminUser } from "./types";
-import { setAdminToken } from "./services/adminApi";
+import { canAccessAdminView } from "./constants/adminRouteAccess";
+import {
+  fetchAdminSession,
+  getAdminToken,
+  mapLoginUserToAdminUser,
+  setAdminToken,
+} from "./services/adminApi";
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState("dashboard");
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   /** When opening KYC Review from User Details, pre-open this user's KYC detail */
   const [kycReviewPreSelectUserId, setKycReviewPreSelectUserId] = useState<
     string | null
@@ -59,6 +79,53 @@ const App: React.FC = () => {
     string | null
   >(null);
   const clearUserManagementFocusUserId = useCallback(() => setUserManagementFocusUserId(null), []);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
+        setMobileNavOpen(false);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getAdminToken();
+        if (!token) {
+          if (!cancelled) setAuthReady(true);
+          return;
+        }
+        const { user } = await fetchAdminSession();
+        if (!cancelled) {
+          setCurrentUser(mapLoginUserToAdminUser(user));
+        }
+      } catch {
+        if (!cancelled) {
+          setAdminToken(null);
+          setCurrentUser(null);
+        }
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!authReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-600" aria-hidden />
+        <span className="sr-only">กำลังโหลดเซสชัน...</span>
+      </div>
+    );
+  }
 
   // AUTH GUARD: If no user is logged in, show Login View
   if (!currentUser) {
@@ -73,6 +140,15 @@ const App: React.FC = () => {
   };
 
   const renderView = () => {
+    if (!canAccessAdminView(currentView, currentUser.role, currentUser.permissions)) {
+      return (
+        <AccessDeniedView
+          viewId={currentView}
+          role={currentUser.role}
+          onGoDashboard={() => setCurrentView("dashboard")}
+        />
+      );
+    }
     switch (currentView) {
       case "dashboard":
         return <DashboardView />;
@@ -91,8 +167,12 @@ const App: React.FC = () => {
         );
       case "app-config":
         return <MobileConfigView />;
+      case "community-challenge":
+        return <CommunityChallengeView />;
       case "push-notifications":
         return <PushNotificationView />;
+      case "email-broadcast":
+        return <EmailBroadcastView />;
       case "testing-center":
         return <TestingCenterView currentUser={currentUser} />;
       case "content":
@@ -120,6 +200,21 @@ const App: React.FC = () => {
         return <FinancialDashboardView />;
       case "payment-provider-gate":
         return <PaymentProviderGateView />;
+      case "finance-runtime-settings":
+        return <FinanceRuntimeSettingsView currentUserRole={currentUser.role} />;
+      case "fare-pricing":
+        return <FarePricingConsoleView />;
+      case "wallet-liquidity":
+        return <WalletLiquidityView />;
+      case "manual-deposits":
+        return <ManualDepositsView />;
+      case "personal-settlement-manual":
+        return (
+          <PersonalSettlementManualView
+            currentUserRole={currentUser.role}
+            currentUserName={currentUser.name}
+          />
+        );
       case "aqond-gateway-console":
         return <AqondGatewayConsoleView />;
       case "insurance-manager":
@@ -145,7 +240,14 @@ const App: React.FC = () => {
       case "security-center":
         return <SecurityCenterView />;
       case "support-center":
-        return <SupportTicketView />;
+        return (
+          <SupportTicketView
+            onOpenUserInAdmin={(userId) => {
+              setUserManagementFocusUserId(userId);
+              setCurrentView("users");
+            }}
+          />
+        );
       case "reports":
         return <ReportCenterView />;
       case "docs":
@@ -157,15 +259,25 @@ const App: React.FC = () => {
       case "user-payouts":
         return (
           <ErrorBoundary>
-            <UserPayoutView />
+            <UserPayoutView currentUserRole={currentUser.role} onNavigate={setCurrentView} />
+          </ErrorBoundary>
+        );
+      case "payout-reconciliation":
+        return (
+          <ErrorBoundary>
+            <PayoutReconciliationView />
           </ErrorBoundary>
         );
       case "referral-monitor":
         return <ReferralMonitorView />;
+      case "brand-adviser-applications":
+        return <BrandAdviserApplicationsView />;
       case "rescue-net":
         return <RescueNetView />;
       case "financial-strategy":
         return <FinancialStrategyView />;
+      case "director-welfare":
+        return <DirectorWelfareHubView />;
       case "staff-management":
         return <StaffManagementView />;
       case "kyc-review":
@@ -197,52 +309,82 @@ const App: React.FC = () => {
   };
 
   return (
+    <FinanceRuntimeProvider>
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Sidebar */}
-      <Sidebar currentView={currentView} setView={setCurrentView} currentUserRole={currentUser.role} />
+      {mobileNavOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-slate-900/50 md:hidden"
+          aria-label="ปิดเมนู"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      ) : null}
+
+      {/* Sidebar — drawer on &lt; md */}
+      <Sidebar
+        currentView={currentView}
+        setView={setCurrentView}
+        currentUserRole={currentUser.role}
+        currentUserPermissions={currentUser.permissions}
+        mobileOpen={mobileNavOpen}
+        onNavigate={() => setMobileNavOpen(false)}
+      />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm z-10 shrink-0">
-          <div className="flex items-center gap-4 w-96">
-            <div className="relative w-full">
+        <header className="z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 shadow-sm sm:h-16 sm:px-6 md:px-8">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+            <button
+              type="button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden"
+              aria-expanded={mobileNavOpen}
+              aria-controls="admin-sidebar"
+              onClick={() => setMobileNavOpen((o) => !o)}
+            >
+              <Menu size={22} />
+            </button>
+            <div className="relative min-w-0 flex-1 md:max-w-md lg:max-w-xl">
               <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                 size={18}
               />
               <input
-                type="text"
+                type="search"
                 placeholder="Search anything..."
-                className="pl-10 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm w-full focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none"
+                className="min-h-[44px] w-full rounded-lg border-none bg-slate-100 py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:bg-white focus:ring-2 focus:ring-indigo-500 sm:min-h-0 sm:py-2"
               />
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <button className="relative text-slate-500 hover:text-indigo-600 transition-colors">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4 md:gap-6">
+            <button
+              type="button"
+              className="relative flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-indigo-600"
+            >
               <Bell size={20} />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white"></span>
+              <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500"></span>
             </button>
-            <div className="flex items-center gap-3 pl-6 border-l border-slate-200">
-              <div className="text-right hidden md:block">
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:gap-3 sm:pl-6">
+              <div className="hidden text-right md:block">
                 <p className="text-sm font-semibold text-slate-800">
                   {currentUser.name}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {currentUser.role.replace("_", " ")}
+                  {currentUser.role.replace(/_/g, " ")}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
                 <img
                   src={currentUser.avatar}
                   alt="Profile"
-                  className="w-full h-full object-cover"
+                  className="h-full w-full object-cover"
                 />
               </div>
               <button
+                type="button"
                 onClick={handleLogout}
-                className="ml-2 p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                 title="Logout"
               >
                 <LogOut size={18} />
@@ -254,10 +396,10 @@ const App: React.FC = () => {
         <CrisisAlertBanner />
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-auto p-8">
-          <div className="max-w-7xl mx-auto h-full flex flex-col">
-            <div className="mb-6 shrink-0">
-              <h1 className="text-2xl font-bold text-slate-800 capitalize">
+        <div className="flex-1 overflow-auto p-4 pb-24 md:p-8 md:pb-8">
+          <div className="mx-auto flex h-full max-w-7xl flex-col">
+            <div className="mb-4 shrink-0 md:mb-6">
+              <h1 className="text-xl font-bold capitalize text-slate-800 md:text-2xl">
                 {currentView === "docs"
                   ? "System Manual"
                   : currentView === "integration-help"
@@ -282,11 +424,23 @@ const App: React.FC = () => {
                   ? "Support Admin"
                   : currentView === "rescue-net"
                   ? "Rescue Net (eSIM)"
+                  : currentView === "director-welfare"
+                  ? "สวัสดิการกรรมการ & เบิกค่าใช้จ่าย"
+                  : currentView === "personal-settlement-manual"
+                  ? "บัญชีรับชั่วคราว (ก่อน Gateway)"
+                  : currentView === "finance-runtime-settings"
+                  ? "การเงินเรียลไทม์ & เกตเวย์สำรอง"
                   : currentView.replace(/-/g, " ")}
               </h1>
               <p className="text-slate-500">
                 {currentView === "rescue-net"
                   ? "ยอดขายแพ็กเกจ eSIM / digital goods (GigaStore) และรายการล่าสุด"
+                  : currentView === "director-welfare"
+                  ? "ร่างระเบียบสวัสดิการ ระบบเบิกค่าใช้จ่าย (Reason Tag) และคำอธิบาย Settlement Report"
+                  : currentView === "personal-settlement-manual"
+                  ? "รับ-จ่ายผ่านบัญชีส่วนบุคคลช่วงรอ Payment Gateway — QR / Mobile banking + บันทึกกระทบยอด"
+                  : currentView === "finance-runtime-settings"
+                  ? "ปิดบัญชีรับชั่วคราวและตั้งค่าเกตเวย์สำรอง (2C2P / GB Prime Pay) — เก็บใน DB ไม่ต้อง build ใหม่"
                   : `Overview and management for ${currentView}`}
               </p>
             </div>
@@ -295,7 +449,10 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <MobileQuickActionsFab currentUserRole={currentUser.role} setView={setCurrentView} />
     </div>
+    </FinanceRuntimeProvider>
   );
 };
 

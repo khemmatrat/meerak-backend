@@ -392,7 +392,15 @@ export const ApiGatewayView: React.FC = () => {
                 <td className="px-6 py-4 font-mono text-slate-600">{row.path}</td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-xs font-bold ${
-                    row.method === 'GET' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                    row.method === 'GET'
+                      ? 'bg-blue-100 text-blue-700'
+                      : row.method === 'POST'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : row.method === 'PATCH' || row.method === 'PUT'
+                      ? 'bg-amber-100 text-amber-700'
+                      : row.method === 'DELETE'
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-slate-100 text-slate-700'
                   }`}>{row.method}</span>
                 </td>
                 <td className="px-6 py-4 text-right">

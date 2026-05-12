@@ -1,0 +1,317 @@
+/**
+ * training-themes.css
+ * Training Center: สไตล์แยกตาม Tier เท่านั้น
+ * ห้ามแก้แบบ Global — ใช้เฉพาะภายใต้ .training-platinum, .training-gold, .training-silver, .training-standard
+ * ไม่กระทบหน้าอื่น
+ */
+
+/* ========== PLATINUM — Midnight Platinum (Deep Obsidian & Frosted Platinum) ========== */
+.training-platinum .training-inner {
+  background: radial-gradient(at 0% 0%, #0f172a 0%, #020617 100%) !important;
+  min-height: 100vh;
+}
+
+.training-platinum .text-gray-900,
+.training-platinum .text-slate-800,
+.training-platinum .text-gray-600,
+.training-platinum .text-slate-600,
+.training-platinum .text-gray-700 { color: #F8FAFC !important; }
+
+/* Header icon — Frosted Glass */
+.training-platinum .p-3.bg-indigo-100 {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.training-platinum .text-indigo-600 { color: #F8FAFC !important; }
+
+/* Section cards: Frosted Glass — thin silver border */
+.training-platinum .bg-white.rounded-2xl,
+.training-platinum .bg-white.rounded-xl,
+.training-platinum .bg-white.rounded-lg {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Course card header: Electric Violet accent */
+.training-platinum .bg-gradient-to-br.from-indigo-500.to-indigo-600 {
+  background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%) !important;
+  box-shadow: 0 4px 20px rgba(168, 85, 247, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Progress bar fill */
+.training-platinum .bg-indigo-600.h-2,
+.training-platinum .bg-indigo-600.h-3,
+.training-platinum .bg-indigo-600.rounded-full {
+  background: linear-gradient(90deg, #8b5cf6, #a855f7) !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
+}
+.training-platinum .bg-gray-200.rounded-full { background: rgba(168, 85, 247, 0.15) !important; }
+
+/* Progress text / icons */
+.training-platinum .text-indigo-600,
+.training-platinum .text-purple-600,
+.training-platinum .text-blue-600 { color: #F8FAFC !important; }
+.training-platinum .p-3.bg-blue-100,
+.training-platinum .p-3.bg-purple-100,
+.training-platinum .p-3.bg-green-100,
+.training-platinum .p-3.bg-yellow-100 {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.training-platinum .text-blue-600,
+.training-platinum .text-yellow-600,
+.training-platinum .text-green-600,
+.training-platinum .text-purple-600 { color: #F8FAFC !important; }
+
+/* Tab active / CTA buttons — Electric Violet accent */
+.training-platinum .bg-indigo-600.text-white.shadow-lg,
+.training-platinum button.bg-indigo-600,
+.training-platinum .px-6.py-3.bg-indigo-600,
+.training-platinum .w-full.py-2.rounded-lg.bg-indigo-600,
+.training-platinum button.bg-indigo-600.text-white {
+  background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%) !important;
+  box-shadow: 0 4px 20px rgba(168, 85, 247, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border: none !important;
+}
+.training-platinum button.bg-indigo-600:hover,
+.training-platinum .bg-indigo-600.text-white:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 24px rgba(168, 85, 247, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+.training-platinum .hover\:bg-indigo-700:hover,
+.training-platinum .hover\:bg-indigo-300:hover { filter: brightness(1.1); }
+
+/* StepCard borders — thin silver */
+.training-platinum .border-indigo-300,
+.training-platinum .hover:border-indigo-300 { border-color: rgba(255, 255, 255, 0.08) !important; }
+.training-platinum .bg-indigo-50\/50 { background: rgba(255, 255, 255, 0.02) !important; }
+
+/* Quick Actions / borders */
+.training-platinum .border-gray-200,
+.training-platinum .border-slate-200 { border-color: rgba(255, 255, 255, 0.08) !important; }
+
+/* ========== GOLD — ธีมทอง-แชมเปญ, ขอบการ์ดหรู ========== */
+.training-gold .training-inner {
+  background: linear-gradient(180deg, #0c0a09 0%, #1a1510 100%) !important;
+  min-height: 100vh;
+}
+
+.training-gold .text-gray-900,
+.training-gold .text-slate-800 { color: #fef3c7 !important; }
+.training-gold .text-gray-600,
+.training-gold .text-slate-600,
+.training-gold .text-gray-700 { color: #fde68a !important; }
+
+.training-gold .p-3.bg-indigo-100 {
+  background: rgba(212, 175, 55, 0.2) !important;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.2);
+}
+.training-gold .text-indigo-600 { color: #fbbf24 !important; }
+
+/* Cards: ขอบทอง เงาอ่อน */
+.training-gold .bg-white.rounded-2xl,
+.training-gold .bg-white.rounded-xl,
+.training-gold .bg-white.rounded-lg {
+  background: rgba(30, 27, 24, 0.92) !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.12), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+
+.training-gold .bg-gradient-to-br.from-indigo-500.to-indigo-600 {
+  background: linear-gradient(135deg, #B8860B 0%, #D4AF37 50%, #F9E29C 100%) !important;
+  color: #0c0d0f !important;
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+}
+
+/* Progress bar — ทอง */
+.training-gold .bg-indigo-600.h-2,
+.training-gold .bg-indigo-600.h-3,
+.training-gold .bg-indigo-600.rounded-full { background: linear-gradient(90deg, #B8860B, #D4AF37) !important; box-shadow: 0 0 10px rgba(212, 175, 55, 0.4); }
+.training-gold .bg-gray-200.rounded-full { background: rgba(212, 175, 55, 0.15) !important; }
+
+.training-gold .text-indigo-600,
+.training-gold .text-purple-600 { color: #fbbf24 !important; }
+.training-gold .text-blue-600 { color: #fbbf24 !important; }
+.training-gold .p-3.bg-blue-100,
+.training-gold .p-3.bg-purple-100,
+.training-gold .p-3.bg-yellow-100 { background: rgba(212, 175, 55, 0.15) !important; }
+.training-gold .text-blue-600,
+.training-gold .text-yellow-600,
+.training-gold .text-purple-600 { color: #fde68a !important; }
+
+.training-gold .bg-indigo-600.text-white.shadow-lg,
+.training-gold button.bg-indigo-600 {
+  background: linear-gradient(135deg, #D4AF37 0%, #F9E29C 100%) !important;
+  color: #0c0d0f !important;
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.4), inset 0 1px 0 rgba(255,255,255,0.3) !important;
+}
+.training-gold .px-6.py-3.bg-indigo-600,
+.training-gold .w-full.py-2.rounded-lg.bg-indigo-600 {
+  background: linear-gradient(135deg, #D4AF37 0%, #F9E29C 100%) !important;
+  color: #0c0d0f !important;
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.35) !important;
+}
+
+.training-gold .border-gray-200,
+.training-gold .border-slate-200 { border-color: rgba(212, 175, 55, 0.2) !important; }
+.training-gold .hover:border-indigo-300 { border-color: rgba(212, 175, 55, 0.4) !important; }
+.training-gold .bg-indigo-50\/50 { background: rgba(212, 175, 55, 0.06) !important; }
+
+/* ========== SILVER — Layout & Glow แบบ Gold ทุกประการ แต่โทนสีเงินเมทัลลิก (Polished Silver) ========== */
+.training-silver .training-inner,
+html[data-theme="vip-silver"] .training-silver .training-inner {
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
+  min-height: 100vh;
+}
+
+/* ฟอนต์สีขาว — ใช้ทั้ง .training-silver และ html[data-theme] เพื่อให้ override ได้แน่นอน */
+.training-silver .text-gray-900,
+.training-silver .text-slate-800,
+.training-silver .text-slate-600,
+.training-silver .text-slate-700,
+.training-silver .text-gray-600,
+.training-silver .text-gray-700,
+.training-silver .text-slate-500,
+.training-silver .text-slate-400,
+html[data-theme="vip-silver"] .training-container .text-gray-900,
+html[data-theme="vip-silver"] .training-container .text-slate-800,
+html[data-theme="vip-silver"] .training-container .text-slate-600,
+html[data-theme="vip-silver"] .training-container .text-slate-700,
+html[data-theme="vip-silver"] .training-container .text-gray-600,
+html[data-theme="vip-silver"] .training-container .text-gray-700,
+html[data-theme="vip-silver"] .training-container .text-slate-500,
+html[data-theme="vip-silver"] .training-container .text-slate-400 { color: #ffffff !important; }
+
+/* Header icon: Soft Silver Shine */
+.training-silver .p-3.bg-indigo-100 {
+  background: rgba(192, 192, 192, 0.2) !important;
+  box-shadow: 0 0 16px rgba(232, 232, 232, 0.25), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+  border: 1px solid rgba(192, 192, 192, 0.35) !important;
+}
+.training-silver .text-indigo-600 { color: #cbd5e1 !important; }
+
+/* Section cards: ขอบโลหะเงินเงา + Soft Silver Shine (มีมิติเหมือน Gold) */
+.training-silver .bg-white.rounded-2xl,
+.training-silver .bg-white.rounded-xl,
+.training-silver .bg-white.rounded-lg,
+html[data-theme="vip-silver"] .training-container .bg-white.rounded-2xl,
+html[data-theme="vip-silver"] .training-container .bg-white.rounded-xl,
+html[data-theme="vip-silver"] .training-container .bg-white.rounded-lg {
+  background: rgba(30, 41, 59, 0.92) !important;
+  border: 1px solid rgba(192, 192, 192, 0.4) !important;
+  box-shadow:
+    0 0 24px rgba(232, 232, 232, 0.15),
+    0 0 48px rgba(192, 192, 192, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Course card header: Linear gradient เครื่องเงิน */
+.training-silver .bg-gradient-to-br.from-indigo-500.to-indigo-600 {
+  background: linear-gradient(135deg, #64748b 0%, #94a3b8 35%, #cbd5e1 65%, #e2e8f0 100%) !important;
+  color: #0f172a !important;
+  box-shadow: 0 0 20px rgba(192, 192, 192, 0.35), inset 0 1px 0 rgba(255,255,255,0.4) !important;
+}
+
+/* Progress bar — สีเงินเมทัลลิก + glow จาง */
+.training-silver .bg-indigo-600.h-2,
+.training-silver .bg-indigo-600.h-3,
+.training-silver .bg-indigo-600.rounded-full {
+  background: linear-gradient(90deg, #64748b, #94a3b8, #cbd5e1) !important;
+  box-shadow: 0 0 10px rgba(192, 192, 192, 0.35), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+}
+.training-silver .bg-gray-200.rounded-full {
+  background: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* Progress text / icons — โทนเงิน */
+.training-silver .text-indigo-600,
+.training-silver .text-purple-600 { color: #cbd5e1 !important; }
+.training-silver .text-blue-600 { color: #94a3b8 !important; }
+.training-silver .p-3.bg-blue-100,
+.training-silver .p-3.bg-purple-100,
+.training-silver .p-3.bg-green-100,
+.training-silver .p-3.bg-yellow-100 {
+  background: rgba(148, 163, 184, 0.2) !important;
+  box-shadow: 0 0 12px rgba(192, 192, 192, 0.2), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+  border: 1px solid rgba(192, 192, 192, 0.25) !important;
+}
+.training-silver .text-blue-600,
+.training-silver .text-yellow-600,
+.training-silver .text-green-600,
+.training-silver .text-purple-600 { color: #e2e8f0 !important; }
+
+/* Tab active — ปุ่มสีเงินพรีเมียม */
+.training-silver .bg-indigo-600.text-white.shadow-lg,
+.training-silver button.bg-indigo-600 {
+  background: linear-gradient(145deg, #94a3b8 0%, #cbd5e1 50%, #e2e8f0 100%) !important;
+  color: #0f172a !important;
+  box-shadow: 0 0 18px rgba(192, 192, 192, 0.4), inset 0 1px 0 rgba(255,255,255,0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+}
+.training-silver button.bg-indigo-600:hover,
+.training-silver .bg-indigo-600.text-white:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 24px rgba(232, 232, 232, 0.45), inset 0 1px 0 rgba(255,255,255,0.5) !important;
+}
+
+/* Start Training / เริ่มเรียน — ปุ่มสีเงิน Polished Silver */
+.training-silver .px-6.py-3.bg-indigo-600,
+.training-silver .w-full.py-2.rounded-lg.bg-indigo-600,
+.training-silver button.bg-indigo-600.text-white {
+  background: linear-gradient(145deg, #94a3b8 0%, #cbd5e1 50%, #e8e8e8 100%) !important;
+  color: #0f172a !important;
+  box-shadow: 0 0 18px rgba(192, 192, 192, 0.35), inset 0 1px 0 rgba(255,255,255,0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+.training-silver .hover\:bg-indigo-700:hover,
+.training-silver .hover\:bg-indigo-300:hover { filter: brightness(1.1); }
+
+/* StepCard / borders — Polished Silver */
+.training-silver .border-indigo-300,
+.training-silver .hover:border-indigo-300 { border-color: rgba(192, 192, 192, 0.5) !important; }
+.training-silver .bg-indigo-50\/50 { background: rgba(148, 163, 184, 0.12) !important; }
+
+.training-silver .border-gray-200,
+.training-silver .border-slate-200 { border-color: rgba(192, 192, 192, 0.35) !important; }
+
+/* StepCard (Nexus Exam): พื้นเข้ม + ฟอนต์ขาว */
+.training-silver .bg-slate-50,
+.training-silver .bg-green-50,
+html[data-theme="vip-silver"] .training-container .bg-slate-50,
+html[data-theme="vip-silver"] .training-container .bg-green-50 {
+  background: rgba(51, 65, 85, 0.8) !important;
+  border-color: rgba(192, 192, 192, 0.4) !important;
+}
+.training-silver .border-green-300,
+html[data-theme="vip-silver"] .training-container .border-green-300 {
+  border-color: rgba(148, 163, 184, 0.5) !important;
+}
+
+/* Module 3 card — พื้นเข้ม + ฟอนต์ขาว (บังคับ) */
+.training-silver .nexus-module3-card,
+html[data-theme="vip-silver"] .training-container .nexus-module3-card {
+  background: rgba(51, 65, 85, 0.9) !important;
+  border-color: rgba(192, 192, 192, 0.45) !important;
+  color: #ffffff !important;
+}
+.training-silver .nexus-module3-card span,
+.training-silver .nexus-module3-card p,
+html[data-theme="vip-silver"] .training-container .nexus-module3-card span,
+html[data-theme="vip-silver"] .training-container .nexus-module3-card p {
+  color: #ffffff !important;
+}
+
+/* Hover card border — เงาเงิน */
+.training-silver .hover\:border-indigo-300:hover,
+.training-silver .hover\:border-indigo-300 { border-color: rgba(232, 232, 232, 0.5) !important; }
+
+/* ========== STANDARD — ไม่เพิ่ม style (เก็บความ Clean/Minimalist เดิม) ========== */
+.training-standard .training-inner {
+  /* ใช้ gradient เดิม from-slate-50 to-slate-100 */
+}

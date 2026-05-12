@@ -1,49 +1,46 @@
 // src/controllers/payment.gateway.controller.ts - Payment Gateway Controller
-import { Request, Response } from 'express';
-import promptPayService from '../services/promptpay.service';
-import stripeService from '../services/stripe.service';
-import trueMoneyService from '../services/truemoney.service';
-import { 
-  PaymentGateway, 
+import { Request, Response } from "express";
+import promptPayService from "../services/promptpay.service";
+import stripeService from "../services/stripe.service";
+import trueMoneyService from "../services/truemoney.service";
+import {
+  PaymentGateway,
   PaymentRequest,
-  PaymentResponse 
-} from '../types/payment.types';
+  PaymentResponse,
+} from "../types/payment.types";
 
 export class PaymentGatewayController {
-  
   /**
-   * Create payment (auto-select gateway or use specified)
+   * Create payment. Defaults to PromptPay (3-5 THB processing fee) for cost optimization.
    */
   async createPayment(req: Request, res: Response): Promise<void> {
     try {
       const paymentRequest: PaymentRequest = req.body;
-      const { job_id, amount, gateway, metadata } = paymentRequest;
+      const { job_id, amount, metadata } = paymentRequest;
+      const gateway = paymentRequest.gateway ?? PaymentGateway.PROMPTPAY;
 
-      // Validate amount
       if (!amount || amount <= 0) {
         res.status(400).json({
           success: false,
-          error: 'Invalid amount',
+          error: "Invalid amount",
         });
         return;
       }
 
-      // Generate reference numbers (from Phase 0)
       const billNo = await this.generateBillNo();
       const transactionNo = await this.generateTransactionNo();
 
       let paymentResponse: PaymentResponse;
 
-      // Route to appropriate gateway
       switch (gateway) {
         case PaymentGateway.PROMPTPAY:
           paymentResponse = await this.createPromptPayPayment(
             amount,
             job_id,
-            metadata?.user_id || '',
+            metadata?.user_id || "",
             billNo,
             transactionNo,
-            metadata
+            metadata,
           );
           break;
 
@@ -51,10 +48,10 @@ export class PaymentGatewayController {
           paymentResponse = await this.createStripePayment(
             amount,
             job_id,
-            metadata?.user_id || '',
+            metadata?.user_id || "",
             billNo,
             transactionNo,
-            metadata
+            metadata,
           );
           break;
 
@@ -62,27 +59,35 @@ export class PaymentGatewayController {
           paymentResponse = await this.createTrueMoneyPayment(
             amount,
             job_id,
-            metadata?.user_id || '',
+            metadata?.user_id || "",
             billNo,
             transactionNo,
-            metadata
+            metadata,
           );
           break;
 
         default:
           res.status(400).json({
             success: false,
-            error: 'Invalid payment gateway',
+            error: "Invalid payment gateway",
           });
           return;
       }
 
       res.json(paymentResponse);
     } catch (error: any) {
-      console.error('Create payment error:', error);
+      console.error("Create payment error:", error);
+      if (error?.code === "PAYMENT_PROVIDER_NOT_CONFIGURED") {
+        res.status(503).json({
+          success: false,
+          error: error.message || "Payment channel not configured",
+          code: error.code,
+        });
+        return;
+      }
       res.status(500).json({
         success: false,
-        error: error.message || 'Payment creation failed',
+        error: error.message || "Payment creation failed",
       });
     }
   }
@@ -96,7 +101,7 @@ export class PaymentGatewayController {
     user_id: string,
     bill_no: string,
     transaction_no: string,
-    metadata?: any
+    metadata?: any,
   ): Promise<PaymentResponse> {
     const payment = await promptPayService.generateQR({
       amount,
@@ -115,7 +120,7 @@ export class PaymentGatewayController {
       qr_code_url: payment.qr_code_url,
       qr_code_data: payment.qr_code_data,
       amount: payment.amount,
-      currency: 'THB',
+      currency: "THB",
       expires_at: payment.expires_at,
       bill_no: payment.ref1,
       transaction_no: payment.ref2,
@@ -132,7 +137,7 @@ export class PaymentGatewayController {
     user_id: string,
     bill_no: string,
     transaction_no: string,
-    metadata?: any
+    metadata?: any,
   ): Promise<PaymentResponse> {
     const payment = await stripeService.createPaymentIntent({
       amount,
@@ -166,7 +171,7 @@ export class PaymentGatewayController {
     user_id: string,
     bill_no: string,
     transaction_no: string,
-    metadata?: any
+    metadata?: any,
   ): Promise<PaymentResponse> {
     // Validate amount limits
     const validation = trueMoneyService.validateAmount(amount);
@@ -190,7 +195,7 @@ export class PaymentGatewayController {
       qr_code_url: payment.qr_code_url,
       deep_link: payment.deep_link,
       amount: payment.amount,
-      currency: 'THB',
+      currency: "THB",
       expires_at: payment.expires_at,
       bill_no,
       transaction_no,
@@ -209,7 +214,7 @@ export class PaymentGatewayController {
       if (!payment_id || !gateway) {
         res.status(400).json({
           success: false,
-          error: 'Missing payment_id or gateway',
+          error: "Missing payment_id or gateway",
         });
         return;
       }
@@ -232,7 +237,7 @@ export class PaymentGatewayController {
         default:
           res.status(400).json({
             success: false,
-            error: 'Invalid gateway',
+            error: "Invalid gateway",
           });
           return;
       }
@@ -244,10 +249,18 @@ export class PaymentGatewayController {
         status,
       });
     } catch (error: any) {
-      console.error('Check payment status error:', error);
+      console.error("Check payment status error:", error);
+      if (error?.code === "PAYMENT_PROVIDER_NOT_CONFIGURED") {
+        res.status(503).json({
+          success: false,
+          error: error.message || "Payment channel not configured",
+          code: error.code,
+        });
+        return;
+      }
       res.status(500).json({
         success: false,
-        error: error.message || 'Status check failed',
+        error: error.message || "Status check failed",
       });
     }
   }
@@ -278,20 +291,20 @@ export class PaymentGatewayController {
         default:
           res.status(400).json({
             success: false,
-            error: 'Invalid gateway',
+            error: "Invalid gateway",
           });
           return;
       }
 
       res.json({
         success,
-        message: success ? 'Payment cancelled' : 'Cancel failed',
+        message: success ? "Payment cancelled" : "Cancel failed",
       });
     } catch (error: any) {
-      console.error('Cancel payment error:', error);
+      console.error("Cancel payment error:", error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Cancel failed',
+        error: error.message || "Cancel failed",
       });
     }
   }
@@ -313,10 +326,10 @@ export class PaymentGatewayController {
 
       res.json(refundResponse);
     } catch (error: any) {
-      console.error('Refund payment error:', error);
+      console.error("Refund payment error:", error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Refund failed',
+        error: error.message || "Refund failed",
       });
     }
   }
@@ -347,7 +360,7 @@ export class PaymentGatewayController {
         default:
           res.status(400).json({
             success: false,
-            error: 'Invalid gateway',
+            error: "Invalid gateway",
           });
           return;
       }
@@ -357,10 +370,18 @@ export class PaymentGatewayController {
         data: details,
       });
     } catch (error: any) {
-      console.error('Get payment details error:', error);
+      console.error("Get payment details error:", error);
+      if (error?.code === "PAYMENT_PROVIDER_NOT_CONFIGURED") {
+        res.status(503).json({
+          success: false,
+          error: error.message || "Payment channel not configured",
+          code: error.code,
+        });
+        return;
+      }
       res.status(500).json({
         success: false,
-        error: error.message || 'Get details failed',
+        error: error.message || "Get details failed",
       });
     }
   }
@@ -369,8 +390,10 @@ export class PaymentGatewayController {
    * Generate bill number (Phase 0 integration)
    */
   private async generateBillNo(): Promise<string> {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const random = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, "0");
     return `BL-${date}-${random}`;
   }
 
@@ -378,8 +401,10 @@ export class PaymentGatewayController {
    * Generate transaction number (Phase 0 integration)
    */
   private async generateTransactionNo(): Promise<string> {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const random = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, "0");
     return `TX-${date}-${random}`;
   }
 }

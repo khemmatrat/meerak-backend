@@ -1,5 +1,5 @@
 -- =================================================================================
--- 029: Wallet Deposit (Omise) + Ledger event_type
+-- 029: Wallet Deposit (gateway charge) + Ledger event_type
 -- =================================================================================
 -- รองรับ event_type 'wallet_deposit' ใน payment_ledger_audit
 -- ตาราง wallet_deposit_charges เก็บ charge_id + user_id สำหรับ idempotency ใน webhook
@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_wallet_deposit_charges_charge_id ON wallet_deposi
 CREATE INDEX IF NOT EXISTS idx_wallet_deposit_charges_user_id ON wallet_deposit_charges(user_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_deposit_charges_status ON wallet_deposit_charges(status);
 
-COMMENT ON TABLE wallet_deposit_charges IS 'Omise charge สำหรับเติมเงิน; webhook อัปเดต status และ credit wallet ครั้งเดียว (idempotent)';
+COMMENT ON TABLE wallet_deposit_charges IS 'Charge id สำหรับเติมเงิน; webhook อัปเดต status และ credit wallet ครั้งเดียว (idempotent)';
 
 -- Allow event_type 'wallet_deposit' in payment_ledger_audit
 DO $$

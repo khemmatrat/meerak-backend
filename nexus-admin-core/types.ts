@@ -5,7 +5,7 @@ export enum AppStatus {
   DEPRECATED = 'DEPRECATED'
 }
 
-export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT' | 'ACCOUNTANT' | 'DEVELOPER' | 'ADMIN' | 'AUDITOR';
+export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT' | 'ACCOUNTANT' | 'DEVELOPER' | 'ADMIN' | 'AUDITOR' | 'STAFF_KYC';
 
 export interface AdminUser {
   id: string;
@@ -13,6 +13,8 @@ export interface AdminUser {
   email: string;
   role: AdminRole;
   avatar?: string;
+  /** ความสามารถเสริม (JWT / session) เช่น FINANCIAL_AUDIT_READ */
+  permissions?: string[];
 }
 
 export interface StaffProfile {
@@ -42,14 +44,31 @@ export interface FeatureFlags {
   enablePayments: boolean;
   enableJobPosting: boolean;
   enableChat: boolean;
+  enablePromoVouchers: boolean;
   maintenanceMode: boolean;
+}
+
+/** ข้อความ/สวิตช์ที่ mobile โหลดจาก GET /api/app/bootstrap — แก้ได้ทันทีโดยไม่ต้อง build ใหม่ */
+export interface MobileAppRemote {
+  paymentNoticeTh: string;
+  paymentNoticeEn: string;
+  transportNoticeTh: string;
+  transportNoticeEn: string;
+  promoNoticeTh: string;
+  promoNoticeEn: string;
+  showPromoFundBalance: boolean;
+  complianceSupportEmail: string;
 }
 
 export interface ServerConfig {
   iosMinVersion: string;
   androidMinVersion: string;
   welcomeMessage: string;
+  forceUpdateMessage: string;
+  iosStoreUrl: string;
+  playStoreUrl: string;
   pushNotificationEnabled: boolean;
+  remote: MobileAppRemote;
   featureFlags: FeatureFlags;
 }
 
@@ -86,11 +105,14 @@ export interface PushNotification {
   id: string;
   title: string;
   message: string;
-  target: 'All' | 'iOS' | 'Android';
+  target: 'All' | 'Landing' | 'Mobile';
   sentAt: string;
   status: 'Sent' | 'Scheduled' | 'Failed';
   openRate: number;
 }
+
+/** Slug สำหรับฟิลด์ placements แบนเนอร์ — ต้องตรงกับ mobile + GET /api/banners?placement= */
+export type BannerPlacementSlug = 'home' | 'welcome' | 'job_detail';
 
 export interface AppBanner {
   id: string;
@@ -102,9 +124,30 @@ export interface AppBanner {
   startDate: string;
   endDate: string;
   clicks: number;
+  /** เปิด bottom sheet — แยกจาก claims */
+  sheetOpens?: number;
+  claims?: number;
+  /** สัดว่นสไลด์: hero | strip | portrait — null = ค่า default จากแอป */
+  slideHeight?: 'hero' | 'strip' | 'portrait' | null;
   promoCode?: string | null;
   discountMaxBaht?: number | null;
   discountDescription?: string | null;
+  /** fixed_baht = ลดเป็นบาท; percent = ลด % ของราคางาน จำกัดด้วย discountMaxBaht */
+  discountMode?: 'fixed_baht' | 'percent';
+  discountPercent?: number | null;
+  /** ยอดเติมเงินสะสมขั้นต่ำ (บาท) ก่อนรับโค้ด */
+  minCumulativeTopupThb?: number;
+  /** ใช้ส่วนลดได้เฉพาะการชำระงานจ้างครั้งแรก */
+  firstPaidJobOnly?: boolean;
+  /** ช่วงใช้โค้ดได้จริง (ISO) — คำนวณจาก promo_valid_* หรือ fallback วันแบนเนอร์ */
+  promoValidFrom?: string | null;
+  promoValidUntil?: string | null;
+  /** ว่าง = ทุกหมวด — ตรงกับ jobs.category */
+  allowedJobCategories?: string[] | null;
+  /** false = ระงับรับ/ใช้โค้ด — แบนเนอร์ยังแสดงเป็นโฆษณาได้ */
+  promoClaimsEnabled?: boolean;
+  /** แสดงเฉพาะหน้าที่ระบุ — null/ว่าง = ทุกหน้า (home, welcome, job_detail) */
+  placements?: BannerPlacementSlug[] | null;
 }
 
 export interface ClusterNode {
@@ -158,6 +201,8 @@ export interface CircuitBreaker {
   state: 'CLOSED' | 'OPEN' | 'HALF-OPEN';
   failureRate: number;
   lastTripTime: string | null;
+  /** Backend service key (e.g. payment_gateway) for trip/reset API */
+  serviceKey?: string;
 }
 
 export interface FinancialTransaction {
@@ -317,9 +362,56 @@ export interface CapitalAllocation {
 }
 
 export interface FinancialStrategy {
+  region: string;
+  currency: string;
   totalReserves: number;
   monthlyBurnRate: number;
   runwayMonths: number;
   expansionBudget: number;
   allocation: CapitalAllocation[];
+  updatedAt?: string | null;
+}
+
+/** ช่วงเปลี่ยนผ่านก่อน payment gateway อนุมัติ — บัญชีรับชั่วคราว + บันทึกรับ/จ่าย (Admin manual) */
+export interface PersonalSettlementAccount {
+  id: string;
+  label: string;
+  bankName: string;
+  accountHolderName: string;
+  accountNumber: string;
+  /** เลขพร้อมเพย์ / เบอร์ผูกพร้อมเพย์ (ไม่มีช่องว่าง) */
+  promptPayId?: string;
+  /** แอปที่ใช้บ่อยสำหรับโอน (เช่น SCB EASY, K PLUS) */
+  preferredMobileBankApps?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+export type ManualSettlementDirection = 'INBOUND' | 'OUTBOUND';
+
+/** QR = สแกนจ่ายเข้า / แสดง QR รับ · Mobile banking = โอนผ่านแอปธนาคาร */
+export type ManualSettlementChannel =
+  | 'QR_PROMPTPAY'
+  | 'QR_BANK_STATIC'
+  | 'MOBILE_BANKING_TRANSFER'
+  | 'OTHER';
+
+export interface ManualSettlementRecord {
+  id: string;
+  direction: ManualSettlementDirection;
+  channel: ManualSettlementChannel;
+  amount: number;
+  currency: 'THB';
+  /** อ้างอิงงาน / ผู้ใช้ / คำอธิบายสั้นๆ */
+  referenceLabel: string;
+  /** เลขอ้างอิงจากสลิป / SMS */
+  bankReference?: string;
+  /** วันที่-เวลาโอน (ที่เห็นบนสลิป) */
+  transferAt?: string;
+  status: 'PENDING_RECONCILE' | 'MATCHED' | 'FLAGGED';
+  notes?: string;
+  /** URL สลิป (S3) หรือลิงก์ภายนอก */
+  slipUrl?: string;
+  createdAt: string;
+  createdBy?: string;
 }

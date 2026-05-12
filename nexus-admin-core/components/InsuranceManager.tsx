@@ -1,8 +1,9 @@
 /**
  * Insurance Vault Manager — กำหนด % เบี้ยประกัน (รวมแยกตามหมวดงาน), แสดงยอดสะสม, Reserve 60% / Manageable 40%, ถอนส่วน 40%
+ * เชื่อมกับ Insurance Claims: TIPO อัปเดตจาก claim payouts, Claims Overview panel
  */
 import React, { useState, useEffect } from "react";
-import { Shield, Loader2, RefreshCw, Lock, TrendingUp, Save, Plus, X } from "lucide-react";
+import { Shield, Loader2, RefreshCw, Lock, TrendingUp, Save, Plus, X, ClipboardList, AlertTriangle, CheckCircle2, ChevronRight } from "lucide-react";
 import {
   getInsuranceSettings,
   patchInsuranceSettings,
@@ -16,31 +17,59 @@ import type {
   JobCategoryItem,
 } from "../services/adminApi";
 
-/** รายการหมวดเริ่มต้น (ใช้เมื่อ API ไม่ส่งมาหรือส่งว่าง) — ตรงกับ backend JOB_CATEGORY_KEYS */
+/** รายการหมวด — ตรงกับ NEXUS_MODULE2_CATEGORIES / คอร์สข้อสอบที่ปรับปรุงแล้ว */
 const DEFAULT_CATEGORIES: JobCategoryItem[] = [
-  { category: "maid", display_name: "แม่บ้าน", rate_percent: 10 },
-  { category: "detective", display_name: "นักสืบ", rate_percent: 15 },
-  { category: "logistics", display_name: "ขนส่ง", rate_percent: 12 },
-  { category: "ac_cleaning", display_name: "ล้างแอร์", rate_percent: 10 },
-  { category: "delivery", display_name: "จัดส่ง", rate_percent: 10 },
-  { category: "tutor", display_name: "ติวเตอร์", rate_percent: 10 },
-  { category: "repair", display_name: "ซ่อมบำรุง", rate_percent: 10 },
-  { category: "event", display_name: "อีเวนต์", rate_percent: 10 },
-  { category: "photography", display_name: "ถ่ายภาพ", rate_percent: 10 },
-  { category: "cleaning", display_name: "ทำความสะอาด", rate_percent: 10 },
-  { category: "moving", display_name: "ย้ายของ", rate_percent: 10 },
-  { category: "pet_care", display_name: "เลี้ยงสัตว์", rate_percent: 10 },
-  { category: "beauty", display_name: "ความงาม", rate_percent: 10 },
-  { category: "health", display_name: "สุขภาพ", rate_percent: 10 },
-  { category: "consulting", display_name: "ที่ปรึกษา", rate_percent: 10 },
-  { category: "tech_support", display_name: "ซ่อมไอที", rate_percent: 10 },
-  { category: "teaching", display_name: "สอนพิเศษ", rate_percent: 10 },
-  { category: "driving", display_name: "ขับรถ", rate_percent: 10 },
+  // งานบ้าน
+  { category: "Cleaning", display_name: "แม่บ้าน / ทำความสะอาด", rate_percent: 10 },
+  { category: "Gardening", display_name: "ช่างสวน / จัดสวน", rate_percent: 10 },
+  { category: "Moving", display_name: "ขนย้ายสิ่งของ", rate_percent: 10 },
+  // ช่าง
+  { category: "Repair", display_name: "ช่างซ่อมแซมทั่วไป", rate_percent: 10 },
+  { category: "AC Technician", display_name: "ช่างแอร์", rate_percent: 10 },
+  { category: "Construction", display_name: "ช่างก่อสร้าง", rate_percent: 10 },
+  { category: "Plumber", display_name: "ช่างประปา", rate_percent: 10 },
+  { category: "Electrician", display_name: "ช่างไฟฟ้า", rate_percent: 10 },
+  // ขนส่ง & ความปลอดภัย
+  { category: "Delivery", display_name: "ขนส่ง / จัดส่งพัสดุ", rate_percent: 10 },
+  { category: "Driving", display_name: "ขับรถ", rate_percent: 10 },
+  { category: "Security", display_name: "รปภ. / ยาม", rate_percent: 10 },
+  // อาหาร
+  { category: "Chef", display_name: "พ่อครัว / แม่ครัว", rate_percent: 10 },
+  { category: "Catering", display_name: "จัดเลี้ยง / Catering", rate_percent: 10 },
+  { category: "Cooking", display_name: "ทำอาหาร", rate_percent: 10 },
+  // ดูแลบุคคล
+  { category: "Babysitter", display_name: "พี่เลี้ยงเด็ก", rate_percent: 10 },
+  { category: "Elderly", display_name: "ผู้ดูแลผู้สูงอายุ", rate_percent: 10 },
+  { category: "Massage", display_name: "นักนวด / นวดแผนไทย", rate_percent: 10 },
+  // สุขภาพ & ความงาม
+  { category: "Beauty", display_name: "ความงาม / เสริมสวย", rate_percent: 10 },
+  { category: "Trainer", display_name: "เทรนเนอร์ฟิตเนส", rate_percent: 10 },
+  // สัตว์เลี้ยง
+  { category: "Pet Care", display_name: "ดูแลสัตว์เลี้ยง", rate_percent: 10 },
+  // ไอที
+  { category: "IT Support", display_name: "ช่างซ่อมคอมพิวเตอร์ / IT", rate_percent: 10 },
+  // การสอน & ฝึก
+  { category: "Tutor", display_name: "ครูสอนพิเศษ / ติวเตอร์", rate_percent: 10 },
+  { category: "Tutoring", display_name: "สอนพิเศษ (ทั่วไป)", rate_percent: 10 },
+  // ครีเอทีฟ
+  { category: "Photography", display_name: "ช่างภาพ / วิดีโอ", rate_percent: 10 },
+  { category: "Design", display_name: "ออกแบบ / กราฟิก", rate_percent: 10 },
+  // ธุรกิจ & วิชาชีพ
+  { category: "Event", display_name: "จัดงานอีเวนต์", rate_percent: 10 },
+  { category: "Accounting", display_name: "บัญชี / การเงิน", rate_percent: 10 },
+  { category: "Legal", display_name: "กฎหมาย / นิติกรรม", rate_percent: 10 },
+  { category: "Medical", display_name: "สาธารณสุข / การแพทย์", rate_percent: 10 },
+  // อื่นๆ
   { category: "other", display_name: "อื่นๆ", rate_percent: 10 },
   { category: "default", display_name: "ค่าเริ่มต้น (ทุกงาน)", rate_percent: 10 },
 ];
 
-export const InsuranceManager: React.FC = () => {
+interface InsuranceManagerProps {
+  /** ถ้าส่งมา ปุ่ม "ดูรายละเอียด Claims" จะเรียก setView('insurance-claims') */
+  setView?: (view: string) => void;
+}
+
+export const InsuranceManager: React.FC<InsuranceManagerProps> = ({ setView }) => {
   const [settings, setSettings] = useState<InsuranceSettingsResponse | null>(null);
   const [summary, setSummary] = useState<InsuranceSummaryResponse | null>(null);
   const [categories, setCategories] = useState<JobCategoryItem[]>([]);
@@ -186,9 +215,39 @@ export const InsuranceManager: React.FC = () => {
   const manageable = summary?.manageable_40 ?? 0;
   const alreadyWithdrawn = summary?.already_withdrawn_for_investment ?? 0;
   const allowed = summary?.allowed_to_withdraw ?? 0;
+  const tic = summary?.total_insurance_collected ?? 0;
 
   return (
     <div className="space-y-6">
+      {/* Insurance Fund — CEO visibility: total premiums collected (safety pool) */}
+      <div className="rounded-xl overflow-hidden border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 shadow-lg">
+        <div className="p-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-4 bg-emerald-500/20 rounded-xl">
+              <Shield size={40} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                Insurance Fund (Revenue B/C)
+              </h2>
+              <p className="text-sm text-slate-600 mt-0.5">
+                Total premiums collected — safety pool for claims
+              </p>
+              <p className="text-3xl font-bold text-emerald-700 mt-2">
+                ฿{tic.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={fetchAll}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-sm font-medium shrink-0"
+          >
+            <RefreshCw size={16} /> Refresh
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -347,6 +406,81 @@ export const InsuranceManager: React.FC = () => {
               บันทึกอัตราต่อหมวด
             </button>
           </div>
+        </div>
+
+        {/* ── Claims Overview — เชื่อมกับ InsuranceClaimsView ── */}
+        <div className="p-6 border-b border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-medium text-slate-700 flex items-center gap-2">
+              <ClipboardList size={18} className="text-amber-500" />
+              สถานะการเคลมประกัน (Insurance Claims)
+            </h4>
+            {setView && (
+              <button
+                onClick={() => setView('insurance-claims')}
+                className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-semibold"
+              >
+                จัดการ Claims <ChevronRight size={16} />
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Pending Claims */}
+            <div className={`rounded-xl border p-4 flex items-start gap-3 ${
+              (summary?.pending_claims_count ?? 0) > 0
+                ? 'bg-amber-50 border-amber-200'
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              <AlertTriangle size={20} className={
+                (summary?.pending_claims_count ?? 0) > 0 ? 'text-amber-500 mt-0.5' : 'text-slate-400 mt-0.5'
+              } />
+              <div>
+                <p className="text-2xl font-bold text-slate-800">
+                  {summary?.pending_claims_count ?? 0}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">เคลมรอพิจารณา</p>
+                {(summary?.pending_claims_exposure ?? 0) > 0 && (
+                  <p className="text-xs text-amber-600 font-semibold mt-1">
+                    ความเสี่ยง ฿{(summary!.pending_claims_exposure!).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Total Approved Payout */}
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
+              <CheckCircle2 size={20} className="text-emerald-500 mt-0.5" />
+              <div>
+                <p className="text-xl font-bold text-slate-800">
+                  ฿{(summary?.total_claims_approved_amount ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">จ่ายเคลมแล้วทั้งหมด (55%)</p>
+                <p className="text-[10px] text-emerald-600 mt-1">รวมใน TIPO แล้ว</p>
+              </div>
+            </div>
+
+            {/* Net Reserve (after claims) */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-start gap-3">
+              <Lock size={20} className="text-indigo-500 mt-0.5" />
+              <div>
+                <p className="text-xl font-bold text-slate-800">
+                  ฿{(summary?.reserve_60 ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">Reserve 60% (สุทธิ)</p>
+                {(summary?.gross_reserve_60 ?? 0) !== (summary?.reserve_60 ?? 0) && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    ก่อนหัก: ฿{(summary?.gross_reserve_60 ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Disclaimer */}
+          <p className="text-xs text-slate-500 mt-3 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+            💡 <strong>การเชื่อมข้อมูล:</strong> เมื่อ Admin อนุมัติ Claim — ระบบจะบันทึก <code>liability_debit</code> ใน <code>insurance_fund_movements</code>
+            อัตโนมัติ ทำให้ยอด TIPO และ Reserve 60% (สุทธิ) อัปเดตทันที
+          </p>
         </div>
 
         {/* Finance Dashboard: TIC, TIPO, CIB, 60/40 */}

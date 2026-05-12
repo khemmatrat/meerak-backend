@@ -28,13 +28,10 @@ router.post('/kyc/submit', authenticate, async (req, res) => {
     const kycData = req.body;
     const result = await functionsClient.submitKYC(idToken, kycData);
 
-    res.json({
-      success: true,
-      ...result,
-    });
+    return res.json({ ...result, success: true });
   } catch (error: any) {
     console.error('KYC submission error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to submit KYC',
       message: error.message,
     });
@@ -60,13 +57,13 @@ router.get('/kyc/status', authenticate, async (req, res) => {
 
     // Sync KYC status ไปยัง users table
     if (status.postgresql) {
-      await sharedDb.syncKYCStatusFromSubmissions(req.user.firebase_uid);
+      await sharedDb.syncKYCStatusFromSubmissions(req.user.firebase_uid ?? req.user.id);
     }
 
-    res.json(status);
+    return res.json(status);
   } catch (error: any) {
     console.error('KYC status check error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to check KYC status',
       message: error.message,
     });
@@ -91,15 +88,12 @@ router.post('/kyc/verify-ai', authenticate, async (req, res) => {
     const result = await functionsClient.verifyKYCWithAI(idToken);
 
     // Sync KYC status หลังจาก verify
-    await sharedDb.syncKYCStatusFromSubmissions(req.user.firebase_uid);
+    await sharedDb.syncKYCStatusFromSubmissions(req.user.firebase_uid ?? req.user.id);
 
-    res.json({
-      success: true,
-      ...result,
-    });
+    return res.json({ ...result, success: true });
   } catch (error: any) {
     console.error('AI verification error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to verify KYC with AI',
       message: error.message,
     });
@@ -122,10 +116,10 @@ router.get('/postgres/health', authenticate, async (req, res) => {
     }
 
     const health = await functionsClient.getPostgresHealth(idToken);
-    res.json(health);
+    return res.json(health);
   } catch (error: any) {
     console.error('PostgreSQL health check error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to check PostgreSQL health',
       message: error.message,
     });
@@ -150,15 +144,12 @@ router.post('/sync-user', authenticate, async (req, res) => {
     const result = await functionsClient.syncUserToPostgres(idToken);
 
     // Sync wallet balance
-    await sharedDb.syncWalletBalance(req.user.firebase_uid);
+    await sharedDb.syncWalletBalance(req.user.firebase_uid ?? req.user.id);
 
-    res.json({
-      success: true,
-      ...result,
-    });
+    return res.json({ ...result, success: true });
   } catch (error: any) {
     console.error('Sync user error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to sync user',
       message: error.message,
     });

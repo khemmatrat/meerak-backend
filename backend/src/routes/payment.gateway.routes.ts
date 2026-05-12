@@ -28,8 +28,8 @@ router.post('/refund', paymentGatewayController.refundPayment.bind(paymentGatewa
  * Webhook Routes (no authentication required)
  */
 
-// PromptPay/Omise webhook
-router.post('/webhook/omise', webhookController.handleOmiseWebhook);
+// Thai QR / e-wallet webhook (HMAC: PAYMENT_WEBHOOK_SECRET, header x-payment-signature)
+router.post('/webhook/thai-qr', webhookController.handleThaiQrPaymentWebhook.bind(webhookController));
 
 // Stripe webhook
 router.post('/webhook/stripe', webhookController.handleStripeWebhook);

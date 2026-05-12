@@ -38,13 +38,17 @@ async function applyNoShowPenalty(pool, params) {
 
     // 1. Refund client
     await client.query(
-      `UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE users SET wallet_balance = wallet_balance + $1,
+         wallet_balance_withdrawable = COALESCE(wallet_balance_withdrawable, 0) + $1,
+         updated_at = NOW() WHERE id = $2`,
       [refundAmount, clientId]
     );
 
     // 2. Fine partner (อาจติดลบ = debt)
     await client.query(
-      `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE users SET wallet_balance = wallet_balance - $1,
+         wallet_balance_withdrawable = GREATEST(0, wallet_balance_withdrawable - LEAST($1, wallet_balance_withdrawable)),
+         updated_at = NOW() WHERE id = $2`,
       [fineAmount, providerId]
     );
 

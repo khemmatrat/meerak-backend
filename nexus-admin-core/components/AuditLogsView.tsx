@@ -166,7 +166,7 @@ function EntityLink({
 }
 
 interface AuditLogsViewProps {
-  /** เฉพาะ ADMIN ถึงจะเข้าหน้านี้ได้ */
+  /** ADMIN / SUPER_ADMIN / AUDITOR */
   currentUserRole?: string;
   /** สำหรับ Link to Entity — โดดไปหน้าจัดการ User / KYC ฯลฯ */
   setView?: (view: string) => void;
@@ -188,7 +188,8 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
   const [pageSize, setPageSize] = useState(50);
   const useBackend = !!getAdminToken();
 
-  const isAdmin = (currentUserRole || "").toUpperCase() === "ADMIN";
+  const ur = (currentUserRole || "").toUpperCase();
+  const isAdmin = ur === "ADMIN" || ur === "SUPER_ADMIN" || ur === "AUDITOR";
 
   const fetchLogs = useCallback(async () => {
     if (!useBackend || !isAdmin) {
@@ -228,7 +229,8 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
         <ShieldAlert size={48} className="mx-auto mb-4 text-amber-600" />
         <h3 className="text-lg font-semibold text-amber-900 mb-2">Access Denied</h3>
         <p className="text-amber-800">
-          This page is for <strong>ADMIN</strong> only. Your role: <strong>{currentUserRole || "—"}</strong>.
+          This page is for <strong>ADMIN / SUPER_ADMIN / AUDITOR</strong> only. Your role:{" "}
+          <strong>{currentUserRole || "—"}</strong>.
         </p>
         <p className="text-sm text-amber-700 mt-2">Contact an administrator if you need access.</p>
       </div>
@@ -268,7 +270,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               type="date"
               value={fromDate}
               onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm sm:min-h-0"
             />
           </div>
           <div>
@@ -277,7 +279,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               type="date"
               value={toDate}
               onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm sm:min-h-0"
             />
           </div>
           <div>
@@ -287,7 +289,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               placeholder="e.g. users, user_roles"
               value={entityType}
               onChange={(e) => { setEntityType(e.target.value); setPage(1); }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm sm:min-h-0"
             />
           </div>
           <div>
@@ -297,7 +299,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               placeholder="e.g. role_change, user_suspend"
               value={action}
               onChange={(e) => { setAction(e.target.value); setPage(1); }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm sm:min-h-0"
             />
           </div>
           <div>
@@ -309,20 +311,22 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               placeholder="actor_id"
               value={actorId}
               onChange={(e) => { setActorId(e.target.value); setPage(1); }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm sm:min-h-0"
             />
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={() => { setPage(1); fetchLogs(); }}
             disabled={loading}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 sm:min-h-0 sm:py-2"
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
             Search
           </button>
           <button
+            type="button"
             onClick={() => {
               setFromDate("");
               setToDate("");
@@ -331,7 +335,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
               setActorId("");
               setPage(1);
             }}
-            className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 flex items-center gap-2"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 sm:min-h-0 sm:py-2"
           >
             <X size={16} /> Clear
           </button>
@@ -370,7 +374,89 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+            {/* Mobile: card stack */}
+            <div className="max-h-[32rem] space-y-3 overflow-y-auto md:hidden">
+              {logs.map((log) => {
+                const isExpanded = expandedId === log.id;
+                const hasChanges =
+                  (log.changes && (Object.keys(log.changes?.old || {}).length > 0 || Object.keys(log.changes?.new || {}).length > 0)) ||
+                  (log.state_before != null || log.state_after != null);
+                const ts = log.created_at ? new Date(log.created_at).toLocaleString() : "—";
+                return (
+                  <div
+                    key={`m-${String(log.id)}`}
+                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <button
+                      type="button"
+                      className="w-full text-left"
+                      onClick={() => hasChanges && setExpandedId(isExpanded ? null : log.id)}
+                      disabled={!hasChanges}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-slate-500">{ts}</p>
+                          <p className="mt-1 font-mono text-xs text-slate-700">
+                            {log.actor_id ?? "—"}
+                            <RoleBadge role={log.actor_role || log.actor_type || ""} />
+                          </p>
+                          <span className="mt-2 inline-block rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                            {log.action}
+                          </span>
+                          <div className="mt-2 font-mono text-xs break-all text-slate-600">
+                            <EntityLink
+                              entityName={log.entity_name || log.entity_type || ""}
+                              entityId={log.entity_id}
+                              setView={setView}
+                              onNavigateToEntity={onNavigateToEntity}
+                            />
+                          </div>
+                          {log.status ? (
+                            <p className="mt-2">
+                              <span
+                                className={
+                                  log.status === "Failed"
+                                    ? "rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600"
+                                    : "rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-600"
+                                }
+                              >
+                                {log.status}
+                              </span>
+                            </p>
+                          ) : null}
+                        </div>
+                        {hasChanges ? (
+                          <span className="shrink-0 text-slate-400">
+                            {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                    {isExpanded && hasChanges ? (
+                      <div className="mt-4 border-t border-slate-100 pt-4">
+                        <span className="mb-2 block text-xs font-medium text-slate-500">JSON Diff</span>
+                        <JsonDiffBeautifier
+                          oldVal={(log.changes && log.changes.old) || (log.state_before as Record<string, unknown>) || undefined}
+                          newVal={(log.changes && log.changes.new) || (log.state_after as Record<string, unknown>) || undefined}
+                        />
+                        {log.ip_address ? (
+                          <p className="mt-3 text-xs text-slate-500">
+                            IP: <span className="font-mono">{log.ip_address}</span>
+                          </p>
+                        ) : null}
+                        {log.reason ? (
+                          <p className="mt-1 text-xs text-slate-500">
+                            <span className="font-medium">Reason:</span> {log.reason}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden max-h-[32rem] overflow-x-auto overflow-y-auto md:block">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10">
                   <tr>
@@ -474,16 +560,18 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUserRole, s
                 </span>
                 <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1 || loading}
-                    className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-slate-200 p-2 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:min-w-0"
                   >
                     <ChevronLeft size={18} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages || loading}
-                    className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-slate-200 p-2 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:min-w-0"
                   >
                     <ChevronRight size={18} />
                   </button>

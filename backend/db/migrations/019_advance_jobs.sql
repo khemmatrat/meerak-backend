@@ -9,14 +9,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Status ตาม Workflow แบบ Fastwork
 -- draft → open → pending → in_progress → completed | disputed
-CREATE TYPE advance_job_status AS ENUM (
-  'draft',
-  'open',
-  'pending',
-  'in_progress',
-  'completed',
-  'disputed'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'advance_job_status') THEN
+    CREATE TYPE advance_job_status AS ENUM (
+      'draft', 'open', 'pending', 'in_progress', 'completed', 'disputed'
+    );
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS advance_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

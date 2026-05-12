@@ -1,20 +1,15 @@
 #!/usr/bin/env node
 /**
- * Reconcile Cron — ตรวจจับเงินรั่ว
- * รันตอนตี 3 ของทุกวัน: เทียบ Omise Balance กับ platform_balance
- * ถ้าต่างกันเกิน 1 บาท → สร้าง reconcile_alerts
+ * Reconcile Cron — compare processor-reported balance vs platform ledger (daily).
  *
- * วิธีใช้:
- *   node backend/scripts/reconcile-cron.js
- *   Cron: 0 3 * * * (ทุกวัน 03:00 น.)
- *
- * ENV: OMISE_SECRET_KEY หรือ OMISE_SECRET_KEY_TEST
+ * ENV: PAYMENT_GATEWAY_SECRET_KEY, PAYMENT_GATEWAY_API_HOST
  */
 import pg from 'pg';
 import { fileURLToPath } from 'url';
 import { join, dirname, resolve } from 'path';
 import dotenv from 'dotenv';
-import { OmiseClient } from '../lib/omise-client.js';
+import { PaymentHttpClient } from '../lib/paymentHttpClient.js';
+import { getPaymentGatewaySecretKey } from '../lib/paymentManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const __filename = fileURLToPath(import.meta.url);
@@ -30,23 +25,23 @@ const pool = new Pool({
 });
 
 const THRESHOLD_THB = parseFloat(process.env.RECONCILE_THRESHOLD_THB || '1');
-const OMISE_KEY = process.env.OMISE_SECRET_KEY || (process.env.NODE_ENV !== 'production' ? process.env.OMISE_SECRET_KEY_TEST : null);
 
 async function runReconcile() {
-  if (!OMISE_KEY) {
-    console.log('[reconcile] Omise key not configured, skip');
-    return { ok: false, reason: 'no_omise_key' };
+  const secretKey = getPaymentGatewaySecretKey();
+  if (!secretKey) {
+    console.log('[reconcile] Payment gateway key not configured, skip');
+    return { ok: false, reason: 'no_gateway_key' };
   }
-  const omise = new OmiseClient(OMISE_KEY);
+  const client = new PaymentHttpClient(secretKey);
 
-  let omiseBalanceTHB = 0;
+  let gatewayBalanceTHB = 0;
   try {
-    const bal = await omise.getBalance();
+    const bal = await client.getBalance();
     const availableSatang = bal.available || bal.total || 0;
-    omiseBalanceTHB = Math.round(Number(availableSatang)) / 100;
+    gatewayBalanceTHB = Math.round(Number(availableSatang)) / 100;
   } catch (e) {
-    console.error('[reconcile] Omise getBalance failed:', e.message);
-    return { ok: false, reason: 'omise_error', error: e.message };
+    console.error('[reconcile] Gateway getBalance failed:', e.message);
+    return { ok: false, reason: 'gateway_error', error: e.message };
   }
 
   const platformRes = await pool.query(`
@@ -60,28 +55,31 @@ async function runReconcile() {
   `).catch(() => ({ rows: [{ platform_balance: 0 }] }));
 
   const platformBalanceTHB = parseFloat(platformRes.rows?.[0]?.platform_balance || 0);
-  const diff = Math.round((omiseBalanceTHB - platformBalanceTHB) * 100) / 100;
+  const diff = Math.round((gatewayBalanceTHB - platformBalanceTHB) * 100) / 100;
 
   if (Math.abs(diff) <= THRESHOLD_THB) {
-    console.log(`[reconcile] OK — Omise ฿${omiseBalanceTHB.toLocaleString()} | Platform ฿${platformBalanceTHB.toLocaleString()} | diff ฿${diff}`);
-    return { ok: true, omise: omiseBalanceTHB, platform: platformBalanceTHB, diff };
+    console.log(`[reconcile] OK — Gateway ฿${gatewayBalanceTHB.toLocaleString()} | Platform ฿${platformBalanceTHB.toLocaleString()} | diff ฿${diff}`);
+    return { ok: true, gateway: gatewayBalanceTHB, platform: platformBalanceTHB, diff };
   }
 
   console.warn(`[reconcile] ALERT — diff ฿${diff} exceeds threshold ฿${THRESHOLD_THB}`);
   await pool.query(
-    `INSERT INTO reconcile_alerts (omise_balance_thb, platform_balance_thb, diff_thb, threshold_thb)
+    `INSERT INTO reconcile_alerts (gateway_reported_balance_thb, platform_balance_thb, diff_thb, threshold_thb)
      VALUES ($1, $2, $3, $4)`,
-    [omiseBalanceTHB, platformBalanceTHB, diff, THRESHOLD_THB]
+    [gatewayBalanceTHB, platformBalanceTHB, diff, THRESHOLD_THB]
   ).catch((e) => {
-    if (e.code === '42P01') console.warn('[reconcile] reconcile_alerts table not found, run migration 081');
+    if (e.code === '42P01') console.warn('[reconcile] reconcile_alerts table not found, run migration 081/137');
     else console.error('[reconcile] Insert alert failed:', e.message);
   });
 
-  // Auto-Notification: Line Notify + Email ไปเจ้านาย/ทีมบัญชี
   const { notifyReconcileAlert } = await import('../lib/alertNotifier.js').catch(() => ({ notifyReconcileAlert: async () => {} }));
-  await notifyReconcileAlert({ omise_balance_thb: omiseBalanceTHB, platform_balance_thb: platformBalanceTHB, diff_thb: diff }).catch((e) => console.warn('[reconcile] Notification failed:', e?.message));
+  await notifyReconcileAlert({
+    gateway_reported_balance_thb: gatewayBalanceTHB,
+    platform_balance_thb: platformBalanceTHB,
+    diff_thb: diff,
+  }).catch((e) => console.warn('[reconcile] Notification failed:', e?.message));
 
-  return { ok: false, alert: true, omise: omiseBalanceTHB, platform: platformBalanceTHB, diff };
+  return { ok: false, alert: true, gateway: gatewayBalanceTHB, platform: platformBalanceTHB, diff };
 }
 
 export { runReconcile };

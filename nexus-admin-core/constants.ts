@@ -11,7 +11,6 @@ import {
   CostMetric, 
   DocArticle,
   DRStatus, 
-  FinancialStrategy,
   FinancialTransaction, 
   IpBlockEntry, 
   JobTransaction,
@@ -38,14 +37,14 @@ export const MOCK_ADMIN_ACCOUNTS: AdminUser[] = [
   {
     id: 'ADM-001',
     name: 'Admin Master',
-    email: 'admin@nexus.com',
+    email: 'admin@aqond.com',
     role: 'SUPER_ADMIN',
     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
   },
   {
     id: 'ADM-002',
     name: 'Support Lead',
-    email: 'support@nexus.com',
+    email: 'support@aqond.com',
     role: 'SUPPORT',
     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
   }
@@ -53,22 +52,22 @@ export const MOCK_ADMIN_ACCOUNTS: AdminUser[] = [
 
 export const MOCK_STAFF_LIST: StaffProfile[] = [
   { 
-    id: 'STF-001', name: 'John Doe', email: 'john.d@nexus.com', role: 'SUPER_ADMIN', 
+    id: 'STF-001', name: 'John Doe', email: 'john.d@aqond.com', role: 'SUPER_ADMIN', 
     status: 'ACTIVE', lastLogin: 'Today, 10:30 AM', addedAt: '2023-01-01', 
     permissions: ['ALL ACCESS'] 
   },
   { 
-    id: 'STF-002', name: 'Jane Finance', email: 'jane.f@nexus.com', role: 'ACCOUNTANT', 
+    id: 'STF-002', name: 'Jane Finance', email: 'jane.f@aqond.com', role: 'ACCOUNTANT', 
     status: 'ACTIVE', lastLogin: 'Yesterday, 04:00 PM', addedAt: '2023-05-15', 
     permissions: ['Financial Audit', 'Reports', 'User Payouts', 'Strategy'] 
   },
   { 
-    id: 'STF-003', name: 'Mike Support', email: 'mike.s@nexus.com', role: 'SUPPORT', 
+    id: 'STF-003', name: 'Mike Support', email: 'mike.s@aqond.com', role: 'SUPPORT', 
     status: 'ACTIVE', lastLogin: 'Today, 09:00 AM', addedAt: '2023-06-20', 
     permissions: ['User Management', 'Support Tickets', 'Push Notifications'] 
   },
   { 
-    id: 'STF-004', name: 'Dev Ops', email: 'dev.ops@nexus.com', role: 'DEVELOPER', 
+    id: 'STF-004', name: 'Dev Ops', email: 'dev.ops@aqond.com', role: 'DEVELOPER', 
     status: 'SUSPENDED', lastLogin: '2023-10-01', addedAt: '2023-08-01', 
     permissions: ['System Logs', 'Cluster Health', 'API Gateway', 'App Config'] 
   }
@@ -77,13 +76,28 @@ export const MOCK_STAFF_LIST: StaffProfile[] = [
 export const INITIAL_CONFIG: ServerConfig = {
   iosMinVersion: '1.2.0',
   androidMinVersion: '1.4.5',
-  welcomeMessage: 'ยินดีต้อนรับสู่ Nexus App! โปรโมชั่นใหม่รอคุณอยู่',
+  welcomeMessage: 'ยินดีต้อนรับสู่ aqond! โปรโมชั่นใหม่รอคุณอยู่',
+  forceUpdateMessage:
+    'แอปเวอร์ชันนี้ไม่รองรับแล้ว กรุณาอัปเดตจาก App Store / Play Store เพื่อใช้งานต่อ',
+  iosStoreUrl: '',
+  playStoreUrl: '',
   pushNotificationEnabled: true,
+  remote: {
+    paymentNoticeTh: '',
+    paymentNoticeEn: '',
+    transportNoticeTh: '',
+    transportNoticeEn: '',
+    promoNoticeTh: '',
+    promoNoticeEn: '',
+    showPromoFundBalance: false,
+    complianceSupportEmail: '',
+  },
   featureFlags: {
     enableSignups: true,
     enablePayments: true,
     enableJobPosting: true,
     enableChat: true,
+    enablePromoVouchers: true,
     maintenanceMode: false
   }
 };
@@ -131,8 +145,8 @@ export const MOCK_LOGS: SystemLog[] = [
 
 export const MOCK_NOTIFICATIONS: PushNotification[] = [
   { id: 'N001', title: 'Flash Sale! ⚡️', message: 'ลดราคา 50% ทุกรายการ เฉพาะวันนี้เท่านั้น', target: 'All', sentAt: '2023-10-27 09:00', status: 'Sent', openRate: 24.5 },
-  { id: 'N002', title: 'Update Available', message: 'กรุณาอัปเดตแอปเป็นเวอร์ชันล่าสุด', target: 'Android', sentAt: '2023-10-26 14:00', status: 'Sent', openRate: 15.2 },
-  { id: 'N003', title: 'Welcome New Users', message: 'รับคูปองส่วนลด 100 บาท', target: 'iOS', sentAt: '2023-10-28 10:00', status: 'Scheduled', openRate: 0 }
+  { id: 'N002', title: 'Update Available', message: 'กรุณาอัปเดตแอปเป็นเวอร์ชันล่าสุด', target: 'Mobile', sentAt: '2023-10-26 14:00', status: 'Sent', openRate: 15.2 },
+  { id: 'N003', title: 'Welcome New Users', message: 'รับคูปองส่วนลด 100 บาท', target: 'Landing', sentAt: '2023-10-28 10:00', status: 'Scheduled', openRate: 0 }
 ];
 
 export const MOCK_BANNERS: AppBanner[] = [
@@ -247,7 +261,7 @@ export const MOCK_CHAT_HISTORY: ChatMessage[] = [
 export const MOCK_AUTO_REPLY_RULES: AutoReplyRule[] = [
   { id: 'AR-01', keyword: 'โอนเงิน', response: 'หากพบปัญหาโอนเงิน กรุณาส่งสลิปโอนเงินมาในแชทนี้ เพื่อให้ระบบตรวจสอบยอดเงินอัตโนมัติครับ', isEnabled: true },
   { id: 'AR-02', keyword: 'รหัสผ่าน', response: 'คุณสามารถรีเซ็ตรหัสผ่านได้ที่เมนู "ลืมรหัสผ่าน" ในหน้า Login ครับ', isEnabled: true },
-  { id: 'AR-03', keyword: 'ลบข้อมูล', response: 'การลบข้อมูลบัญชีต้องดำเนินการผ่าน Email support@nexus.com เพื่อยืนยันตัวตนครับ', isEnabled: false }
+  { id: 'AR-03', keyword: 'ลบข้อมูล', response: 'การลบข้อมูลบัญชีต้องดำเนินการผ่าน Email support@aqond.com เพื่อยืนยันตัวตนครับ', isEnabled: false }
 ];
 
 export const MOCK_REPORTS: ReportTemplate[] = [
@@ -305,6 +319,8 @@ export const MOCK_PAYOUTS: PayoutRequest[] = [
 ];
 
 export const MOCK_FINANCIAL_STRATEGY: FinancialStrategy = {
+  region: 'TH',
+  currency: 'THB',
   totalReserves: 15000000,
   monthlyBurnRate: 1200000,
   runwayMonths: 12.5,

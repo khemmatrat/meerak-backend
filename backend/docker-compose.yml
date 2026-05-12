@@ -4,12 +4,9 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: kycdb          # ใส่ค่าโดยตรง
-      POSTGRES_USER: kycuser      # ใส่ค่าโดยตรง  
-      POSTGRES_PASSWORD: admin123 # ใส่ค่าโดยตรง
-      # POSTGRES_DB: ${DB_NAME:-kycdb}
-      # POSTGRES_USER: ${DB_USER:-kycuser}
-      # POSTGRES_PASSWORD: ${DB_PASSWORD:-kycpassword}
+      POSTGRES_DB: ${DB_NAME:-kycdb}
+      POSTGRES_USER: ${DB_USER:-kycuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     ports:
       - "5432:5432"
     

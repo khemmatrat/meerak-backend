@@ -19,6 +19,10 @@ import {
   getInternalGatewayPulse,
   postInternalGatewayGenerateReport,
 } from "../services/adminApi";
+import {
+  GatewayMemoryPressureDisplay,
+  type ProcessMemoryPulse,
+} from "./GatewayMemoryPressureDisplay";
 
 function initialPrevMonthBangkok(): { y: number; m: number } {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -186,6 +190,7 @@ export const AqondGatewayConsoleView: React.FC = () => {
   const li = pulse?.ledgerIntegrity as Record<string, unknown> | undefined;
   const signing = pulse?.internalGatewaySigning as { hmacSecretConfigured?: boolean } | undefined;
   const sh = pulse?.systemHealth as { level?: string; reasons?: string[] } | undefined;
+  const processMemory = pulse?.processMemory as ProcessMemoryPulse | undefined;
   const healthLevel = String(sh?.level || "").toLowerCase();
   const healthDotClass =
     healthLevel === "green"
@@ -197,7 +202,7 @@ export const AqondGatewayConsoleView: React.FC = () => {
           : "bg-slate-300 border-slate-400";
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-8 relative">
+    <div className="relative mx-auto max-w-6xl space-y-6 p-4 md:space-y-8 md:p-6">
       {showReasonModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
@@ -227,13 +232,13 @@ export const AqondGatewayConsoleView: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Network className="text-indigo-600" size={28} />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold text-slate-900 md:text-2xl">
+            <Network className="shrink-0 text-indigo-600" size={28} />
             AQOND Gateway Console
           </h1>
-          <p className="text-slate-600 mt-1 text-sm max-w-2xl">
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
             บันทึกธุรกรรม Internal Gateway แยกจาก Stripe/Payso — double-entry ledger, HMAC + nonce (ฝั่ง backend
             ไม่เก็บ PAN/CVV) และ state machine สำหรับการออกใบอนุญาตในอนาคต
           </p>
@@ -246,7 +251,7 @@ export const AqondGatewayConsoleView: React.FC = () => {
           type="button"
           onClick={load}
           disabled={loading || !accessReason}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+          className="flex min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-white hover:bg-indigo-500 disabled:opacity-50 sm:w-auto sm:min-h-0 sm:py-2"
         >
           <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
           รีเฟรช
@@ -270,7 +275,8 @@ export const AqondGatewayConsoleView: React.FC = () => {
               <span className="text-xs font-normal text-cyan-900/90">{sh.reasons.join(" · ")}</span>
             ) : null}
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+          <GatewayMemoryPressureDisplay pm={processMemory} variant="card" />
+          <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <p className="text-xs text-cyan-800 uppercase">Webhook outbox ค้าง</p>
               <p className="font-mono font-bold text-cyan-950">{String(pulse.webhookOutboxPending ?? "—")}</p>
@@ -513,11 +519,44 @@ export const AqondGatewayConsoleView: React.FC = () => {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-semibold text-slate-800">gateway_transactions (masked)</h2>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-2 p-3 md:hidden">
+              {txRows.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-500">ไม่มีธุรกรรม</p>
+              ) : (
+                txRows.map((r) => (
+                  <div key={`tx-m-${String(r.id)}`} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-xs text-slate-500">
+                          {r.created_at ? String(r.created_at).slice(0, 19) : "—"}
+                        </p>
+                        <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                          {String(r.amount_minor ?? "—")}{" "}
+                          <span className="text-xs font-normal text-slate-500">minor</span>
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                        {String(r.status ?? "")}
+                      </span>
+                    </div>
+                    <details className="mt-2 border-t border-slate-200 pt-2">
+                      <summary className="cursor-pointer text-xs font-medium text-indigo-600">รายละเอียด</summary>
+                      <p className="mt-2 break-all font-mono text-xs text-slate-600">
+                        ref: {String(r.merchant_reference ?? "—")}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        proc: {r.processing_time_ms != null ? `${r.processing_time_ms} ms` : "—"}
+                      </p>
+                    </details>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
@@ -553,11 +592,42 @@ export const AqondGatewayConsoleView: React.FC = () => {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-semibold text-slate-800">gateway_settlement_reports</h2>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-2 p-3 md:hidden">
+              {settlements.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-500">ยังไม่มีรายงาน settlement</p>
+              ) : (
+                settlements.map((r) => (
+                  <div key={`set-m-${String(r.id)}`} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+                    <p className="font-mono text-xs text-slate-600">
+                      {String(r.report_period_start || "")} → {String(r.report_period_end || "")}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold tabular-nums text-slate-900">
+                      vol {String(r.total_volume_minor ?? "—")}{" "}
+                      <span className="text-sm font-normal text-slate-500">minor</span>
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+                      <span>fee {String(r.total_fee_minor ?? "—")}</span>
+                      <span>·</span>
+                      <span>n={String(r.transaction_count ?? "")}</span>
+                      <span className="rounded bg-white px-1.5 py-0.5 ring-1 ring-slate-200">
+                        {String(r.status ?? "")}
+                      </span>
+                    </div>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs text-indigo-600">hash</summary>
+                      <p className="mt-1 break-all font-mono text-[10px] text-slate-500">
+                        {r.snapshot_hash_sha256 ? String(r.snapshot_hash_sha256) : "—"}
+                      </p>
+                    </details>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>

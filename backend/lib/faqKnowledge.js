@@ -67,6 +67,18 @@ async function ensureFaqTableExists(pool) {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // ตารางที่สร้างจาก migration เก่าอาจไม่มีคอลัมน์ครบ — เติมให้ก่อน INSERT
+    await pool.query(
+      `ALTER TABLE faq_knowledge ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'general'`
+    );
+    await pool.query(`ALTER TABLE faq_knowledge ADD COLUMN IF NOT EXISTS ticket_id VARCHAR(100)`);
+    await pool.query(`ALTER TABLE faq_knowledge ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`);
+    await pool.query(
+      `ALTER TABLE faq_knowledge ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`
+    );
+    await pool.query(
+      `ALTER TABLE faq_knowledge ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`
+    );
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_faq_knowledge_category ON faq_knowledge(category)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_faq_knowledge_created_at ON faq_knowledge(created_at DESC)`);
     return true;
@@ -81,24 +93,23 @@ async function ensureFaqTableExists(pool) {
  */
 async function saveFaq(pool, { question, best_answer, category, ticket_id, created_by }) {
   if (!pool || !question || !best_answer) return null;
+  const q = String(question).trim().slice(0, 2000);
+  const a = String(best_answer).trim().slice(0, 10000);
+  if (!q || !a) return null;
   try {
     await ensureFaqTableExists(pool);
+    const tid = ticket_id != null && ticket_id !== '' ? String(ticket_id).slice(0, 100) : null;
+    const cb = created_by != null && created_by !== '' ? String(created_by).slice(0, 255) : null;
     const r = await pool.query(
       `INSERT INTO faq_knowledge (question, best_answer, category, ticket_id, created_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW())
        RETURNING id, question, best_answer, category, created_at`,
-      [
-        String(question).trim().slice(0, 2000),
-        String(best_answer).trim().slice(0, 10000),
-        (category || 'general').slice(0, 100),
-        ticket_id || null,
-        created_by || null,
-      ]
+      [q, a, (category || 'general').slice(0, 100), tid, cb]
     );
     return r.rows[0] || null;
   } catch (err) {
     console.error('faqKnowledge saveFaq error:', err.message, err.code);
-    return null;
+    throw err;
   }
 }
 

@@ -60,15 +60,12 @@ describe('Wallet API Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    test('should create deposit charge successfully', async () => {
+    test('deprecated POST /wallet/deposit returns 410 (use /wallet/deposit/payso or /manual)', async () => {
       const res = await request(BASE_URL)
         .post('/api/wallet/deposit')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ amount: 100, method: 'promptpay' });
-      
-      // อาจเป็น 201 หรือ 200 ขึ้นอยู่กับ implementation
-      expect([200, 201]).toContain(res.status);
-      expect(res.body).toHaveProperty('chargeId');
+        .send({ amount: 100, payment_method: 'promptpay' });
+      expect(res.status).toBe(410);
     }, 30000);
   });
 
@@ -87,11 +84,27 @@ describe('Wallet API Tests', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({ 
           amount: 999999999, 
-          bank_details: { bank: 'test', account: '1234567890' } 
+          bank_details: { bank: 'test', account: '1234567890', slip_url: 'https://example.com/slip.png' } 
         });
       
+      expect([400, 403]).toContain(res.status);
+      if (res.status === 400) {
+        expect(res.body.error).toMatch(/ยอดในกระเป๋าไม่เพียงพอ|insufficient/i);
+      } else {
+        expect(res.body.code).toBe('KYC_REQUIRED_FOR_PAYOUT');
+      }
+    });
+
+    test('should reject withdrawal without slip_url', async () => {
+      const res = await request(BASE_URL)
+        .post('/api/payouts/request')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          amount: 500,
+          bank_details: { bank: 'test', channel: 'bank_transfer', account_number: '123' },
+        });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/ยอดในกระเป๋าไม่เพียงพอ|insufficient/i);
+      expect(res.body.code).toBe('withdrawal_slip_required');
     });
 
     test('should reject negative withdrawal amount', async () => {
@@ -100,7 +113,7 @@ describe('Wallet API Tests', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({ 
           amount: -100, 
-          bank_details: { bank: 'test' } 
+          bank_details: { bank: 'test', slip_url: 'https://example.com/slip.png' } 
         });
       
       expect(res.status).toBe(400);
@@ -113,12 +126,15 @@ describe('Wallet API Tests', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({ 
           amount: 1, // จำนวนเล็กน้อยเพื่อทดสอบ
-          bank_details: { bank: 'SCB', account: '1234567890' } 
+          bank_details: { bank: 'SCB', account: '1234567890', slip_url: 'https://example.com/slip.png' } 
         });
       
-      // อาจจะสำเร็จหรือล้มเหลวขึ้นอยู่กับยอดเงิน
-      expect([201, 400]).toContain(res.status);
-      
+      // อาจจะสำเร็จหรือล้มเหลวขึ้นอยู่กับยอดเงิน / KYC
+      expect([201, 400, 403]).toContain(res.status);
+
+      if (res.status === 403) {
+        expect(res.body.code).toBe('KYC_REQUIRED_FOR_PAYOUT');
+      }
       if (res.status === 201) {
         expect(res.body.request).toHaveProperty('id');
         expect(res.body.request.status).toBe('pending');
@@ -134,11 +150,15 @@ describe('Wallet API Tests', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({ 
           amount: 999999, 
-          bank_details: { bank: 'test' } 
+          bank_details: { bank: 'test', slip_url: 'https://example.com/slip.png' } 
         });
       
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/ยอดในกระเป๋าไม่เพียงพอ|insufficient|available/i);
+      expect([400, 403]).toContain(res.status);
+      if (res.status === 400) {
+        expect(res.body.error).toMatch(/ยอดในกระเป๋าไม่เพียงพอ|insufficient|available/i);
+      } else {
+        expect(res.body.code).toBe('KYC_REQUIRED_FOR_PAYOUT');
+      }
     });
 
     test('should handle concurrent withdrawal attempts', async () => {
@@ -149,7 +169,7 @@ describe('Wallet API Tests', () => {
           .set('Authorization', `Bearer ${authToken}`)
           .send({ 
             amount: 1, 
-            bank_details: { bank: 'test' } 
+            bank_details: { bank: 'test', slip_url: 'https://example.com/slip.png' } 
           })
       );
 
@@ -157,7 +177,7 @@ describe('Wallet API Tests', () => {
       
       // อย่างน้อย 1 request ต้องล้มเหลวถ้ายอดไม่พอ
       const successCount = results.filter(r => r.status === 201).length;
-      const failCount = results.filter(r => r.status === 400).length;
+      const failCount = results.filter(r => [400, 403].includes(r.status)).length;
       
       expect(successCount + failCount).toBe(3);
     });

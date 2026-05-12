@@ -106,11 +106,11 @@ export const DashboardView: React.FC = () => {
       <GatewayInternalHealthStrip />
 
       {/* Main tabs: Overview vs Support Admin (Minnie + queue) */}
-      <div className="flex flex-wrap gap-2 p-1 bg-slate-100/80 rounded-xl border border-slate-200/80 w-fit max-w-full">
+      <div className="flex w-full max-w-full flex-col gap-2 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:inline-flex sm:w-auto sm:flex-row sm:flex-wrap">
         <button
           type="button"
           onClick={() => setMainTab('overview')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all sm:min-h-0 sm:py-2 ${
             mainTab === 'overview' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -119,7 +119,7 @@ export const DashboardView: React.FC = () => {
         <button
           type="button"
           onClick={() => setMainTab('support-admin')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all sm:min-h-0 sm:py-2 ${
             mainTab === 'support-admin' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -314,9 +314,9 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3">
         {/* Main Chart */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <div className="order-1 bg-white p-4 rounded-xl shadow-sm border border-slate-100 sm:p-6 lg:col-span-2 lg:order-none">
           <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
             <h3 className="text-lg font-bold text-slate-800">Traffic & Revenue</h3>
             <select
@@ -329,7 +329,7 @@ export const DashboardView: React.FC = () => {
               <option value="month">เดือนนี้</option>
             </select>
           </div>
-          <div className="h-80">
+          <div className="h-64 sm:h-80">
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
@@ -363,7 +363,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
         {/* AI Insight Panel */}
-        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-6 rounded-xl text-white shadow-xl relative overflow-hidden">
+        <div className="order-2 bg-gradient-to-br from-indigo-900 to-slate-900 p-4 sm:p-6 rounded-xl text-white shadow-xl relative overflow-hidden lg:order-none">
           <div className="absolute top-0 right-0 p-32 bg-indigo-500 rounded-full blur-3xl opacity-20 -mr-16 -mt-16 pointer-events-none"></div>
           
           <div className="flex items-center gap-2 mb-4 relative z-10">

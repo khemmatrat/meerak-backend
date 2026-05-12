@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="std-body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fafafa"/>
+      <stop offset="55%" stop-color="#e8e8ea"/>
+      <stop offset="100%" stop-color="#d4d4d8"/>
+    </linearGradient>
+    <linearGradient id="std-glass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#bae6fd"/>
+      <stop offset="100%" stop-color="#7dd3fc"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="24" cy="52" rx="10" ry="5" fill="#1f2937" opacity=".35"/>
+  <ellipse cx="64" cy="52" rx="10" ry="5" fill="#1f2937" opacity=".35"/>
+  <path fill="url(#std-body)" d="M14 38 28 26l38-6 12 14-2 10H16l-2-6Z"/>
+  <path fill="#d4d4d8" d="m28 26 38-6 2 14-42 8-4-14Z"/>
+  <path fill="url(#std-glass)" d="m32 28 26-5 10 11-38 9-8-13Z"/>
+  <path fill="#00875A" d="m36 32 28-6 6 10-34 9-8-13Z"/>
+  <path stroke="#cbd5e1" stroke-width="1" stroke-linejoin="round" d="M14 38 28 26l38-6 12 14-2 10H16l-2-6Z" fill="none"/>
+  <circle cx="24" cy="46" r="5.5" fill="#374151" stroke="#1f2937" stroke-width="1"/>
+  <circle cx="64" cy="46" r="5.5" fill="#374151" stroke="#1f2937" stroke-width="1"/>
+  <ellipse cx="24" cy="46" rx="2" ry="2.5" fill="#9ca3af"/>
+  <ellipse cx="64" cy="46" rx="2" ry="2.5" fill="#9ca3af"/>
+</svg>

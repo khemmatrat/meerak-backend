@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 import { searchFaq } from './faqKnowledge.js';
+import { maskPiiForLlm, maskMessagesArrayForLlm } from './piiMask.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '..', '.env') });
@@ -139,9 +140,12 @@ function getRuleBasedReply(text, last5Messages, jobInfo) {
 const ANTI_LOOP_HINT = `คำตอบที่คุณจะส่งต้องไม่ซ้ำกับข้อความก่อนหน้าในแชทเกิน 70% — ตอบใหม่ทั้งหมดโดยใช้คำและประโยคเริ่มต้นที่แตกต่างอย่างสิ้นเชิง (เช่น เริ่มด้วย 'ครับ' หรือ 'ค่ะ' แทน 'สวัสดีครับ' หรือใช้โครงสร้างประโยคใหม่ทั้งหมด)`;
 
 async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, ticketSubject) {
+  const safeUserText = maskPiiForLlm(String(userText || ''));
+  const safeHistory = maskMessagesArrayForLlm(last5Messages || []);
+
   let faqMatch = null;
-  if (pool && userText) {
-    faqMatch = await searchFaq(pool, userText);
+  if (pool && safeUserText) {
+    faqMatch = await searchFaq(pool, safeUserText);
   }
 
   try {
@@ -155,13 +159,13 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
         },
       });
 
-      const prevTexts = (last5Messages || [])
+      const prevTexts = (safeHistory || [])
         .filter((m) => m.sender !== 'User' && m.sender !== 'USER' && m.message)
         .map((m) => m.message)
         .slice(-3);
 
       const faqContext = faqMatch && faqMatch.score >= 0.4 ? faqMatch : null;
-      let finalPrompt = buildFullPrompt(userText, last5Messages, jobInfo, ticketSubject, '', faqContext);
+      let finalPrompt = buildFullPrompt(safeUserText, safeHistory, jobInfo, ticketSubject, '', faqContext);
       let result = await model.generateContent(finalPrompt);
       let response = await result.response;
       let aiText = (response.text() || '').trim();
@@ -169,7 +173,7 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
       if (aiText) {
         const overlap = getWordOverlapRatio(aiText, prevTexts);
         if (overlap > 0.7 && prevTexts.length > 0) {
-          finalPrompt = buildFullPrompt(userText, last5Messages, jobInfo, ticketSubject, ANTI_LOOP_HINT, faqContext);
+          finalPrompt = buildFullPrompt(safeUserText, safeHistory, jobInfo, ticketSubject, ANTI_LOOP_HINT, faqContext);
           result = await model.generateContent(finalPrompt);
           response = await result.response;
           const retryText = (response.text() || '').trim();
@@ -188,7 +192,7 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
     else console.error('Gemini AI Error:', error?.message);
   }
 
-  const fallback = getRuleBasedReply(userText, last5Messages, jobInfo);
+  const fallback = getRuleBasedReply(safeUserText, safeHistory, jobInfo);
   return {
     text: fallback || 'สวัสดีครับ ขอบคุณที่ติดต่อเรา รักษ์รับเรื่องไว้แล้ว ทีมงานจะตรวจสอบและติดต่อกลับโดยเร็วครับ',
     source: 'ai_generated',

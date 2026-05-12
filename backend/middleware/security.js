@@ -22,10 +22,19 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     const o = req.headers.origin || '';
-    const allowed = ['https://app.aqond.com', 'https://admin.aqond.com', 'https://aqond.com', 'https://www.aqond.com'];
-    if (allowed.includes(o)) res.setHeader('Access-Control-Allow-Origin', o);
-    else res.setHeader('Access-Control-Allow-Origin', 'https://app.aqond.com');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    const allowed = [
+      'https://app.aqond.com',
+      'https://admin.aqond.com',
+      'https://aqond.com',
+      'https://www.aqond.com',
+      'https://localhost',
+      'http://localhost',
+      'capacitor://localhost',
+    ];
+    if (o && allowed.includes(o)) {
+      res.setHeader('Access-Control-Allow-Origin', o);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     logSecurity('RATE_LIMIT_EXCEEDED', {
       ip: req.ip,
       path: req.path,
@@ -131,6 +140,50 @@ export const profileLimiter = rateLimit({
     });
     res.status(429).json({
       error: 'Too many profile requests. Please try again later.',
+      retryAfter: 900,
+    });
+  },
+});
+
+/** จำกัด POST /api/banners/:id/events — ลดการยิง analytics ปลอมต่อ IP */
+export const bannerEventsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 120 : 10000,
+  skip: (req) => {
+    if (req.method === 'OPTIONS') return true;
+    if (process.env.NODE_ENV !== 'production') {
+      const ip = req.ip || req.connection.remoteAddress;
+      if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
+        return true;
+      }
+    }
+    return false;
+  },
+  message: 'Too many banner event requests.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    const o = req.headers.origin || '';
+    const allowed = [
+      'https://app.aqond.com',
+      'https://admin.aqond.com',
+      'https://aqond.com',
+      'https://www.aqond.com',
+      'https://localhost',
+      'http://localhost',
+      'capacitor://localhost',
+    ];
+    if (o && allowed.includes(o)) {
+      res.setHeader('Access-Control-Allow-Origin', o);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    logSecurity('BANNER_EVENTS_RATE_LIMIT_EXCEEDED', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+    });
+    res.status(429).json({
+      error: 'Too many banner analytics requests. Please try again later.',
       retryAfter: 900,
     });
   },

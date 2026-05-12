@@ -7,18 +7,19 @@ export const paymentController = {
   processPayment: async (req: Request, res: Response) => {
     try {
       const { jobId, method, discount } = req.body;
-      const userId = req.user.id;
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       
       const result = await PaymentService.processPayment(userId, jobId, method, discount);
       
-      res.json({
+      return res.json({
         success: true,
         transactionId: result.transactionId,
         paymentUrl: result.paymentUrl,
         message: 'Payment initiated successfully'
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   },
 
@@ -28,9 +29,9 @@ export const paymentController = {
       
       const success = await PaymentService.holdPayment(jobId, amount);
       
-      res.json({ success, message: 'Payment held successfully' });
+      return res.json({ success, message: 'Payment held successfully' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   },
 
@@ -40,9 +41,9 @@ export const paymentController = {
       
       const success = await PaymentService.releasePayment(jobId);
       
-      res.json({ success, message: 'Payment released successfully' });
+      return res.json({ success, message: 'Payment released successfully' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   },
 
@@ -52,9 +53,9 @@ export const paymentController = {
       
       const status = await PaymentService.getPaymentStatus(jobId);
       
-      res.json(status);
+      return res.json(status);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   },
 
@@ -64,9 +65,9 @@ export const paymentController = {
       
       const receipt = await PaymentService.generateReceipt(jobId);
       
-      res.json({ receiptUrl: receipt });
+      return res.json({ receiptUrl: receipt });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   },
 
@@ -81,9 +82,19 @@ export const paymentController = {
         Number(offset)
       );
       
-      res.json(history);
+      return res.json(history);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: (error as Error).message });
+    }
+  },
+
+  refundPayment: async (req: Request, res: Response) => {
+    try {
+      const { jobId, reason } = req.body;
+      const result = await PaymentService.releasePayment(jobId);
+      return res.json({ success: !!result, message: 'Refund initiated' });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   }
 };

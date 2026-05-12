@@ -1,0 +1,235 @@
+/**
+ * Platinum Theme — Midnight Platinum (Deep Obsidian & Frosted Platinum)
+ * Import this file AFTER index.css and training-themes.css
+ *
+ * Color Palette:
+ * - Deep Navy Obsidian: #020617
+ * - Platinum White: #F8FAFC
+ * - Cool Slate: #94A3B8
+ * - Electric Violet (accent): #a855f7
+ * - Gold subtle: rgba(212, 175, 55, 0.15)
+ */
+
+/* === Main content: typography Platinum White / Cool Slate === */
+[data-vip-theme="platinum"] main .text-slate-50,
+[data-vip-theme="platinum"] main .text-slate-100,
+[data-vip-theme="platinum"] main .text-slate-400,
+[data-vip-theme="platinum"] main .text-slate-500,
+body.theme-platinum main .text-slate-50,
+body.theme-platinum main .text-slate-100,
+body.theme-platinum main .text-slate-400,
+body.theme-platinum main .text-slate-500 {
+  color: #F8FAFC !important;
+}
+
+/* === index.css overrides: Deep Navy Obsidian base === */
+html.theme-platinum,
+body.theme-platinum,
+body.theme-platinum #root {
+  background: var(--bg-main) !important;
+  color: #F8FAFC !important;
+}
+
+[data-vip-theme="platinum"] .bg-white,
+body.theme-platinum .bg-white {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--platinum-border) !important;
+}
+
+.vip-theme-platinum {
+  background: var(--bg-main) !important;
+  color: #F8FAFC !important;
+}
+
+.vip-theme-platinum .vip-surface,
+.vip-theme-platinum .bg-white {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #F8FAFC !important;
+}
+
+.vip-theme-platinum .text-gray-900,
+.vip-theme-platinum .text-gray-800,
+.vip-theme-platinum .text-gray-700,
+.vip-theme-platinum .text-gray-600,
+.vip-theme-platinum .text-gray-500,
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card .text-gray-500,
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card .text-gray-700,
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card .text-gray-900 {
+  color: #F8FAFC !important;
+}
+
+.vip-theme-platinum .settings-page .bg-white.rounded-xl h3,
+.vip-theme-platinum .settings-page .bg-white.rounded-xl .text-gray-500,
+.vip-theme-platinum .settings-page .bg-white.rounded-xl .text-gray-700,
+[data-vip-theme="platinum"] .settings-page .bg-white.rounded-xl h3,
+[data-vip-theme="platinum"] .settings-page .bg-white.rounded-xl .text-gray-500,
+[data-vip-theme="platinum"] .settings-page .bg-white.rounded-xl .text-gray-700 {
+  color: #F8FAFC !important;
+}
+
+/* Cards: Frosted Glass — thin silver border, sharp 1px inner glow */
+.vip-theme-platinum .luxury-card,
+.vip-theme-platinum .premium-card,
+.vip-theme-platinum .vip-platinum-card {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.vip-theme-platinum .luxury-card.home-quick-action-card,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+.vip-theme-platinum .luxury-card.home-quick-action-card h3,
+.vip-theme-platinum .luxury-card.home-quick-action-card p,
+.vip-theme-platinum .luxury-card.home-quick-action-card .text-slate-100,
+.vip-theme-platinum .luxury-card.home-quick-action-card .text-slate-500,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card h3,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card p,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card .text-slate-100,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card .text-slate-500 {
+  color: #F8FAFC !important;
+}
+.vip-theme-platinum .luxury-card.home-quick-action-card .bg-charcoal-800,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card .bg-charcoal-800 {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+.vip-theme-platinum .luxury-card.home-quick-action-card:hover,
+[data-vip-theme="platinum"] .luxury-card.home-quick-action-card:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.vip-theme-platinum .home-admin-notif-card,
+[data-vip-theme="platinum"] .home-admin-notif-card {
+  background: var(--surface-glass) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.vip-theme-platinum .home-admin-notif-card .home-admin-notif-title,
+.vip-theme-platinum .home-admin-notif-card .home-admin-notif-message,
+.vip-theme-platinum .home-admin-notif-card .home-admin-notif-time,
+[data-vip-theme="platinum"] .home-admin-notif-card .home-admin-notif-title,
+[data-vip-theme="platinum"] .home-admin-notif-card .home-admin-notif-message,
+[data-vip-theme="platinum"] .home-admin-notif-card .home-admin-notif-time {
+  color: #F8FAFC !important;
+}
+
+.vip-theme-platinum .layout-notif-dropdown,
+.theme-platinum .layout-notif-dropdown,
+[data-vip-theme="platinum"] .layout-notif-dropdown {
+  background: rgba(2, 6, 23, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.vip-theme-platinum .layout-notif-dropdown .text-slate-100,
+.vip-theme-platinum .layout-notif-dropdown .text-slate-200,
+.vip-theme-platinum .layout-notif-dropdown .text-slate-300,
+.vip-theme-platinum .layout-notif-dropdown .text-slate-400,
+.vip-theme-platinum .layout-notif-dropdown .text-slate-500 {
+  color: #F8FAFC !important;
+}
+
+.vip-theme-platinum .layout-notif-dropdown .text-slate-400,
+.vip-theme-platinum .layout-notif-dropdown .text-slate-500 {
+  color: #94A3B8 !important;
+}
+
+.vip-theme-platinum .job-detail-main-card {
+  background: var(--surface-glass) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card,
+[data-vip-theme="platinum"] .job-detail-main-card .job-detail-info-card {
+  background: rgba(2, 6, 23, 0.6) !important;
+}
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card label,
+.vip-theme-platinum .job-detail-main-card .job-detail-info-card .text-xs,
+[data-vip-theme="platinum"] .job-detail-main-card .job-detail-info-card label,
+[data-vip-theme="platinum"] .job-detail-main-card .job-detail-info-card .text-xs {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+}
+
+.vip-theme-platinum .job-detail-chat .bg-white.rounded-2xl,
+[data-vip-theme="platinum"] .job-detail-chat .bg-white.rounded-2xl {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.vip-theme-platinum .job-detail-chat h3,
+.vip-theme-platinum .job-detail-chat .font-bold.text-gray-800,
+.vip-theme-platinum .job-detail-chat .text-gray-400,
+.vip-theme-platinum .job-detail-chat .text-gray-800,
+.vip-theme-platinum .job-detail-chat p.text-center,
+[data-vip-theme="platinum"] .job-detail-chat h3,
+[data-vip-theme="platinum"] .job-detail-chat .font-bold.text-gray-800,
+[data-vip-theme="platinum"] .job-detail-chat .text-gray-400,
+[data-vip-theme="platinum"] .job-detail-chat .text-gray-800,
+[data-vip-theme="platinum"] .job-detail-chat p.text-center {
+  color: #F8FAFC !important;
+}
+
+[data-vip-theme="platinum"] .nav-glass {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-vip-theme="platinum"] .nav-bottom-glass {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06), 0 -4px 24px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* === training-themes.css overrides: Midnight Platinum === */
+.training-platinum .training-inner {
+  background: var(--bg-main) !important;
+}
+
+.training-platinum .text-gray-900,
+.training-platinum .text-slate-800,
+.training-platinum .text-gray-600,
+.training-platinum .text-slate-600,
+.training-platinum .text-gray-700,
+.training-platinum .text-indigo-600,
+.training-platinum .text-purple-600,
+.training-platinum .text-blue-600,
+.training-platinum .text-yellow-600,
+.training-platinum .text-green-600 {
+  color: #F8FAFC !important;
+}
+
+.training-platinum .bg-white.rounded-2xl,
+.training-platinum .bg-white.rounded-xl,
+.training-platinum .bg-white.rounded-lg {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.training-platinum .bg-gradient-to-br.from-indigo-500.to-indigo-600,
+.training-platinum .bg-indigo-600.h-2,
+.training-platinum .bg-indigo-600.h-3,
+.training-platinum .bg-indigo-600.rounded-full,
+.training-platinum .bg-indigo-600.text-white.shadow-lg,
+.training-platinum button.bg-indigo-600,
+.training-platinum .px-6.py-3.bg-indigo-600,
+.training-platinum .w-full.py-2.rounded-lg.bg-indigo-600,
+.training-platinum button.bg-indigo-600.text-white {
+  background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%) !important;
+}
+
+.training-platinum .border-gray-200,
+.training-platinum .border-slate-200,
+.training-platinum .border-indigo-300 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Main content text */
+[data-vip-theme="platinum"] main .text-slate-50,
+[data-vip-theme="platinum"] main .text-slate-100,
+[data-vip-theme="platinum"] main .text-slate-400,
+[data-vip-theme="platinum"] main .text-slate-500 {
+  color: #F8FAFC !important;
+}

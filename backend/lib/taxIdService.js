@@ -37,6 +37,7 @@ function inferTypeFromEvent(eventType, metadata = {}) {
   const leg = (metadata?.leg || '').toLowerCase();
   const source = (metadata?.source || '').toLowerCase();
   if (eventType === 'booking_fee' || leg.includes('booking') || source === 'booking') return 'BK';
+  if (eventType === 'insurance_liability_credit') return 'JM'; // ค่าประกันรวมกับ Job Match
   if (eventType === 'escrow_held' && leg === 'commission') {
     return source === 'advance' || metadata?.job_type === 'advance' ? 'JB' : 'JM';
   }

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bell, Smartphone, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-import { MOCK_NOTIFICATIONS } from '../constants';
+import { Send, Bell, Smartphone, CheckCircle, Clock, AlertCircle, Volume2 } from 'lucide-react';
 import { PushNotification } from '../types';
 import { getAdminToken } from '../services/adminApi';
 import { sendBroadcastNotification, getAdminNotifications } from '../services/adminApi';
@@ -21,7 +20,7 @@ function toPushNotif(item: { id: string; title: string; message: string; target:
     id: item.id,
     title: item.title,
     message: item.message,
-    target: (item.target as 'All' | 'iOS' | 'Android') || 'All',
+    target: (item.target as 'All' | 'Landing' | 'Mobile') || 'All',
     sentAt: item.sentAt ? new Date(item.sentAt).toLocaleString('th-TH') : new Date().toLocaleString('th-TH'),
     status: 'Sent',
     openRate: 0
@@ -29,23 +28,24 @@ function toPushNotif(item: { id: string; title: string; message: string; target:
 }
 
 export const PushNotificationView: React.FC = () => {
-  const [history, setHistory] = useState<PushNotification[]>(MOCK_NOTIFICATIONS);
+  const [history, setHistory] = useState<PushNotification[]>([]);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [target, setTarget] = useState<'All' | 'iOS' | 'Android'>('All');
+  const [target, setTarget] = useState<'All' | 'Landing' | 'Mobile'>('All');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const useBackend = !!getAdminToken();
 
   useEffect(() => {
-    if (!useBackend) return;
+    if (!useBackend) {
+      setHistory([]);
+      return;
+    }
     getAdminNotifications(50)
       .then((res) => {
-        if (res.notifications?.length) {
-          setHistory(res.notifications.map(toPushNotif));
-        }
+        setHistory((res.notifications || []).map(toPushNotif));
       })
-      .catch(() => {});
+      .catch(() => setHistory([]));
   }, [useBackend]);
 
   const handleSend = async (e: React.FormEvent) => {
@@ -67,7 +67,12 @@ export const PushNotificationView: React.FC = () => {
         setHistory((prev) => [newNotif, ...prev]);
         setTitle('');
         setMessage('');
-        alert('ส่งการแจ้งเตือนเรียบร้อยแล้ว — ข้อความจะไปแสดงที่หน้า Home ของแอปผู้ใช้');
+        alert(
+          'ส่งการแจ้งเตือนเรียบร้อย — ข้อความไปแสดงที่หน้า Home และ Push (ช่องข่าวแอดมิน)' +
+            (res.fcm != null
+              ? ` FCM: ส่งสำเร็จ ${res.fcm.success} / ล้มเหลว ${res.fcm.failed}`
+              : '')
+        );
       } catch (err: any) {
         setError(err?.message || 'ส่งไม่สำเร็จ');
       } finally {
@@ -133,18 +138,23 @@ export const PushNotificationView: React.FC = () => {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">กลุ่มเป้าหมาย (Target)</label>
               <div className="grid grid-cols-3 gap-2">
-                {['All', 'iOS', 'Android'].map((t) => (
+                {[
+                  { v: 'All', label: 'ทั้งหมด', desc: 'Landing + Mobile' },
+                  { v: 'Landing', label: 'Landing', desc: 'Web Push' },
+                  { v: 'Mobile', label: 'Mobile', desc: 'In-app' },
+                ].map(({ v, label, desc }) => (
                   <button
                     type="button"
-                    key={t}
-                    onClick={() => setTarget(t as any)}
+                    key={v}
+                    onClick={() => setTarget(v as any)}
+                    title={desc}
                     className={`py-2 px-3 rounded-lg text-sm font-medium border transition-all ${
-                      target === t 
+                      target === v 
                         ? 'bg-indigo-600 text-white border-indigo-600' 
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    {t}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -153,6 +163,22 @@ export const PushNotificationView: React.FC = () => {
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
             )}
+            <div className="rounded-lg border border-amber-100 bg-amber-50/90 p-3 text-xs text-amber-950 space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <Volume2 size={14} aria-hidden />
+                เสียงแจ้งเตือน (FCM)
+              </p>
+              <p>
+                <strong>ข่าวจากแท็บนี้</strong> ใช้ช่อง <code className="bg-white px-1 rounded">aqond_app_news</code> และ{' '}
+                <code className="bg-white px-1 rounded">notification_type=app_news</code> — แยกจากแจ้งเตือนระบบงาน (รับงาน/เงินเข้า)
+                ที่ใช้ช่อง <code className="bg-white px-1 rounded">aqond_intercity_jobs</code> /{' '}
+                <code className="bg-white px-1 rounded">job_system</code>
+              </p>
+              <p className="text-amber-900/90">
+                บน Android ต้องสร้าง NotificationChannel <code className="bg-white px-1 rounded">aqond_app_news</code> ใน native ถ้ายังไม่มี
+                จึงจะกำหนดเสียงต่างจากงานได้ — ดู <code className="bg-white px-1 rounded">backend/lib/fcmPushDefaults.js</code>
+              </p>
+            </div>
             <div className="pt-4">
               <button 
                 type="submit" 

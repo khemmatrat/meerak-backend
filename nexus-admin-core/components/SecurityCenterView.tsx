@@ -1,34 +1,157 @@
-
-import React, { useState } from 'react';
-import { Shield, Lock, Globe, AlertTriangle, Zap, MinusCircle, Plus, Search, Power } from 'lucide-react';
-import { MOCK_BLOCKED_IPS, MOCK_SECURITY_RULES } from '../constants';
-import { IpBlockEntry, SecurityRule } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Shield, Lock, Globe, AlertTriangle, Zap, MinusCircle, Plus, Search, Power, Loader2, RefreshCw } from 'lucide-react';
+import { MOCK_SECURITY_RULES } from '../constants';
+import { SecurityRule } from '../types';
+import {
+  getSecurityStats,
+  verifySecurityAll,
+  getBlockedIps,
+  blockIp,
+  unblockIp,
+  getAdminUsers,
+  getHighRiskUsers,
+  suspendAdminUser,
+  walletFreezeAdminUser,
+  forceLogoutAdminUser,
+  getReconcileAlerts,
+  resolveReconcileAlert,
+  type SecurityStatsResponse,
+  type HighRiskUser,
+} from '../services/adminApi';
+import { useToast } from '../context/ToastContext';
 
 export const SecurityCenterView: React.FC = () => {
-  const [blockedIps, setBlockedIps] = useState<IpBlockEntry[]>(MOCK_BLOCKED_IPS);
+  const toast = useToast();
+  const [blockedIps, setBlockedIps] = useState<Array<{ id: string; ip: string; reason?: string; blocked_at?: string; expires_at?: string }>>([]);
   const [rules, setRules] = useState<SecurityRule[]>(MOCK_SECURITY_RULES);
   const [panicMode, setPanicMode] = useState(false);
   const [newIp, setNewIp] = useState('');
+  const [stats, setStats] = useState<SecurityStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [killSwitchUserId, setKillSwitchUserId] = useState('');
+  const [killSwitchSearch, setKillSwitchSearch] = useState('');
+  const [killSwitchSearchResults, setKillSwitchSearchResults] = useState<Array<{ id: string; email?: string; full_name?: string; phone?: string }>>([]);
+  const [killSwitchAction, setKillSwitchAction] = useState<'freeze' | 'suspend' | 'revoke'>('revoke');
+  const [killSwitchBusy, setKillSwitchBusy] = useState(false);
+  const [blockIpBusy, setBlockIpBusy] = useState(false);
+  const [highRiskUsers, setHighRiskUsers] = useState<HighRiskUser[]>([]);
+  const [reconcileAlerts, setReconcileAlerts] = useState<Array<{ id: string; omise_balance_thb: number; platform_balance_thb: number; diff_thb: number; created_at: string | null }>>([]);
 
-  const handleAddIp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newIp) return;
-    const newEntry: IpBlockEntry = {
-      id: `BLK-${Date.now()}`,
-      ip: newIp,
-      reason: 'Manual Block via Security Center',
-      blockedAt: new Date().toLocaleString(),
-      expiresAt: 'Permanent',
-      blockedBy: 'AdminMaster',
-      status: 'Active'
-    };
-    setBlockedIps([newEntry, ...blockedIps]);
-    setNewIp('');
+  const fetchBlockedIps = async () => {
+    try {
+      const { blockedIps: ips } = await getBlockedIps();
+      setBlockedIps(ips || []);
+    } catch {
+      setBlockedIps([]);
+    }
   };
 
-  const handleUnblock = (id: string) => {
-    if(confirm('Are you sure you want to unblock this IP?')) {
-      setBlockedIps(blockedIps.filter(ip => ip.id !== id));
+  const fetchStats = async () => {
+    setLoading(true);
+    try {
+      const data = await getSecurityStats();
+      setStats(data);
+    } catch (e) {
+      console.warn('Security stats fetch failed:', e);
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchHighRiskUsers = async () => {
+    try {
+      const { users } = await getHighRiskUsers({ limit: 20 });
+      setHighRiskUsers(users || []);
+    } catch {
+      setHighRiskUsers([]);
+    }
+  };
+
+  const fetchReconcileAlerts = async () => {
+    try {
+      const { alerts } = await getReconcileAlerts();
+      setReconcileAlerts(alerts || []);
+    } catch {
+      setReconcileAlerts([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+    fetchBlockedIps();
+    fetchHighRiskUsers();
+    fetchReconcileAlerts();
+  }, []);
+
+  const handleSearchUser = async () => {
+    if (!killSwitchSearch.trim()) return;
+    try {
+      const { users } = await getAdminUsers({ search: killSwitchSearch.trim(), limit: 10 });
+      setKillSwitchSearchResults(users || []);
+    } catch {
+      setKillSwitchSearchResults([]);
+    }
+  };
+
+  const handleVerifyAll = async () => {
+    setVerifying(true);
+    try {
+      await verifySecurityAll();
+      await fetchStats();
+      toast.success('Ledger integrity verified');
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Verification failed');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleKillSwitch = async () => {
+    if (!killSwitchUserId.trim()) return;
+    if (!confirm(`Are you sure you want to ${killSwitchAction} user ${killSwitchUserId}?`)) return;
+    setKillSwitchBusy(true);
+    try {
+      if (killSwitchAction === 'suspend') await suspendAdminUser(killSwitchUserId.trim(), 'Security Center: Suspended by admin');
+      else if (killSwitchAction === 'freeze') await walletFreezeAdminUser(killSwitchUserId.trim(), true);
+      else await forceLogoutAdminUser(killSwitchUserId.trim(), 'Security Center: Revoke sessions');
+      setKillSwitchUserId('');
+      setKillSwitchSearchResults([]);
+      await fetchStats();
+      toast.success(`Kill Switch: ${killSwitchAction === 'revoke' ? 'Sessions revoked' : killSwitchAction === 'freeze' ? 'Wallet frozen' : 'Account suspended'}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Kill Switch failed');
+    } finally {
+      setKillSwitchBusy(false);
+    }
+  };
+
+  const handleAddIp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const ip = newIp.trim();
+    if (!ip) return;
+    setBlockIpBusy(true);
+    try {
+      await blockIp(ip, 'Manual block via Security Center');
+      setNewIp('');
+      await fetchBlockedIps();
+      toast.success(`Blocked IP ${ip}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Block IP failed');
+    } finally {
+      setBlockIpBusy(false);
+    }
+  };
+
+  const handleUnblock = async (ip: string) => {
+    if (!confirm(`Unblock ${ip}?`)) return;
+    try {
+      await unblockIp(ip);
+      await fetchBlockedIps();
+      toast.success(`Unblocked ${ip}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Unblock failed');
     }
   };
 
@@ -138,8 +261,8 @@ export const SecurityCenterView: React.FC = () => {
                     onChange={(e) => setNewIp(e.target.value)}
                     className="flex-1 px-4 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                  />
-                 <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700 flex items-center gap-2">
-                    <Plus size={16} /> Block IP
+                 <button type="submit" disabled={blockIpBusy} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50">
+                    {blockIpBusy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Block IP
                  </button>
                </form>
              </div>
@@ -160,10 +283,10 @@ export const SecurityCenterView: React.FC = () => {
                         <tr key={entry.id} className="hover:bg-rose-50/10">
                            <td className="px-4 py-3 font-mono font-bold text-slate-700">{entry.ip}</td>
                            <td className="px-4 py-3 text-slate-500 text-xs">{entry.reason}</td>
-                           <td className="px-4 py-3 text-slate-500 text-xs">{entry.expiresAt}</td>
+                           <td className="px-4 py-3 text-slate-500 text-xs">{entry.expires_at ? new Date(entry.expires_at).toLocaleDateString() : '—'}</td>
                            <td className="px-4 py-3 text-right">
                               <button 
-                                onClick={() => handleUnblock(entry.id)}
+                                onClick={() => handleUnblock(entry.ip)}
                                 className="text-xs text-indigo-600 hover:text-indigo-800 font-medium hover:underline"
                               >
                                 Unblock
@@ -177,71 +300,200 @@ export const SecurityCenterView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: Insights & Stats */}
+        {/* Right Column: Security Pulse (Real Data) */}
         <div className="space-y-6">
            <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg">
-              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                 <Shield size={20} className="text-emerald-400" />
-                 Defense Overview
-              </h3>
-              <div className="space-y-4">
-                 <div className="flex justify-between items-center">
-                    <span className="text-slate-400 text-sm">Threats Blocked (24h)</span>
-                    <span className="font-bold text-xl">12,450</span>
-                 </div>
-                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full w-[70%]"></div>
-                 </div>
-                 <div className="flex justify-between items-center">
-                    <span className="text-slate-400 text-sm">Bandwidth Saved</span>
-                    <span className="font-bold text-xl">45.2 GB</span>
-                 </div>
+              <div className="flex justify-between items-center mb-4">
+                 <h3 className="font-bold text-lg flex items-center gap-2">
+                    <Shield size={20} className="text-emerald-400" />
+                    Security Pulse
+                 </h3>
+                 <button onClick={fetchStats} disabled={loading} className="p-1.5 rounded hover:bg-slate-700">
+                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                 </button>
               </div>
-              <div className="mt-6 pt-6 border-t border-slate-700">
-                 <h4 className="text-sm font-semibold text-slate-300 mb-3">Top Attack Types</h4>
-                 <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                       <span className="text-rose-400">SQL Injection</span>
-                       <span className="text-slate-400">45%</span>
+              {loading ? (
+                 <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin" /></div>
+              ) : stats ? (
+                 <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-400 text-sm">Failed Logins (24h)</span>
+                       <span className={`font-bold text-xl ${(stats.failedLogins24h || 0) >= 10 ? 'text-rose-400' : 'text-white'}`}>{stats.failedLogins24h ?? 0}</span>
                     </div>
-                    <div className="flex justify-between text-xs">
-                       <span className="text-amber-400">Bot Scraping</span>
-                       <span className="text-slate-400">30%</span>
+                    {stats.bruteForceIps?.length ? (
+                    <div className="p-2 bg-rose-900/50 rounded">
+                       <span className="text-rose-300 text-xs">Brute-force IPs (≥5 fails)</span>
+                       <div className="mt-1 space-y-0.5">
+                         {stats.bruteForceIps.slice(0, 5).map((b, i) => (
+                           <div key={i} className="flex justify-between text-xs">
+                             <span className="font-mono">{b.ip}</span>
+                             <span className="text-rose-400">{b.count} attempts</span>
+                           </div>
+                         ))}
+                       </div>
                     </div>
-                    <div className="flex justify-between text-xs">
-                       <span className="text-blue-400">DDoS (L7)</span>
-                       <span className="text-slate-400">25%</span>
+                    ) : null}
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-400 text-sm">Ledger Integrity</span>
+                       <span className={`font-bold text-sm ${stats.ledgerIntegrity?.valid === true ? 'text-emerald-400' : stats.ledgerIntegrity?.valid === false ? 'text-rose-400' : 'text-slate-400'}`}>
+                          {stats.ledgerIntegrity?.valid === true ? '✓ Valid' : stats.ledgerIntegrity?.valid === false ? '✗ Broken' : stats.ledgerIntegrity?.note || '—'}
+                       </span>
                     </div>
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-400 text-sm">Rate Limit Entries</span>
+                       <span className="font-bold text-xl">{stats.rateLimitEntries ?? 0}</span>
+                    </div>
+                    <button onClick={handleVerifyAll} disabled={verifying} className="w-full mt-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                       {verifying ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />} Run Deep Scan
+                    </button>
                  </div>
+              ) : (
+                 <p className="text-slate-400 text-sm">Unable to load stats</p>
+              )}
+           </div>
+
+           {/* Live Threat Map — Recent Security Events */}
+           <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                 <AlertTriangle size={18} /> Recent Security Events
+              </h3>
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                 {stats?.recentEvents?.length ? stats.recentEvents.slice(0, 15).map((ev, i) => (
+                    <div key={i} className="p-2 bg-slate-50 rounded text-xs">
+                       <span className="font-medium text-slate-700">{(ev as any).label || ev.action}</span>
+                       {ev.ipAddress && <span className="text-slate-500 ml-1">({ev.ipAddress})</span>}
+                       <span className="text-slate-400 ml-1 block mt-0.5">{ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}</span>
+                    </div>
+                 )) : (
+                    <p className="text-slate-500 text-sm">No recent events</p>
+                 )}
               </div>
            </div>
 
-           <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                 <Globe size={18} /> Attack Map (Top Sources)
-              </h3>
-              <div className="space-y-3">
-                 {[
-                    { country: 'Russia', code: 'RU', hits: 5400, risk: 'High' },
-                    { country: 'China', code: 'CN', hits: 3200, risk: 'High' },
-                    { country: 'Unknown Proxy', code: '??', hits: 1200, risk: 'Medium' },
-                 ].map((c, i) => (
-                    <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded hover:bg-slate-100 cursor-pointer">
-                       <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs font-bold text-slate-500 bg-slate-200 px-1.5 rounded">{c.code}</span>
-                          <span className="text-sm text-slate-700">{c.country}</span>
-                       </div>
-                       <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-600">{c.hits}</span>
-                          <span className={`w-2 h-2 rounded-full ${c.risk === 'High' ? 'bg-rose-500' : 'bg-amber-500'}`}></span>
-                       </div>
-                    </div>
+           {/* High-Risk Users (5 ธงแดง) */}
+           {highRiskUsers.length > 0 ? (
+             <div className="bg-amber-50 p-6 rounded-xl border-2 border-amber-200 shadow-sm">
+               <h3 className="font-bold text-amber-800 mb-4 flex items-center gap-2">
+                 <AlertTriangle size={18} /> High-Risk Users ({highRiskUsers.length})
+               </h3>
+               <div className="max-h-48 overflow-y-auto space-y-2">
+                 {highRiskUsers.map((u) => (
+                   <div key={u.user_id} className="p-3 bg-white rounded border border-amber-100 flex justify-between items-center">
+                     <div className="min-w-0">
+                       <p className="font-medium text-slate-800 truncate">{u.full_name || u.email || u.phone || u.user_id.slice(0, 8)}</p>
+                       <p className="text-xs text-slate-500">Score: {u.total_score} • {u.flag_count} flag(s) • {u.anomaly_types?.join(', ') || '—'}</p>
+                     </div>
+                     <span className={`text-xs font-bold px-2 py-1 rounded ${u.total_score >= 80 ? 'bg-rose-200 text-rose-800' : 'bg-amber-200 text-amber-800'}`}>
+                       {u.account_status === 'suspended' ? 'SUSPENDED' : u.total_score}
+                     </span>
+                   </div>
                  ))}
+               </div>
+               <button onClick={fetchHighRiskUsers} className="mt-3 w-full py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg font-medium">
+                 Refresh
+               </button>
+             </div>
+           ) : null}
+
+           {/* Kill Switch */}
+           <div className="bg-white p-6 rounded-xl border-2 border-rose-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                 <Power size={18} className="text-rose-600" /> Kill Switch
+              </h3>
+              <p className="text-sm text-slate-600 mb-4">Freeze account, suspend, or revoke sessions for a user.</p>
+              <div className="space-y-3">
+                 <div className="flex gap-2">
+                   <input
+                      type="text"
+                      placeholder="ค้นหาด้วย email หรือเบอร์โทร"
+                      value={killSwitchSearch}
+                      onChange={(e) => setKillSwitchSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearchUser()}
+                      className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm"
+                   />
+                   <button type="button" onClick={handleSearchUser} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg text-sm font-medium hover:bg-slate-300 flex items-center gap-1">
+                     <Search size={16} /> ค้นหา
+                   </button>
+                 </div>
+                 {killSwitchSearchResults.length > 0 && (
+                   <div className="max-h-24 overflow-y-auto border border-slate-200 rounded-lg divide-y">
+                     {killSwitchSearchResults.map((u) => (
+                       <button key={u.id} type="button" onClick={() => { setKillSwitchUserId(u.id); setKillSwitchSearchResults([]); setKillSwitchSearch(u.email || u.phone || u.id); }} className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">
+                         {u.full_name || u.email || u.phone} <span className="text-slate-400 text-xs">({u.id.slice(0, 8)}...)</span>
+                       </button>
+                     ))}
+                   </div>
+                 )}
+                 <input
+                    type="text"
+                    placeholder="หรือวาง User ID (UUID) โดยตรง"
+                    value={killSwitchUserId}
+                    onChange={(e) => setKillSwitchUserId(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm"
+                 />
+                 <select value={killSwitchAction} onChange={(e) => setKillSwitchAction(e.target.value as any)} className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm">
+                    <option value="revoke">Revoke All Sessions</option>
+                    <option value="freeze">Freeze Wallet</option>
+                    <option value="suspend">Suspend Account</option>
+                 </select>
+                 <button onClick={handleKillSwitch} disabled={killSwitchBusy || !killSwitchUserId.trim()} className="w-full py-2 bg-rose-600 text-white rounded-lg font-medium text-sm hover:bg-rose-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {killSwitchBusy ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />} Execute
+                 </button>
               </div>
-              <button className="w-full mt-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">
-                 View Full Attack Map
-              </button>
            </div>
+
+           {/* Reconcile Alerts — เงินรั่ว (Omise vs Platform) */}
+           {reconcileAlerts.length > 0 ? (
+             <div className="bg-rose-50 p-6 rounded-xl border-2 border-rose-200 shadow-sm">
+               <h3 className="font-bold text-rose-800 mb-4 flex items-center gap-2">
+                 <AlertTriangle size={18} /> Reconcile Alerts ({reconcileAlerts.length})
+               </h3>
+               <p className="text-sm text-rose-700 mb-3">ยอด Omise กับ Platform ต่างกันเกินกำหนด — ตรวจสอบด่วน</p>
+               <div className="max-h-40 overflow-y-auto space-y-2">
+                 {reconcileAlerts.map((a) => (
+                   <div key={a.id} className="p-3 bg-white rounded border border-rose-200 flex justify-between items-center">
+                     <div>
+                       <p className="text-sm font-medium text-slate-800">Diff ฿{a.diff_thb.toLocaleString()}</p>
+                       <p className="text-xs text-slate-500">Omise ฿{a.omise_balance_thb?.toLocaleString()} | Platform ฿{a.platform_balance_thb?.toLocaleString()}</p>
+                       <p className="text-xs text-slate-400">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</p>
+                     </div>
+                     <button
+                       onClick={async () => {
+                         try {
+                           await resolveReconcileAlert(a.id);
+                           await fetchReconcileAlerts();
+                           toast.success('Marked as resolved');
+                         } catch (e: any) {
+                           toast.error(e?.message ?? 'Failed');
+                         }
+                       }}
+                       className="text-xs px-2 py-1 bg-rose-600 text-white rounded hover:bg-rose-700"
+                     >
+                       Resolve
+                     </button>
+                   </div>
+                 ))}
+               </div>
+               <button onClick={fetchReconcileAlerts} className="mt-3 w-full py-2 text-sm text-rose-700 hover:bg-rose-100 rounded-lg font-medium">
+                 Refresh
+               </button>
+             </div>
+           ) : null}
+
+           {/* Suspicious Payouts */}
+           {stats?.suspiciousPayouts?.length ? (
+              <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                 <h3 className="font-bold text-slate-800 mb-4">Suspicious Payouts (≥50k or recent)</h3>
+                 <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {stats.suspiciousPayouts.slice(0, 5).map((p) => (
+                       <div key={p.id} className="flex justify-between text-sm p-2 bg-amber-50 rounded">
+                          <span>{p.userName || p.userId}</span>
+                          <span className="font-mono">฿{(p.amount || 0).toLocaleString()}</span>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+           ) : null}
         </div>
 
       </div>

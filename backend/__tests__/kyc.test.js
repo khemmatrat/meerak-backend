@@ -22,7 +22,7 @@ describe('KYC API Tests', () => {
         name: 'KYC Test User',
         role: 'provider'
       });
-    
+
     if (registerRes.status === 201) {
       authToken = registerRes.body.token;
       userId = registerRes.body.user?.id;
@@ -34,7 +34,7 @@ describe('KYC API Tests', () => {
       const res = await request(BASE_URL)
         .get(`/api/kyc/status/${userId}`)
         .set('Authorization', `Bearer ${authToken}`);
-      
+
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('kyc_level');
     });
@@ -42,7 +42,7 @@ describe('KYC API Tests', () => {
     test('should reject KYC status request without auth', async () => {
       const res = await request(BASE_URL)
         .get(`/api/kyc/status/${userId}`);
-      
+
       // อาจเป็น 401 หรือ 200 ขึ้นอยู่กับว่า endpoint เป็น public หรือไม่
       expect([200, 401]).toContain(res.status);
     });
@@ -57,7 +57,7 @@ describe('KYC API Tests', () => {
           // Missing id_card_number
           selfie_url: 'https://example.com/selfie.jpg'
         });
-      
+
       expect(res.status).toBe(400);
     });
 
@@ -70,7 +70,7 @@ describe('KYC API Tests', () => {
           selfie_url: 'https://example.com/selfie.jpg',
           id_card_url: 'https://example.com/id.jpg'
         });
-      
+
       // อาจเป็น 400 ถ้ามี validation
       expect([200, 201, 400]).toContain(res.status);
     });
@@ -85,9 +85,9 @@ describe('KYC API Tests', () => {
           id_card_url: 'https://test.cloudinary.com/id_card.jpg',
           address: '123 Test Street, Bangkok'
         });
-      
+
       expect([200, 201]).toContain(res.status);
-      
+
       if (res.status === 201 || res.status === 200) {
         expect(res.body).toHaveProperty('message');
       }
@@ -103,9 +103,9 @@ describe('KYC API Tests', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send({
           amount: 50000, // เกินขีดจำกัด
-          bank_details: { bank: 'SCB', account: '1234567890' }
+          bank_details: { bank: 'SCB', account: '1234567890', slip_url: 'https://example.com/slip.png' }
         });
-      
+
       // อาจเป็น 400 ถ้ามี KYC limit check
       expect([200, 201, 400, 403]).toContain(res.status);
     });
@@ -122,7 +122,7 @@ describe('KYC API Tests', () => {
           selfie_url: 'https://test.cloudinary.com/selfie_new.jpg',
           id_card_url: 'https://test.cloudinary.com/id_new.jpg'
         });
-      
+
       expect([200, 201, 400]).toContain(res.status);
     });
   });

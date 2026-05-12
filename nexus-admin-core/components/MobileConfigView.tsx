@@ -1,22 +1,60 @@
 
-import React, { useState } from 'react';
-import { Smartphone, Save, AlertTriangle, Power, ToggleLeft, ToggleRight, Layers, CreditCard, MessageSquare, Briefcase, RefreshCw, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Smartphone, Save, AlertTriangle, Power, ToggleLeft, ToggleRight, Layers, CreditCard, MessageSquare, Briefcase, RefreshCw, CheckCircle, Bell } from 'lucide-react';
 import { INITIAL_CONFIG } from '../constants';
 import { ServerConfig } from '../types';
+import { getMobileConfig, patchMobileConfig } from '../services/adminApi';
 
 export const MobileConfigView: React.FC = () => {
-  const [config, setConfig] = useState<ServerConfig>(INITIAL_CONFIG);
+  const [config, setConfig] = useState<ServerConfig>(() => ({ ...INITIAL_CONFIG }));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const handleSave = () => {
+  const fetchConfig = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getMobileConfig();
+      const c = res.config as Partial<ServerConfig> | undefined;
+      setConfig({
+        ...INITIAL_CONFIG,
+        ...c,
+        remote: {
+          ...INITIAL_CONFIG.remote,
+          ...(c?.remote && typeof c.remote === 'object' ? c.remote : {}),
+        },
+        featureFlags: {
+          ...INITIAL_CONFIG.featureFlags,
+          ...(c?.featureFlags || {}),
+        },
+      } as ServerConfig);
+      setLastUpdated(res.updatedAt ? new Date(res.updatedAt).toLocaleString() : null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load config');
+      setConfig({ ...INITIAL_CONFIG }); // fallback on error
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    // Simulate API Call
-    setTimeout(() => {
+    setError(null);
+    try {
+      const res = await patchMobileConfig(config);
+      setConfig(res.config as ServerConfig);
+      setLastUpdated(new Date(res.updatedAt).toLocaleString());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save config');
+    } finally {
       setIsSaving(false);
-      setLastUpdated(new Date().toLocaleTimeString());
-      alert('บันทึกการตั้งค่าไปยัง Cloud Config เรียบร้อยแล้ว (Live Update)');
-    }, 1000);
+    }
   };
 
   const toggleFeature = (key: keyof typeof config.featureFlags) => {
@@ -29,8 +67,24 @@ export const MobileConfigView: React.FC = () => {
      });
   };
 
+  if (loading && !config) {
+    return (
+      <div className="max-w-5xl mx-auto flex items-center justify-center h-64">
+        <div className="text-slate-500 flex items-center gap-2">
+          <RefreshCw size={20} className="animate-spin" />
+          Loading config...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">
+          {error}
+        </div>
+      )}
       
       {/* Header Actions */}
       <div className="flex justify-between items-center bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
@@ -42,10 +96,13 @@ export const MobileConfigView: React.FC = () => {
             <p className="text-slate-500 text-sm">ควบคุมเวอร์ชันและฟีเจอร์ของแอปพลิเคชันแบบ Real-time</p>
          </div>
          <div className="flex items-center gap-4">
+            <button onClick={fetchConfig} disabled={loading} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg" title="Refresh">
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            </button>
             {lastUpdated && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle size={12}/> Updated: {lastUpdated}</span>}
             <button 
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || loading}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-bold transition-colors disabled:opacity-70 shadow-lg shadow-indigo-200"
             >
                 {isSaving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
@@ -101,6 +158,38 @@ export const MobileConfigView: React.FC = () => {
                      <AlertTriangle size={16} className="shrink-0 mt-0.5" />
                      <p>การเปลี่ยนเลข Version จะบังคับให้ผู้ใช้ที่ต่ำกว่าเวอร์ชันนี้ต้องอัปเดตแอปทันที (Force Update blocking screen).</p>
                   </div>
+
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                     <label className="text-sm font-bold text-slate-700">ข้อความบังคับอัปเดต (Force Update)</label>
+                     <textarea
+                        rows={2}
+                        value={config.forceUpdateMessage}
+                        onChange={(e) => setConfig({ ...config, forceUpdateMessage: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                     />
+                     <div className="grid sm:grid-cols-2 gap-2">
+                        <div>
+                           <label className="text-xs font-semibold text-slate-600">iOS App Store URL</label>
+                           <input
+                              type="url"
+                              value={config.iosStoreUrl}
+                              onChange={(e) => setConfig({ ...config, iosStoreUrl: e.target.value })}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono mt-1"
+                              placeholder="https://apps.apple.com/..."
+                           />
+                        </div>
+                        <div>
+                           <label className="text-xs font-semibold text-slate-600">Google Play URL</label>
+                           <input
+                              type="url"
+                              value={config.playStoreUrl}
+                              onChange={(e) => setConfig({ ...config, playStoreUrl: e.target.value })}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono mt-1"
+                              placeholder="https://play.google.com/..."
+                           />
+                        </div>
+                     </div>
+                  </div>
                </div>
             </div>
 
@@ -113,6 +202,78 @@ export const MobileConfigView: React.FC = () => {
                   className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-sm"
                   placeholder="ข้อความต้อนรับเมื่อเปิดแอป..."
                />
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+               <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
+                  <MessageSquare size={18} className="text-violet-600" /> Remote notices (แอป — ไม่ต้อง build ใหม่)
+               </h3>
+               <p className="text-xs text-slate-500">
+                  แสดงบน mobile ตามภาษา (TH / EN) — ชำระเงิน, Transport Hub, หน้าแรกโปร, อีเมล compliance ใน About
+               </p>
+               <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Payment notice (TH)</label>
+                     <textarea rows={2} value={config.remote.paymentNoticeTh}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, paymentNoticeTh: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Payment notice (EN)</label>
+                     <textarea rows={2} value={config.remote.paymentNoticeEn}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, paymentNoticeEn: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Transport notice (TH)</label>
+                     <textarea rows={2} value={config.remote.transportNoticeTh}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, transportNoticeTh: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Transport notice (EN)</label>
+                     <textarea rows={2} value={config.remote.transportNoticeEn}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, transportNoticeEn: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Promo / home notice (TH)</label>
+                     <textarea rows={2} value={config.remote.promoNoticeTh}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, promoNoticeTh: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                     <label className="text-xs font-semibold text-slate-600">Promo / home notice (EN)</label>
+                     <textarea rows={2} value={config.remote.promoNoticeEn}
+                       onChange={(e) => setConfig({ ...config, remote: { ...config.remote, promoNoticeEn: e.target.value } })}
+                       className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  </div>
+               </div>
+               <div>
+                  <label className="text-xs font-semibold text-slate-600">Compliance / legal contact email (About)</label>
+                  <input type="email" value={config.remote.complianceSupportEmail}
+                    onChange={(e) => setConfig({ ...config, remote: { ...config.remote, complianceSupportEmail: e.target.value } })}
+                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
+                    placeholder="legal@example.com" />
+               </div>
+               <div className="flex items-center justify-between p-3 border border-slate-100 rounded-xl">
+                  <div>
+                     <p className="font-bold text-slate-800 text-sm">แสดงยอดกองทุนโปร (public)</p>
+                     <p className="text-xs text-slate-500">เปิดเมื่อต้องการโชว์งบ discount_promo_fund บนหน้าแรก</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setConfig({
+                        ...config,
+                        remote: { ...config.remote, showPromoFundBalance: !config.remote.showPromoFundBalance },
+                      })
+                    }
+                    className={config.remote.showPromoFundBalance ? 'text-emerald-500' : 'text-slate-300'}
+                  >
+                     {config.remote.showPromoFundBalance ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                  </button>
+               </div>
             </div>
          </div>
 
@@ -144,6 +305,25 @@ export const MobileConfigView: React.FC = () => {
                   </p>
                </div>
 
+               {/* Push Notifications */}
+               <div className="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
+                 <div className="flex items-center gap-3">
+                   <div className={`p-2 rounded-lg ${config.pushNotificationEnabled ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                     <Bell size={18} />
+                   </div>
+                   <div>
+                     <p className="font-bold text-slate-800 text-sm">Push Notifications</p>
+                     <p className="text-xs text-slate-500">เปิด/ปิด การส่ง push notification ทั้งระบบ</p>
+                   </div>
+                 </div>
+                 <button
+                   onClick={() => setConfig({ ...config, pushNotificationEnabled: !config.pushNotificationEnabled })}
+                   className={`transition-colors ${config.pushNotificationEnabled ? 'text-emerald-500' : 'text-slate-300'}`}
+                 >
+                   {config.pushNotificationEnabled ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                 </button>
+               </div>
+
                {/* Individual Features List */}
                <div className="space-y-2">
                   {[
@@ -151,6 +331,7 @@ export const MobileConfigView: React.FC = () => {
                      { key: 'enablePayments', label: 'Payments System', icon: CreditCard, desc: 'ระบบฝาก/ถอนเงิน' },
                      { key: 'enableJobPosting', label: 'Job Posting', icon: Briefcase, desc: 'การโพสต์งานใหม่' },
                      { key: 'enableChat', label: 'Chat System', icon: MessageSquare, desc: 'ระบบแชทภายในแอป' },
+                     { key: 'enablePromoVouchers', label: 'Promo / โค้ดส่วนลด', icon: Layers, desc: 'รับ/ใช้วอเชอร์จากแบนเนอร์ (ผูกกองทุน)' },
                   ].map((feature) => (
                       <div key={feature.key} className="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-3">

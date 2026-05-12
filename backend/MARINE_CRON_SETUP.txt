@@ -1,0 +1,54 @@
+================================================================================
+  Marine No-Check-In Cron — คำอธิบายและวิธีตั้ง Cron
+================================================================================
+
+1. Migration 129 (FCM Admin)
+   - ไม่ต้องรัน SQL — fcm_tokens.source รองรับ 'admin' อยู่แล้ว (VARCHAR 20)
+   - ดู backend/db/migrations/129_fcm_admin_source.sql
+
+2. Admin ลงทะเบียน FCM Token
+   - Endpoint: POST /api/admin/notifications/register-fcm
+   - ต้องล็อกอิน Admin ก่อน (Authorization: Bearer <admin_token>)
+   - Body: { "token": "<FCM_registration_token>" }
+   - Admin ที่ลงทะเบียนแล้วจะได้รับ Push เมื่อ:
+     • SOS Marine — กัปตันกดปุ่ม SOS
+     • Marine No Check-in — กัปตันยังไม่เช็คอิน 30 นาทีก่อนออกเรือ
+
+   ตัวอย่าง (curl):
+   --------
+   curl -X POST https://your-api.com/api/admin/notifications/register-fcm \
+     -H "Authorization: Bearer YOUR_ADMIN_JWT" \
+     -H "Content-Type: application/json" \
+     -d '{"token":"YOUR_FCM_TOKEN"}'
+
+3. Marine No-Check-In Cron
+   - หา Marine jobs ที่ออกเรือภายใน 30 นาที แต่กัปตันยังไม่เช็คอิน
+   - เรียก backup-captain-search → แจ้ง Admin ผ่าน FCM
+   - รันทุก 10 นาที
+
+   คำสั่ง:
+   --------
+   cd /path/to/meerak/backend && npm run marine-no-checkin
+
+   ตั้ง Cron (Linux):
+   --------
+   */10 * * * * cd /path/to/meerak/backend && npm run marine-no-checkin >> /var/log/marine-no-checkin.log 2>&1
+
+   Windows Task Scheduler:
+   --------
+   Program: npm
+   Arguments: run marine-no-checkin
+   Start in: G:\meerak\backend (หรือ path โปรเจค backend)
+   Trigger: Every 10 minutes
+
+   Manual check:
+   --------
+   node backend/scripts/marine-no-checkin-cron.js
+
+4. ENV ที่ใช้
+   - DB_HOST, DB_PORT, DB_DATABASE, DB_USER, DB_PASSWORD
+   - VITE_BACKEND_URL หรือ BACKEND_URL (สำหรับเรียก backup-captain-search)
+
+5. สรุป
+   - Admin ลงทะเบียน FCM → ได้รับ SOS + No-check-in
+   - Cron ทุก 10 นาที → ตรวจสอบ Marine jobs ที่ใกล้ออกเรือ

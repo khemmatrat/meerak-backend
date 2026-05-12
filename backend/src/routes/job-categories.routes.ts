@@ -87,7 +87,7 @@ router.get('/forms/:category', optionalAuthenticate, (req, res) => {
     return res.status(400).json({ error: `Invalid category: ${category}` });
   }
 
-  res.json(schema);
+  return res.json(schema);
 });
 
 /**
@@ -172,7 +172,7 @@ router.post('/:category', authenticate, async (req, res) => {
       }
     );
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Job created successfully',
       job: result.job,
@@ -181,7 +181,7 @@ router.post('/:category', authenticate, async (req, res) => {
 
   } catch (error) {
     console.error('❌ Create category job error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create job',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -203,11 +203,11 @@ router.post('/:category/calculate-billing', optionalAuthenticate, async (req, re
 
     const result = await billingService.calculateBilling(category, category_details, base_price);
 
-    res.json(result);
+    return res.json(result);
 
   } catch (error) {
     console.error('❌ Calculate billing error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to calculate billing',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -227,11 +227,11 @@ router.get('/:jobId/billing', optionalAuthenticate, async (req, res) => {
       return res.status(404).json({ error: 'Billing not found' });
     }
 
-    res.json(billing);
+    return res.json(billing);
 
   } catch (error) {
     console.error('❌ Get billing error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to fetch billing',
       message: error instanceof Error ? error.message : 'Unknown error'
     });

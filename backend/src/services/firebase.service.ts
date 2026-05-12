@@ -39,7 +39,7 @@ try {
 }
 
 export const firebaseAdmin = admin;
-export const firebaseAuth = admin.auth();
+export const firebaseAuth: admin.auth.Auth = admin.auth();
 
 /**
  * Verify Firebase ID Token

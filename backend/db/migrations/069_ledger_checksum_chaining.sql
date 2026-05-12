@@ -41,6 +41,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_payment_ledger_chain_hash ON payment_ledger_audit;
 CREATE TRIGGER trigger_payment_ledger_chain_hash
   BEFORE INSERT ON payment_ledger_audit
   FOR EACH ROW EXECUTE PROCEDURE compute_ledger_chain_hash();

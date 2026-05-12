@@ -1,7 +1,7 @@
 // backend/src/routes/payment.routes.ts
 import express from 'express';
 import { paymentController } from '../controllers/payment.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authenticate as authMiddleware } from '../middleware/auth';
 
 const router = express.Router();
 

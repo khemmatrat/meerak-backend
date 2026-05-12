@@ -1,8 +1,9 @@
 /**
  * Commission Revenue — รายได้จากค่าคอมมิชชั่น
  * แยกตามประเภทงาน • ยอดรอจ่าย vs จ่ายแล้ว • กราฟแนวโน้ม • ตั้งอัตราค่าคอมมิชชั่น
+ * เชื่อม Backend: GET /api/admin/financial/commission
  */
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Percent,
   DollarSign,
@@ -14,6 +15,7 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
+import { useCommissionRevenue } from "../hooks/useFinancialData";
 
 export interface CommissionByCategory {
   category: string;
@@ -28,20 +30,6 @@ export interface CommissionRateConfig {
   rate_percent: number;
 }
 
-const MOCK_BY_CATEGORY: CommissionByCategory[] = [
-  { category: "ติดตั้ง/ซ่อมแอร์", total_commission: 12500, paid: 10000, pending: 2500, job_count: 25 },
-  { category: "ทำความสะอาด", total_commission: 8200, paid: 6000, pending: 2200, job_count: 41 },
-  { category: "ลอจิสติกส์", total_commission: 15000, paid: 12000, pending: 3000, job_count: 30 },
-  { category: "อื่นๆ", total_commission: 3300, paid: 3300, pending: 0, job_count: 11 },
-];
-
-const MOCK_TREND = [
-  { period: "สัปดาห์ 1", amount: 8500 },
-  { period: "สัปดาห์ 2", amount: 10200 },
-  { period: "สัปดาห์ 3", amount: 11800 },
-  { period: "สัปดาห์ 4", amount: 13900 },
-];
-
 const DEFAULT_RATES: CommissionRateConfig[] = [
   { category: "default", rate_percent: 10 },
   { category: "ติดตั้ง/ซ่อมแอร์", rate_percent: 10 },
@@ -50,31 +38,15 @@ const DEFAULT_RATES: CommissionRateConfig[] = [
 ];
 
 export const CommissionRevenue: React.FC = () => {
-  const [byCategory, setByCategory] = useState<CommissionByCategory[]>(MOCK_BY_CATEGORY);
-  const [trend, setTrend] = useState(MOCK_TREND);
+  const { data, loading, error, refetch } = useCommissionRevenue();
   const [rates, setRates] = useState<CommissionRateConfig[]>(DEFAULT_RATES);
-  const [loading, setLoading] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
 
-  const totalCommission = byCategory.reduce((s, c) => s + c.total_commission, 0);
-  const totalPaid = byCategory.reduce((s, c) => s + c.paid, 0);
-  const totalPending = byCategory.reduce((s, c) => s + c.pending, 0);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      await new Promise((r) => setTimeout(r, 500));
-      setByCategory(MOCK_BY_CATEGORY);
-      setTrend(MOCK_TREND);
-    } catch (e) {
-      console.error(e);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const byCategory = data?.by_category ?? [];
+  const trend = data?.trend ?? [];
+  const totalCommission = data?.total_commission ?? byCategory.reduce((s, c) => s + c.total_commission, 0);
+  const totalPaid = data?.total_paid ?? byCategory.reduce((s, c) => s + c.paid, 0);
+  const totalPending = data?.total_pending ?? byCategory.reduce((s, c) => s + c.pending, 0);
 
   const handleExport = () => {
     const header = "Category,Total Commission,Paid,Pending,Job Count\n";
@@ -93,7 +65,7 @@ export const CommissionRevenue: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const maxTrend = Math.max(...trend.map((t) => t.amount), 1);
+  const maxTrend = trend.length > 0 ? Math.max(...trend.map((t) => t.amount), 1) : 1;
 
   return (
     <div className="space-y-6">
@@ -137,8 +109,9 @@ export const CommissionRevenue: React.FC = () => {
         >
           <Settings size={16} /> ตั้งอัตราค่าคอมมิชชั่น
         </button>
+        {error && <span className="text-sm text-rose-600">{error}</span>}
         <button
-          onClick={fetchData}
+          onClick={refetch}
           disabled={loading}
           className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
         >
