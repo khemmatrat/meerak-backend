@@ -1,4 +1,5 @@
 wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,experience_score,business_impact,time_saved_minutes,speed,clarity,recovery,smoothness,confidence,screenshot,video,log,issue,owner,tested_at,build,env
+
 1,M-001,S001,1,Page loads < 3s,SSR ~745ms; dev cold >3s on android,⚠️,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,pv-s001-check; e2e,Confirm prod build,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
 1,M-001,S001,2,Products visible,BFF 100; Playwright grid visible,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,GET /api/bff/v1/home,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
 1,M-001,S001,3,No console errors,Playwright: zero fatal errors,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e/pv-s001-home.spec.ts,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
@@ -77,4 +78,15 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 2,M-001,S007,10,My Orders list,order-card testid,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,orders page,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
 2,M-001,S007,11,API validation,pv-s007-check idempotency+stock,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007-check.mjs,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
 2,M-001,S007,12,Regression S001–S007,70/71 PASS FLAKE-001 accepted,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s00x 70/71 9db705ef,,PV-3-Checkout,2026-07-02T13:47:00.000Z,9db705ef,local-dev:3003
+2,M-001,S008,1,PromptPay place,redirect /m/checkout/payment + QR,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 1,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,2,Countdown timer,HH:MM:SS visible,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,checkout-payment-timer,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,3,Session refresh,payment page persists,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 3,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,4,Order pending,payment_status pending,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 4,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,5,Cart cleared,BFF cart 0 post-place,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 5,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,6,Expired handling,result?status=expired,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 6,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,7,Payment CTAs,save QR + confirm,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008 step 7,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,8,Telemetry S008,payment_ui surface,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,recordPaymentUiTelemetry,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,9,API validation,pv-s008-check promptpay+action,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s008-check.mjs,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S008,10,Regression S001–S007,frozen per PV-001,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,no S001–S007 code changes,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
 
+2,M-001,S008,11,Regression S001-S008,65/67 PASS FLAKE-001+002 accepted,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s00x 65/67 104fd386,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003

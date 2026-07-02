@@ -21,8 +21,8 @@ Target tag: after S010
 
 Current state (2026-07-02)
 ──────────────────────────
-S007 ✓ Stable (sealed)
-Next: S008 Payment Processing
+S008 ✓ Stable (sealed)
+Next: S009 Payment verify
 ```
 
 ---
@@ -38,7 +38,9 @@ Once a scenario is marked **Stable** (see [STABLE-SCENARIOS.md](STABLE-SCENARIOS
 3. **Blocking regression** (not accepted flakes — see [KNOWN-ISSUES-REGISTRY.md](KNOWN-ISSUES-REGISTRY.md))
 4. **Approved engineering change** (documented in session + tracker)
 
-Rationale: small “just tweak it” changes are the most common source of regressions at scale.
+Rationale: small "just tweak it" changes are the most common source of regressions at scale.
+
+**Stable now:** S004, S007, S008
 
 ---
 
@@ -46,7 +48,7 @@ Rationale: small “just tweak it” changes are the most common source of regre
 
 **S001–S005** — frozen at Baseline 001. Do not modify unless PV-001 criteria or critical prod regression.
 
-**S001** — additional freeze: [FLAKE-001](KNOWN-ISSUES-REGISTRY.md#flake-001--s001-skeleton-timing-accepted) accepted; no PV time until **Production Build Validation**.
+**S001** — additional freeze: FLAKE-001 + FLAKE-002 accepted; no PV time until **Production Build Validation**.
 
 ---
 
@@ -54,9 +56,9 @@ Rationale: small “just tweak it” changes are the most common source of regre
 
 | Type | Example | Purpose |
 |------|---------|---------|
-| Feature | `pv(s007): Consumer Checkout — place order validation` | Scenario implementation |
+| Feature | `pv(s008): Consumer Checkout — payment UI validation` | Scenario implementation |
 | Regression | (CI / documented run) | Result evidence |
-| **Governance** | `docs(pv): record FLAKE-001 and regression accounting` | Flakes, stable seal, baselines |
+| **Governance** | `docs(pv): seal S008 and update regression governance` | Flakes, stable seal, baselines |
 
 ---
 
@@ -64,9 +66,9 @@ Rationale: small “just tweak it” changes are the most common source of regre
 
 | Suite | Result | Dashboard |
 |-------|--------|-----------|
-| S001–S007 | **70/71 PASS** | [REGRESSION-DASHBOARD.md](REGRESSION-DASHBOARD.md) |
+| S001–S008 | **65/67 PASS** | [REGRESSION-DASHBOARD.md](REGRESSION-DASHBOARD.md) |
 
-Effective blocking failures: **0** (FLAKE-001 accepted).
+Effective blocking failures: **0** (FLAKE-001, FLAKE-002 accepted). S008 introduced no blocking regressions.
 
 ---
 

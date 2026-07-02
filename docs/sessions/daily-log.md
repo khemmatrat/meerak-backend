@@ -44,3 +44,10 @@ Next: S005 View cart
 - S007 Stable; S001 frozen until prod build validation
 - Known Issues Registry + Regression Dashboard added
 
+
+### PV — Regression 65/67 + S008 Stable
+
+- S001 flakes FLAKE-001/002 accepted; S008 sealed at `104fd386`
+- Governance: docs(pv): seal S008 and update regression governance
+- Next: S009 Payment verify
+

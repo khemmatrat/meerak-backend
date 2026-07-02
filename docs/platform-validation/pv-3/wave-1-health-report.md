@@ -127,3 +127,19 @@ Reproduce:
 S007 Place Order marked **Stable**. S001 **frozen** until Production Build Validation.
 
 See: [REGRESSION-DASHBOARD.md](../REGRESSION-DASHBOARD.md) · [KNOWN-ISSUES-REGISTRY.md](../KNOWN-ISSUES-REGISTRY.md)
+---
+
+## Platform Regression — S001–S008 (2026-07-02)
+
+| Metric | Value |
+|--------|-------|
+| **Suite** | S001–S008 android-chrome |
+| **Result** | **65 / 67 PASS** |
+| **Blocking** | **0** |
+| **Known flakes** | FLAKE-001 (S001 skeleton), FLAKE-002 (S001 load) |
+| **Build** | `104fd386` |
+| **S008 impact** | No blocking regressions |
+
+S008 Payment UI marked **Stable**. S001 **frozen** until Production Build Validation.
+
+See: [REGRESSION-DASHBOARD.md](../REGRESSION-DASHBOARD.md) · [STABLE-SCENARIOS.md](../STABLE-SCENARIOS.md)

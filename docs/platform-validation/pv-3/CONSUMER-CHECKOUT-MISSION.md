@@ -19,15 +19,16 @@ Speed · Confidence · Clarity · Error Recovery · Business Impact · Time Save
 |----------|-------|-------|------------|--------|
 | S006 | Checkout start | 🟡 Functional Pass | 8.7 | **Complete** |
 | S007 | Place order | 🟡 Functional Pass | 8.8 | **Stable** |
-| S008 | Payment flow | — | — | Not started |
+| S008 | Payment flow | 🟡 Functional Pass | 8.7 | **Stable** |
 | S009 | Payment verify | — | — | Not started |
 | S010 | Payment result | — | — | Not started |
 
-
 ---
 
-## Regression (S001–S007)
+## Regression (S001–S008)
 
-**70/71 PASS** · FLAKE-001 accepted (S001 skeleton) · **S007 Stable**
+**65/67 PASS** · FLAKE-001 + FLAKE-002 accepted (S001 timing) · **S008 Stable**
 
-Next: **S008 — Payment Processing** (await review)
+S008 introduced **zero blocking regressions** (S002–S008 all pass).
+
+Next: **S009 — Payment verify** (unblocked after S008 seal)

@@ -78,6 +78,8 @@ cd aqond-v2/apps/storefront && npx playwright test e2e/pv-s00*.spec.ts --project
 
 ## Regression governance (2026-07-02)
 
-- **S001–S007 regression:** 70/71 PASS · [REGRESSION-DASHBOARD.md](REGRESSION-DASHBOARD.md)
+- **S001–S008 regression:** 65/67 PASS · [REGRESSION-DASHBOARD.md](REGRESSION-DASHBOARD.md)
+- **S008:** Stable · **S009** next (Payment verify)
 - **FLAKE-001:** S001 skeleton — Accepted · [KNOWN-ISSUES-REGISTRY.md](KNOWN-ISSUES-REGISTRY.md)
 - **S007:** Stable · **S008** next (Payment Processing)
+

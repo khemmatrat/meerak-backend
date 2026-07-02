@@ -9,4 +9,5 @@ S004,M-001,cart_add,Add to cart,9.3,high,5,🟢 Production Pass,marketplace,3.9,
 S005,M-001,cart_view,View cart,8.9,high,7,🟡 Functional Pass,marketplace,3.3,2026-07-02T05:14:11.838Z,e2e 10/10 android-chrome
 S006,M-001,checkout_start,Checkout start,8.7,critical,24,🟡 Functional Pass,marketplace,4.4,2026-07-02T06:27:57.127Z,e2e 10/10 android-chrome — Consumer Checkout Mission
 S007,M-001,place_order,Place order,8.8,critical,28,🟡 Functional Pass,marketplace,4.2,2026-07-02T06:43:27.020Z,STABLE e2e 16/16 android+iphone regression 70/71
+S008,M-001,payment_ui,Payment flow,8.7,critical,22,🟡 Functional Pass,marketplace,4.0,2026-07-02T14:30:00.000Z,STABLE e2e 16/16 regression 65/67 build 104fd386
 

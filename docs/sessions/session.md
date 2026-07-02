@@ -64,3 +64,14 @@ Resume S005 when ready after Wave 1 review.
 - **STABLE-SCENARIOS.md** + **GOVERNANCE.md** published
 - **Next:** S008 Payment Processing (S001–S007 sealed)
 
+
+## PV Regression S001–S008 + S008 sealed (2026-07-02)
+
+- **Regression:** 65/67 PASS (android-chrome, build `104fd386`)
+- **FLAKE-001:** S001 skeleton 744ms — Accepted
+- **FLAKE-002:** S001 home load 8110ms — Accepted
+- **Blocking failures:** 0 · S008 introduced no regressions on S002–S008
+- **S008:** marked **Stable** (sealed)
+- **Next:** S009 Payment verify (unblocked)
+- **PV-001:** S001–S008 sealed — no changes unless security / corruption / blocking regression / approved change
+
