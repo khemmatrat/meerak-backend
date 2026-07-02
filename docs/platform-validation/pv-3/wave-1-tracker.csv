@@ -1,0 +1,46 @@
+wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,experience_score,business_impact,time_saved_minutes,speed,clarity,recovery,smoothness,confidence,screenshot,video,log,issue,owner,tested_at,build,env
+1,M-001,S001,1,Page loads < 3s,SSR ~745ms; dev cold >3s on android,⚠️,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,pv-s001-check; e2e,Confirm prod build,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,2,Products visible,BFF 100; Playwright grid visible,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,GET /api/bff/v1/home,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,3,No console errors,Playwright: zero fatal errors,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e/pv-s001-home.spec.ts,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,4,Skeleton < 200ms,AxsMarketplaceHomeSkeletonPaint; dev <500ms,⚠️,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e step 4,Prod target 200ms,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,5,Empty state not 500,กำลังเชื่อมต่อข้อมูล + ลองใหม่,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,?pv_test=empty,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,6,Offline cache/page,sessionStorage + offline banner,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e step 6,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,7,Recover auto refresh,online → router.refresh,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e step 7,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,8,Accessibility,font OK; tab nav; aria; lang,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e/pv-s001-production.spec.ts,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,9,Slow network 400ms,CDP throttle; page usable <30s,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e step 9,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,10,Massive data scroll,"massive=100,5000 synthetic; scroll <3s",✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,e2e step 10,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,11,Telemetry → Analytics,POST /api/experience/telemetry + business_impact,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,scenarioTelemetry.ts,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S001,12,AI Observation,POST /api/experience/observation,✅,🟡 Functional Pass,9.1,high,18,8.5,10,10,8,9,,,jarvis observation,,PV-2,2026-07-01T18:40:54.349Z,6aaa372a,local-dev:3003
+1,M-001,S002,1,ค้นหาชื่อสินค้า,catalog-fallback ครีม; Playwright results visible,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 1,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,2,คำสะกดผิดเล็กน้อย (fuzzy),ครีมกันแด → ครีมกันแดด 299,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,searchCatalogMatch.ts,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,3,ไม่มีผลลัพธ์ → แนะนำคำ/หมวด,AxsSearchEmptySuggestions,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 3,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,4,กรองราคา/COD/หมวด,price preset + filter chips,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 4-5,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,5,เรียงลำดับ,sort tab ราคา ↓,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 4-5,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,6,กดเข้า PDP,product link navigates,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 6-7,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,7,กลับมา state ยังอยู่,URL q= + sessionStorage scroll,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 6-7,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,8,Jarvis แนะนำ (optional),jarvis surface present if enabled,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,optional,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,9,Slow network,400ms latency; results or empty UX,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,e2e step 9,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S002,10,Telemetry + Experience Score,POST telemetry scenario S002 surface search,✅,🟡 Functional Pass,8.7,high,6,8.5,9,9,8.5,8.5,,,recordSearchTelemetry,,PV-2,2026-07-01T19:06:50.843Z,6aaa372a,local-dev:3003
+1,M-001,S003,1,ข้อมูลสินค้าโหลด,title + price + gallery visible,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 1,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,2,Detail API,GET /api/product/[id]/detail 200,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 2; pv-s003-check,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,3,ปุ่มใส่รถเข็นเปิดใช้,footer รถเข็น enabled,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 3,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,4,Buy sheet เปิด,PdpBuySheet data-testid,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 3-4,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,5,ยืนยันใส่รถเข็นสำเร็จ,ใส่รถเข็นแล้ว ✓,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 5,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,6,Search → PDP,ครีม search → product link,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 6,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,7,ซื้อเลยเปิด sheet,buy bar → ซื้อเลย confirm,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 7,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,8,กลับจาก PDP state คง,back → search q= preserved,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 8,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,9,Slow network,400ms latency; PDP usable,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,e2e step 9,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S003,10,Telemetry + Experience Score,POST telemetry scenario S003 surface product,✅,🟡 Functional Pass,8.8,high,8,8.5,9,9,9,8.5,,,recordProductTelemetry,,PV-2,2026-07-02T03:28:18.741Z,6aaa372a,local-dev:3003
+1,M-001,S004,1,สินค้าอยู่ในรถเข็น,POST cart + owner_id required,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s004-check,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,2,Cart count อัปเดตทันที,optimistic badge <150ms UI; sync on response,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,useShopCart,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,3,Badge หลัง reload/nav/back,PDP + tab-cart-badge,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s004-production,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,4,Owner เดียวกัน guest/user,resolveCartOwnerId + merge API,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,cartOwner; /api/cart/merge,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,5,Cart persistence,sessionStorage cache + local carts.json,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,shopCart cache,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,6,Guest → user merge,mergeLocalCarts + cart_merge telemetry,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,auth applySession,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,7,Qty/subtotal integrity,line_micro = unit×qty; ฿398 for ×2,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,localCart summarize,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,8,Remove item,qty=0 removes line; empty state,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,TtCartLine editable,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,9,Offline recovery,cache banner + cart_restore/recovery,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,useShopCart online handler,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,10,Telemetry trace_id,cart_add/refresh/merge/remove surfaces,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,scenarioTelemetry,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,11,Performance,badge visible <5s; async network,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s004-production timing,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,12,A11y,aria-live toast; qty aria-labels,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,MobileProductClient + TtCartLine,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S004,13,Regression S001–S004,Playwright all specs PASS,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s00x regression run,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003

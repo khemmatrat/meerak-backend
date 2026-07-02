@@ -1,0 +1,9 @@
+scenario_id,mission_id,surface,title,experience_score,business_impact,time_saved_minutes,scenario_grade,module,priority_score,tested_at,notes
+S001,M-001,home,Open storefront home,9.1,high,18,🟡 Functional Pass,marketplace,2.7,,Steps 1-12 functional; prod timing pending
+S006,M-001,checkout,Checkout start,,critical,24,⬜,marketplace,,,
+S038,M-005,payment,Payment QR,,critical,24,⬜,marketplace,,,
+S043,M-006,notifications,Notification settings,,medium,4,⬜,notification,,,
+S016,M-002,food_home,Food home,,high,12,⬜,food,,,
+S002,M-001,search,Find & decide,8.7,high,6,🟡 Functional Pass,marketplace,3.9,2026-07-01T19:06:50.843Z,e2e 10/10 android-chrome
+S003,M-001,product,Product detail — decide to buy,8.8,high,8,🟡 Functional Pass,marketplace,3.9,2026-07-02T03:28:18.741Z,e2e 9/9 android-chrome + iphone-safari
+S004,M-001,cart_add,Add to cart,9.3,high,5,🟢 Production Pass,marketplace,3.9,2026-07-02T04:31:07.128Z,e2e 16/16 android+iphone production hardening
