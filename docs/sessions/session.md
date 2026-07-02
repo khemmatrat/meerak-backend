@@ -38,3 +38,11 @@ Resume S005 when ready after Wave 1 review.
 **No order/payment processing** in S006 scope.  
 **Next:** S007 Place order (when approved)
 
+
+## S007 — Place order (Consumer Checkout)
+
+- **Grade:** 🟡 Functional Pass · **Experience:** 8.8/10 · **Critical** · 28 min saved
+- **E2E:** 8/8 PASS (android-chrome + iphone-safari)
+- **Validated:** place CTA, loading, idempotency, success banner, orders list, cart clear, stock, COD payment state, retry, refresh/back, telemetry
+- **Commit stop point:** separate from S008 — await review
+

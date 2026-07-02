@@ -18,7 +18,8 @@ Speed · Confidence · Clarity · Error Recovery · Business Impact · Time Save
 | Scenario | Title | Grade | Experience | Status |
 |----------|-------|-------|------------|--------|
 | S006 | Checkout start | 🟡 Functional Pass | 8.7 | **Complete** |
-| S007 | Place order | — | — | Not started |
+| S007 | Place order | 🟡 Functional Pass | 8.8 | **Complete** |
 | S008 | Payment flow | — | — | Not started |
 | S009 | Payment verify | — | — | Not started |
 | S010 | Payment result | — | — | Not started |
+

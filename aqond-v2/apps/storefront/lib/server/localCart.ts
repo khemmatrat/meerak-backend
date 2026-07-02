@@ -116,3 +116,10 @@ export async function mergeLocalCarts(
   await writeStore(store);
   return { cart: summarize(userCart), merged_lines: guestItems.length };
 }
+
+export async function clearLocalCart(ownerId: string): Promise<CartSummary> {
+  const store = await readStore();
+  delete store[ownerId];
+  await writeStore(store);
+  return summarize([]);
+}

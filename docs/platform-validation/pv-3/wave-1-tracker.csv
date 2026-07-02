@@ -65,3 +65,15 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 2,M-001,S006,9,Checkout CTA,place CTA validates addr (no order),✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,checkout-place-cta,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
 2,M-001,S006,10,Telemetry S006,checkout_start surface,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,recordCheckoutStartTelemetry,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
 2,M-001,S006,11,Regression S001–S006,Browse frozen + S006 e2e,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s00x regression,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S007,1,Place order COD,success banner + order ID + stock,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 1,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,2,Loading state,CTA disabled + placing status,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,checkout-placing,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,3,Double-click guard,1 order per idempotency key,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 3,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,4,Payment state,COD payment_status on order,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 4,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,5,Recovery retry,503 then success on retry,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 5,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,6,Refresh persistence,order visible after reload,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 6,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,7,Back button,cart empty after success,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007 step 7,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,8,Telemetry S007,place_order surface,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,recordPlaceOrderTelemetry,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,9,Cart cleared,BFF cart count 0 post-place,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,clearLocalCart,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,10,My Orders list,order-card testid,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,orders page,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,11,API validation,pv-s007-check idempotency+stock,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007-check.mjs,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,12,Regression S001–S007,Browse frozen + checkout,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s00x regression,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003

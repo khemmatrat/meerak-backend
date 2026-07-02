@@ -32,3 +32,9 @@ Next: S005 View cart
 - Functional Pass 8.7 · critical impact · 24 min time saved baseline
 - e2e 10/10 · API check PASS · reports in `s006-checkout-start/`
 
+
+### S007 — Place order (Consumer Checkout)
+
+- Functional Pass 8.8 · e2e 16/16 (android+iphone) · API check PASS
+- Order placement UX: success on My Orders, cart cleared, stock decrement, idempotency
+

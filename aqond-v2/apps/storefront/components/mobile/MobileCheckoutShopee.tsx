@@ -15,7 +15,8 @@ import {
   createSavedAddress,
   type ShippingRate,
 } from '@/lib/checkout';
-import { recordCheckoutStartTelemetry } from '@/lib/experience/scenarioTelemetry';
+import { recordCheckoutStartTelemetry, recordPlaceOrderTelemetry } from '@/lib/experience/scenarioTelemetry';
+import { CART_CACHE_KEY, dispatchCartUpdated, emptyCartSummary } from '@/lib/shopCart';
 import { CoPaymentPicker } from '@/components/mobile/CoPaymentPicker';
 import { PAYMENT_METHODS, paymentMethodLabel, type PaymentMethodId } from '@/lib/payment';
 import type { PromoResult } from '@/lib/promo';
@@ -122,6 +123,8 @@ export function MobileCheckoutShopee() {
   const [addrSaving, setAddrSaving] = useState(false);
   const viewStarted = useRef(0);
   const viewTelemetrySent = useRef(false);
+  const placingGuard = useRef(false);
+  const placeSessionKey = useRef('');
 
   useEffect(() => {
     viewStarted.current = performance.now();
@@ -352,17 +355,22 @@ export function MobileCheckoutShopee() {
   };
 
   const place = async () => {
-    if (isEmpty) return;
+    if (isEmpty || placingGuard.current || placing) return;
     const msg = validate();
     if (msg) {
       setError(msg);
       setAddrOpen(true);
       return;
     }
+    if (!placeSessionKey.current) {
+      placeSessionKey.current = `m-co-${owner}-${Date.now()}`;
+    }
+    placingGuard.current = true;
     setPlacing(true);
     setError('');
+    const t0 = performance.now();
     const creatorId = loadLastCreator();
-    const baseKey = `m-co-${Date.now()}`;
+    const baseKey = placeSessionKey.current;
     try {
       let resolvedAddressId = addressId;
       if (!resolvedAddressId && auth?.userId) {
@@ -428,6 +436,29 @@ export function MobileCheckoutShopee() {
         });
         if (lastResult?.order_id) orderIds.push(String(lastResult.order_id));
       }
+      if (!orderIds.length) {
+        throw new Error('ไม่ได้รับหมายเลขคำสั่งซื้อ');
+      }
+      const primaryOrderId = orderIds[0];
+      const paymentStatus =
+        (lastResult as { payment_status?: string })?.payment_status ||
+        (payMethod === 'cod' ? 'cod' : 'pending');
+      recordPlaceOrderTelemetry({
+        loadMs: Math.round(performance.now() - t0),
+        orderId: primaryOrderId,
+        cartCount: itemCount,
+        totalMicro: grandTotalMicro,
+        paymentMethod: payMethod,
+        paymentStatus,
+        duplicate: Boolean((lastResult as { duplicate?: boolean })?.duplicate),
+      });
+      dispatchCartUpdated(emptyCartSummary());
+      try {
+        sessionStorage.removeItem(CART_CACHE_KEY);
+      } catch {
+        /* ignore */
+      }
+      setCart({ items: [], count: 0, total_micro: 0 });
       saveAddr(owner, {
         fullName: fullName.trim(),
         address: address.trim(),
@@ -447,10 +478,20 @@ export function MobileCheckoutShopee() {
         router.push('/m/checkout/payment');
         return;
       }
-      router.push('/m/orders');
+      placeSessionKey.current = '';
+      router.push(`/m/orders?placed=${encodeURIComponent(primaryOrderId)}&payment=${paymentStatus}`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'สั่งซื้อไม่สำเร็จ');
+      const errMsg = e instanceof Error ? e.message : 'สั่งซื้อไม่สำเร็จ';
+      recordPlaceOrderTelemetry({
+        loadMs: Math.round(performance.now() - t0),
+        cartCount: itemCount,
+        totalMicro: grandTotalMicro,
+        paymentMethod: payMethod,
+        error: errMsg,
+      });
+      setError(errMsg);
     } finally {
+      placingGuard.current = false;
       setPlacing(false);
     }
   };
@@ -880,10 +921,16 @@ export function MobileCheckoutShopee() {
               className="tt-co-pro-place"
               data-testid="checkout-place-cta"
               disabled={placing}
+              aria-busy={placing}
               onClick={() => void place()}
             >
               {placing ? 'กำลังสั่ง...' : 'สั่งสินค้า'}
             </button>
+            {placing && (
+              <p className="tt-hint" data-testid="checkout-placing" role="status">
+                กำลังยืนยันคำสั่งซื้อ — กรุณารอสักครู่
+              </p>
+            )}
           </footer>
         </>
       )}

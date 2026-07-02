@@ -107,6 +107,27 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordPlaceOrderTelemetry(input: {
+  loadMs?: number;
+  orderId?: string;
+  cartCount?: number;
+  totalMicro?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  duplicate?: boolean;
+  error?: string | null;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('S007', 'place_order', {
+    loadMs: input.loadMs,
+    error: input.error,
+    productCount: input.cartCount,
+    query: input.orderId,
+    source: input.duplicate ? 'duplicate' : input.paymentStatus || input.paymentMethod || 'place',
+    traceId: input.traceId,
+  });
+}
+
 export function recordCheckoutStartTelemetry(input: {
   loadMs?: number;
   cartCount?: number;
