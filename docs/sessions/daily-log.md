@@ -19,3 +19,9 @@ Next: S005 View cart
 - Marketplace Browse S001–S004: avg Experience 9.0, regression 38/38 PASS
 - Baseline Registry + CHANGELOG + RELEASE-NOTES added under `docs/platform-validation/`
 
+
+### S005 — View cart PV complete
+
+- Functional Pass 8.9 · e2e 10/10 · tracker + rollup updated
+- Cart page telemetry `S005/cart_view`; header count = item qty total
+

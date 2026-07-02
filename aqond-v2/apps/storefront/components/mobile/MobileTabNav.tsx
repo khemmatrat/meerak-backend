@@ -53,7 +53,7 @@ export function MobileTabNav() {
   const params = useSearchParams();
   const [inIframe, setInIframe] = useState(false);
   const [cartHref, setCartHref] = useState('/m/cart');
-  const { count: shopCartCount } = useShopCart();
+  const { itemQtyTotal: shopCartCount } = useShopCart();
 
   useEffect(() => {
     setInIframe(typeof window !== 'undefined' && window.self !== window.top);

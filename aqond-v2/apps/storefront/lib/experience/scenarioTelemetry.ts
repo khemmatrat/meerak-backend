@@ -107,6 +107,29 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordCartViewTelemetry(input: {
+  loadMs?: number;
+  cartCount?: number;
+  lineCount?: number;
+  totalMicro?: number;
+  empty?: boolean;
+  error?: string | null;
+  cacheHit?: boolean;
+  source?: string;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('S005', 'cart_view', {
+    loadMs: input.loadMs,
+    error: input.error,
+    cacheHit: input.cacheHit,
+    productCount: input.cartCount,
+    networkProfile: input.empty ? 'empty' : undefined,
+    query: input.totalMicro != null ? String(input.totalMicro) : undefined,
+    source: input.source || (input.empty ? 'empty' : `lines:${input.lineCount ?? 0}`),
+    traceId: input.traceId,
+  });
+}
+
 export function recordCartAddTelemetry(input: {
   loadMs?: number;
   productId?: string;

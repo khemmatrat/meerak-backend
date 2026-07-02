@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useCartOwner } from '@/lib/cartOwner';
 import { bffGet, bffPost } from '@/lib/bff';
@@ -10,7 +10,7 @@ import { formatCatalogPrice } from '@/lib/format';
 import { enrichCartItem } from '@/lib/productVisual';
 import { dispatchCartUpdated, type ShopCartSummary } from '@/lib/shopCart';
 import { useShopCart } from '@/lib/useShopCart';
-import { recordCartRemoveTelemetry } from '@/lib/experience/scenarioTelemetry';
+import { recordCartRemoveTelemetry, recordCartViewTelemetry } from '@/lib/experience/scenarioTelemetry';
 import { TtCartLine } from '@/components/mobile/TtCartLine';
 import { TtProductGrid, type TtProduct } from '@/components/mobile/TtProductGrid';
 import { TtCheckoutStepBar, TtCheckoutNextHint } from '@/components/mobile/TtCheckoutStepBar';
@@ -50,6 +50,13 @@ export default function MobileCartPage() {
   const [foodCartCount, setFoodCartCount] = useState(0);
   const [catalog, setCatalog] = useState<TtProduct[]>([]);
   const [qtyBusy, setQtyBusy] = useState<string | null>(null);
+  const viewStarted = useRef(0);
+  const viewTelemetrySent = useRef(false);
+
+  useEffect(() => {
+    viewStarted.current = performance.now();
+    viewTelemetrySent.current = false;
+  }, [ownerId]);
 
   useEffect(() => {
     if (!ownerReady || !ownerId) return;
@@ -69,8 +76,22 @@ export default function MobileCartPage() {
     [cart, catalog],
   );
   const recs = catalog.slice(0, 8);
-  const count = cart?.count ?? items.length ?? 0;
+  const lineCount = cart?.count ?? items.length ?? 0;
+  const displayCount = cart?.item_qty_total ?? lineCount;
   const isEmpty = !loading && items.length === 0;
+
+  useEffect(() => {
+    if (!ownerReady || !ownerId || loading || viewTelemetrySent.current) return;
+    viewTelemetrySent.current = true;
+    recordCartViewTelemetry({
+      loadMs: Math.round(performance.now() - viewStarted.current),
+      cartCount: displayCount,
+      lineCount: lineCount,
+      totalMicro: cart?.total_micro ?? 0,
+      empty: isEmpty,
+      source: 'cart_page',
+    });
+  }, [ownerReady, ownerId, loading, displayCount, lineCount, cart?.total_micro, isEmpty]);
 
   const onQtyChange = useCallback(
     async (productId: string, nextQty: number) => {
@@ -105,7 +126,7 @@ export default function MobileCartPage() {
         <div className="tt-header-row">
           <Link href="/m/home" className="tt-back" aria-label="กลับ">‹</Link>
           <span style={{ flex: 1, fontWeight: 700, fontSize: '1rem' }} data-testid="cart-page-count">
-            รถเข็นสินค้า ({count})
+            รถเข็นสินค้า ({displayCount})
           </span>
           <span className="tt-icon-btn" title="ที่อยู่">📍</span>
         </div>
@@ -164,7 +185,12 @@ export default function MobileCartPage() {
               รวม {formatCatalogPrice(cart.total_micro || 0)}
             </p>
             <TtCheckoutNextHint scope="shop" />
-            <Link href="/m/checkout" className="tt-btn-primary" style={{ textAlign: 'center', marginTop: 12 }}>
+            <Link
+              href="/m/checkout"
+              className="tt-btn-primary"
+              style={{ textAlign: 'center', marginTop: 12 }}
+              data-testid="cart-checkout-cta"
+            >
               ดำเนินการชำระเงิน
             </Link>
           </div>

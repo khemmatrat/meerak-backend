@@ -44,3 +44,13 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 1,M-001,S004,11,Performance,badge visible <5s; async network,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s004-production timing,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
 1,M-001,S004,12,A11y,aria-live toast; qty aria-labels,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,MobileProductClient + TtCartLine,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
 1,M-001,S004,13,Regression S001–S004,Playwright all specs PASS,✅,🟢 Production Pass,9.3,high,5,9.5,9.5,9.5,9,9.5,,,pv-s00x regression run,,PV-2,2026-07-02T04:31:07.128Z,6aaa372a,local-dev:3003
+1,M-001,S005,1,Line items match,cart line title + count header,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005-cart-view step 1,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,2,Totals correct,subtotal ฿398 for qty×2,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 2; pv-s005-check,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,3,Checkout step bar,TtCheckoutStepBar step 1 active,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,cart-checkout-steps,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,4,Checkout CTA,href /m/checkout,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,cart-checkout-cta,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,5,Tab navigation,home → tab cart → /m/cart,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 5,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,6,Empty state,cart-empty-state + CTA home,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 6,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,7,Multi-line cart,2 lines; total ฿298,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 7,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,8,BFF parity,GET total_micro matches UI,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 8,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,9,Qty on view,stepper updates subtotal live,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 9,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+1,M-001,S005,10,Telemetry S005,cart_view surface + trace_id,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,recordCartViewTelemetry,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
