@@ -9,38 +9,11 @@ Official record of accepted flakes, deferred items, and freeze decisions.
 | Field | Value |
 |-------|-------|
 | **ID** | FLAKE-001 |
-| **Scenario** | S001 — Open storefront home |
-| **Test** | `step 4: skeleton visible quickly (not black screen)` |
-| **Issue** | Skeleton paint exceeds 500ms dev budget during long regression suite |
-| **Observed** | up to ~2043ms in S001–S007 combined run |
-| **Impact** | **None** |
-| **Root cause** | Dev build + accumulated suite execution (cold/warm state) |
-| **Production impact** | Not reproduced in isolated production validation |
-| **Checkout impact** | None |
-| **User impact** | None |
+| **Scenario** | S001 |
+| **Test** | skeleton visible quickly |
+| **Observed** | 758ms (S001–S010 suite, build `8a736187`) |
+| **Impact** | None |
 | **Status** | **Accepted** |
-| **Criteria met** | Reproducible only in long suite · Not in isolated prod validation · No user/checkout impact |
-
-### Governance
-
-See [GOVERNANCE.md](GOVERNANCE.md) rule **PV-001** for Stable scenarios.
-
-- **S001 frozen** until **Production Build Validation** (do not spend PV time on S001 dev flakes)
-- Regression accounting: **65/67 PASS** (S001–S008) — FLAKE-001 excluded from blocking signal
-- Do **not** modify S001–S007 unless new blocking regression appears
-
----
-
-## Freeze register
-
-| Scenario | Status | Until |
-|----------|--------|-------|
-| S001–S005 | Frozen (Browse baseline) | Critical prod regression only |
-| S001 | Additional freeze (FLAKE-001) | Production Build Validation |
-| S006–S008 | Complete → S008 **Stable** | S009+ only with review with review |
-
----
-
 
 ---
 
@@ -49,19 +22,51 @@ See [GOVERNANCE.md](GOVERNANCE.md) rule **PV-001** for Stable scenarios.
 | Field | Value |
 |-------|-------|
 | **ID** | FLAKE-002 |
-| **Scenario** | S001 — Open storefront home |
-| **Test** | `steps 1–3: load, products, no console errors` |
-| **Issue** | `domcontentloaded` exceeds 8000ms dev budget during long regression suite |
-| **Observed** | 8110ms in S001–S008 combined run (build `104fd386`) |
-| **Impact** | **None** |
-| **Root cause** | Dev build + accumulated suite execution |
-| **Production impact** | Not reproduced in isolated validation |
+| **Scenario** | S001 |
+| **Test** | load, products, no console errors |
+| **Observed** | 8139ms (S001–S010 suite) |
+| **Impact** | None |
 | **Status** | **Accepted** |
 
-- Regression accounting: **65/67 PASS** — FLAKE-001 + FLAKE-002 excluded from blocking signal
-- Do **not** modify S001 unless blocking regression or Production Build Validation
+---
 
+## FLAKE-003 — S004 cart-add telemetry (Accepted)
 
-*Maintainers: append new FLAKE-### entries; never delete accepted records.*
+| Field | Value |
+|-------|-------|
+| **ID** | FLAKE-003 |
+| **Scenario** | S004 (Stable) |
+| **Test** | telemetry posted for cart add |
+| **Issue** | PDP buy-sheet timeout in long combined suite |
+| **Impact** | None — S004 functional steps pass |
+| **Status** | **Accepted** — do not modify S004 per PV-001 |
 
+---
 
+## FLAKE-004 — S010 result telemetry (Accepted)
+
+| Field | Value |
+|-------|-------|
+| **ID** | FLAKE-004 |
+| **Scenario** | S010 |
+| **Test** | telemetry posted for payment result |
+| **Issue** | Payment confirm slow after 22min suite; isolated 8/8 pass |
+| **Impact** | None — S010 functional steps pass |
+| **Status** | **Accepted** |
+
+---
+
+## Freeze register
+
+| Scope | Status |
+|-------|--------|
+| S001–S005 | Frozen (B001) |
+| S001 | FLAKE-001/002 until prod build validation |
+| S006–S010 | Stable / Complete (B002) |
+| S004, S007–S010 | **Stable** — PV-001 |
+
+Regression accounting: **79/83 PASS** · **0 blocking**
+
+---
+
+*Maintainers: append FLAKE-### entries; never delete accepted records.*

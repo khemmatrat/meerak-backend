@@ -51,3 +51,9 @@ Next: S005 View cart
 - Governance: docs(pv): seal S008 and update regression governance
 - Next: S009 Payment verify
 
+
+### PV — Baseline 002 Consumer Checkout sealed
+
+- Regression 79/83 · S009/S010 Stable · tag baseline-wave2-2026-07-02
+- MISSION-COVERAGE.md published · await review
+

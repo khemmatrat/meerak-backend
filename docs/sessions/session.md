@@ -75,3 +75,13 @@ Resume S005 when ready after Wave 1 review.
 - **Next:** S009 Payment verify (unblocked)
 - **PV-001:** S001–S008 sealed — no changes unless security / corruption / blocking regression / approved change
 
+
+## Baseline 002 — Consumer Checkout sealed (2026-07-02)
+
+- **Regression S001–S010:** 79/83 PASS (build `8a736187`)
+- **Blocking:** 0 · FLAKE-001–004 accepted
+- **S009 Stable:** `1a972588` · **S010 Stable:** `8a736187`
+- **Tag:** `baseline-wave2-2026-07-02`
+- **Governance:** docs(pv): seal Consumer Checkout mission
+- **PAUSE** — await review before Food/Rider/Merchant
+

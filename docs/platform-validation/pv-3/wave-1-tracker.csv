@@ -90,3 +90,25 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 2,M-001,S008,10,Regression S001–S007,frozen per PV-001,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,no S001–S007 code changes,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
 
 2,M-001,S008,11,Regression S001-S008,65/67 PASS FLAKE-001+002 accepted,✅,🟡 Functional Pass,8.7,critical,22,8.5,9,8.5,8.5,8.5,,,pv-s00x 65/67 104fd386,,PV-3-Checkout,2026-07-02T14:30:00.000Z,104fd386,local-dev:3003
+2,M-001,S009,1,Confirm verify,order paid + success result,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 1,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,2,Verify API,POST with ref+order_ids+buyer,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 2,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,3,Idempotent re-verify,duplicate success,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 3,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,4,Expired verify,status expired,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 4,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,5,Missing ref,wrong_type,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 5,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,6,Buyer mismatch,status failed,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 6,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,7,Verifying UI,confirm loading text,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009 step 7,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,8,Telemetry S009,payment_verify surface,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,recordPaymentVerifyTelemetry,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,9,API validation,pv-s009-check verify+idempotency,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,pv-s009-check.mjs,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S009,10,Regression S001–S008,frozen per PV-001,✅,🟡 Functional Pass,8.7,critical,20,8.5,9,8.5,8.5,8.5,,,no sealed scenario refactors,,PV-3-Checkout,2026-07-02T08:58:07.791Z,474da517,local-dev:3003
+2,M-001,S010,1,Success result,amount+ref+title,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 1,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,2,Orders CTA,href tab=toship,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 2,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,3,Home CTA,href /m/home,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 3,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,4,Expired result,failed hero + topay link,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 4,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,5,Failed result,message visible,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 5,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,6,Refresh persistence,success session survives,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 6,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,7,Missing session,redirect checkout,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010 step 7,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,8,Telemetry S010,payment_result surface,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,recordPaymentResultTelemetry,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,9,API validation,pv-s010-check lifecycle,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,pv-s010-check.mjs,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,S010,10,Consumer Checkout,S006–S010 mission complete,✅,🟡 Functional Pass,8.7,critical,18,8.5,9,8.5,8.5,8.5,,,Baseline 002 candidate,,PV-3-Checkout,2026-07-02T09:17:32.598Z,1a972588,local-dev:3003
+2,M-001,W2,1,Regression S001-S010,79/83 PASS FLAKE-001-004 accepted,✅,🟡 Functional Pass,8.7,critical,112,8.5,9,8.5,8.5,8.5,,,wave2 regression 8a736187,,PV-3-Checkout,2026-07-02T10:30:00.000Z,8a736187,local-dev:3003
+
