@@ -54,3 +54,14 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 1,M-001,S005,8,BFF parity,GET total_micro matches UI,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 8,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
 1,M-001,S005,9,Qty on view,stepper updates subtotal live,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,pv-s005 step 9,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
 1,M-001,S005,10,Telemetry S005,cart_view surface + trace_id,✅,🟡 Functional Pass,8.9,high,7,9,9,9,8.5,8.5,,,recordCartViewTelemetry,,PV-2,2026-07-02T05:14:11.838Z,20ea40ff,local-dev:3003
+2,M-001,S006,1,Cart summary,line items + payment summary ฿199,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s006 step 1,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,2,Address selection,address card + form fields,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s006 step 2,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,3,Address validation,postal 5-digit gate,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s006 step 3,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,4,Shipping calculation,rates + summary shipping row,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s006 step 4; shipping quote API,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,5,Coupon availability,shop voucher picker,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,checkout-coupon-shop,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,6,Promotion visibility,platform voucher + VIP banners,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,checkout-promotion-banners,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,7,Wallet visibility,BFF wallet balance shown,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,checkout-wallet-section,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,8,Payment methods,selected method + picker modal,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s006 step 8,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,9,Checkout CTA,place CTA validates addr (no order),✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,checkout-place-cta,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,10,Telemetry S006,checkout_start surface,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,recordCheckoutStartTelemetry,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003
+2,M-001,S006,11,Regression S001–S006,Browse frozen + S006 e2e,✅,🟡 Functional Pass,8.7,critical,24,8.5,9,8.5,8.5,8.5,,,pv-s00x regression,,PV-3-Checkout,2026-07-02T06:27:57.127Z,f8e4b0b6,local-dev:3003

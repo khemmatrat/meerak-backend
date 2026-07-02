@@ -107,6 +107,37 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordCheckoutStartTelemetry(input: {
+  loadMs?: number;
+  cartCount?: number;
+  totalMicro?: number;
+  hasAddress?: boolean;
+  shippingReady?: boolean;
+  walletVisible?: boolean;
+  promoVisible?: boolean;
+  paymentVisible?: boolean;
+  error?: string | null;
+  traceId?: string;
+}) {
+  const flags = [
+    input.hasAddress ? 'addr' : '',
+    input.shippingReady ? 'ship' : '',
+    input.walletVisible ? 'wallet' : '',
+    input.promoVisible ? 'promo' : '',
+    input.paymentVisible ? 'pay' : '',
+  ]
+    .filter(Boolean)
+    .join('+');
+  recordScenarioTelemetry('S006', 'checkout_start', {
+    loadMs: input.loadMs,
+    error: input.error,
+    productCount: input.cartCount,
+    source: flags || 'entry',
+    query: input.totalMicro != null ? String(input.totalMicro) : undefined,
+    traceId: input.traceId,
+  });
+}
+
 export function recordCartViewTelemetry(input: {
   loadMs?: number;
   cartCount?: number;

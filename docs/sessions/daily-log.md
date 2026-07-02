@@ -25,3 +25,10 @@ Next: S005 View cart
 - Functional Pass 8.9 · e2e 10/10 · tracker + rollup updated
 - Cart page telemetry `S005/cart_view`; header count = item qty total
 
+
+### Consumer Checkout — S006 Checkout start
+
+- New mission PV Wave 2; Browse S001–S005 frozen
+- Functional Pass 8.7 · critical impact · 24 min time saved baseline
+- e2e 10/10 · API check PASS · reports in `s006-checkout-start/`
+

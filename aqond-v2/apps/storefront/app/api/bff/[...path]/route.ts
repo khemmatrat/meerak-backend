@@ -57,6 +57,14 @@ async function handle(req: NextRequest, ctx: { params: { path: string[] } }) {
     if (local) return local;
   }
 
+  if (
+    preferLocalShopCart() &&
+    (path === 'v1/checkout' || path.startsWith('v1/checkout?') || path === 'v1/wallet' || path.startsWith('v1/wallet?'))
+  ) {
+    const local = await tryLocalBff(path, req, init.method, bodyText);
+    if (local) return local;
+  }
+
   try {
     const res = await fetch(url, init);
     const body = await res.text();
@@ -253,7 +261,14 @@ async function tryLocalBff(
     return NextResponse.json({ ...cart, owner_id: qOwner });
   }
   if (path === 'v1/wallet' || path.startsWith('v1/wallet?')) {
-    return NextResponse.json({ balance_micro: 0, coins: 0, coupons: [], owner_id: owner });
+    const qOwner = new URL(req.url).searchParams.get('owner_id') || owner;
+    return NextResponse.json({
+      balance_micro: 125_000,
+      coins: 50,
+      coupons: [{ code: 'WALLET10', label: 'ลด ฿10 จากกระเป๋า' }],
+      owner_id: qOwner,
+      source: 'local-dev',
+    });
   }
   if (path.startsWith('v1/product')) {
     const payload = await buildLocalHomePayload();

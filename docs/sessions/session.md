@@ -29,3 +29,12 @@ Resume S005 when ready after Wave 1 review.
 - **Registry:** `docs/platform-validation/BASELINE-REGISTRY.md`
 - **Next PV:** S005 View cart (after baseline tag applied)
 
+
+## Consumer Checkout Mission — S006 (2026-07-02)
+
+**New mission** (separate from Browse baseline 001).  
+**S006 Checkout start:** 🟡 Functional Pass · Experience **8.7** · e2e **10/10**  
+**Validated:** cart summary, address, shipping, coupons, wallet, payments preview, CTA validation, telemetry  
+**No order/payment processing** in S006 scope.  
+**Next:** S007 Place order (when approved)
+
