@@ -111,3 +111,19 @@ Reproduce:
 - `pv-3/s004-hardening/`
 
 *Snapshot: 2026-07-02 · PV-2 Wave 1*
+
+---
+
+## Platform Regression — S001–S007 (2026-07-02)
+
+| Metric | Value |
+|--------|-------|
+| **Suite** | S001–S007 android-chrome |
+| **Result** | **70 / 71 PASS** |
+| **Blocking** | **0** |
+| **Known flake** | FLAKE-001 (S001 skeleton timing — accepted) |
+| **Build** | `9db705ef` |
+
+S007 Place Order marked **Stable**. S001 **frozen** until Production Build Validation.
+
+See: [REGRESSION-DASHBOARD.md](../REGRESSION-DASHBOARD.md) · [KNOWN-ISSUES-REGISTRY.md](../KNOWN-ISSUES-REGISTRY.md)

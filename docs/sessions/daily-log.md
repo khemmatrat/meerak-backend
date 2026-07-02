@@ -38,3 +38,9 @@ Next: S005 View cart
 - Functional Pass 8.8 · e2e 16/16 (android+iphone) · API check PASS
 - Order placement UX: success on My Orders, cart cleared, stock decrement, idempotency
 
+
+### PV — Regression 70/71 + FLAKE-001 accepted
+
+- S007 Stable; S001 frozen until prod build validation
+- Known Issues Registry + Regression Dashboard added
+

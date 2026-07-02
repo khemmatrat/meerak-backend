@@ -76,4 +76,5 @@ wave,mission_id,scenario_id,step,expected,actual,step_status,scenario_grade,expe
 2,M-001,S007,9,Cart cleared,BFF cart count 0 post-place,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,clearLocalCart,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
 2,M-001,S007,10,My Orders list,order-card testid,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,orders page,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
 2,M-001,S007,11,API validation,pv-s007-check idempotency+stock,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s007-check.mjs,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
-2,M-001,S007,12,Regression S001–S007,Browse frozen + checkout,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s00x regression,,PV-3-Checkout,2026-07-02T06:43:27.020Z,a43ad5dc,local-dev:3003
+2,M-001,S007,12,Regression S001–S007,70/71 PASS FLAKE-001 accepted,✅,🟡 Functional Pass,8.8,critical,28,8.5,9,8.5,8.5,9,,,pv-s00x 70/71 9db705ef,,PV-3-Checkout,2026-07-02T13:47:00.000Z,9db705ef,local-dev:3003
+

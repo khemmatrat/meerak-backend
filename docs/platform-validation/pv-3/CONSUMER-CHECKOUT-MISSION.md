@@ -18,8 +18,16 @@ Speed · Confidence · Clarity · Error Recovery · Business Impact · Time Save
 | Scenario | Title | Grade | Experience | Status |
 |----------|-------|-------|------------|--------|
 | S006 | Checkout start | 🟡 Functional Pass | 8.7 | **Complete** |
-| S007 | Place order | 🟡 Functional Pass | 8.8 | **Complete** |
+| S007 | Place order | 🟡 Functional Pass | 8.8 | **Stable** |
 | S008 | Payment flow | — | — | Not started |
 | S009 | Payment verify | — | — | Not started |
 | S010 | Payment result | — | — | Not started |
 
+
+---
+
+## Regression (S001–S007)
+
+**70/71 PASS** · FLAKE-001 accepted (S001 skeleton) · **S007 Stable**
+
+Next: **S008 — Payment Processing** (await review)

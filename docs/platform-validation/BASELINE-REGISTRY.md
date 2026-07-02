@@ -73,3 +73,11 @@ cd aqond-v2/apps/storefront && npx playwright test e2e/pv-s00*.spec.ts --project
 ---
 
 *Maintainers: append a row when a new baseline tag is created. Never retag or force-push baselines.*
+
+---
+
+## Regression governance (2026-07-02)
+
+- **S001–S007 regression:** 70/71 PASS · [REGRESSION-DASHBOARD.md](REGRESSION-DASHBOARD.md)
+- **FLAKE-001:** S001 skeleton — Accepted · [KNOWN-ISSUES-REGISTRY.md](KNOWN-ISSUES-REGISTRY.md)
+- **S007:** Stable · **S008** next (Payment Processing)

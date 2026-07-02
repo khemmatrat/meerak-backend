@@ -45,6 +45,16 @@ Baseline captured **before Merge Checkout (S005+)**. Use this tag to answer: *"W
 
 ---
 
+
+## [regression-2026-07-02] — S001–S007 regression accounting
+
+- **Result:** 70/71 PASS (android-chrome)
+- **FLAKE-001:** S001 skeleton timing — **Accepted**, no blocking impact
+- **S007:** marked **Stable**
+- **S001:** frozen until Production Build Validation
+- **Next:** S008 Payment Processing (await review)
+
 ## [Unreleased]
 
 - Baseline 002 — Checkout (S005–S010) — planned after Wave 1 checkout PV
+

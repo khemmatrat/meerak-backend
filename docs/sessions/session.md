@@ -46,3 +46,21 @@ Resume S005 when ready after Wave 1 review.
 - **Validated:** place CTA, loading, idempotency, success banner, orders list, cart clear, stock, COD payment state, retry, refresh/back, telemetry
 - **Commit stop point:** separate from S008 — await review
 
+
+## PV Regression accounting (2026-07-02)
+
+- **S001–S007:** 70/71 PASS (android-chrome, build `9db705ef`)
+- **FLAKE-001:** S001 skeleton timing — Accepted, no impact — **do not spend time on S001 now**
+- **S001 frozen** until Production Build Validation
+- **S007:** marked **Stable**
+- **Next mission:** S008 Payment Processing (await review)
+- Registry: `docs/platform-validation/KNOWN-ISSUES-REGISTRY.md`
+- Dashboard: `docs/platform-validation/REGRESSION-DASHBOARD.md`
+
+
+## PV Governance — S007 sealed (2026-07-02)
+
+- **Rule PV-001:** Stable scenarios (S004, S007) — no changes unless security / corruption / blocking regression / approved change
+- **STABLE-SCENARIOS.md** + **GOVERNANCE.md** published
+- **Next:** S008 Payment Processing (S001–S007 sealed)
+
