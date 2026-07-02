@@ -107,6 +107,28 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordPaymentUiTelemetry(input: {
+  loadMs?: number;
+  orderIds?: string[];
+  amount?: string;
+  ref?: string;
+  paymentMethod?: string;
+  expired?: boolean;
+  error?: string | null;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('S008', 'payment_ui', {
+    loadMs: input.loadMs,
+    error: input.error,
+    productCount: input.orderIds?.length,
+    query: input.ref,
+    source: input.expired
+      ? 'expired'
+      : input.paymentMethod || input.amount || 'payment_ui',
+    traceId: input.traceId,
+  });
+}
+
 export function recordPlaceOrderTelemetry(input: {
   loadMs?: number;
   orderId?: string;
