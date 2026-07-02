@@ -97,6 +97,15 @@ export const SCENARIO_BUSINESS_CATALOG: Record<string, ScenarioBusinessMeta> = {
     time_saved_minutes: 22,
     module: 'marketplace',
   },
+  S009: {
+    scenario_id: 'S009',
+    mission_id: 'M-001',
+    surface: 'payment_verify',
+    title: 'Payment verify',
+    business_impact: 'critical',
+    time_saved_minutes: 20,
+    module: 'marketplace',
+  },
   S038: {
     scenario_id: 'S038',
     mission_id: 'M-005',

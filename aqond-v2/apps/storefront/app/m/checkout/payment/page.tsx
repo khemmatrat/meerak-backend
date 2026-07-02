@@ -9,7 +9,7 @@ import {
   type CheckoutPaymentSession,
   type PaymentResultSession,
 } from '@/lib/paymentQr';
-import { recordPaymentUiTelemetry } from '@/lib/experience/scenarioTelemetry';
+import { recordPaymentUiTelemetry, recordPaymentVerifyTelemetry } from '@/lib/experience/scenarioTelemetry';
 
 export default function CheckoutPaymentPage() {
   const router = useRouter();
@@ -72,6 +72,7 @@ export default function CheckoutPaymentPage() {
       return;
     }
     setConfirming(true);
+    const t0 = performance.now();
     try {
       const res = await fetch('/api/checkout/payment/verify', {
         method: 'POST',
@@ -86,6 +87,14 @@ export default function CheckoutPaymentPage() {
       });
       const data = await res.json().catch(() => ({}));
       const status = (data.status || 'failed') as PaymentResultSession['status'];
+      recordPaymentVerifyTelemetry({
+        loadMs: Math.round(performance.now() - t0),
+        orderIds: session.orderIds,
+        ref: session.action.ref,
+        verifyStatus: status,
+        duplicate: Boolean(data.duplicate),
+        error: status === 'failed' || status === 'wrong_type' ? data.message : null,
+      });
       goResult({
         status,
         amount: session.action.amount,
@@ -107,8 +116,9 @@ export default function CheckoutPaymentPage() {
   const handleDevSkip = useCallback(async () => {
     if (!session || confirming) return;
     setConfirming(true);
+    const t0 = performance.now();
     try {
-      await fetch('/api/checkout/payment/verify', {
+      const res = await fetch('/api/checkout/payment/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -118,6 +128,14 @@ export default function CheckoutPaymentPage() {
           expires_at: session.expiresAt,
           amount: session.action.amount,
         }),
+      });
+      const data = await res.json().catch(() => ({}));
+      recordPaymentVerifyTelemetry({
+        loadMs: Math.round(performance.now() - t0),
+        orderIds: session.orderIds,
+        ref: session.action.ref,
+        verifyStatus: 'success',
+        duplicate: Boolean(data.duplicate),
       });
       goResult({
         status: 'success',

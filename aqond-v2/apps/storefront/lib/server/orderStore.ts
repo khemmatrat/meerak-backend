@@ -167,6 +167,12 @@ export async function attachTracking(orderId: string, trackingNo: string, carrie
   return hit;
 }
 
+export async function readOrdersByIds(orderIds: string[]): Promise<StoredOrder[]> {
+  const orders = await readOrders();
+  const wanted = new Set(orderIds.filter(Boolean));
+  return orders.filter((o) => wanted.has(o.order_id));
+}
+
 export async function markOrdersPaymentStatus(
   orderIds: string[],
   paymentStatus: 'paid' | 'pending' | 'failed',

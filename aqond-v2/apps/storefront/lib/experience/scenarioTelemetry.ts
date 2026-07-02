@@ -107,6 +107,27 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordPaymentVerifyTelemetry(input: {
+  loadMs?: number;
+  orderIds?: string[];
+  ref?: string;
+  verifyStatus?: string;
+  duplicate?: boolean;
+  error?: string | null;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('S009', 'payment_verify', {
+    loadMs: input.loadMs,
+    error: input.error,
+    productCount: input.orderIds?.length,
+    query: input.ref,
+    source: input.duplicate
+      ? 'duplicate'
+      : input.verifyStatus || 'verify',
+    traceId: input.traceId,
+  });
+}
+
 export function recordPaymentUiTelemetry(input: {
   loadMs?: number;
   orderIds?: string[];
