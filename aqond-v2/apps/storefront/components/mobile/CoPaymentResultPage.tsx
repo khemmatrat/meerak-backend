@@ -45,16 +45,27 @@ export function CoPaymentResultPage({ result, onBack }: Props) {
         <h1 data-testid="checkout-payment-result-title">
           {isSuccess ? 'ชำระเงินสำเร็จแล้ว' : fail.title}
         </h1>
-        <p>{result.message || (isSuccess ? 'ระบบได้รับการชำระเงินของคุณแล้ว' : fail.sub)}</p>
-        {amountLabel && <p className="tt-co-pay-result-amount">{amountLabel}</p>}
-        {result.ref && <p className="tt-co-pay-result-ref">Ref. {result.ref}</p>}
+        <p data-testid="checkout-payment-result-message">
+          {result.message || (isSuccess ? 'ระบบได้รับการชำระเงินของคุณแล้ว' : fail.sub)}
+        </p>
+        {amountLabel && (
+          <p className="tt-co-pay-result-amount" data-testid="checkout-payment-result-amount">
+            {amountLabel}
+          </p>
+        )}
+        {result.ref && (
+          <p className="tt-co-pay-result-ref" data-testid="checkout-payment-result-ref">
+            Ref. {result.ref}
+          </p>
+        )}
         <div className="tt-co-pay-result-actions">
-          <Link href="/m/home" className="tt-co-pay-result-btn outline">
+          <Link href="/m/home" className="tt-co-pay-result-btn outline" data-testid="checkout-payment-result-home-cta">
             ช้อปต่อ
           </Link>
           <Link
             href={isSuccess ? '/m/orders?tab=toship' : '/m/orders?tab=topay'}
             className="tt-co-pay-result-btn outline"
+            data-testid="checkout-payment-result-orders-cta"
           >
             {isSuccess ? 'ดูคำสั่งซื้อ' : 'ชำระใหม่'}
           </Link>

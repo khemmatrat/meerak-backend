@@ -107,6 +107,24 @@ export function recordProductTelemetry(input: {
   });
 }
 
+export function recordPaymentResultTelemetry(input: {
+  loadMs?: number;
+  resultStatus?: string;
+  amount?: string;
+  ref?: string;
+  error?: string | null;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('S010', 'payment_result', {
+    loadMs: input.loadMs,
+    error: input.error,
+    query: input.ref,
+    source: input.resultStatus || 'result',
+    networkProfile: input.amount,
+    traceId: input.traceId,
+  });
+}
+
 export function recordPaymentVerifyTelemetry(input: {
   loadMs?: number;
   orderIds?: string[];
