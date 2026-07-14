@@ -1,0 +1,6 @@
+{
+  "budgets": [
+    { "path": "/*", "maxBundleKb": 350, "maxLcpMs": 2500, "maxTtiMs": 3800 }
+  ],
+  "note": "P169 perf budgets — enforce in CI with bundle analyzer + Lighthouse"
+}

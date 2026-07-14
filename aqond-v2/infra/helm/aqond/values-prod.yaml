@@ -1,0 +1,35 @@
+global:
+  env: prod
+  imageTag: prod
+  namespace: aqond-prod
+
+ingress:
+  host: api.aqond.example.com
+  tls:
+    enabled: true
+    secretName: aqond-prod-tls
+
+autoscaling:
+  hpa:
+    minReplicas: 3
+    maxReplicas: 50
+  keda:
+    orderMinReplicas: 4
+    orderMaxReplicas: 40
+
+mesh:
+  enabled: true
+
+progressiveDelivery:
+  enabled: true
+
+citus:
+  enabled: true
+
+security:
+  networkPolicy: true
+  podSecurity:
+    enforce: restricted
+
+observability:
+  enabled: true

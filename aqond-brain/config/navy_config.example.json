@@ -1,0 +1,20 @@
+{
+  "competitors": [
+    {
+      "name": "Competitor A",
+      "url": "https://example.com/competitor-a",
+      "type": "website"
+    },
+    {
+      "name": "Competitor B",
+      "url": "https://example.com/competitor-b",
+      "type": "website"
+    }
+  ],
+  "rss_keywords": [
+    "Startup Thailand",
+    "Freelance Tax",
+    "หางาน"
+  ],
+  "google_news_rss_base": "https://news.google.com/rss/search?q={query}&hl=th&gl=TH&ceid=TH:th"
+}

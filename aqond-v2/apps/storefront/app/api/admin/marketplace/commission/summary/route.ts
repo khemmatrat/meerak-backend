@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyAdminKey } from '@/lib/server/merchantAdmin';
+import { getMarketplaceCommissionSummary } from '@/lib/server/marketplaceCommissionAdmin';
+
+function check(req: NextRequest) {
+  const key = req.headers.get('x-admin-key') || req.nextUrl.searchParams.get('admin_key');
+  return verifyAdminKey(key);
+}
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  if (!check(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const summary = await getMarketplaceCommissionSummary({
+    from: req.nextUrl.searchParams.get('from'),
+    to: req.nextUrl.searchParams.get('to'),
+    group: req.nextUrl.searchParams.get('group'),
+  });
+  return NextResponse.json(summary);
+}

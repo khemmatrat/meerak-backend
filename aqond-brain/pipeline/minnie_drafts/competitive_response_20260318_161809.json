@@ -1,0 +1,8 @@
+{
+  "trigger": "spy_report_updated",
+  "source_file": "pipeline/spy_report.json",
+  "created_at": "2026-03-18T16:18:09.707795+00:00",
+  "action": "draft_competitive_response",
+  "output_folder": "pipeline/minnie_drafts",
+  "message": "กรุณาเขียน Competitive Response Content ตามข้อมูลใน spy_report.json"
+}

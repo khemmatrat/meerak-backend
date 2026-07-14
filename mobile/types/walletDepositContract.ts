@@ -45,3 +45,40 @@ export interface WalletDepositCreateResponse {
   error?: string;
   code?: string;
 }
+
+/** Nested shape from backend reconcilePaysoChargeIfPaid / queryPaysoWalletDepositStatus */
+export interface WalletDepositStatusReconcileQuery {
+  ok?: boolean;
+  statusCode?: number;
+  paid?: boolean;
+  status?: string | null;
+  error?: string | null;
+  userMessage?: string | null;
+  method?: string | null;
+  path?: string | null;
+  config_warning?: string | null;
+  [key: string]: unknown;
+}
+
+/** GET /api/wallet/deposit/status/:chargeId — field `reconcile` */
+export interface WalletDepositStatusReconcile {
+  checked?: boolean;
+  reason?: string;
+  paid?: boolean;
+  gatewayStatus?: string | null;
+  explain?: string | null;
+  creditError?: string | null;
+  query?: WalletDepositStatusReconcileQuery | null;
+  credited?: unknown;
+  [key: string]: unknown;
+}
+
+/** GET /api/wallet/deposit/status/:chargeId — 200 JSON */
+export interface WalletDepositStatusResponse {
+  charge_id: string;
+  amount: number;
+  status: string;
+  created_at?: string | null;
+  completed_at?: string | null;
+  reconcile?: WalletDepositStatusReconcile | null;
+}

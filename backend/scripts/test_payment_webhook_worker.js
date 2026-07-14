@@ -45,6 +45,12 @@ const rootDir = join(backendDir, '..');
 dotenv.config({ path: join(backendDir, '.env') });
 dotenv.config({ path: join(rootDir, '.env') });
 
+// This suite exercises webhook *business logic* with no signature verifier registered
+// (setSignatureVerifier(null)). Signature verification now fails closed by default, so we must
+// explicitly opt in to unverified processing here. Signature-specific behavior is covered by
+// test_payment_webhook_security.js.
+process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK = '1';
+
 const argv = process.argv.slice(2);
 const useUrl = argv.includes('--use-url') && process.env.DATABASE_URL;
 

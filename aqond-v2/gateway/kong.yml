@@ -1,0 +1,1071 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: kong-health
+    url: http://escrow-service:8091
+    routes:
+      - name: root-health
+        paths:
+          - /health
+        strip_path: false
+        methods:
+          - GET
+
+  - name: marketplace-upstream
+    url: http://marketplace-web:8080
+    connect_timeout: 60000
+    read_timeout: 120000
+    write_timeout: 120000
+    routes:
+      - name: marketplace-read
+        paths:
+          - /api/v1/marketplace
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: marketplace-write
+        paths:
+          - /api/v1/marketplace
+        strip_path: true
+        methods:
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 300
+          policy: local
+      # JWT on seller/admin write routes in P2b — catalog read is public for P2a shop
+
+  # LiveKit WebRTC: browsers connect ws://localhost:7880 directly (port 7880).
+  # All live API (token, F-Code, studio UI) → live-token-service below.
+
+  - name: live-token-service
+    url: http://live-token-service:8092
+    connect_timeout: 60000
+    read_timeout: 120000
+    write_timeout: 120000
+    routes:
+      - name: live-api
+        paths:
+          - /api/v1/live
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: live-commerce-service
+    url: http://live-commerce-svc:8097
+    connect_timeout: 60000
+    read_timeout: 300000
+    write_timeout: 300000
+    routes:
+      - name: live-commerce-api
+        paths:
+          - /api/v1/live-commerce
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: chat-upstream
+    url: http://chat-service:8093
+    routes:
+      - name: chat-api
+        paths:
+          - /api/v1/chat
+        strip_path: true
+
+  - name: voice-upstream
+    url: http://voice-service:8090
+    connect_timeout: 60000
+    read_timeout: 300000
+    write_timeout: 300000
+    routes:
+      - name: voice-api
+        paths:
+          - /api/v1/voice
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: escrow-upstream
+    url: http://escrow-service:8091
+    routes:
+      - name: escrow-api
+        paths:
+          - /api/v1/escrow
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: key-auth
+            config:
+              key_names:
+                - X-Escrow-Api-Key
+              hide_credentials: false
+
+  - name: cms-upstream
+    url: http://cms-service:8094
+    connect_timeout: 60000
+    read_timeout: 600000
+    write_timeout: 600000
+    routes:
+      - name: cms-api
+        paths:
+          - /api/v1/cms
+        strip_path: true
+
+  - name: automation-upstream
+    url: http://n8n:5678
+    routes:
+      - name: automation-webhook
+        paths:
+          - /api/v1/automation
+        strip_path: true
+
+  - name: analytics-upstream
+    url: http://analytics-service:8095
+    connect_timeout: 60000
+    read_timeout: 300000
+    write_timeout: 300000
+    routes:
+      - name: analytics-api
+        paths:
+          - /api/v1/analytics
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: notify-upstream
+    url: http://notify-service:8096
+    routes:
+      - name: notify-legacy-api
+        paths:
+          - /api/v1/notify-legacy
+        strip_path: true
+
+  - name: bagisto-admin-upstream
+    url: http://bagisto-app:80
+    connect_timeout: 120000
+    read_timeout: 600000
+    write_timeout: 600000
+    routes:
+      - name: bagisto-admin
+        paths:
+          - /api/v1/bagisto-admin
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+
+  - name: ai-core-upstream
+    url: http://ai-core:8100
+    connect_timeout: 60000
+    read_timeout: 600000
+    write_timeout: 600000
+    routes:
+      - name: ai-api
+        paths:
+          - /api/v1/ai
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: key-auth
+            config:
+              key_names:
+                - X-AI-Core-Api-Key
+              hide_credentials: false
+
+  - name: foundation-svc
+    url: http://foundation-svc:8101
+    routes:
+      - name: foundation-api
+        paths:
+          - /api/v1/foundation
+        strip_path: true
+
+  - name: catalog-svc
+    url: http://catalog-svc:8110
+    connect_timeout: 60000
+    read_timeout: 120000
+    routes:
+      - name: catalog-read
+        paths:
+          - /api/v1/catalog
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: catalog-write
+        paths:
+          - /api/v1/catalog
+        strip_path: true
+        methods:
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+
+  - name: inventory-svc
+    url: http://inventory-svc:8111
+    routes:
+      - name: inventory-api
+        paths:
+          - /api/v1/inventory
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 1200
+          policy: local
+
+  - name: order-svc
+    url: http://order-svc:8113
+    connect_timeout: 60000
+    read_timeout: 120000
+    routes:
+      - name: order-api
+        paths:
+          - /api/v1/orders
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 900
+          policy: local
+
+  - name: readmodel-svc
+    url: http://readmodel-svc:8114
+    routes:
+      - name: readmodel-api
+        paths:
+          - /api/v1/read
+        strip_path: true
+        methods:
+          - GET
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 3000
+          policy: local
+
+  - name: feed-svc
+    url: http://feed-svc:8115
+    routes:
+      - name: feed-read
+        paths:
+          - /api/v1/feed
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: feed-write
+        paths:
+          - /api/v1/feed
+        strip_path: true
+        methods:
+          - POST
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 3000
+          policy: local
+
+  - name: video-svc
+    url: http://video-svc:8116
+    connect_timeout: 60000
+    read_timeout: 600000
+    write_timeout: 600000
+    routes:
+      - name: video-api
+        paths:
+          - /api/v1/video
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 600
+          policy: local
+
+  - name: rec-svc
+    url: http://rec-svc:8117
+    routes:
+      - name: rec-api
+        paths:
+          - /api/v1/rec
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 3000
+          policy: local
+
+  - name: payment-svc
+    url: http://payment-svc:8120
+    routes:
+      - name: payment-api
+        paths:
+          - /api/v1/payment
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: checkout-svc
+    url: http://checkout-svc:8121
+    routes:
+      - name: checkout-api
+        paths:
+          - /api/v1/checkout
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: search-svc
+    url: http://search-svc:8122
+    routes:
+      - name: search-api
+        paths:
+          - /api/v1/search
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: recsys-svc
+    url: http://recsys-svc:8125
+    routes:
+      - name: recsys-api
+        paths:
+          - /api/v1/recsys
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: reviews-svc
+    url: http://reviews-svc:8123
+    routes:
+      - name: reviews-api
+        paths:
+          - /api/v1/reviews
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: trust-svc
+    url: http://trust-svc:8124
+    routes:
+      - name: trust-api
+        paths:
+          - /api/v1/trust
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  # ---- Epoch 8 (P111-P140) global expansion ----
+  - name: locale-svc
+    url: http://locale-svc:8126
+    routes:
+      - name: locale-api
+        paths:
+          - /api/v1/locale
+          - /api/v1/messages
+          - /api/v1/product-i18n
+          - /api/v1/price
+          - /api/v1/tax
+          - /api/v1/invoice
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: shipping-svc
+    url: http://shipping-svc:8127
+    routes:
+      - name: shipping-api
+        paths:
+          - /api/v1/shipping
+          - /api/v1/customs
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: address-svc
+    url: http://address-svc:8128
+    routes:
+      - name: address-api
+        paths:
+          - /api/v1/address
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: compliance-svc
+    url: http://compliance-svc:8129
+    routes:
+      - name: compliance-api
+        paths:
+          - /api/v1/residency
+          - /api/v1/dsr
+          - /api/v1/consent
+          - /api/v1/kyc
+          - /api/v1/aml
+          - /api/v1/age
+          - /api/v1/parental
+          - /api/v1/returns
+          - /api/v1/retention
+          - /api/v1/treasury
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: policy-svc
+    url: http://policy-svc:8130
+    routes:
+      - name: policy-api
+        paths:
+          - /api/v1/flags
+          - /api/v1/policy
+          - /api/v1/legal
+          - /api/v1/payment-methods
+          - /api/v1/reports
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: notification-svc
+    url: http://notification-svc:8131
+    routes:
+      - name: notification-api
+        paths:
+          - /api/v1/notify
+          - /api/v1/notifications
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  # ---- Epoch 9 (P141-P170) storefront BFF + cart + settings ----
+  - name: bff-svc
+    url: http://bff-svc:8132
+    routes:
+      - name: bff-api
+        paths:
+          - /api/v1/bff
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 30000
+          policy: local
+
+  - name: cart-svc
+    url: http://cart-svc:8133
+    routes:
+      - name: cart-api
+        paths:
+          - /api/v1/cart
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: food-svc
+    url: http://food-svc:8141
+    routes:
+      - name: food-read
+        paths:
+          - /api/v1/food
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: food-write
+        paths:
+          - /api/v1/food
+        strip_path: true
+        methods:
+          - POST
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: dispatch-svc
+    url: http://dispatch-svc:8142
+    routes:
+      - name: dispatch-read
+        paths:
+          - /api/v1/dispatch
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: dispatch-write
+        paths:
+          - /api/v1/dispatch
+        strip_path: true
+        methods:
+          - POST
+          - PATCH
+          - PUT
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: merchant-ops-svc
+    url: http://merchant-ops-svc:8143
+    routes:
+      - name: merchant-ops-read
+        paths:
+          - /api/v1/merchant-ops
+        strip_path: true
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+      - name: merchant-ops-write
+        paths:
+          - /api/v1/merchant-ops
+        strip_path: true
+        methods:
+          - POST
+          - PATCH
+          - DELETE
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: settings-svc
+    url: http://settings-svc:8134
+    routes:
+      - name: settings-api
+        paths:
+          - /api/v1/settings
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  # ---- Epoch 10 (P171-P200) SRE / scale / readiness ----
+  - name: sre-svc
+    url: http://sre-svc:8135
+    routes:
+      - name: sre-api
+        paths:
+          - /api/v1/sre
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  # ---- Epoch 11 (P201-P230) production EXP track ----
+  - name: promotions-svc
+    url: http://promotions-svc:8136
+    routes:
+      - name: promotions-api
+        paths:
+          - /api/v1/promotions
+        strip_path: true
+        methods:
+          - GET
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: coupon-svc
+    url: http://coupon-svc:8137
+    routes:
+      - name: coupon-api
+        paths:
+          - /api/v1/coupons
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: account-svc
+    url: http://account-svc:8138
+    routes:
+      - name: account-api
+        paths:
+          - /api/v1/account
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: coins-svc
+    url: http://coins-svc:8139
+    routes:
+      - name: coins-api
+        paths:
+          - /api/v1/coins
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: creator-svc
+    url: http://creator-svc:8140
+    routes:
+      - name: creator-api
+        paths:
+          - /api/v1/creator
+        strip_path: true
+        methods:
+          - GET
+          - POST
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: wallet-svc
+    url: http://wallet-svc:8112
+    routes:
+      - name: wallet-api
+        paths:
+          - /api/v1/wallet
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: key-auth
+            config:
+              key_names:
+                - X-Wallet-Api-Key
+                - X-Escrow-Api-Key
+              hide_credentials: false
+
+  - name: hermes-orchestrator
+    url: http://hermes-orchestrator:8120
+    connect_timeout: 60000
+    read_timeout: 600000
+    routes:
+      - name: hermes-api
+        paths:
+          - /api/v1/hermes
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: key-auth
+            config:
+              key_names:
+                - X-Hermes-Api-Key
+                - X-AI-Core-Api-Key
+              hide_credentials: false
+
+  # Legacy meerak (Cloud 2) — frozen paths; render-kong-config.ps1 → https://api.aqond.com
+  - name: cloud2-legacy-upstream
+    url: https://api.aqond.com
+    connect_timeout: 60000
+    read_timeout: 180000
+    write_timeout: 180000
+    routes:
+      - name: cloud2-auth
+        paths: [/api/auth]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-profile
+        paths: [/api/profile]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-kyc
+        paths: [/api/kyc]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-users
+        paths: [/api/users]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-jobs
+        paths: [/api/jobs]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-bookings
+        paths: [/api/bookings]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-ads
+        paths: [/api/ads]
+        strip_path: false
+        methods: [GET, POST, OPTIONS]
+      - name: cloud2-ads-admin
+        paths: [/api/ads-admin]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-videos
+        paths: [/api/videos]
+        strip_path: false
+        methods: [GET, POST, PATCH, DELETE, OPTIONS]
+      - name: cloud2-notifications
+        paths: [/api/notifications]
+        strip_path: false
+        methods: [GET, POST, OPTIONS]
+      - name: cloud2-wallet
+        paths: [/api/wallet]
+        strip_path: false
+        methods: [GET, POST, PATCH, OPTIONS]
+      - name: cloud2-vip
+        paths: [/api/vip]
+        strip_path: false
+        methods: [GET, POST, OPTIONS]
+      - name: cloud2-stories
+        paths: [/api/stories]
+        strip_path: false
+        methods: [GET, POST, PATCH, DELETE, OPTIONS]
+      - name: cloud2-webhooks
+        paths: [/api/webhooks]
+        strip_path: false
+        methods: [POST, OPTIONS]
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 300
+          policy: local
+
+  # v2 public aliases (parallel to /api/v1/* — strip_path keeps internal /v1/... paths)
+  - name: v2-merchant-bff
+    url: http://bff-svc:8132
+    routes:
+      - name: v2-merchant-read
+        paths: [/api/v2/merchant]
+        strip_path: true
+        methods: [GET, HEAD, OPTIONS]
+      - name: v2-merchant-write
+        paths: [/api/v2/merchant]
+        strip_path: true
+        methods: [POST, PUT, PATCH, DELETE]
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify: [exp]
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: v2-tiktok-bff
+    url: http://bff-svc:8132
+    routes:
+      - name: v2-tiktok-api
+        paths: [/api/v2/tiktok]
+        strip_path: true
+        methods: [GET, POST, OPTIONS]
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 12000
+          policy: local
+
+  - name: v2-rider-dispatch
+    url: http://dispatch-svc:8142
+    routes:
+      - name: v2-rider-merch-read
+        paths: [/api/v2/rider-merch]
+        strip_path: true
+        methods: [GET, HEAD, OPTIONS]
+      - name: v2-rider-merch-write
+        paths: [/api/v2/rider-merch]
+        strip_path: true
+        methods: [POST, PATCH, DELETE]
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify: [exp]
+              key_claim_name: iss
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 6000
+          policy: local
+
+  - name: v2-food-alias
+    url: http://food-svc:8141
+    routes:
+      - name: v2-food-read
+        paths: [/api/v2/merchant/food]
+        strip_path: true
+        methods: [GET, HEAD, OPTIONS]
+      - name: v2-food-write
+        paths: [/api/v2/merchant/food]
+        strip_path: true
+        methods: [POST, DELETE]
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify: [exp]
+              key_claim_name: iss
+
+  - name: v2-merchant-ops-alias
+    url: http://merchant-ops-svc:8143
+    routes:
+      - name: v2-merchant-ops-read
+        paths: [/api/v2/merchant/ops]
+        strip_path: true
+        methods: [GET, HEAD, OPTIONS]
+      - name: v2-merchant-ops-write
+        paths: [/api/v2/merchant/ops]
+        strip_path: true
+        methods: [PATCH, POST]
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify: [exp]
+              key_claim_name: iss
+
+consumers:
+  - username: meerak-mobile
+    jwt_secrets:
+      - key: meerak-jwt
+        secret: "8t4hZzeLtcRfS82bH4tBt_TG1WDcA_YtQ99rpS6icGo"
+  - username: aqond-service
+    jwt_secrets:
+      - key: aqond-jwt-issuer
+        secret: "8t4hZzeLtcRfS82bH4tBt_TG1WDcA_YtQ99rpS6icGo"
+  - username: escrow-client
+    keyauth_credentials:
+      - key: hbdeUGbfRCFWGQaB1jCHTxsGop6Athrt
+  - username: ai-core-client
+    keyauth_credentials:
+      - key: aqx5h88dF5aH6ilt15AI9irOlbwenOFw
+  - username: cms-client
+    keyauth_credentials:
+      - key: 4qbjLrVUvu-3Az7wOwezuwXZ9RHom8Yw
+  - username: merchant-sync-client
+    keyauth_credentials:
+      - key: Vdcco9waSweKs4j3e6cdYgEQoJHIXQLS
+  - username: live-merchant-client
+    keyauth_credentials:
+      - key: xLP9nfTHNSdLStoTALW3kFtXwXOUfmGO
+  - username: analytics-client
+    keyauth_credentials:
+      - key: v47mTrxEo9tNomQEo_WVdk734q-itoZp
+  - username: notify-client
+    keyauth_credentials:
+      - key: bwp5CzHuonu9GzUFJsrwNqY6xM4WvrMY
+
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 600
+      policy: local
+  - name: cors
+    config:
+      origins:
+        - http://localhost:8000
+        - http://localhost:3000
+        - http://127.0.0.1:3000
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Authorization
+        - Content-Type
+        - X-Escrow-Api-Key
+        - X-Notify-Api-Key
+        - X-AI-Core-Api-Key
+        - X-CMS-Api-Key
+        - X-Live-Merchant-Api-Key
+        - X-Analytics-Api-Key
+        - X-Bagisto-Sync-Secret
+        - X-Wallet-Api-Key
+        - X-Hermes-Api-Key
+        - X-Aqond-Region
+        - X-User-Id
+        - X-Session-Id
+        - Accept-Language
+        - Idempotency-Key
+      credentials: true

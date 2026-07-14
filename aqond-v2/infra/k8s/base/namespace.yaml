@@ -1,0 +1,10 @@
+# P62: Raw K8s base — prefer Helm for full stack (P63)
+# Minimal namespace for kind/minikube bootstrap
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aqond-dev
+  labels:
+    aqond.io/part-of: aqond-v2
+    aqond.io/env: dev
+    pod-security.kubernetes.io/enforce: restricted

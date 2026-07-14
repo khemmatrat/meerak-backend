@@ -1,0 +1,10 @@
+# EditorConfig - ใช้ UTF-8 ทุกไฟล์ ป้องกัน encoding ผิด
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{ts,tsx,js,jsx,json,css,html}]
+charset = utf-8

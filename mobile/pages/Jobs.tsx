@@ -27,10 +27,11 @@ import { PreLaunchServiceBlock } from "../components/PreLaunchServiceBlock";
 export const Jobs: React.FC = () => {
   const [searchParams] = useSearchParams();
   const categoryFromUrl = searchParams.get("category") || "All";
+  const searchFromUrl = (searchParams.get("search") || "").trim();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState(categoryFromUrl);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(searchFromUrl);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
@@ -50,10 +51,12 @@ export const Jobs: React.FC = () => {
       if (cat === "All") {
         navigate("/jobs", { replace: true });
       } else {
-        navigate(`/jobs?category=${encodeURIComponent(cat)}`, { replace: true });
+        navigate(`/jobs?category=${encodeURIComponent(cat)}`, {
+          replace: true,
+        });
       }
     },
-    [navigate]
+    [navigate],
   );
 
   useEffect(() => {
@@ -72,6 +75,8 @@ export const Jobs: React.FC = () => {
   useEffect(() => {
     const urlCat = searchParams.get("category") || "All";
     setCategory(urlCat);
+    const urlSearch = (searchParams.get("search") || "").trim();
+    setSearchQuery(urlSearch);
   }, [searchParams]);
 
   useEffect(() => {
@@ -152,8 +157,12 @@ export const Jobs: React.FC = () => {
       <div className="flex flex-col space-y-4">
         <div className="flex justify-between items-center gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{t("jobs.title")}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{t("jobs.category_hub_sub")}</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {t("jobs.title")}
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {t("jobs.category_hub_sub")}
+            </p>
           </div>
 
           <div className="bg-white p-1 rounded-lg border border-gray-200 flex items-center shadow-sm shrink-0">
@@ -186,7 +195,9 @@ export const Jobs: React.FC = () => {
               <p className="text-xs font-bold uppercase tracking-wider text-emerald-700/90">
                 AQOND
               </p>
-              <h2 className="text-lg font-bold text-gray-900">{t("jobs.category_hub_title")}</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {t("jobs.category_hub_title")}
+              </h2>
             </div>
             <button
               type="button"
@@ -276,8 +287,12 @@ export const Jobs: React.FC = () => {
       {category !== "All" && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm">
           <p className="text-gray-800">
-            <span className="font-medium text-gray-600">{t("jobs.showing")}: </span>
-            <span className="font-bold text-emerald-800">{t(`cat.${category}`)}</span>
+            <span className="font-medium text-gray-600">
+              {t("jobs.showing")}:{" "}
+            </span>
+            <span className="font-bold text-emerald-800">
+              {t(`cat.${category}`)}
+            </span>
           </p>
           <button
             type="button"
@@ -336,7 +351,10 @@ export const Jobs: React.FC = () => {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-48 bg-gray-200 rounded-xl animate-pulse" />
+            <div
+              key={i}
+              className="h-48 bg-gray-200 rounded-xl animate-pulse"
+            />
           ))}
         </div>
       ) : (
@@ -344,7 +362,11 @@ export const Jobs: React.FC = () => {
           {viewMode === "list" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
               {jobs.map((job) => (
-                <Link to={`/jobs/${job.id}`} key={job.id} className="group block">
+                <Link
+                  to={`/jobs/${job.id}`}
+                  key={job.id}
+                  className="group block"
+                >
                   <div className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow p-6 h-full flex flex-col">
                     <div className="flex justify-between items-start mb-4">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
@@ -358,14 +380,17 @@ export const Jobs: React.FC = () => {
                     <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-emerald-600 transition-colors">
                       {job.title}
                     </h3>
-                    <p className="text-gray-500 text-sm mb-4 line-clamp-2 flex-1">{job.description}</p>
+                    <p className="text-gray-500 text-sm mb-4 line-clamp-2 flex-1">
+                      {job.description}
+                    </p>
 
                     <div className="flex items-center justify-between pt-4 border-t border-gray-50">
                       <div className="flex items-start text-gray-600 text-sm min-w-0 pr-2">
                         <MapPin size={16} className="mr-1 shrink-0 mt-0.5" />
                         <span className="line-clamp-2 break-words">
                           {job.location
-                            ? formatJobPrimaryAddress(job) || t("jobs.location_not_specified")
+                            ? formatJobPrimaryAddress(job) ||
+                              t("jobs.location_not_specified")
                             : t("jobs.location_not_specified")}
                         </span>
                       </div>
@@ -373,7 +398,9 @@ export const Jobs: React.FC = () => {
                         <DollarSign size={18} />
                         <span>
                           {job.price}{" "}
-                          <span className="text-xs font-normal text-gray-500">{t("detail.thb")}</span>
+                          <span className="text-xs font-normal text-gray-500">
+                            {t("detail.thb")}
+                          </span>
                         </span>
                       </div>
                     </div>
@@ -387,20 +414,28 @@ export const Jobs: React.FC = () => {
                     <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-2xl bg-white border border-emerald-100 shadow-sm mb-4">
                       <Filter className="h-7 w-7 text-emerald-500" />
                     </div>
-                    <h3 className="text-base font-bold text-gray-900">{t("jobs.empty_explore")}</h3>
-                    <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">{t("jobs.empty_explore_sub")}</p>
-                    <p className="mt-1 text-sm text-gray-500">{t("jobs.try_filter")}</p>
+                    <h3 className="text-base font-bold text-gray-900">
+                      {t("jobs.empty_explore")}
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">
+                      {t("jobs.empty_explore_sub")}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {t("jobs.try_filter")}
+                    </p>
                     <div className="mt-6 flex flex-wrap justify-center gap-2">
-                      {["Cleaning", "Driver", "Beauty", "IT_Support"].map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => popularPick(cat)}
-                          className="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition-colors"
-                        >
-                          {t(`cat.${cat}`)}
-                        </button>
-                      ))}
+                      {["Cleaning", "Driver", "Beauty", "IT_Support"].map(
+                        (cat) => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => popularPick(cat)}
+                            className="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition-colors"
+                          >
+                            {t(`cat.${cat}`)}
+                          </button>
+                        ),
+                      )}
                     </div>
                     <button
                       type="button"

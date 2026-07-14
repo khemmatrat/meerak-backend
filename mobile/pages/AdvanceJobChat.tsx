@@ -24,7 +24,11 @@ import type { JobAdvanceAPI, AdvanceApplicantWithUser, AdvanceJobMessageAPI } fr
 import { useAuth } from "../context/AuthContext";
 import { useNotification } from "../context/NotificationContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useMobileAppConfig } from "../context/MobileAppConfigContext";
+import { resolveJobBoardCopy } from "../utils/jobBoardCopy";
 import { isMockJobId, getMockJobById } from "../services/mockJobsForReview";
+import { formatDealStatusTh } from "../utils/advanceDealLabels";
+import { trackAdvanceEvent, advanceJobEventMeta } from "../utils/analytics";
 
 const SAFETY_MSG = "เพื่อความปลอดภัยและรับประกันรายได้ กรุณาชำระเงินผ่านระบบ AQOND เท่านั้น";
 
@@ -42,6 +46,8 @@ export const AdvanceJobChat: React.FC = () => {
   const { token, user } = useAuth();
   const { notify } = useNotification();
   const { t } = useLanguage();
+  const { config } = useMobileAppConfig();
+  const jobBoardCopy = resolveJobBoardCopy(config.remote);
   const [job, setJob] = useState<JobAdvanceAPI | null>(null);
   const [applicant, setApplicant] = useState<AdvanceApplicantWithUser | null>(null);
   const [messages, setMessages] = useState<AdvanceJobMessageAPI[]>([]);
@@ -68,6 +74,7 @@ export const AdvanceJobChat: React.FC = () => {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportBlockLoading, setReportBlockLoading] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   const currentUserId = user?.id ?? (user as any)?.userId;
   const isEmployer = job && (String(job.employer_id) === String(currentUserId) || String((user as any)?.userId) === String(job.employer_id));
@@ -111,7 +118,9 @@ export const AdvanceJobChat: React.FC = () => {
       if (j) setDealAmount(String(j.max_budget || j.min_budget || ""));
       try {
         const a = await getAdvanceJobApplicants(id, token);
-        const found = (a || []).find((x) => String(x.user_id) === String(talentId));
+        const found = (a?.applicants || []).find(
+          (x) => String(x.user_id) === String(talentId),
+        );
         setApplicant(found ?? null);
       } catch {
         setApplicant(null);
@@ -175,6 +184,18 @@ export const AdvanceJobChat: React.FC = () => {
   useEffect(() => {
     loadDeal();
   }, [loadDeal]);
+
+  useEffect(() => {
+    if (!id || loading) return;
+    trackAdvanceEvent(
+      "advance_chat_opened",
+      advanceJobEventMeta(job, {
+        job_id: id,
+        role: isEmployer ? "employer" : "talent",
+      }),
+      jobBoardCopy,
+    );
+  }, [id, loading]);
 
   useEffect(() => {
     if (showHistory) loadDealHistory();
@@ -371,26 +392,30 @@ export const AdvanceJobChat: React.FC = () => {
 
   if (loading && !job) {
     return (
-      <div className="luxury-card rounded-2xl p-12 text-center">
-        <Loader2 size={32} className="mx-auto animate-spin text-amber-400 mb-4" />
-        <p className="text-slate-400">กำลังโหลด...</p>
+      <div className="aqond-trust-theme jobboard-flow-theme min-h-screen">
+        <div className="luxury-card rounded-2xl p-12 text-center">
+          <Loader2 size={32} className="mx-auto animate-spin text-amber-400 mb-4" />
+          <p className="text-slate-400">กำลังโหลด...</p>
+        </div>
       </div>
     );
   }
 
   if (!job) {
     return (
-      <div className="luxury-card rounded-2xl p-8 text-center">
-        <p className="text-slate-400">ไม่พบงานนี้</p>
-        <Link to="/job-board" className="mt-4 inline-flex items-center gap-2 text-amber-400 hover:underline">
-          <ArrowLeft size={16} /> กลับ
-        </Link>
+      <div className="aqond-trust-theme jobboard-flow-theme min-h-screen">
+        <div className="luxury-card rounded-2xl p-8 text-center">
+          <p className="text-slate-400">ไม่พบงานนี้</p>
+          <Link to="/job-board" className="mt-4 inline-flex items-center gap-2 text-amber-400 hover:underline">
+            <ArrowLeft size={16} /> กลับ
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className="aqond-trust-theme jobboard-flow-theme jb-chat-page flex flex-col gap-4 pb-4 min-h-[100dvh]">
       <Link
         to={isEmployer ? `/job-board/${id}/manage` : `/job-board/${id}`}
         className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200"
@@ -406,6 +431,18 @@ export const AdvanceJobChat: React.FC = () => {
             <DollarSign size={14} />
             ฿{job.min_budget?.toLocaleString()} – ฿{job.max_budget?.toLocaleString()}
           </p>
+          {applicant?.quotation?.total_amount ? (
+            <p className="text-xs text-emerald-400 mt-1">
+              ใบเสนอของคุณ ฿{Number(applicant.quotation.total_amount).toLocaleString("th-TH")}
+              {applicant.quotation.timeline_days
+                ? ` · ${applicant.quotation.timeline_days} วัน`
+                : ""}
+            </p>
+          ) : deal ? (
+            <p className="text-xs text-blue-300 mt-1">
+              ดีล ฿{Number(deal.amount).toLocaleString("th-TH")} · {formatDealStatusTh(deal.status)}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
         <p className="text-sm text-slate-400 flex flex-wrap items-center gap-2">
@@ -448,7 +485,7 @@ export const AdvanceJobChat: React.FC = () => {
                   <button
                     onClick={() => {
                       setShowActionsMenu(false);
-                      if (confirm("ต้องการบล็อกผู้ใช้นี้หรือไม่? จะไม่เห็นข้อความหรือติดต่อได้อีก")) handleBlock();
+                      setShowBlockConfirm(true);
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-slate-700/50 flex items-center gap-2"
                   >
@@ -478,7 +515,7 @@ export const AdvanceJobChat: React.FC = () => {
             boxShadow: "0 0 20px rgba(212,175,55,0.15)",
           }}
         >
-          <p className="text-sm text-slate-400 mb-2">นายจ้างส่ง Deal มาให้คุณ</p>
+          <p className="text-sm text-slate-400 mb-2">นายจ้างส่งดีลมาให้คุณ</p>
           <p className="text-2xl font-bold text-amber-400 mb-2">฿{deal.amount.toLocaleString()}</p>
           {deal.expires_at && (
             <p className="text-xs text-slate-500 mb-4 flex items-center gap-1">
@@ -493,14 +530,14 @@ export const AdvanceJobChat: React.FC = () => {
               className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2"
             >
               {dealActionLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-              Accept Deal
+              รับดีล
             </button>
             <button
               onClick={() => handleDealAction("decline")}
               disabled={dealActionLoading}
               className="px-4 py-2 rounded-xl bg-slate-600 text-slate-200 hover:bg-slate-500"
             >
-              Decline
+              ปฏิเสธ
             </button>
             <button
               onClick={() => {
@@ -527,7 +564,7 @@ export const AdvanceJobChat: React.FC = () => {
             boxShadow: "0 0 20px rgba(99,102,241,0.15)",
           }}
         >
-          <p className="text-sm text-slate-400 mb-2">Talent เสนอราคาใหม่</p>
+          <p className="text-sm text-slate-400 mb-2">ผู้สมัครเสนอราคาใหม่</p>
           <p className="text-2xl font-bold text-indigo-400 mb-2">฿{deal.amount.toLocaleString()}</p>
           {deal.expires_at && (
             <p className="text-xs text-slate-500 mb-4 flex items-center gap-1">
@@ -542,14 +579,14 @@ export const AdvanceJobChat: React.FC = () => {
               className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2"
             >
               {dealActionLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-              Accept
+              รับข้อเสนอ
             </button>
             <button
               onClick={() => handleDealAction("decline")}
               disabled={dealActionLoading}
               className="px-4 py-2 rounded-xl bg-slate-600 text-slate-200 hover:bg-slate-500"
             >
-              Decline
+              ปฏิเสธ
             </button>
           </div>
         </div>
@@ -563,24 +600,20 @@ export const AdvanceJobChat: React.FC = () => {
         >
           <span className="flex items-center gap-2">
             <History size={18} />
-            ประวัติ Deal
+            ประวัติดีล
           </span>
           <span className="text-sm text-slate-500">{showHistory ? "ซ่อน" : "แสดง"}</span>
         </button>
         {showHistory && (
           <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
             {dealHistory.length === 0 ? (
-              <p className="text-slate-500 text-sm py-2">ยังไม่มีประวัติ Deal</p>
+              <p className="text-slate-500 text-sm py-2">ยังไม่มีประวัติดีล</p>
             ) : (
               dealHistory.map((h) => (
                 <div key={h.id} className="flex justify-between items-center py-2 border-b border-slate-700/50 last:border-0 text-sm">
                   <span className="text-amber-400">฿{h.amount.toLocaleString()}</span>
                   <span className="text-slate-500">
-                    {h.status === "accepted" && "รับแล้ว"}
-                    {h.status === "declined" && "ปฏิเสธ"}
-                    {h.status === "expired" && "หมดอายุ"}
-                    {h.status === "counter_offered" && "Talent เสนอใหม่"}
-                    {h.status === "replaced" && "ส่ง Deal ใหม่"}
+                    {formatDealStatusTh(h.status)}
                   </span>
                 </div>
               ))
@@ -590,7 +623,7 @@ export const AdvanceJobChat: React.FC = () => {
       </div>
 
       {/* Chat */}
-      <div className="luxury-card rounded-2xl p-6 flex flex-col h-[400px]">
+      <div className="luxury-card rounded-2xl p-4 sm:p-6 flex flex-col flex-1 min-h-0 jb-chat-panel">
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 min-h-0">
           {messages.length === 0 ? (
             <p className="text-slate-500 text-center py-8">ยังไม่มีข้อความ — เริ่มคุยได้เลย</p>
@@ -685,12 +718,12 @@ export const AdvanceJobChat: React.FC = () => {
             placeholder="พิมพ์ข้อความ..."
             className="flex-1 px-4 py-3 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 placeholder-slate-500"
           />
-          {isEmployer && !job.hired_user_id && (
+          {isEmployer && !(job as any).hired_user_id && (
             <button
               onClick={() => setShowDealModal(true)}
               className="px-4 py-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium hover:bg-amber-500/30"
             >
-              Send Deal
+              ส่งดีล
             </button>
           )}
           <button
@@ -707,7 +740,7 @@ export const AdvanceJobChat: React.FC = () => {
       {showDealModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowDealModal(false)}>
           <div className="bg-charcoal-800 rounded-2xl border border-slate-600 shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-100 mb-4">ส่ง Deal</h3>
+            <h3 className="text-lg font-bold text-slate-100 mb-4">ส่งดีล</h3>
             <p className="text-sm text-slate-400 mb-2">จำนวนเงินที่ตกลง (บาท)</p>
             <p className="text-xs text-slate-500 mb-2">อ้างอิง: ฿{job.min_budget?.toLocaleString()} – ฿{job.max_budget?.toLocaleString()}</p>
             <input
@@ -728,7 +761,7 @@ export const AdvanceJobChat: React.FC = () => {
                 disabled={dealSubmitting || !dealAmount.trim()}
                 className="flex-1 py-2 rounded-xl bg-amber-500 text-charcoal-900 font-bold disabled:opacity-50"
               >
-                {dealSubmitting ? <Loader2 size={18} className="animate-spin mx-auto" /> : "ส่ง Deal"}
+                {dealSubmitting ? <Loader2 size={18} className="animate-spin mx-auto" /> : "ส่งดีล"}
               </button>
             </div>
           </div>
@@ -790,6 +823,42 @@ export const AdvanceJobChat: React.FC = () => {
                 className="flex-1 py-2 rounded-xl bg-red-600 text-white font-bold disabled:opacity-50"
               >
                 {reportBlockLoading ? <Loader2 size={18} className="animate-spin mx-auto" /> : "แจ้งรายงาน"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBlockConfirm && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setShowBlockConfirm(false)}
+        >
+          <div
+            className="rounded-2xl border border-slate-200 bg-white shadow-2xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900 mb-2">บล็อกผู้ใช้นี้?</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              จะไม่เห็นข้อความหรือติดต่อกับผู้ใช้นี้ได้อีก
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBlockConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBlockConfirm(false);
+                  handleBlock();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-medium hover:bg-red-500"
+              >
+                บล็อก
               </button>
             </div>
           </div>

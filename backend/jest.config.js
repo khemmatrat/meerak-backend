@@ -5,7 +5,8 @@ export default {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
-  testMatch: ['**/__tests__/**/*.test.js'],
+  // Unit tests use Node's built-in runner (`node:test`); Jest runs HTTP integration tests only.
+  testMatch: ['**/__tests__/{kyc,wallet}.test.js'],
   collectCoverageFrom: [
     'server.js',
     'lib/**/*.js',

@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "providers": {
+    "grok": {
+      "label": "xAI Grok Imagine Video",
+      "lip_sync": true,
+      "max_duration_sec": 10,
+      "min_duration_sec": 1,
+      "default_duration_sec": 10,
+      "aspect_ratios": ["9:16", "16:9", "1:1"],
+      "resolutions": ["720p", "480p"],
+      "default_resolution": "720p",
+      "languages": ["th", "en", "ja", "zh"],
+      "prompt_max_chars": 8000,
+      "script_max_chars": 500,
+      "requires_portrait": true,
+      "requires_video_gen_flag": "AIVOS_MERCHANT_AD_GROK_VIDEO"
+    },
+    "veo": {
+      "label": "Google Veo",
+      "lip_sync": false,
+      "max_duration_sec": 8,
+      "min_duration_sec": 1,
+      "default_duration_sec": 8,
+      "aspect_ratios": ["9:16", "16:9"],
+      "resolutions": ["720p"],
+      "default_resolution": "720p",
+      "languages": ["th", "en", "ja", "zh"],
+      "prompt_max_chars": 6000,
+      "script_max_chars": 400,
+      "requires_portrait": true,
+      "ready": false
+    },
+    "runway": {
+      "label": "Runway",
+      "lip_sync": false,
+      "max_duration_sec": 10,
+      "min_duration_sec": 1,
+      "default_duration_sec": 10,
+      "aspect_ratios": ["9:16", "16:9", "1:1"],
+      "resolutions": ["720p"],
+      "default_resolution": "720p",
+      "languages": ["th", "en"],
+      "prompt_max_chars": 6000,
+      "script_max_chars": 400,
+      "requires_portrait": true,
+      "ready": false
+    },
+    "kling": {
+      "label": "Kling",
+      "lip_sync": true,
+      "max_duration_sec": 10,
+      "min_duration_sec": 1,
+      "default_duration_sec": 10,
+      "aspect_ratios": ["9:16"],
+      "resolutions": ["720p"],
+      "default_resolution": "720p",
+      "languages": ["th", "en", "zh"],
+      "prompt_max_chars": 6000,
+      "script_max_chars": 400,
+      "requires_portrait": true,
+      "ready": false
+    },
+    "generic": {
+      "label": "Generic video AI",
+      "lip_sync": false,
+      "max_duration_sec": 10,
+      "min_duration_sec": 1,
+      "default_duration_sec": 10,
+      "aspect_ratios": ["9:16", "16:9", "1:1"],
+      "resolutions": ["720p"],
+      "default_resolution": "720p",
+      "languages": ["th", "en", "ja", "zh"],
+      "prompt_max_chars": 8000,
+      "script_max_chars": 500,
+      "requires_portrait": false,
+      "ready": false
+    }
+  },
+  "ugc_provider_map": {
+    "ugc_grok": "grok"
+  }
+}

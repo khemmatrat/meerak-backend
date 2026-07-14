@@ -1,0 +1,12 @@
+apiVersion: v2
+name: aqond
+description: AQOND v2 platform — commerce, feed, video, sharding (Epoch 6 P63)
+type: application
+version: 0.6.0
+appVersion: "2.0.0"
+keywords:
+  - aqond
+  - commerce
+  - kubernetes
+maintainers:
+  - name: aqond-platform

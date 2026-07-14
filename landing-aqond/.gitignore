@@ -6,3 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
+# Generated at build (contains Firebase config + VAPID)
+public/firebase-messaging-sw.js

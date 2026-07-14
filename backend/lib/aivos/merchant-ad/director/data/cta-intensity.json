@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "dimension": "cta_intensity",
+  "entries": {
+    "soft": {
+      "label": "Soft CTA",
+      "suffix_th": "ลองดูได้นะคะ ไม่กดก็ไม่เป็นไร",
+      "suffix_en": "Feel free to check it out, no pressure."
+    },
+    "hard": {
+      "label": "Hard CTA",
+      "suffix_th": "สั่งเลยวันนี้ ก่อนหมดโปร",
+      "suffix_en": "Order now before the offer ends."
+    },
+    "_default": {
+      "label": "Standard CTA",
+      "suffix_th": "",
+      "suffix_en": ""
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "receipt_core_version": "1.0.0",
+  "updated_at": "2026-07-02T14:00:00Z",
+  "environment_default": "production",
+  "theme": {
+    "id": "aqond-default",
+    "brand_title": "AQOND",
+    "tagline": "All-in-One Commerce Platform",
+    "primary_color": "#B08D48",
+    "accent_color": "#8B6914",
+    "footer_text": "Thank you for using AQOND",
+    "support_email": "support@aqond.com",
+    "support_web": "www.aqond.com",
+    "logo_enabled": true
+  },
+  "blocks": {
+    "header": { "enabled": true },
+    "brand": { "enabled": true },
+    "merchant": { "enabled": true },
+    "customer": { "enabled": true },
+    "items": { "enabled": true },
+    "totals": { "enabled": true },
+    "payment": { "enabled": true },
+    "delivery": { "enabled": true },
+    "wallet": { "enabled": false },
+    "verify": { "enabled": true },
+    "jarvis_audit": { "enabled": true },
+    "footer": { "enabled": true }
+  },
+  "templates": {
+    "engine-preview-v1": {
+      "enabled": true,
+      "template_version": "1.0.0",
+      "receipt_type": "ENGINE_PREVIEW",
+      "language": "TH",
+      "currency": "THB",
+      "timezone": "Asia/Bangkok",
+      "blocks": ["header", "brand", "merchant", "customer", "items", "totals", "payment", "delivery", "footer"]
+    },
+    "marketplace-v1": {
+      "enabled": true,
+      "template_version": "1.0.0",
+      "receipt_type": "R001",
+      "language": "TH",
+      "currency": "THB",
+      "timezone": "Asia/Bangkok",
+      "blocks": ["header", "brand", "merchant", "customer", "items", "totals", "payment", "delivery", "verify", "jarvis_audit", "footer"]
+    },
+    "food-v1": {
+      "enabled": false,
+      "template_version": "1.0.0",
+      "receipt_type": "R002",
+      "language": "TH",
+      "currency": "THB",
+      "timezone": "Asia/Bangkok",
+      "blocks": ["header", "brand", "merchant", "customer", "items", "totals", "payment", "delivery", "footer"]
+    }
+  }
+}

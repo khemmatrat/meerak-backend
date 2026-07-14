@@ -1,0 +1,143 @@
+# =============================================================================
+# AQOND Go Live - Docker Compose สำหรับ IP 147.50.231.183
+# =============================================================================
+# โครงสร้าง /root/apps บน server:
+#   /root/apps/backend    <- backend
+#   /root/apps/admin      <- nexus-admin-core (rename)
+#   /root/apps/landing    <- landing-aqond (rename)
+#   /root/apps/           <- mobile (root)
+#
+# รันจาก /root/apps: docker-compose -f docker-compose.golive.yml up -d
+# Ports: Mobile 3000 | Admin 8080 | Backend 3001 | Landing 3009
+#
+# ก่อนรันครั้งแรก: ต้องรัน migrations ก่อน (หลัง db + redis up แล้ว)
+#   docker-compose -f docker-compose.golive.yml up -d db redis
+#   (รอ 10 วินาที) จากนั้น: node backend/scripts/run-migration.js 006 007 008 009 010 035
+#   node backend/scripts/set-admin-password.js admin123
+#   แล้วค่อย docker-compose up -d (รันทุก service)
+# =============================================================================
+
+version: "3.8"
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: aqond-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meera
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-meera123}
+      POSTGRES_DB: meera_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meera -d meera_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: aqond-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: aqond-backend:latest
+    container_name: aqond-backend
+    restart: unless-stopped
+    working_dir: /app/backend
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: meera_db
+      DB_USER: meera
+      DB_PASSWORD: ${DB_PASSWORD:-meera123}
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    command: sh -c "npm ci --omit=dev && node server.js"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mobile:
+    image: node:20-alpine
+    container_name: aqond-mobile
+    restart: unless-stopped
+    working_dir: /app/mobile
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-https://api.aqond.com}
+      VITE_BACKEND_URL_HTTPS: ${VITE_BACKEND_URL_HTTPS:-https://api.aqond.com}
+      VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+      VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-aqond-production.firebaseapp.com}
+      VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-aqond-production}
+      VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-aqond-production.firebasestorage.app}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-187301416431}
+      VITE_FIREBASE_APP_ID: "${VITE_FIREBASE_APP_ID:-1:187301416431:web:774a67a1d8554faccbfa1a}"
+    ports:
+      - "3000:3000"
+    command: sh -c "npm ci && npm run build && npm install -g serve && serve -s dist -l 3000"
+    depends_on:
+      - backend
+
+  admin:
+    image: node:20-alpine
+    container_name: aqond-admin
+    restart: unless-stopped
+    working_dir: /app/admin
+    volumes:
+      - .:/app
+    environment:
+      VITE_ADMIN_API_URL: https://api.aqond.com
+      VITE_BACKEND_URL: https://api.aqond.com
+    ports:
+      - "8080:8080"
+    # ส่ง env ตรงๆ ตอน build — ใช้ HTTPS เพื่อหลีกเลี่ยง Mixed Content
+    command: sh -c "export VITE_BACKEND_URL=https://api.aqond.com && export VITE_ADMIN_API_URL=https://api.aqond.com && npm ci --legacy-peer-deps && npm run build && npx serve -s dist -l 8080 --listen tcp://0.0.0.0:8080"
+    depends_on:
+      - backend
+
+  landing:
+    image: node:20-alpine
+    container_name: aqond-landing
+    restart: unless-stopped
+    working_dir: /app/landing
+    volumes:
+      - .:/app
+    ports:
+      - "3009:3009"
+    command: sh -c "npm ci && npm run build && npx serve -s dist -l 3009"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

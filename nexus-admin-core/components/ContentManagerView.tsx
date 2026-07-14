@@ -1,28 +1,43 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, ExternalLink, Power, Calendar, Grid, X, Tag, BarChart2 } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  Power,
+  Calendar,
+  Grid,
+  X,
+  Tag,
+  BarChart2,
+  GraduationCap,
+  Image,
+} from "lucide-react";
 import {
   getBanners,
   createBanner,
   updateBanner,
   deleteBanner,
+  uploadBannerImage,
   getAdminToken,
   ADMIN_API_BASE,
-} from '../services/adminApi';
-import type { AppBanner, BannerPlacementSlug } from '../types';
-import { JOB_CATEGORIES_FOR_PROMO_BANNERS } from '../constants/jobCategoriesForBanners';
+} from "../services/adminApi";
+import type { AppBanner, BannerPlacementSlug } from "../types";
+import { JOB_CATEGORIES_FOR_PROMO_BANNERS } from "../constants/jobCategoriesForBanners";
 import {
   ALL_BANNER_PLACEMENTS,
   BANNER_PLACEMENT_LABELS,
   bannerPlacementsFromApi,
   bannerPlacementsToApiPayload,
-} from '../constants/bannerPlacements';
+} from "../constants/bannerPlacements";
+import { CourseMarketplaceAdminView } from "./CourseMarketplaceAdminView";
 
 /** แปลง ISO → ค่า input datetime-local ตามเวลาไทย */
 function isoToDatetimeLocalBangkok(iso: string): string {
-  if (!iso) return '';
+  if (!iso) return "";
   const d = new Date(iso);
-  const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' });
-  return s.slice(0, 16).replace(' ', 'T');
+  const s = d.toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" });
+  return s.slice(0, 16).replace(" ", "T");
 }
 
 /** datetime-local (เวลาไทย) → ISO ส่ง API */
@@ -67,9 +82,10 @@ function bannerPassesHomePlacementGate(banner: AppBanner): boolean {
   if (p == null || p.length === 0) return true;
   if (p.includes("home")) return true;
   const hasPromo =
-    !!(banner.promoCode?.trim()) ||
+    !!banner.promoCode?.trim() ||
     (banner.discountMaxBaht != null && Number(banner.discountMaxBaht) > 0);
-  if (hasPromo && (p.includes("welcome") || p.includes("job_detail"))) return true;
+  if (hasPromo && (p.includes("welcome") || p.includes("job_detail")))
+    return true;
   return false;
 }
 
@@ -87,41 +103,73 @@ function isBannerShownOnMobileHome(banner: AppBanner): boolean {
 
 function placementBadges(banner: AppBanner): string {
   const p = banner.placements;
-  if (!p || p.length === 0) return 'ทุกหน้า';
-  return p.map((x) => BANNER_PLACEMENT_LABELS[x as BannerPlacementSlug] || x).join(' · ');
+  if (!p || p.length === 0) return "ทุกหน้า";
+  return p
+    .map((x) => BANNER_PLACEMENT_LABELS[x as BannerPlacementSlug] || x)
+    .join(" · ");
 }
 
-function slideHeightLabel(v: AppBanner['slideHeight']): string {
-  if (v == null) return 'ค่าเริ่มตามแอป / หน้า';
-  if (v === 'hero') return 'Hero 16:9';
-  if (v === 'strip') return 'แถบเตี้ย (job detail)';
-  if (v === 'portrait') return 'Portrait 9:16';
+function slideHeightLabel(v: AppBanner["slideHeight"]): string {
+  if (v == null) return "ค่าเริ่มตามแอป / หน้า";
+  if (v === "hero") return "Hero 16:9";
+  if (v === "strip") return "แถบเตี้ย (job detail)";
+  if (v === "portrait") return "Portrait 9:16";
   return String(v);
 }
 
+function isDirectBannerImageUrl(url: string): boolean {
+  const u = url.trim();
+  if (!/^https?:\/\//i.test(u)) return false;
+  if (/drive\.google\.com|docs\.google\.com|dropbox\.com\/s\//i.test(u))
+    return false;
+  return true;
+}
+
+function resolveBannerImageUrl(
+  imageUrl: string,
+  imageVariants: Record<string, string>,
+): string {
+  if (isDirectBannerImageUrl(imageUrl)) return imageUrl.trim();
+  const preferred = ["16:9", "2:1", "3:4", "9:16", "4:3", "1:1"] as const;
+  for (const k of preferred) {
+    const v = imageVariants[k];
+    if (v && isDirectBannerImageUrl(v)) return v.trim();
+  }
+  return imageUrl.trim();
+}
+
+function defaultBannerDateRange(): { startDate: string; endDate: string } {
+  const start = todayYmdBangkok();
+  const endDate = new Date(`${start}T12:00:00+07:00`);
+  endDate.setDate(endDate.getDate() + 30);
+  const end = endDate.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+  return { startDate: start, endDate: end };
+}
+
 const initialFormState = {
-  title: '',
-  imageUrl: '',
-  actionUrl: '',
+  title: "",
+  imageUrl: "",
+  imageVariants: {} as Record<string, string>,
+  actionUrl: "",
   order: 1,
-  startDate: '',
-  endDate: '',
+  startDate: defaultBannerDateRange().startDate,
+  endDate: defaultBannerDateRange().endDate,
   isActive: true,
-  promoCode: '',
-  discountMode: 'fixed_baht' as 'fixed_baht' | 'percent',
-  discountPercent: '' as number | '',
-  discountMaxBaht: '' as number | '',
-  minCumulativeTopupThb: '' as number | '',
+  promoCode: "",
+  discountMode: "fixed_baht" as "fixed_baht" | "percent",
+  discountPercent: "" as number | "",
+  discountMaxBaht: "" as number | "",
+  minCumulativeTopupThb: "" as number | "",
   firstPaidJobOnly: false,
-  discountDescription: '',
-  promoValidFromLocal: '',
-  promoValidUntilLocal: '',
+  discountDescription: "",
+  promoValidFromLocal: "",
+  promoValidUntilLocal: "",
   allowedJobCategories: [] as string[],
   /** ปิด = โฆษณาแบนเนอร์ได้ แต่ไม่ให้รับ/ใช้โค้ด */
   promoClaimsEnabled: true,
   placements: [...ALL_BANNER_PLACEMENTS] as BannerPlacementSlug[],
   /** ว่าง = null ใน API — ใช้ค่า default จากแอป */
-  slideHeight: '' as '' | 'hero' | 'strip' | 'portrait',
+  slideHeight: "" as "" | "hero" | "strip" | "portrait",
 };
 
 type DbHealth = {
@@ -139,6 +187,7 @@ type DbHealth = {
 };
 
 export const ContentManagerView: React.FC = () => {
+  const [section, setSection] = useState<"banners" | "courses">("banners");
   const [banners, setBanners] = useState<AppBanner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +197,14 @@ export const ContentManagerView: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [dbHealth, setDbHealth] = useState<DbHealth | null>(null);
   const [dbHealthErr, setDbHealthErr] = useState<string | null>(null);
+  const [bannerImageUploading, setBannerImageUploading] = useState(false);
+  const [bannerImageUploadErr, setBannerImageUploadErr] = useState<
+    string | null
+  >(null);
+  const [bannerImagePreview, setBannerImagePreview] = useState<string | null>(
+    null,
+  );
+  const [modalError, setModalError] = useState<string | null>(null);
 
   /** ยืนยันว่าแอดมินชี้ backend เดียวกับที่เปิดเทียบ api.aqond.com — ไม่ต้องล็อกอิน */
   useEffect(() => {
@@ -176,19 +233,28 @@ export const ContentManagerView: React.FC = () => {
 
   useEffect(() => {
     if (!getAdminToken()) {
-      setError('กรุณา Login เพื่อโหลด/บันทึกแบนเนอร์');
+      setError("กรุณา Login เพื่อโหลด/บันทึกแบนเนอร์");
       setLoading(false);
       return;
     }
     getBanners()
-      .then((res) => { setBanners(res.banners || []); setError(null); })
-      .catch((e: any) => { setError(e?.message || 'โหลดแบนเนอร์ไม่สำเร็จ'); setBanners([]); })
+      .then((res) => {
+        setBanners(res.banners || []);
+        setError(null);
+      })
+      .catch((e: any) => {
+        setError(e?.message || "โหลดแบนเนอร์ไม่สำเร็จ");
+        setBanners([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const handleAddNew = () => {
     setEditingBanner(null);
-    setFormData(initialFormState);
+    setFormData({ ...initialFormState, ...defaultBannerDateRange() });
+    setModalError(null);
+    setBannerImageUploadErr(null);
+    setBannerImagePreview(null);
     setIsModalOpen(true);
   };
 
@@ -197,39 +263,51 @@ export const ContentManagerView: React.FC = () => {
     setFormData({
       title: banner.title,
       imageUrl: banner.imageUrl,
-      actionUrl: banner.actionUrl || '',
+      imageVariants:
+        (banner.imageVariants as Record<string, string> | null) || {},
+      actionUrl: banner.actionUrl || "",
       order: banner.order,
-      startDate: banner.startDate || '',
-      endDate: banner.endDate || '',
+      startDate: banner.startDate || "",
+      endDate: banner.endDate || "",
       isActive: banner.isActive,
-      promoCode: banner.promoCode || '',
-      discountMode: banner.discountMode === 'percent' ? 'percent' : 'fixed_baht',
-      discountPercent: banner.discountPercent ?? '',
-      discountMaxBaht: banner.discountMaxBaht ?? '',
-      minCumulativeTopupThb: banner.minCumulativeTopupThb ?? '',
+      promoCode: banner.promoCode || "",
+      discountMode:
+        banner.discountMode === "percent" ? "percent" : "fixed_baht",
+      discountPercent: banner.discountPercent ?? "",
+      discountMaxBaht: banner.discountMaxBaht ?? "",
+      minCumulativeTopupThb: banner.minCumulativeTopupThb ?? "",
       firstPaidJobOnly: banner.firstPaidJobOnly ?? false,
-      discountDescription: banner.discountDescription || '',
-      promoValidFromLocal: banner.promoValidFrom ? isoToDatetimeLocalBangkok(banner.promoValidFrom) : '',
-      promoValidUntilLocal: banner.promoValidUntil ? isoToDatetimeLocalBangkok(banner.promoValidUntil) : '',
+      discountDescription: banner.discountDescription || "",
+      promoValidFromLocal: banner.promoValidFrom
+        ? isoToDatetimeLocalBangkok(banner.promoValidFrom)
+        : "",
+      promoValidUntilLocal: banner.promoValidUntil
+        ? isoToDatetimeLocalBangkok(banner.promoValidUntil)
+        : "",
       allowedJobCategories: banner.allowedJobCategories ?? [],
       promoClaimsEnabled: banner.promoClaimsEnabled !== false,
       placements: bannerPlacementsFromApi(banner.placements),
       slideHeight:
-        banner.slideHeight === 'hero' || banner.slideHeight === 'strip' || banner.slideHeight === 'portrait'
+        banner.slideHeight === "hero" ||
+        banner.slideHeight === "strip" ||
+        banner.slideHeight === "portrait"
           ? banner.slideHeight
-          : '',
+          : "",
     });
+    setModalError(null);
+    setBannerImageUploadErr(null);
+    setBannerImagePreview(null);
     setIsModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('ยืนยันการลบแบนเนอร์นี้? (ไม่สามารถกู้คืนได้)')) return;
+    if (!window.confirm("ยืนยันการลบแบนเนอร์นี้? (ไม่สามารถกู้คืนได้)")) return;
     if (!getAdminToken()) return;
     try {
       await deleteBanner(id);
       setBanners((prev) => prev.filter((b) => b.id !== id));
     } catch (e: any) {
-      setError(e?.message || 'ลบไม่สำเร็จ');
+      setError(e?.message || "ลบไม่สำเร็จ");
     }
   };
 
@@ -237,43 +315,117 @@ export const ContentManagerView: React.FC = () => {
     if (!getAdminToken()) return;
     try {
       await updateBanner(banner.id, { isActive: !banner.isActive });
-      setBanners((prev) => prev.map((b) => (b.id === banner.id ? { ...b, isActive: !b.isActive } : b)));
+      setBanners((prev) =>
+        prev.map((b) =>
+          b.id === banner.id ? { ...b, isActive: !b.isActive } : b,
+        ),
+      );
     } catch (e: any) {
-      setError(e?.message || 'อัปเดตไม่สำเร็จ');
+      setError(e?.message || "อัปเดตไม่สำเร็จ");
     }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!getAdminToken()) return;
+    setModalError(null);
+    if (!getAdminToken()) {
+      setModalError("กรุณา Login ใหม่ — เซสชันหมดอายุหรือยังไม่ได้เข้าสู่ระบบ");
+      return;
+    }
+    if (!formData.title.trim()) {
+      setModalError("กรุณากรอกชื่อแบนเนอร์");
+      return;
+    }
+    if (!formData.startDate || !formData.endDate) {
+      setModalError(
+        "กรุณาเลือกวันเริ่มและวันสิ้นสุดแสดงแบนเนอร์ (เลื่อนลงในฟอร์ม)",
+      );
+      return;
+    }
+    if (formData.endDate < formData.startDate) {
+      setModalError("วันสิ้นสุดต้องไม่ก่อนวันเริ่ม");
+      return;
+    }
+    const resolvedImageUrl = resolveBannerImageUrl(
+      formData.imageUrl,
+      formData.imageVariants || {},
+    );
+    if (!isDirectBannerImageUrl(resolvedImageUrl)) {
+      setModalError(
+        formData.imageUrl.trim()
+          ? "Image URL ต้องเป็นลิงก์รูปโดยตรง (https://…jpg/png) — ลิงก์ Google Drive ใช้ไม่ได้ ให้กด “เลือกรูป” อัปโหลดเข้า S3 แทน"
+          : "กรุณาอัปโหลดรูปแบนเนอร์ (เลือกรูป / ลากวาง) หรือใส่ Image URL จาก S3",
+      );
+      return;
+    }
+    if (formData.promoCode.trim()) {
+      const maxB =
+        formData.discountMaxBaht === ""
+          ? null
+          : Number(formData.discountMaxBaht);
+      if (formData.discountMode === "percent") {
+        const pct =
+          formData.discountPercent === ""
+            ? null
+            : Number(formData.discountPercent);
+        if (!(pct != null && pct > 0 && pct <= 100)) {
+          setModalError("โหมดเปอร์เซ็นต์: ต้องระบุ % ส่วนลดระหว่าง 1–100");
+          return;
+        }
+        if (!(maxB != null && maxB > 0)) {
+          setModalError(
+            "โหมดเปอร์เซ็นต์: ต้องระบุเพดานส่วนลดสูงสุด (บาท) มากกว่า 0",
+          );
+          return;
+        }
+      } else if (!(maxB != null && maxB > 0)) {
+        setModalError(
+          "มีรหัสโค้ดแล้ว ต้องระบุวงเงินส่วนลดสูงสุดมากกว่า 0 บาท (เช่น 100) — ค่า 0 ระบบไม่รับ",
+        );
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (formData.placements.length === 0) {
-        setError('เลือกอย่างน้อย 1 หน้าที่จะแสดงแบนเนอร์');
+        setModalError("เลือกอย่างน้อย 1 หน้าที่จะแสดงแบนเนอร์");
         return;
       }
       const payload = {
-        title: formData.title,
-        imageUrl: formData.imageUrl,
+        title: formData.title.trim(),
+        imageUrl: resolvedImageUrl,
+        imageVariants:
+          formData.imageVariants && Object.keys(formData.imageVariants).length
+            ? formData.imageVariants
+            : null,
         actionUrl: formData.actionUrl || undefined,
         order: formData.order,
         startDate: formData.startDate || undefined,
         endDate: formData.endDate || undefined,
         isActive: formData.isActive,
         promoCode: formData.promoCode.trim() || undefined,
-        discountMode: formData.promoCode.trim() ? formData.discountMode : undefined,
+        discountMode: formData.promoCode.trim()
+          ? formData.discountMode
+          : undefined,
         discountPercent:
-          formData.promoCode.trim() && formData.discountMode === 'percent' && formData.discountPercent !== ''
+          formData.promoCode.trim() &&
+          formData.discountMode === "percent" &&
+          formData.discountPercent !== ""
             ? Number(formData.discountPercent)
             : undefined,
-        discountMaxBaht: formData.discountMaxBaht === '' ? undefined : Number(formData.discountMaxBaht),
+        discountMaxBaht:
+          formData.discountMaxBaht === ""
+            ? undefined
+            : Number(formData.discountMaxBaht),
         minCumulativeTopupThb:
-          formData.promoCode.trim() && formData.minCumulativeTopupThb !== ''
+          formData.promoCode.trim() && formData.minCumulativeTopupThb !== ""
             ? Number(formData.minCumulativeTopupThb)
             : formData.promoCode.trim()
               ? 0
               : undefined,
-        firstPaidJobOnly: formData.promoCode.trim() ? formData.firstPaidJobOnly : undefined,
+        firstPaidJobOnly: formData.promoCode.trim()
+          ? formData.firstPaidJobOnly
+          : undefined,
         discountDescription: formData.discountDescription.trim() || undefined,
         promoValidFrom: formData.promoCode.trim()
           ? formData.promoValidFromLocal.trim()
@@ -290,28 +442,135 @@ export const ContentManagerView: React.FC = () => {
             ? formData.allowedJobCategories
             : null
           : undefined,
-        promoClaimsEnabled: formData.promoCode.trim() ? formData.promoClaimsEnabled : undefined,
+        promoClaimsEnabled: formData.promoCode.trim()
+          ? formData.promoClaimsEnabled
+          : undefined,
         placements: bannerPlacementsToApiPayload(formData.placements),
-        slideHeight: formData.slideHeight === '' ? null : formData.slideHeight,
+        slideHeight: formData.slideHeight === "" ? null : formData.slideHeight,
       };
       if (editingBanner) {
         const res = await updateBanner(editingBanner.id, payload);
-        setBanners((prev) => prev.map((b) => (b.id === editingBanner.id ? { ...b, ...res.banner } : b)));
+        setBanners((prev) =>
+          prev.map((b) =>
+            b.id === editingBanner.id ? { ...b, ...res.banner } : b,
+          ),
+        );
       } else {
         const res = await createBanner(payload);
         setBanners((prev) => [res.banner as AppBanner, ...prev]);
       }
       setIsModalOpen(false);
-      setFormData(initialFormState);
+      setFormData({ ...initialFormState, ...defaultBannerDateRange() });
       setEditingBanner(null);
+      setModalError(null);
     } catch (err: any) {
-      setError(err?.message || 'บันทึกไม่สำเร็จ');
+      const msg = err?.message || "บันทึกไม่สำเร็จ";
+      setModalError(msg);
+      setError(msg);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleBannerImageFile = async (file: File) => {
+    if (!file) return;
+    if (!getAdminToken()) {
+      setBannerImageUploadErr("กรุณา Login ก่อนอัปโหลดรูป");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setBannerImageUploadErr("รองรับเฉพาะไฟล์รูปภาพ");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setBannerImageUploadErr("ไฟล์ใหญ่เกินไป (สูงสุด 12MB)");
+      return;
+    }
+    setBannerImageUploadErr(null);
+    setBannerImageUploading(true);
+    const objectUrl = URL.createObjectURL(file);
+    setBannerImagePreview(objectUrl);
+    try {
+      const r = await uploadBannerImage(file);
+      if (!r?.url) throw new Error("upload response missing url");
+      setFormData((prev) => ({ ...prev, imageUrl: r.url }));
+    } catch (e: unknown) {
+      setBannerImageUploadErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBannerImageUploading(false);
+      // keep preview until modal closes; revoke old one when replaced/closed
+    }
+  };
+
+  const handleBannerVariantFile = async (aspectKey: string, file: File) => {
+    if (!file) return;
+    if (!getAdminToken()) {
+      setBannerImageUploadErr("กรุณา Login ก่อนอัปโหลดรูป");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setBannerImageUploadErr("รองรับเฉพาะไฟล์รูปภาพ");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setBannerImageUploadErr("ไฟล์ใหญ่เกินไป (สูงสุด 12MB)");
+      return;
+    }
+    setBannerImageUploadErr(null);
+    setBannerImageUploading(true);
+    try {
+      const r = await uploadBannerImage(file);
+      if (!r?.url) throw new Error("upload response missing url");
+      setFormData((prev) => {
+        const nextVariants = {
+          ...(prev.imageVariants || {}),
+          [aspectKey]: r.url,
+        };
+        const keepMain = isDirectBannerImageUrl(prev.imageUrl);
+        return {
+          ...prev,
+          imageVariants: nextVariants,
+          imageUrl: keepMain ? prev.imageUrl : r.url,
+        };
+      });
+    } catch (e: unknown) {
+      setBannerImageUploadErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBannerImageUploading(false);
+    }
+  };
+
   return (
+    <div className="space-y-6 p-4 md:p-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-800">Content Manager</h2>
+        <p className="text-slate-500 text-sm">แบนเนอร์แอป · Course Marketplace (review, revenue, moderation)</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        <button
+          type="button"
+          onClick={() => setSection("banners")}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 ${
+            section === "banners" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"
+          }`}
+        >
+          <Image size={16} /> แบนเนอร์
+        </button>
+        <button
+          type="button"
+          onClick={() => setSection("courses")}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 ${
+            section === "courses" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"
+          }`}
+        >
+          <GraduationCap size={16} /> Course Marketplace
+        </button>
+      </div>
+
+      {section === "courses" ? <CourseMarketplaceAdminView embedded /> : null}
+
+      {section === "banners" ? (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
@@ -320,12 +579,15 @@ export const ContentManagerView: React.FC = () => {
             จัดการแบนเนอร์ (Banner Management)
           </h2>
           <p className="text-slate-500 text-sm">
-            เลือกหน้าที่แสดง (Home / Welcome / รายละเอียดงาน) โค้ดส่วนลด และ Action / Deep Link — คู่มืออยู่ที่ไฟล์{' '}
-            <code className="text-[11px] bg-slate-100 px-1 rounded">nexus-admin-core/BANNER_GUIDE_TH.md</code>
+            เลือกหน้าที่แสดง (Home / Welcome / รายละเอียดงาน) โค้ดส่วนลด และ
+            Action / Deep Link — คู่มืออยู่ที่ไฟล์{" "}
+            <code className="text-[11px] bg-slate-100 px-1 rounded">
+              nexus-admin-core/BANNER_GUIDE_TH.md
+            </code>
           </p>
           {error && <p className="text-rose-600 text-sm mt-1">{error}</p>}
         </div>
-        <button 
+        <button
           onClick={handleAddNew}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-indigo-200"
         >
@@ -334,7 +596,9 @@ export const ContentManagerView: React.FC = () => {
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1.5">
-        <p className="font-semibold text-slate-800">ตรวจว่าแอดมินกับ public API ใช้ DB เดียวกัน</p>
+        <p className="font-semibold text-slate-800">
+          ตรวจว่าแอดมินกับ public API ใช้ DB เดียวกัน
+        </p>
         <p>
           <span className="text-slate-500">ค่า build </span>
           <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
@@ -343,46 +607,59 @@ export const ContentManagerView: React.FC = () => {
         </p>
         {dbHealthErr && (
           <p className="text-rose-600">
-            โหลด <code className="text-[11px]">/api/health/database</code> ไม่ได้: {dbHealthErr} — ตรวจ CORS / URL
+            โหลด <code className="text-[11px]">/api/health/database</code>{" "}
+            ไม่ได้: {dbHealthErr} — ตรวจ CORS / URL
           </p>
         )}
         {dbHealth && (
           <>
             {dbHealth.canonical_production_database && (
               <p>
-                <span className="text-slate-500">canonical (ที่ระบบออกแบบ):</span>{' '}
+                <span className="text-slate-500">
+                  canonical (ที่ระบบออกแบบ):
+                </span>{" "}
                 <strong>{dbHealth.canonical_production_database}</strong>
-                {typeof dbHealth.aligned_with_canonical === 'boolean' && (
+                {typeof dbHealth.aligned_with_canonical === "boolean" && (
                   <span
                     className={
-                      dbHealth.aligned_with_canonical ? ' text-emerald-700 ml-2' : ' text-rose-700 ml-2'
+                      dbHealth.aligned_with_canonical
+                        ? " text-emerald-700 ml-2"
+                        : " text-rose-700 ml-2"
                     }
                   >
-                    {dbHealth.aligned_with_canonical ? '✓ ตรง' : '✗ ไม่ตรง — แก้ DATABASE_URL หรือ DB_DATABASE บน backend'}
+                    {dbHealth.aligned_with_canonical
+                      ? "✓ ตรง"
+                      : "✗ ไม่ตรง — แก้ DATABASE_URL หรือ DB_DATABASE บน backend"}
                   </span>
                 )}
               </p>
             )}
             <p>
-              <span className="text-slate-500">current_database:</span>{' '}
-              <strong>{dbHealth.current_database ?? '—'}</strong>
+              <span className="text-slate-500">current_database:</span>{" "}
+              <strong>{dbHealth.current_database ?? "—"}</strong>
             </p>
             {dbHealth.pool_config_source && (
               <p className="text-slate-500">
-                pool: <code className="text-[11px] bg-white px-1 rounded">{dbHealth.pool_config_source}</code>
-                {dbHealth.use_database_url_for_pool && dbHealth.database_name_parsed_from_database_url
+                pool:{" "}
+                <code className="text-[11px] bg-white px-1 rounded">
+                  {dbHealth.pool_config_source}
+                </code>
+                {dbHealth.use_database_url_for_pool &&
+                dbHealth.database_name_parsed_from_database_url
                   ? ` → URL ชี้ db: ${dbHealth.database_name_parsed_from_database_url}`
                   : dbHealth.env_db_host
-                    ? ` → DB_HOST=${dbHealth.env_db_host} DB_DATABASE=${dbHealth.env_db_database ?? '—'}`
-                    : ''}
+                    ? ` → DB_HOST=${dbHealth.env_db_host} DB_DATABASE=${dbHealth.env_db_database ?? "—"}`
+                    : ""}
               </p>
             )}
             {dbHealth.warning && (
-              <p className="text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1.5">{dbHealth.warning}</p>
+              <p className="text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
+                {dbHealth.warning}
+              </p>
             )}
             <p>
-              <span className="text-slate-500">จำนวนแถว home_banners:</span>{' '}
-              <strong>{dbHealth.home_banners_count ?? '—'}</strong>
+              <span className="text-slate-500">จำนวนแถว home_banners:</span>{" "}
+              <strong>{dbHealth.home_banners_count ?? "—"}</strong>
             </p>
             {dbHealth.home_banners_max_updated_at && (
               <p className="text-slate-500">
@@ -390,7 +667,7 @@ export const ContentManagerView: React.FC = () => {
               </p>
             )}
             <p className="text-slate-500 pt-1 border-t border-slate-200">
-              เปิดแท็บ{' '}
+              เปิดแท็บ{" "}
               <a
                 className="text-indigo-600 underline font-medium"
                 href={`${ADMIN_API_BASE}/api/health/database`}
@@ -398,160 +675,210 @@ export const ContentManagerView: React.FC = () => {
                 rel="noopener noreferrer"
               >
                 {ADMIN_API_BASE}/api/health/database
-              </a>{' '}
-              แล้วเทียบค่ากับกล่องนี้ — ต้องตรงกัน ถ้าคุณเปิด{' '}
-              <code className="text-[11px]">https://api.aqond.com/api/health/database</code> แล้วได้คนละค่า แปลว่าแอดมิน build ชี้ API คนละตัว (แก้{' '}
-              <code className="text-[11px]">VITE_ADMIN_API_URL</code> แล้ว rebuild)
+              </a>{" "}
+              แล้วเทียบค่ากับกล่องนี้ — ต้องตรงกัน ถ้าคุณเปิด{" "}
+              <code className="text-[11px]">
+                https://api.aqond.com/api/health/database
+              </code>{" "}
+              แล้วได้คนละค่า แปลว่าแอดมิน build ชี้ API คนละตัว (แก้{" "}
+              <code className="text-[11px]">VITE_ADMIN_API_URL</code> แล้ว
+              rebuild)
             </p>
           </>
         )}
       </div>
 
       {loading && banners.length === 0 && (
-        <div className="text-slate-500 py-8 text-center">กำลังโหลดแบนเนอร์...</div>
+        <div className="text-slate-500 py-8 text-center">
+          กำลังโหลดแบนเนอร์...
+        </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {banners.map((banner) => (
-          <div key={banner.id} className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all group hover:shadow-lg ${banner.isActive ? 'border-slate-200' : 'border-slate-200 opacity-75'}`}>
+          <div
+            key={banner.id}
+            className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all group hover:shadow-lg ${banner.isActive ? "border-slate-200" : "border-slate-200 opacity-75"}`}
+          >
             <div className="relative h-48 bg-slate-100">
-              <img 
-                src={banner.imageUrl} 
-                alt={banner.title} 
-                className={`w-full h-full object-cover transition-all ${!banner.isActive && 'grayscale'}`}
-                onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x400?text=Invalid+Image'; }}
+              <img
+                src={banner.imageUrl}
+                alt={banner.title}
+                className={`w-full h-full object-cover transition-all ${!banner.isActive && "grayscale"}`}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src =
+                    "https://via.placeholder.com/800x400?text=Invalid+Image";
+                }}
               />
               <div className="absolute top-3 left-3 bg-black/60 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm">
                 ORDER: {banner.order}
               </div>
-              
+
               {/* Overlay Actions */}
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2">
-                 <button 
-                    onClick={() => handleEdit(banner)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                 >
-                    <Edit2 size={14} /> แก้ไข
-                 </button>
-                 <button 
-                    onClick={() => handleDelete(banner.id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-white rounded-lg text-rose-600 text-xs font-bold hover:bg-rose-50 transition-colors"
-                 >
-                    <Trash2 size={14} /> ลบ
-                 </button>
+                <button
+                  onClick={() => handleEdit(banner)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                >
+                  <Edit2 size={14} /> แก้ไข
+                </button>
+                <button
+                  onClick={() => handleDelete(banner.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white rounded-lg text-rose-600 text-xs font-bold hover:bg-rose-50 transition-colors"
+                >
+                  <Trash2 size={14} /> ลบ
+                </button>
               </div>
             </div>
-            
+
             <div className="p-4">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                   <h3 className="font-bold text-slate-800 text-sm leading-tight truncate pr-2">{banner.title}</h3>
-                   <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      banner.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                   }`}>
-                      {banner.isActive ? 'ACTIVE' : 'INACTIVE'}
-                   </span>
+                  <h3 className="font-bold text-slate-800 text-sm leading-tight truncate pr-2">
+                    {banner.title}
+                  </h3>
+                  <span
+                    className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      banner.isActive
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {banner.isActive ? "ACTIVE" : "INACTIVE"}
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => toggleStatus(banner)}
-                  className={`p-1.5 rounded-full transition-colors ${banner.isActive ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}
+                  className={`p-1.5 rounded-full transition-colors ${banner.isActive ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"}`}
                 >
                   <Power size={16} />
                 </button>
               </div>
-              
+
               <div className="space-y-2">
-                 <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
-                    <Calendar size={12} className="shrink-0 mt-0.5" />
-                    <span className="leading-snug">
-                      <span className="font-mono text-[11px]">{banner.startDate || "ไม่ระบุเริ่ม"} — {banner.endDate || "ไม่ระบุสิ้นสุด"}</span>
-                      {(banner.startDate || banner.endDate) && (
-                        <>
-                          {" "}
-                          (
-                          {[banner.startDate ? formatBannerYmdAsThaiLine(banner.startDate) : "เริ่ม ?", banner.endDate ? formatBannerYmdAsThaiLine(banner.endDate) : "สิ้นสุด ?"].join(" → ")})
-                          )
-                        </>
-                      )}
+                <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                  <Calendar size={12} className="shrink-0 mt-0.5" />
+                  <span className="leading-snug">
+                    <span className="font-mono text-[11px]">
+                      {banner.startDate || "ไม่ระบุเริ่ม"} —{" "}
+                      {banner.endDate || "ไม่ระบุสิ้นสุด"}
                     </span>
-                 </div>
-                 <div
-                   className={`text-[10px] font-semibold px-2 py-1.5 rounded border ${
-                     isBannerShownOnMobileHome(banner)
-                       ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                       : "bg-amber-50 text-amber-900 border-amber-200"
-                   }`}
-                 >
-                   {isBannerShownOnMobileHome(banner)
-                     ? `✓ จะเห็นบนหน้าหลักแอปวันนี้ (เขตไทย วันนี้=${todayYmdBangkok()} ค.ศ.; GET /api/banners?placement=home)`
-                     : `⚠ ไม่เข้าหน้าหลักแอปวันนี้ — เปิด ACTIVE, ช่วงวันเริ่ม–จบให้ครอบคลุมวันนี้ (${formatBannerYmdAsThaiLine(todayYmdBangkok())}), หรือเลือกตำแหน่ง “หน้า Home (หลังล็อกอิน)”`}
-                 </div>
-                 <div className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 rounded px-2 py-1.5">
-                   <span className="font-semibold text-slate-700">ตำแหน่งแสดง: </span>
-                   {placementBadges(banner)}
-                 </div>
-                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-600 bg-indigo-50/80 border border-indigo-100 rounded px-2 py-1.5">
-                   <span className="inline-flex items-center gap-0.5 font-semibold text-indigo-900" title="เปิด bottom sheet ในแอป">
-                     <BarChart2 size={11} aria-hidden />
-                     Sheet {banner.sheetOpens ?? 0}
-                   </span>
-                   <span title="บันทึก event การรับโค้ด">Claim {banner.claims ?? 0}</span>
-                   <span className="text-slate-400" title="คลิกรวม (legacy DB)">Click {banner.clicks ?? 0}</span>
-                 </div>
-                 <div className="text-[10px] text-slate-600 px-0.5">
-                   <span className="font-semibold text-slate-700">สัดส่วนสไลด์: </span>
-                   {slideHeightLabel(banner.slideHeight)}
-                 </div>
-                 {banner.actionUrl && (
-                   <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                      <ExternalLink size={12} />
-                      <span className="truncate">{banner.actionUrl}</span>
-                   </div>
-                 )}
-                 {banner.promoCode && banner.promoClaimsEnabled === false && (
-                   <div className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded">
-                     รับ/ใช้โค้ดถูกระงับ — แบนเนอร์ยังแสดงเป็นโฆษณาได้
-                   </div>
-                 )}
-                 {banner.promoCode && (
-                   <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 p-2 rounded">
-                      <Tag size={12} />
-                      <span className="break-words">
-                        โค้ด {banner.promoCode}
-                        {banner.discountMode === 'percent'
-                          ? ` • ${banner.discountPercent ?? 0}% (เพดาน ฿${banner.discountMaxBaht ?? 0})`
-                          : ` • สูงสุด ฿${banner.discountMaxBaht ?? 0}`}
-                        {(banner.minCumulativeTopupThb ?? 0) > 0
-                          ? ` • เติมสะสม ≥${banner.minCumulativeTopupThb} บ.`
-                          : ''}
-                        {banner.firstPaidJobOnly ? ' • งานจ้างแรก' : ''}
+                    {(banner.startDate || banner.endDate) && (
+                      <>
+                        {" "}
+                        (
+                        {[
+                          banner.startDate
+                            ? formatBannerYmdAsThaiLine(banner.startDate)
+                            : "เริ่ม ?",
+                          banner.endDate
+                            ? formatBannerYmdAsThaiLine(banner.endDate)
+                            : "สิ้นสุด ?",
+                        ].join(" → ")}
+                        ) )
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div
+                  className={`text-[10px] font-semibold px-2 py-1.5 rounded border ${
+                    isBannerShownOnMobileHome(banner)
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                      : "bg-amber-50 text-amber-900 border-amber-200"
+                  }`}
+                >
+                  {isBannerShownOnMobileHome(banner)
+                    ? `✓ จะเห็นบนหน้าหลักแอปวันนี้ (เขตไทย วันนี้=${todayYmdBangkok()} ค.ศ.; GET /api/banners?placement=home)`
+                    : `⚠ ไม่เข้าหน้าหลักแอปวันนี้ — เปิด ACTIVE, ช่วงวันเริ่ม–จบให้ครอบคลุมวันนี้ (${formatBannerYmdAsThaiLine(todayYmdBangkok())}), หรือเลือกตำแหน่ง “หน้า Home (หลังล็อกอิน)”`}
+                </div>
+                <div className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 rounded px-2 py-1.5">
+                  <span className="font-semibold text-slate-700">
+                    ตำแหน่งแสดง:{" "}
+                  </span>
+                  {placementBadges(banner)}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-600 bg-indigo-50/80 border border-indigo-100 rounded px-2 py-1.5">
+                  <span
+                    className="inline-flex items-center gap-0.5 font-semibold text-indigo-900"
+                    title="เปิด bottom sheet ในแอป"
+                  >
+                    <BarChart2 size={11} aria-hidden />
+                    Sheet {banner.sheetOpens ?? 0}
+                  </span>
+                  <span title="บันทึก event การรับโค้ด">
+                    Claim {banner.claims ?? 0}
+                  </span>
+                  <span className="text-slate-400" title="คลิกรวม (legacy DB)">
+                    Click {banner.clicks ?? 0}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-600 px-0.5">
+                  <span className="font-semibold text-slate-700">
+                    สัดส่วนสไลด์:{" "}
+                  </span>
+                  {slideHeightLabel(banner.slideHeight)}
+                </div>
+                {banner.actionUrl && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                    <ExternalLink size={12} />
+                    <span className="truncate">{banner.actionUrl}</span>
+                  </div>
+                )}
+                {banner.promoCode && banner.promoClaimsEnabled === false && (
+                  <div className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded">
+                    รับ/ใช้โค้ดถูกระงับ — แบนเนอร์ยังแสดงเป็นโฆษณาได้
+                  </div>
+                )}
+                {banner.promoCode && (
+                  <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 p-2 rounded">
+                    <Tag size={12} />
+                    <span className="break-words">
+                      โค้ด {banner.promoCode}
+                      {banner.discountMode === "percent"
+                        ? ` • ${banner.discountPercent ?? 0}% (เพดาน ฿${banner.discountMaxBaht ?? 0})`
+                        : ` • สูงสุด ฿${banner.discountMaxBaht ?? 0}`}
+                      {(banner.minCumulativeTopupThb ?? 0) > 0
+                        ? ` • เติมสะสม ≥${banner.minCumulativeTopupThb} บ.`
+                        : ""}
+                      {banner.firstPaidJobOnly ? " • งานจ้างแรก" : ""}
+                    </span>
+                  </div>
+                )}
+                {banner.promoCode &&
+                  (banner.promoValidFrom || banner.promoValidUntil) && (
+                    <div className="text-[10px] text-slate-600 bg-violet-50 p-2 rounded border border-violet-100">
+                      <span className="font-semibold text-violet-800">
+                        ช่วงรับ/ใช้โค้ด (ไม่ใช่ช่วงโชว์แบนเนอร์ในแอป):{" "}
                       </span>
-                   </div>
-                 )}
-                 {banner.promoCode && (banner.promoValidFrom || banner.promoValidUntil) && (
-                   <div className="text-[10px] text-slate-600 bg-violet-50 p-2 rounded border border-violet-100">
-                     <span className="font-semibold text-violet-800">ช่วงรับ/ใช้โค้ด (ไม่ใช่ช่วงโชว์แบนเนอร์ในแอป): </span>
-                     {banner.promoValidFrom
-                       ? new Date(banner.promoValidFrom).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
-                       : 'เริ่มตามวันแสดงแบนเนอร์'}
-                     {' — '}
-                     {banner.promoValidUntil
-                       ? new Date(banner.promoValidUntil).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
-                       : 'สิ้นสุดตามวันแสดงแบนเนอร์'}
-                   </div>
-                 )}
-                 {banner.promoCode && banner.allowedJobCategories && banner.allowedJobCategories.length > 0 && (
-                   <div className="text-[10px] text-slate-600 bg-amber-50/80 p-2 rounded border border-amber-100">
-                     <span className="font-semibold">หมวด: </span>
-                     {banner.allowedJobCategories.join(', ')}
-                   </div>
-                 )}
+                      {banner.promoValidFrom
+                        ? new Date(banner.promoValidFrom).toLocaleString(
+                            "th-TH",
+                            { timeZone: "Asia/Bangkok" },
+                          )
+                        : "เริ่มตามวันแสดงแบนเนอร์"}
+                      {" — "}
+                      {banner.promoValidUntil
+                        ? new Date(banner.promoValidUntil).toLocaleString(
+                            "th-TH",
+                            { timeZone: "Asia/Bangkok" },
+                          )
+                        : "สิ้นสุดตามวันแสดงแบนเนอร์"}
+                    </div>
+                  )}
+                {banner.promoCode &&
+                  banner.allowedJobCategories &&
+                  banner.allowedJobCategories.length > 0 && (
+                    <div className="text-[10px] text-slate-600 bg-amber-50/80 p-2 rounded border border-amber-100">
+                      <span className="font-semibold">หมวด: </span>
+                      {banner.allowedJobCategories.join(", ")}
+                    </div>
+                  )}
               </div>
             </div>
           </div>
         ))}
 
-        <button 
+        <button
           onClick={handleAddNew}
           className="border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all min-h-[300px]"
         >
@@ -573,283 +900,646 @@ export const ContentManagerView: React.FC = () => {
           >
             <div className="shrink-0 p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 id="banner-modal-title" className="font-bold text-slate-800">
-                {editingBanner ? 'แก้ไขแบนเนอร์' : 'เพิ่มแบนเนอร์ใหม่'}
+                {editingBanner ? "แก้ไขแบนเนอร์" : "เพิ่มแบนเนอร์ใหม่"}
               </h3>
-              <button type="button" onClick={() => setIsModalOpen(false)} aria-label="ปิด">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                aria-label="ปิด"
+              >
                 <X size={20} className="text-slate-400 hover:text-slate-600" />
               </button>
             </div>
-            <form lang="th" onSubmit={handleSave} className="flex flex-col flex-1 min-h-0">
+            <form
+              lang="th"
+              onSubmit={handleSave}
+              className="flex flex-col flex-1 min-h-0"
+            >
               <div className="overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-4 flex-1">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อแบนเนอร์</label>
-                <input type="text" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"/>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Image URL</label>
-                <input type="url" required value={formData.imageUrl} onChange={e => setFormData({...formData, imageUrl: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"/>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50/90 p-3 space-y-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase">ตำแหน่งแสดงในแอป</label>
-                <p className="text-[11px] text-slate-500 leading-snug">
-                  เลือกได้หลายหน้า แอปเรียก <code className="text-[10px] bg-white px-1 rounded border">GET /api/banners?placement=home|welcome|job_detail</code> — เลือกครบทั้ง 3 ช่อง = บันทึกเป็นแสดงทุกหน้า (ค่า NULL ใน DB)
-                </p>
-                <div className="flex flex-col gap-2">
-                  {ALL_BANNER_PLACEMENTS.map((slug) => (
-                    <label key={slug} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 accent-indigo-600 shrink-0"
-                        checked={formData.placements.includes(slug)}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setFormData((prev) => ({
-                            ...prev,
-                            placements: on
-                              ? Array.from(new Set([...prev.placements, slug]))
-                              : prev.placements.filter((p) => p !== slug),
-                          }));
-                        }}
-                      />
-                      {BANNER_PLACEMENT_LABELS[slug]}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                   <label className="block text-xs font-semibold text-slate-700 mb-0">วันเริ่มแสดงแบนเนอร์</label>
-                   <p className="text-[10px] text-slate-500 leading-snug">เลือกจากปฏิทินของเบราว์เซอร์ • เก็บในระบบเป็น ค.ศ.</p>
-                   <input type="date" required value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"/>
-                   {formData.startDate ? (
-                     <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 leading-snug">
-                       ระบบอ่านเป็นวัน <strong>{formatBannerYmdAsThaiLine(formData.startDate)}</strong>
-                       <span className="text-slate-600 font-normal"> ({formData.startDate} ค.ศ.)</span>
-                     </p>
-                   ) : null}
-                </div>
-                <div className="space-y-1.5">
-                   <label className="block text-xs font-semibold text-slate-700 mb-0">วันสิ้นสุดแสดงแบนเนอร์</label>
-                   <p className="text-[10px] text-slate-500 leading-snug">รวมถึงวันนี้เป็นวันสุดท้ายที่แสดง</p>
-                   <input type="date" required value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"/>
-                   {formData.endDate ? (
-                     <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 leading-snug">
-                       สิ้นสุดเมื่อ <strong>{formatBannerYmdAsThaiLine(formData.endDate)}</strong>
-                       <span className="text-slate-600 font-normal"> ({formData.endDate} ค.ศ.)</span>
-                     </p>
-                   ) : null}
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950 leading-snug">
-                <strong>วันนี้ (เทียบเขตไทย Bangkok):</strong>{" "}
-                {formatBannerYmdAsThaiLine(todayYmdBangkok())}{" "}
-                <span className="font-mono text-slate-700">({todayYmdBangkok()} ค.ศ.)</span>
-                {" — "}ต้องอยู่ระหว่างวันเริ่ม–วันสิ้นสุดรวมปลายทั้งสองข้าง
-              </div>
-              <p className="text-[11px] text-slate-500 -mt-2">
-                สองช่องด้านบน = ช่วงที่แอปจะโหลดแบนเนอร์ (ใช้กรองใน{" "}
-                <code className="text-[10px] bg-slate-100 px-1 rounded">GET /api/banners</code> เทียบวันนี้แบบ Bangkok) — แยกจากช่วงโค้ดด้านล่างโดยสิ้นเชิง
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Action / Deep Link</label>
-                <input type="text" value={formData.actionUrl} onChange={e => setFormData({...formData, actionUrl: e.target.value})} placeholder="app://promotion/1 หรือ /jobs" className="w-full border rounded-lg px-3 py-2 text-sm outline-none font-mono"/>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">สัดส่วนสไลด์ในแอป</label>
-                <select
-                  value={formData.slideHeight}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      slideHeight: e.target.value as typeof formData.slideHeight,
-                    })
-                  }
-                  className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"
-                >
-                  <option value="">ค่าเริ่มตามแอป / หน้า (NULL ใน DB)</option>
-                  <option value="hero">Hero 16:9</option>
-                  <option value="strip">แถบเตี้ย (รายละเอียดงาน)</option>
-                  <option value="portrait">Portrait 9:16</option>
-                </select>
-                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                  ทับค่า default จาก remote / placement — ใช้เมื่อแคมเปญต้องการสัดส่วนพิเศษ (สอดคล้องคอลัมน์ <code className="text-[10px] bg-slate-100 px-1 rounded">slide_height</code>)
-                </p>
-              </div>
-              <div className="border-t border-slate-100 pt-4 space-y-3">
-                <p className="text-xs font-bold text-slate-500 uppercase">โค้ดส่วนลด (ถ้ามี)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">รหัสโค้ด</label>
-                    <input type="text" value={formData.promoCode} onChange={e => setFormData({...formData, promoCode: e.target.value.toUpperCase()})} placeholder="SUMMER50" className="w-full border rounded-lg px-3 py-2 text-sm outline-none font-mono"/>
+                {modalError ? (
+                  <div
+                    className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800"
+                    role="alert"
+                  >
+                    {modalError}
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">โหมดส่วนลด</label>
-                    <select
-                      value={formData.discountMode}
+                ) : null}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    ชื่อแบนเนอร์
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.title}
+                    onChange={(e) =>
+                      setFormData({ ...formData, title: e.target.value })
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Image URL
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.imageUrl}
+                    onChange={(e) =>
+                      setFormData({ ...formData, imageUrl: e.target.value })
+                    }
+                    placeholder="https://… (อัปโหลดด้านล่างจะเติมให้อัตโนมัติ — ห้ามใช้ Google Drive)"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  {formData.imageUrl.trim() &&
+                  !isDirectBannerImageUrl(formData.imageUrl) ? (
+                    <p className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      ลิงก์นี้ไม่ใช่ URL รูปโดยตรง — ใช้ปุ่ม “เลือกรูป”
+                      ด้านล่างแทน
+                    </p>
+                  ) : null}
+                  <div className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] text-slate-600 leading-snug">
+                          ลากไฟล์รูปมาวางเพื่ออัปโหลดเข้า S3 (เก็บที่{" "}
+                          <code className="bg-white px-1 rounded border text-[10px]">
+                            public/banners/*
+                          </code>
+                          )
+                        </p>
+                        <label className="shrink-0">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void handleBannerImageFile(f);
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="inline-flex cursor-pointer items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                            เลือกรูป
+                          </span>
+                        </label>
+                      </div>
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const f = e.dataTransfer?.files?.[0];
+                          if (f) void handleBannerImageFile(f);
+                        }}
+                        className={`flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500 ${
+                          bannerImageUploading
+                            ? "opacity-70"
+                            : "hover:bg-slate-50"
+                        }`}
+                        aria-busy={bannerImageUploading}
+                      >
+                        {bannerImageUploading
+                          ? "กำลังอัปโหลดรูป…"
+                          : "ลากรูปมาวางตรงนี้"}
+                      </div>
+                      {bannerImageUploadErr ? (
+                        <p className="text-[11px] text-rose-700">
+                          {bannerImageUploadErr}
+                        </p>
+                      ) : null}
+                      {bannerImagePreview || formData.imageUrl ? (
+                        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                          <img
+                            src={bannerImagePreview || formData.imageUrl}
+                            alt=""
+                            className="h-40 w-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-bold text-slate-700">
+                    อัปโหลดรูปหลายสัดส่วน (optional)
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                    แอปจะเลือกภาพที่เหมาะกับตำแหน่ง/หน้าจอโดยอัตโนมัติ
+                    (ไม่ต้องครอป)
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {(
+                      ["1:1", "2:1", "9:16", "16:9", "4:3", "3:4"] as const
+                    ).map((k) => (
+                      <div
+                        key={k}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-slate-700">
+                            {k}
+                          </span>
+                          <label className="shrink-0">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) void handleBannerVariantFile(k, f);
+                                e.target.value = "";
+                              }}
+                            />
+                            <span className="inline-flex cursor-pointer items-center rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800">
+                              อัปโหลด
+                            </span>
+                          </label>
+                        </div>
+                        {formData.imageVariants?.[k] ? (
+                          <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white">
+                            <img
+                              src={formData.imageVariants[k]}
+                              alt=""
+                              className="h-24 w-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-[10px] text-slate-400">
+                            ยังไม่ได้อัปโหลด
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/90 p-3 space-y-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase">
+                    ตำแหน่งแสดงในแอป
+                  </label>
+                  <p className="text-[11px] text-slate-500 leading-snug">
+                    เลือกได้หลายหน้า แอปเรียก{" "}
+                    <code className="text-[10px] bg-white px-1 rounded border">
+                      GET /api/banners?placement=home|welcome|job_detail
+                    </code>{" "}
+                    — เลือกครบทั้ง 3 ช่อง = บันทึกเป็นแสดงทุกหน้า (ค่า NULL ใน
+                    DB)
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {ALL_BANNER_PLACEMENTS.map((slug) => (
+                      <label
+                        key={slug}
+                        className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 accent-indigo-600 shrink-0"
+                          checked={formData.placements.includes(slug)}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setFormData((prev) => ({
+                              ...prev,
+                              placements: on
+                                ? Array.from(
+                                    new Set([...prev.placements, slug]),
+                                  )
+                                : prev.placements.filter((p) => p !== slug),
+                            }));
+                          }}
+                        />
+                        {BANNER_PLACEMENT_LABELS[slug]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-700 mb-0">
+                      วันเริ่มแสดงแบนเนอร์
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      เลือกจากปฏิทินของเบราว์เซอร์ • เก็บในระบบเป็น ค.ศ.
+                    </p>
+                    <input
+                      type="date"
+                      required
+                      value={formData.startDate}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          discountMode: e.target.value === 'percent' ? 'percent' : 'fixed_baht',
-                        })
+                        setFormData({ ...formData, startDate: e.target.value })
                       }
                       className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"
-                    >
-                      <option value="fixed_baht">ลดเป็นบาท (วงเงินรวม)</option>
-                      <option value="percent">ลดเป็น % ของราคางาน</option>
-                    </select>
+                    />
+                    {formData.startDate ? (
+                      <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 leading-snug">
+                        ระบบอ่านเป็นวัน{" "}
+                        <strong>
+                          {formatBannerYmdAsThaiLine(formData.startDate)}
+                        </strong>
+                        <span className="text-slate-600 font-normal">
+                          {" "}
+                          ({formData.startDate} ค.ศ.)
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-700 mb-0">
+                      วันสิ้นสุดแสดงแบนเนอร์
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      รวมถึงวันนี้เป็นวันสุดท้ายที่แสดง
+                    </p>
+                    <input
+                      type="date"
+                      required
+                      value={formData.endDate}
+                      onChange={(e) =>
+                        setFormData({ ...formData, endDate: e.target.value })
+                      }
+                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"
+                    />
+                    {formData.endDate ? (
+                      <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 leading-snug">
+                        สิ้นสุดเมื่อ{" "}
+                        <strong>
+                          {formatBannerYmdAsThaiLine(formData.endDate)}
+                        </strong>
+                        <span className="text-slate-600 font-normal">
+                          {" "}
+                          ({formData.endDate} ค.ศ.)
+                        </span>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-                {formData.discountMode === 'percent' && (
+                <div className="rounded-lg border border-slate-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950 leading-snug">
+                  <strong>วันนี้ (เทียบเขตไทย Bangkok):</strong>{" "}
+                  {formatBannerYmdAsThaiLine(todayYmdBangkok())}{" "}
+                  <span className="font-mono text-slate-700">
+                    ({todayYmdBangkok()} ค.ศ.)
+                  </span>
+                  {" — "}ต้องอยู่ระหว่างวันเริ่ม–วันสิ้นสุดรวมปลายทั้งสองข้าง
+                </div>
+                <p className="text-[11px] text-slate-500 -mt-2">
+                  สองช่องด้านบน = ช่วงที่แอปจะโหลดแบนเนอร์ (ใช้กรองใน{" "}
+                  <code className="text-[10px] bg-slate-100 px-1 rounded">
+                    GET /api/banners
+                  </code>{" "}
+                  เทียบวันนี้แบบ Bangkok) — แยกจากช่วงโค้ดด้านล่างโดยสิ้นเชิง
+                </p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Action / Deep Link
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.actionUrl}
+                    onChange={(e) =>
+                      setFormData({ ...formData, actionUrl: e.target.value })
+                    }
+                    placeholder="app://promotion/1 หรือ /jobs"
+                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    สัดส่วนสไลด์ในแอป
+                  </label>
+                  <select
+                    value={formData.slideHeight}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        slideHeight: e.target
+                          .value as typeof formData.slideHeight,
+                      })
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"
+                  >
+                    <option value="">ค่าเริ่มตามแอป / หน้า (NULL ใน DB)</option>
+                    <option value="hero">Hero 16:9</option>
+                    <option value="strip">แถบเตี้ย (รายละเอียดงาน)</option>
+                    <option value="portrait">Portrait 9:16</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                    ทับค่า default จาก remote / placement —
+                    ใช้เมื่อแคมเปญต้องการสัดส่วนพิเศษ (สอดคล้องคอลัมน์{" "}
+                    <code className="text-[10px] bg-slate-100 px-1 rounded">
+                      slide_height
+                    </code>
+                    )
+                  </p>
+                </div>
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <p className="text-xs font-bold text-slate-500 uppercase">
+                    โค้ดส่วนลด (ถ้ามี)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">
+                        รหัสโค้ด
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.promoCode}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            promoCode: e.target.value.toUpperCase(),
+                          })
+                        }
+                        placeholder="SUMMER50"
+                        className="w-full border rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">
+                        โหมดส่วนลด
+                      </label>
+                      <select
+                        value={formData.discountMode}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            discountMode:
+                              e.target.value === "percent"
+                                ? "percent"
+                                : "fixed_baht",
+                          })
+                        }
+                        className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white"
+                      >
+                        <option value="fixed_baht">
+                          ลดเป็นบาท (วงเงินรวม)
+                        </option>
+                        <option value="percent">ลดเป็น % ของราคางาน</option>
+                      </select>
+                    </div>
+                  </div>
+                  {formData.discountMode === "percent" && (
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">
+                        เปอร์เซ็นต์ส่วนลด (1–100)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        step={0.5}
+                        value={formData.discountPercent}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            discountPercent:
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value),
+                          })
+                        }
+                        placeholder="50"
+                        className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
+                      />
+                    </div>
+                  )}
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">เปอร์เซ็นต์ส่วนลด (1–100)</label>
+                    <label className="block text-xs text-slate-500 mb-1">
+                      {formData.discountMode === "percent"
+                        ? "เพดานส่วนลดสูงสุด (บาท) — จำกัดยอดหักจากกองทุน"
+                        : "วงเงินส่วนลดสูงสุด (บาท)"}
+                    </label>
                     <input
                       type="number"
-                      min={1}
-                      max={100}
-                      step={0.5}
-                      value={formData.discountPercent}
+                      min={formData.promoCode.trim() ? 1 : 0}
+                      value={formData.discountMaxBaht}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          discountPercent: e.target.value === '' ? '' : Number(e.target.value),
+                          discountMaxBaht:
+                            e.target.value === "" ? "" : Number(e.target.value),
                         })
                       }
-                      placeholder="50"
+                      placeholder="100"
+                      className={`w-full border rounded-lg px-3 py-2 text-sm outline-none ${
+                        formData.promoCode.trim() &&
+                        (formData.discountMaxBaht === "" ||
+                          Number(formData.discountMaxBaht) <= 0)
+                          ? "border-amber-400 bg-amber-50/50"
+                          : ""
+                      }`}
+                    />
+                    {formData.promoCode.trim() &&
+                    (formData.discountMaxBaht === "" ||
+                      Number(formData.discountMaxBaht) <= 0) ? (
+                      <p className="mt-1 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                        มีรหัสโค้ดแล้ว — ต้องใส่วงเงินส่วนลด &gt; 0 (เช่น 100
+                        บาท) ไม่งั้นกดบันทึกไม่ได้
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">
+                      ยอดเติมเงินสะสมขั้นต่ำ (บาท) ก่อนกดรับโค้ด — 0 = ไม่บังคับ
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={formData.minCumulativeTopupThb}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          minCumulativeTopupThb:
+                            e.target.value === "" ? "" : Number(e.target.value),
+                        })
+                      }
+                      placeholder="100"
                       className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
                     />
                   </div>
-                )}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    {formData.discountMode === 'percent'
-                      ? 'เพดานส่วนลดสูงสุด (บาท) — จำกัดยอดหักจากกองทุน'
-                      : 'วงเงินส่วนลดสูงสุด (บาท)'}
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.firstPaidJobOnly}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          firstPaidJobOnly: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 accent-indigo-600"
+                    />
+                    ใช้ได้เฉพาะการชำระงานจ้างครั้งแรกของลูกค้า
+                    (หลังรับโค้ดแล้วใช้ครั้งเดียว)
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.discountMaxBaht}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        discountMaxBaht: e.target.value === '' ? '' : Number(e.target.value),
-                      })
-                    }
-                    placeholder="100"
-                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    ยอดเติมเงินสะสมขั้นต่ำ (บาท) ก่อนกดรับโค้ด — 0 = ไม่บังคับ
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.minCumulativeTopupThb}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        minCumulativeTopupThb: e.target.value === '' ? '' : Number(e.target.value),
-                      })
-                    }
-                    placeholder="100"
-                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.firstPaidJobOnly}
-                    onChange={(e) => setFormData({ ...formData, firstPaidJobOnly: e.target.checked })}
-                    className="w-4 h-4 accent-indigo-600"
-                  />
-                  ใช้ได้เฉพาะการชำระงานจ้างครั้งแรกของลูกค้า (หลังรับโค้ดแล้วใช้ครั้งเดียว)
-                </label>
-                {formData.promoCode.trim() !== '' && (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">เริ่มใช้โค้ดได้ (เวลาไทย)</label>
-                        <input
-                          type="datetime-local"
-                          value={formData.promoValidFromLocal}
-                          onChange={(e) => setFormData({ ...formData, promoValidFromLocal: e.target.value })}
-                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                        />
+                  {formData.promoCode.trim() !== "" && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">
+                            เริ่มใช้โค้ดได้ (เวลาไทย)
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={formData.promoValidFromLocal}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                promoValidFromLocal: e.target.value,
+                              })
+                            }
+                            className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">
+                            หมดอายุโค้ด (เวลาไทย)
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={formData.promoValidUntilLocal}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                promoValidUntilLocal: e.target.value,
+                              })
+                            }
+                            className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
+                          />
+                        </div>
                       </div>
+                      <p className="text-[11px] text-slate-500">
+                        เว้นว่าง = ใช้ช่วงวันที่แบนเนอร์ (ตั้งแต่ 00:00 ถึง
+                        23:59:59 ตามวันที่แบนเนอร์)
+                      </p>
                       <div>
-                        <label className="block text-xs text-slate-500 mb-1">หมดอายุโค้ด (เวลาไทย)</label>
-                        <input
-                          type="datetime-local"
-                          value={formData.promoValidUntilLocal}
-                          onChange={(e) => setFormData({ ...formData, promoValidUntilLocal: e.target.value })}
-                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                        />
+                        <label className="block text-xs text-slate-500 mb-1">
+                          หมวดงานที่ใช้โค้ดได้ (Ctrl/Cmd เลือกหลายรายการ)
+                        </label>
+                        <select
+                          multiple
+                          size={8}
+                          value={formData.allowedJobCategories}
+                          onChange={(e) => {
+                            const opts = Array.from(
+                              e.target.selectedOptions,
+                            ).map((o) => o.value);
+                            setFormData({
+                              ...formData,
+                              allowedJobCategories: opts,
+                            });
+                          }}
+                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white min-h-[140px]"
+                        >
+                          {JOB_CATEGORIES_FOR_PROMO_BANNERS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          ไม่เลือก = ใช้ได้ทุกหมวดงาน
+                        </p>
                       </div>
-                    </div>
-                    <p className="text-[11px] text-slate-500">เว้นว่าง = ใช้ช่วงวันที่แบนเนอร์ (ตั้งแต่ 00:00 ถึง 23:59:59 ตามวันที่แบนเนอร์)</p>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">หมวดงานที่ใช้โค้ดได้ (Ctrl/Cmd เลือกหลายรายการ)</label>
-                      <select
-                        multiple
-                        size={8}
-                        value={formData.allowedJobCategories}
-                        onChange={(e) => {
-                          const opts = Array.from(e.target.selectedOptions).map((o) => o.value);
-                          setFormData({ ...formData, allowedJobCategories: opts });
-                        }}
-                        className="w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white min-h-[140px]"
-                      >
-                        {JOB_CATEGORIES_FOR_PROMO_BANNERS.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = ใช้ได้ทุกหมวดงาน</p>
-                    </div>
-                    <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.promoClaimsEnabled}
-                        onChange={(e) => setFormData({ ...formData, promoClaimsEnabled: e.target.checked })}
-                        className="w-4 h-4 mt-0.5 accent-indigo-600 shrink-0"
-                      />
-                      <span>
-                        <span className="font-semibold">อนุญาตรับและใช้โค้ด</span>
-                        <span className="block text-[11px] text-slate-500">
-                          ปิดตัวนี้ = โชว์แบนเนอร์โปรได้ (โฆษณาล่วงหน้า) แต่ผู้ใช้รับหรือใช้โค้ดไม่ได้จนกว่าจะเปิดอีกครั้ง
+                      <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.promoClaimsEnabled}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              promoClaimsEnabled: e.target.checked,
+                            })
+                          }
+                          className="w-4 h-4 mt-0.5 accent-indigo-600 shrink-0"
+                        />
+                        <span>
+                          <span className="font-semibold">
+                            อนุญาตรับและใช้โค้ด
+                          </span>
+                          <span className="block text-[11px] text-slate-500">
+                            ปิดตัวนี้ = โชว์แบนเนอร์โปรได้ (โฆษณาล่วงหน้า)
+                            แต่ผู้ใช้รับหรือใช้โค้ดไม่ได้จนกว่าจะเปิดอีกครั้ง
+                          </span>
                         </span>
-                      </span>
+                      </label>
+                    </>
+                  )}
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">
+                      คำอธิบายโค้ด (แสดงที่หน้า Home)
                     </label>
-                  </>
-                )}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">คำอธิบายโค้ด (แสดงที่หน้า Home)</label>
-                  <input type="text" value={formData.discountDescription} onChange={e => setFormData({...formData, discountDescription: e.target.value})} placeholder="ส่วนลดเมื่อจ้างงาน สูงสุด 100 บาท" className="w-full border rounded-lg px-3 py-2 text-sm outline-none"/>
+                    <input
+                      type="text"
+                      value={formData.discountDescription}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          discountDescription: e.target.value,
+                        })
+                      }
+                      placeholder="ส่วนลดเมื่อจ้างงาน สูงสุด 100 บาท"
+                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4">
-                 <div className="flex-1">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ลำดับ (Order)</label>
-                    <input type="number" value={formData.order} onChange={e => setFormData({...formData, order: parseInt(e.target.value)})} className="w-full border rounded-lg px-3 py-2 text-sm outline-none"/>
-                 </div>
-                 <div className="flex items-center gap-2 mt-5">
-                    <input type="checkbox" id="isActive" checked={formData.isActive} onChange={e => setFormData({...formData, isActive: e.target.checked})} className="w-4 h-4 accent-indigo-600"/>
-                    <label htmlFor="isActive" className="text-sm font-bold text-slate-700">เปิดใช้งานทันที</label>
-                 </div>
-              </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      ลำดับ (Order)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.order}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          order: parseInt(e.target.value),
+                        })
+                      }
+                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 mt-5">
+                    <input
+                      type="checkbox"
+                      id="isActive"
+                      checked={formData.isActive}
+                      onChange={(e) =>
+                        setFormData({ ...formData, isActive: e.target.checked })
+                      }
+                      className="w-4 h-4 accent-indigo-600"
+                    />
+                    <label
+                      htmlFor="isActive"
+                      className="text-sm font-bold text-slate-700"
+                    >
+                      เปิดใช้งานทันที
+                    </label>
+                  </div>
+                </div>
               </div>
               <div className="shrink-0 border-t border-slate-200 bg-white px-4 sm:px-6 py-3 pb-4">
-                <button type="submit" disabled={saving} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:opacity-50">
-                  {saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:opacity-50"
+                >
+                  {saving ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+    </div>
+      ) : null}
     </div>
   );
 };

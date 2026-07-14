@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "provider": "runway",
+  "label": "Runway",
+  "prefix": "High-fidelity motion video from reference image.",
+  "spoken_wrapper": "{spoken_instruction} Voice-over: \"{spoken}\"",
+  "suffix": "Smooth camera motion, preserve reference subject, professional ad quality."
+}

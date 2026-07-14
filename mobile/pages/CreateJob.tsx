@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
 import { MockApi } from "../services/mockApi";
 import { api, getBackendBase } from "../services/api";
@@ -18,6 +18,7 @@ import {
 import { useLanguage } from "../context/LanguageContext";
 import { useNotification } from "../context/NotificationContext";
 import { useAuth } from "../context/AuthContext";
+import { useMobileAppConfig } from "../context/MobileAppConfigContext";
 import { UserProfile, JobLocation, Job } from "../types";
 import EmployerMap from "../components/EmployerMap";
 import { calcMatchJobTalentBreakdown } from "../constants/matchJobFeeStructure";
@@ -31,6 +32,16 @@ import {
   type FeeEstimatesResponse,
   estimateMatchTalentBreakdown,
 } from "../services/feeEstimatesService";
+import {
+  DEFAULT_HIRING_ORDER_NEWBIE,
+  DEFAULT_HIRING_ORDER_SENIOR,
+  EMPLOYMENT_TYPE_OPTIONS,
+  THAI_PROVINCES,
+  getBlueprintBySurfaceAndCategory,
+  getEmploymentTypeLabel,
+  getRoutingMatrixBySurface,
+  suggestRoutingByKeywords,
+} from "../constants/workTaxonomy";
 
 const DEFAULT_INSURANCE_PERCENT = 10;
 
@@ -41,6 +52,7 @@ export const CreateJob: React.FC = () => {
   const { t } = useLanguage();
   const { notify } = useNotification();
   const { user } = useAuth();
+  const { config } = useMobileAppConfig();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [insurance, setInsurance] = useState(true);
@@ -77,7 +89,29 @@ export const CreateJob: React.FC = () => {
     duration_hours: 2, // Default duration
     /** เพิ่มจาก dropdown — บันทึกลงรายละเอียดงานตอนส่ง */
     partyCompanionSkill: "" as "" | "Sommelier",
+    employment_type: "one_time",
+    province: "กรุงเทพมหานคร",
   });
+  const matchBlueprint = getBlueprintBySurfaceAndCategory(
+    "match_job",
+    formData.category,
+  );
+  const matchRoutingMatrix = getRoutingMatrixBySurface("match_job").slice(0, 6);
+  const routingSuggestion = useMemo(
+    () =>
+      suggestRoutingByKeywords(
+        [formData.title, formData.description, formData.category].join(" "),
+        {
+          verticalWeightOverrides: config.remote.routingWeightOverrides || null,
+        },
+      ),
+    [
+      formData.title,
+      formData.description,
+      formData.category,
+      config.remote.routingWeightOverrides,
+    ],
+  );
 
   useEffect(() => {
     void fetchFeeEstimates().then(setFeeEstimates).catch(() => {});
@@ -451,8 +485,8 @@ export const CreateJob: React.FC = () => {
         // เพิ่มข้อมูลตำแหน่งแบบละเอียดถ้ามี
         province: jobAddress.province,
         district: jobAddress.district,
-        subdistrict: jobAddress.subdistrict,
-        postal_code: jobAddress.postalCode,
+        subdistrict: (jobAddress as any).subdistrict,
+        postal_code: (jobAddress as any).postalCode,
       };
 
       // 5. Prepare job data — ตรวจสอบ datetime ต้องเป็นอนาคต (งานโพสต์ใหม่ไม่ expired)
@@ -471,10 +505,20 @@ export const CreateJob: React.FC = () => {
         formData.partyCompanionSkill === "Sommelier" && !alreadyHasSomm
           ? `${descTrim}${appendSomm}`
           : formData.description;
+      const descriptionWithProfile = [
+        descriptionFinal.trim(),
+        "",
+        "Hiring Profile",
+        `- จังหวัดงาน: ${formData.province || "ไม่ระบุ"}`,
+        `- ลักษณะการจ้างงาน: ${getEmploymentTypeLabel(formData.employment_type)}`,
+        "- ช่องทางลงงาน: Match Job",
+      ]
+        .join("\n")
+        .trim();
 
       const jobPayload = {
         title: formData.title,
-        description: descriptionFinal,
+        description: descriptionWithProfile,
         category: formData.category,
         price: jobFee,
         duration_hours: Number(formData.duration_hours) || 2,
@@ -489,6 +533,8 @@ export const CreateJob: React.FC = () => {
         // เพิ่ม metadata สำหรับ tracking
         _submitted_at: new Date().toISOString(),
         _source: "web_app",
+        _employment_type: formData.employment_type,
+        _target_province: formData.province,
       };
 
       // 6. Create Job
@@ -501,10 +547,10 @@ export const CreateJob: React.FC = () => {
       // 7. Show success message based on where job was saved
       let successMessage = t("create.success");
 
-      if (createdJob._source === "firebase_fallback") {
+      if ((createdJob as any)._source === "firebase_fallback") {
         successMessage = "งานถูกสร้างสำเร็จ (บันทึกลงระบบสำรอง)";
         notify(successMessage, "warning");
-      } else if (createdJob._source === "localstorage") {
+      } else if ((createdJob as any)._source === "localstorage") {
         successMessage = "งานถูกสร้างสำเร็จ (บันทึกชั่วคราวในเบราว์เซอร์)";
         notify(successMessage, "warning");
       } else {
@@ -652,10 +698,12 @@ export const CreateJob: React.FC = () => {
                   const tb = feeEstimates?.fee_rates
                     ? estimateMatchTalentBreakdown(jobFee, "none", feeEstimates.fee_rates)
                     : calcMatchJobTalentBreakdown(jobFee, undefined);
-                  const srcPct =
-                    "sourcingPct" in tb ? tb.sourcingPct : 8;
-                  const comPct =
-                    "commissionPct" in tb ? tb.commissionPct : 24;
+                  const srcPct = Number(
+                    "sourcingPct" in tb ? tb.sourcingPct : 8,
+                  );
+                  const comPct = Number(
+                    "commissionPct" in tb ? tb.commissionPct : 24,
+                  );
                   return (
                     <div className="mt-3 space-y-1.5 text-sm text-slate-600">
                       <div className="flex justify-between">
@@ -728,7 +776,9 @@ export const CreateJob: React.FC = () => {
 
   // Step 1: Form — slide-in from bottom when coming from Party Vibe Picker
   return (
-    <div className={`max-w-2xl mx-auto space-y-6 ${fromPartyVibe ? "create-job-slide-up" : ""}`}>
+    <div
+      className={`aqond-trust-theme max-w-2xl mx-auto space-y-6 ${fromPartyVibe ? "create-job-slide-up" : ""}`}
+    >
       {/* AI Scan Result Banner */}
       {!providerId && (scanning || scanComplete) && (
         <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 animate-in fade-in slide-in-from-top-4">
@@ -852,6 +902,134 @@ export const CreateJob: React.FC = () => {
               />
             </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                จังหวัดงาน
+              </label>
+              <select
+                name="province"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                value={formData.province}
+                onChange={handleChange}
+              >
+                {THAI_PROVINCES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ลักษณะการจ้างงาน
+              </label>
+              <select
+                name="employment_type"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                value={formData.employment_type}
+                onChange={handleChange}
+              >
+                {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+            <p className="text-xs font-bold text-emerald-900 uppercase tracking-wide">
+              Match Job Guide
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(matchBlueprint?.sampleHiringExamples || []).length > 0 ? (
+                matchBlueprint?.sampleHiringExamples.map((sample) => (
+                  <span
+                    key={sample}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-emerald-200 text-xs text-emerald-900"
+                  >
+                    {sample}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-emerald-800">
+                  ระบบจะใช้ flow มาตรฐานสำหรับงานหน้างานและงานด่วน
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-emerald-900 mb-1">
+                  ลำดับจ้างงาน (มือใหม่)
+                </p>
+                <ol className="text-xs text-emerald-900/90 list-decimal list-inside space-y-0.5">
+                  {DEFAULT_HIRING_ORDER_NEWBIE.map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ol>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-emerald-900 mb-1">
+                  ลำดับจ้างงาน (Senior)
+                </p>
+                <ol className="text-xs text-emerald-900/90 list-decimal list-inside space-y-0.5">
+                  {DEFAULT_HIRING_ORDER_SENIOR.map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+            <div className="pt-1">
+              <p className="text-xs font-semibold text-emerald-900 mb-1.5">
+                Routing Matrix (Match Job)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {matchRoutingMatrix.map((item) => (
+                  <span
+                    key={item.profession}
+                    className="rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-[11px] text-emerald-900"
+                  >
+                    {item.profession}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/work-routing-matrix")}
+              className="text-xs text-emerald-800 underline"
+            >
+              เปิด Routing Matrix แบบค้นหา
+            </button>
+          </div>
+          {routingSuggestion && routingSuggestion.surface !== "match_job" && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs uppercase tracking-wide font-semibold text-amber-700">
+                Auto Route แนะนำ
+              </p>
+              <p className="text-sm text-amber-900 mt-1">
+                งานนี้อาจเหมาะกับ <b>{routingSuggestion.surface}</b> มากกว่า
+                ({(routingSuggestion.confidence * 100).toFixed(0)}%)
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/create-job-advance")}
+                  className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 text-xs"
+                >
+                  ไป Job Board Form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/video-feed")}
+                  className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 text-xs"
+                >
+                  ไป Video Feed
+                </button>
+              </div>
+            </div>
+          )}
 
           {COMPANION_SKILL_CATEGORIES.includes(
             formData.category as (typeof COMPANION_SKILL_CATEGORIES)[number],
@@ -955,6 +1133,12 @@ export const CreateJob: React.FC = () => {
                       location.lat,
                       location.lng,
                     );
+                    if (address?.province) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        province: String(address.province),
+                      }));
+                    }
                     setJobAddress((prev) => ({
                       ...prev,
                       ...address,

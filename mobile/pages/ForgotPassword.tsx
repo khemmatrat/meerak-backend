@@ -3,11 +3,21 @@ import { Link, useNavigate } from "react-router-dom";
 import { MockApi } from "../services/mockApi";
 import {
   sendOTP,
+  resendOTP,
   verifyOTP as verifyFirebaseOTP,
   resetPhoneAuth,
   getFreshPhoneAuthIdToken,
+  warmRecaptchaVerifier,
 } from "../services/phoneAuth";
-import { Lock, Smartphone, ArrowLeft, CheckCircle, Clock } from "lucide-react";
+import {
+  Lock,
+  Smartphone,
+  ArrowLeft,
+  CheckCircle,
+  Clock,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 type Step = "phone" | "otp" | "password" | "success";
 
@@ -21,12 +31,20 @@ export const ForgotPassword: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otpCountdown, setOtpCountdown] = useState(0);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
-  // รีเซ็ต Firebase Phone Auth เมื่อเข้ามาหน้านี้ (ถ้ามาจาก Login อาจมี state ค้าง)
   useEffect(() => {
     resetPhoneAuth();
+    void warmRecaptchaVerifier();
   }, []);
+
+  useEffect(() => {
+    if (step === "phone" || step === "otp") {
+      void warmRecaptchaVerifier();
+    }
+  }, [step]);
 
   useEffect(() => {
     if (otpCountdown > 0) {
@@ -80,7 +98,12 @@ export const ForgotPassword: React.FC = () => {
       }
       if (result.phone) {
         const p = result.phone.replace(/^\+/, "").replace(/\s/g, "");
-        const normalized = p.startsWith("66") && p.length >= 10 ? "0" + p.slice(2) : p.startsWith("0") ? p : "0" + p;
+        const normalized =
+          p.startsWith("66") && p.length >= 10
+            ? "0" + p.slice(2)
+            : p.startsWith("0")
+              ? p
+              : "0" + p;
         setPhone(normalized);
       }
       setStep("password");
@@ -124,10 +147,27 @@ export const ForgotPassword: React.FC = () => {
     }
   };
 
-  const handleResendOTP = () => {
-    resetPhoneAuth();
-    setStep("phone");
-    setOtpCode("");
+  const handleResendOTP = async () => {
+    if (otpCountdown > 240) {
+      setError("รอสักครู่แล้วกดส่งรหัสใหม่ได้อีกครั้งนะคะ");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await resendOTP(phone.trim());
+      if (!result.success) {
+        setError(result.message);
+        return;
+      }
+      setOtpCountdown(300);
+      setOtpCode("");
+      setError("ส่งรหัสใหม่แล้ว กรุณาตรวจ SMS อีกครั้งค่ะ");
+    } catch {
+      setError("ส่งรหัสไม่สำเร็จชั่วคราว กดส่งรหัสอีกครั้งได้เลยค่ะ");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -139,7 +179,8 @@ export const ForgotPassword: React.FC = () => {
           </div>
           <h1 className="text-xl font-bold text-gray-900">ลืมรหัสผ่าน</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {step === "phone" && "กรอกเบอร์โทรที่ใช้สมัครสมาชิก เพื่อขอรหัส OTP"}
+            {step === "phone" &&
+              "กรอกเบอร์โทรที่ใช้สมัครสมาชิก เพื่อขอรหัส OTP"}
             {step === "otp" && "กรอกรหัส OTP ที่ส่งไปยัง SMS ของคุณ"}
             {step === "password" && "ตั้งรหัสผ่านใหม่"}
             {step === "success" && "ตั้งรหัสผ่านใหม่สำเร็จ"}
@@ -147,13 +188,16 @@ export const ForgotPassword: React.FC = () => {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm border border-red-100">
+          <div className="mb-4 p-3 rounded-lg text-sm border text-center leading-relaxed bg-amber-50 text-amber-950 border-amber-200">
             {error}
           </div>
         )}
 
-        {/* reCAPTCHA (สำหรับ Firebase Phone Auth — ใช้ recaptcha-container เหมือน Login) */}
-        <div id="recaptcha-container" className="invisible h-0 overflow-hidden" aria-hidden="true"></div>
+        <div
+          id="recaptcha-container"
+          className="recaptcha-host"
+          aria-hidden="true"
+        />
 
         {step === "phone" && (
           <form onSubmit={handleCheckPhone} className="space-y-4">
@@ -185,16 +229,21 @@ export const ForgotPassword: React.FC = () => {
         {step === "otp" && (
           <form onSubmit={handleVerifyOTP} className="space-y-4">
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm">
-              <p className="font-medium text-blue-900">รหัส OTP ถูกส่งไปยัง {phone}</p>
+              <p className="font-medium text-blue-900">
+                รหัส OTP ถูกส่งไปยัง {phone}
+              </p>
               {otpCountdown > 0 && (
                 <div className="flex items-center text-blue-600 text-xs mt-2">
                   <Clock size={12} className="mr-1" />
-                  หมดอายุใน {Math.floor(otpCountdown / 60)}:{String(otpCountdown % 60).padStart(2, "0")}
+                  หมดอายุใน {Math.floor(otpCountdown / 60)}:
+                  {String(otpCountdown % 60).padStart(2, "0")}
                 </div>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">รหัส OTP 6 หลัก</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                รหัส OTP 6 หลัก
+              </label>
               <input
                 type="text"
                 required
@@ -215,8 +264,9 @@ export const ForgotPassword: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={handleResendOTP}
-              className="w-full py-2 text-sm text-amber-600 hover:underline"
+              disabled={loading}
+              onClick={() => void handleResendOTP()}
+              className="w-full py-2 text-sm text-sky-600 hover:underline disabled:opacity-50"
             >
               ไม่ได้รับรหัส? ส่งใหม่อีกครั้ง
             </button>
@@ -230,30 +280,64 @@ export const ForgotPassword: React.FC = () => {
               ยืนยันเบอร์โทรศัพท์สำเร็จ
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
-                placeholder="อย่างน้อย 6 ตัวอักษร"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={loading}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                รหัสผ่านใหม่
+              </label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-3 pr-11 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                  placeholder="อย่างน้อย 6 ตัวอักษร"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  aria-label={showNewPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  disabled={loading}
+                >
+                  {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ยืนยันรหัสผ่านใหม่</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
-                placeholder="กรอกรหัสผ่านอีกครั้ง"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={loading}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ยืนยันรหัสผ่านใหม่
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-3 pr-11 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                  placeholder="กรอกรหัสผ่านอีกครั้ง"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  aria-label={
+                    showConfirmPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  disabled={loading}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff size={18} />
+                  ) : (
+                    <Eye size={18} />
+                  )}
+                </button>
+              </div>
             </div>
             <button
               type="submit"
@@ -268,10 +352,15 @@ export const ForgotPassword: React.FC = () => {
         {step === "success" && (
           <div className="space-y-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
-              <CheckCircle className="text-emerald-600 shrink-0 mt-0.5" size={20} />
+              <CheckCircle
+                className="text-emerald-600 shrink-0 mt-0.5"
+                size={20}
+              />
               <div className="text-sm text-emerald-800">
                 <p className="font-medium">ตั้งรหัสผ่านใหม่สำเร็จ</p>
-                <p className="mt-1">คุณสามารถใช้รหัสผ่านใหม่เข้าสู่ระบบได้เลย</p>
+                <p className="mt-1">
+                  คุณสามารถใช้รหัสผ่านใหม่เข้าสู่ระบบได้เลย
+                </p>
               </div>
             </div>
             <button
@@ -285,7 +374,10 @@ export const ForgotPassword: React.FC = () => {
 
         {step !== "success" && (
           <p className="mt-4 text-center text-sm text-gray-500">
-            <Link to="/login" className="text-amber-600 hover:underline inline-flex items-center gap-1">
+            <Link
+              to="/login"
+              className="text-amber-600 hover:underline inline-flex items-center gap-1"
+            >
               <ArrowLeft size={14} /> กลับไปเข้าสู่ระบบ
             </Link>
           </p>

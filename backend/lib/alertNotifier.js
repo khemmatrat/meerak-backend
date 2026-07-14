@@ -45,7 +45,7 @@ export async function sendLineNotify(message) {
 
 /**
  * ส่ง Email ผ่าน SMTP (nodemailer ถ้ามี)
- * @param {object} opts - { to, subject, text }
+ * @param {object} opts - { to, subject, text, html, attachments }
  */
 export async function sendAlertEmail(opts) {
   const to = opts?.to || process.env.ALERT_EMAIL_TO;
@@ -70,6 +70,8 @@ export async function sendAlertEmail(opts) {
       to,
       subject: opts.subject || '[AQOND] Reconcile Alert',
       text: opts.text || opts.body,
+      html: opts.html || undefined,
+      attachments: Array.isArray(opts.attachments) ? opts.attachments : undefined,
     });
     return { ok: true };
   } catch (e) {

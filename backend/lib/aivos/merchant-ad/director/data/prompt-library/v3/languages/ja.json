@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "ja",
+  "spoken_instruction": "自然な日本語で明瞭に話す。UGCクリエイター風のトーン。",
+  "placeholder_spoken": "こんにちは！{shop}の{product}をご紹介します。{offer} {cta}",
+  "motion_hint": "スマホ自撮り、カメラに向かって自然に歩く。",
+  "tone_hint": "親しみやすく、丁寧で信頼感のある話し方。"
+}

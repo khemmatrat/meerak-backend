@@ -1,0 +1,12 @@
+# P62/P63: Shared env ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aqond-env
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+data:
+  AQOND_ENV: {{ .Values.global.env | quote }}
+  AQOND_DEFAULT_REGION: {{ .Values.global.region | quote }}
+  KONG_DECLARATIVE_CONFIG: /kong/kong.yml

@@ -1,0 +1,24 @@
+# P66: ArgoCD Application (GitOps)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aqond-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/aqond-v2.git
+    targetRevision: main
+    path: aqond-v2/infra/helm/aqond
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: aqond-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

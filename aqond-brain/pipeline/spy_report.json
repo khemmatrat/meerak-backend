@@ -1,0 +1,44 @@
+{
+  "brief": "สร้างโฆษณาวิดีโอ TikTok/Reels 45-60 วินาทีสำหรับ **Aqond** — แพลตฟอร์มเรียนออนไลน์สไตล์มหาวิทยาลัยระดับปริญญาตรี\n\n## เป้าหมาย\nทำให้คนรู้จัก Aqond และสร้าง brand awareness ในกลุ่ม Gen Z / มหาลัย / วัยทำงานที่อยากเรียนต่อ\n\n## จุดขาย (USP)\n- **AI Tutor ส่วนตัว 24/7** ตอบคำถามได้ทันที ไม่ต้องรอครู\n- **เน้นวิชา STEM** (คณิต, ฟิสิกส์, เคมี, โปรแกรมมิ่ง) ระดับปริญญาตรีคุณภาพสูง\n- **เรียนได้ทุกที่ทุกเวลา** — mobile-first, responsive\n- **ราคาคุ้มค่า**: 299 บาท/เดือน (ถูกกว่าติวเตอร์เดือนละหลักพัน)\n- **Community-driven** — แชร์โน้ต, ถาม-ตอบกับเพื่อน\n\n## Tone & Style\n- Modern, energetic, aspirational\n- ใช้ภาษาไทยวัยรุ่น แต่ไม่เกินไป (professional enough)\n- สร้าง FOMO + social proof\n- Hook แรง 3 วินาทีแรก (ต้องหยุดนิ้วเลื่อน)\n\n## Target Audience\n1. **Gen Z (18-24)**: นักศึกษามหาลัย ที่อยากเกรดดี / เข้าใจวิชายาก\n2. **Working Professionals (25-35)**: ทำงานแล้วอยากเรียนต่อ / upskill\n3. **Career Switchers**: คนที่อยากเปลี่ยนสายงาน (เช่น เรียน coding)\n\n## Call-to-Action\n\"ดาวน์โหลด Aqond วันนี้ — ทดลองฟรี 7 วัน ไม่ต้องใช้บัตรเครดิต\"\n\n## Pain Points (ต้องโดนใจ)\n- เรียนไม่เข้าใจ ไม่มีคนถาม\n- ติวเตอร์แพง (หลักพัน/เดือน)\n- เวลาไม่ตรงกับครู/อาจารย์\n- อยากเรียนต่อแต่ไม่มีเวลาไปมหาลัย\n\n## Competitors (ต้องแตกต่าง)\n- Coursera/edX: เน้นคนทำงาน, ไม่มี AI tutor ตอบคำถาม realtime\n- YouTube tutorials: ฟรีแต่ไม่ structured, ไม่มี certificate\n- ติวเตอร์ online: แพงมาก, ต้องนัดเวลา\n\n## Visual Direction\n- Scene 1 (Hook): มือกำลังเลื่อน TikTok → หยุดที่โฆษณา Aqond\n- Scene 2 (Problem): นักศึกษาเครียดกับสมการยาก / ข้อสอบใกล้\n- Scene 3 (Solution): เปิดแอป Aqond → AI chat ตอบคำถามทันที\n- Scene 4 (Features): แสดง UI เรียบง่าย, ราคา, วิชา STEM\n- Scene 5 (Social Proof): \"10,000+ คนใช้แล้ว\" / testimonial\n- Scene 6 (CTA): ปุ่ม Download + \"ทดลองฟรี 7 วัน\"",
+  "competitors": [
+    {
+      "name": "Coursera",
+      "strength": "คอร์สจากมหาลัยดัง (Stanford, MIT)",
+      "weakness": "ไม่มี AI tutor ส่วนตัว, ราคาแพง ($49-79/course)"
+    },
+    {
+      "name": "edX",
+      "strength": "มี MicroMasters programs",
+      "weakness": "UX ไม่เป็นมิตรกับมือถือ, ไม่มี realtime help"
+    },
+    {
+      "name": "YouTube Educational",
+      "strength": "ฟรี, เนื้อหาเยอะ",
+      "weakness": "ไม่ structured, ไม่มี certificate, ต้องค้นหาเอง"
+    },
+    {
+      "name": "ติวเตอร์ online ทั่วไป",
+      "strength": "1-on-1 attention",
+      "weakness": "แพงมาก (3,000-10,000 บาท/เดือน), ต้องนัดเวลา"
+    }
+  ],
+  "market_trends": [
+    "Gen Z ใช้เวลาบน TikTok/Reels เฉลี่ย 90 นาที/วัน",
+    "AI education market เติบโต 47% YoY (2025-2026)",
+    "Micro-learning & bite-sized content เป็นที่ต้องการ",
+    "Online degree programs ยอมรับในตลาดงานมากขึ้น",
+    "Career switching ไป Tech เป็นเทรนด์ในไทย"
+  ],
+  "target_metrics": {
+    "awareness_goal": "100,000 impressions ใน 30 วัน",
+    "conversion_goal": "5,000 app downloads",
+    "ctr_target": "3-5%",
+    "platforms": [
+      "TikTok",
+      "Facebook Reels",
+      "Instagram Reels",
+      "YouTube Shorts"
+    ]
+  },
+  "updated_at": "2026-03-18T17:25:00Z"
+}

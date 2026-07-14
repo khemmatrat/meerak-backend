@@ -1,0 +1,190 @@
+# Default values — override per env with values-dev/staging/prod.yaml (P63)
+
+global:
+  imageRegistry: ghcr.io/aqond
+  imageTag: dev
+  imagePullPolicy: IfNotPresent
+  namespace: aqond
+  region: TH
+  env: dev
+
+ingress:
+  enabled: true
+  className: kong
+  host: aqond.local
+  tls:
+    enabled: false
+    secretName: aqond-tls
+
+kong:
+  enabled: true
+  image: kong:3.4
+  replicaCount: 1
+  adminPort: 8001
+  proxyPort: 8000
+
+postgres:
+  enabled: true
+  host: aqond-postgres
+  port: 5432
+  database: commerce
+  user: admin_boss
+  existingSecret: aqond-secrets
+
+redis:
+  enabled: true
+  addr: aqond-redis:6379
+  cluster: false
+  clusterAddrs: redis-node-1:6379,redis-node-2:6379,redis-node-3:6379
+
+kafka:
+  enabled: true
+  brokers: redpanda:9092
+
+scylla:
+  enabled: true
+  hosts: scylla:9042
+
+citus:
+  enabled: false
+  coordinatorHost: citus-coordinator
+
+observability:
+  enabled: true
+  prometheus: true
+  grafana: true
+  otelCollector: true
+  loki: true
+  alertmanager: true
+
+autoscaling:
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPU: 70
+  keda:
+    enabled: true
+    orderMinReplicas: 2
+    orderMaxReplicas: 20
+    flashQueueThreshold: 100
+
+mesh:
+  enabled: false
+  provider: istio
+
+progressiveDelivery:
+  enabled: false
+  orderCanarySteps: 4
+
+security:
+  networkPolicy: true
+  podSecurity:
+    enforce: restricted
+  serviceAccount:
+    create: true
+
+priorityClasses:
+  hotPath: aqond-hot-path
+  batch: aqond-batch
+
+# Commerce hot path gets higher priority + spread (P69)
+services:
+  foundation-svc:
+    enabled: true
+    port: 8101
+    path: /api/v1/foundation
+    priority: batch
+    probes:
+      path: /health
+    env:
+      SHARD_COUNT: "2"
+      KAFKA_BROKERS: redpanda:9092
+  catalog-svc:
+    enabled: true
+    port: 8110
+    path: /api/v1/catalog
+    priority: hot
+    probes:
+      path: /health
+  inventory-svc:
+    enabled: true
+    port: 8111
+    path: /api/v1/inventory
+    priority: hot
+    probes:
+      path: /health
+    env:
+      INV_SHARD_BUCKETS: "8"
+      READ_CACHE_TTL_MS: "500"
+  order-svc:
+    enabled: true
+    port: 8113
+    path: /api/v1/orders
+    priority: hot
+    keda: true
+    probes:
+      path: /health
+    env:
+      ORDER_QUEUE_CAPACITY: "256"
+      ORDER_TOPIC_PARTITIONS: "4"
+      RATE_BUYER_PER_MIN: "30"
+      FLASH_ADMIT_BATCH: "10"
+  wallet-svc:
+    enabled: true
+    port: 8112
+    path: /api/v1/wallet
+    priority: hot
+    probes:
+      path: /health
+  readmodel-svc:
+    enabled: true
+    port: 8114
+    path: /api/v1/read
+    priority: hot
+    probes:
+      path: /health
+  feed-svc:
+    enabled: true
+    port: 8115
+    path: /api/v1/feed
+    priority: hot
+    probes:
+      path: /health
+  video-svc:
+    enabled: true
+    port: 8116
+    path: /api/v1/video
+    priority: batch
+    probes:
+      path: /health
+  rec-svc:
+    enabled: true
+    port: 8117
+    path: /api/v1/rec
+    priority: hot
+    probes:
+      path: /health
+  transcode-worker:
+    enabled: true
+    port: 0
+    priority: batch
+    kedaScaleToZero: true
+    env:
+      TRANSCODE_STUB: "1"
+
+resources:
+  hot:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  batch:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

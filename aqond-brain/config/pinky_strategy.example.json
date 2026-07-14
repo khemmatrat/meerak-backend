@@ -1,0 +1,12 @@
+{
+  "created_at": "2025-03-18T12:00:00Z",
+  "focus_platform": "tiktok",
+  "focus_platforms": ["tiktok", "facebook"],
+  "content_tone_adjustment": "เน้นสั้น ฮุกแรง แนว viral",
+  "recommended_keywords": ["Startup", "Freelance", "หางาน"],
+  "message_to_minnie": "มินนี่! ดูนี่สิ TikTok ชอบแนวนี้ รอบหน้าเขียนบทเน้นแบบนี้ด่วน!",
+  "content_types_working": ["Hook Story", "Number Post"],
+  "advice_for_minnie": "โฟกัสธีม Startup ล้มแล้วลุก",
+  "advice_for_thomas": "โพสต์ 10:00 และ 18:00",
+  "metrics_summary": "ยอดรวมสัปดาห์: views X, follows Y"
+}

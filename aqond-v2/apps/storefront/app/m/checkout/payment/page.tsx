@@ -83,6 +83,8 @@ export default function CheckoutPaymentPage() {
           buyer_id: session.buyerId,
           expires_at: session.expiresAt,
           amount: session.action.amount,
+          intent_id: session.action.intent_id,
+          payso_reference_id: session.action.payso_reference_id || session.action.ref,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -113,45 +115,6 @@ export default function CheckoutPaymentPage() {
     }
   }, [confirming, goResult, handleExpired, session]);
 
-  const handleDevSkip = useCallback(async () => {
-    if (!session || confirming) return;
-    setConfirming(true);
-    const t0 = performance.now();
-    try {
-      const res = await fetch('/api/checkout/payment/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ref: session.action.ref,
-          order_ids: session.orderIds || [],
-          buyer_id: session.buyerId,
-          expires_at: session.expiresAt,
-          amount: session.action.amount,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      recordPaymentVerifyTelemetry({
-        loadMs: Math.round(performance.now() - t0),
-        orderIds: session.orderIds,
-        ref: session.action.ref,
-        verifyStatus: 'success',
-        duplicate: Boolean(data.duplicate),
-      });
-      goResult({
-        status: 'success',
-        amount: session.action.amount,
-        ref: session.action.ref,
-        message: 'ชำระเงินสำเร็จแล้ว (ทดสอบ)',
-      });
-    } finally {
-      setConfirming(false);
-    }
-  }, [confirming, goResult, session]);
-
-  const showDevSkip =
-    process.env.NODE_ENV === 'development' ||
-    process.env.NEXT_PUBLIC_AQOND_LOCAL_DEV === '1';
-
   if (!session) {
     return <p className="tt-co-pro-loading">กำลังโหลด...</p>;
   }
@@ -166,17 +129,6 @@ export default function CheckoutPaymentPage() {
         onExpired={handleExpired}
         onConfirm={handleConfirm}
       />
-      {showDevSkip && (
-        <button
-          type="button"
-          className="tt-co-qr-dev-skip"
-          data-testid="checkout-payment-dev-skip"
-          disabled={confirming}
-          onClick={() => void handleDevSkip()}
-        >
-          🧪 DEV: ชำระสำเร็จ
-        </button>
-      )}
     </>
   );
 }

@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "provider": "grok",
+  "label": "xAI Grok Imagine Video",
+  "prefix": "UGC image-to-video with realistic lip sync.",
+  "spoken_wrapper": "{spoken_instruction} Person speaks to camera: \"{spoken}\"",
+  "suffix": "Preserve subject identity from reference frame. 9:16 vertical 720p. Authentic UGC aesthetic. Realistic lip sync. No on-screen text."
+}

@@ -1,0 +1,506 @@
+
+<style>
+  :root { --accent: #6C5CE7; --accent2: #00CEC9; --warn: #FDCB6E; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .header { padding: 1.5rem 1.5rem 0.5rem; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 0; }
+  .header-title { font-size: 18px; font-weight: 500; color: var(--color-text-primary); }
+  .header-sub { font-size: 13px; color: var(--color-text-secondary); margin-top: 4px; }
+  .tabs { display: flex; gap: 0; padding: 0 1.5rem; border-bottom: 0.5px solid var(--color-border-tertiary); overflow-x: auto; }
+  .tab { padding: 10px 16px; font-size: 13px; font-weight: 400; color: var(--color-text-secondary); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all .15s; }
+  .tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-text-primary); font-weight: 500; }
+  .tab:hover:not(.active) { color: var(--color-text-primary); }
+  .panel { display: none; padding: 1.25rem 1.5rem; }
+  .panel.active { display: block; }
+  .slot-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 12px; border: 0.5px solid var(--color-border-tertiary); }
+  .slot-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .slot-num { width: 24px; height: 24px; border-radius: 50%; background: var(--color-background-primary); border: 0.5px solid var(--color-border-secondary); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; color: var(--color-text-secondary); flex-shrink: 0; }
+  .slot-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); flex: 1; }
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+  .badge-purple { background: #EDE9FF; color: #5B40C2; }
+  .badge-teal { background: #D6F8F5; color: #0A8A85; }
+  .badge-amber { background: #FFF3D6; color: #9A6800; }
+  .badge-pink { background: #FFE8F5; color: #A3005A; }
+  .badge-blue { background: #E0F0FF; color: #1557A0; }
+  .badge-green { background: #E0F5E6; color: #1A7A40; }
+  .badge-coral { background: #FFE8E0; color: #A83820; }
+  .slot-prompt { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; background: var(--color-background-primary); border-radius: var(--border-radius-md); padding: 10px 12px; border: 0.5px solid var(--color-border-tertiary); font-family: var(--font-mono); white-space: pre-wrap; word-break: break-word; }
+  .copy-btn { margin-top: 8px; font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-secondary); cursor: pointer; transition: all .15s; }
+  .copy-btn:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+  .copy-btn.copied { color: #1A7A40; border-color: #1A7A40; }
+  .format-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+  .format-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 12px; border: 0.5px solid var(--color-border-tertiary); text-align: center; }
+  .format-icon { font-size: 22px; margin-bottom: 6px; }
+  .format-label { font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
+  .format-desc { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; line-height: 1.5; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .cal-day { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 6px; border: 0.5px solid var(--color-border-tertiary); min-height: 100px; }
+  .cal-day-name { font-size: 10px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 6px; text-align: center; }
+  .cal-item { font-size: 9px; padding: 2px 5px; border-radius: 4px; margin-bottom: 3px; line-height: 1.4; }
+  .rule-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-icon { font-size: 16px; flex-shrink: 0; width: 28px; text-align: center; }
+  .rule-text { font-size: 13px; color: var(--color-text-primary); line-height: 1.6; }
+  .rule-sub { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+  .discord-box { background: #2B2D31; border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-top: 12px; }
+  .discord-tag { font-size: 11px; color: #00AFF4; font-weight: 500; margin-bottom: 8px; }
+  .discord-content { font-size: 12px; color: #DBDEE1; line-height: 1.7; font-family: var(--font-mono); white-space: pre-wrap; }
+  .section-label { font-size: 11px; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  @media (max-width: 500px) { .cal-grid { grid-template-columns: 1fr; } .cal-day { min-height: auto; } }
+</style>
+
+<div class="header">
+  <div class="header-title">Aqond Startup Content System</div>
+  <div class="header-sub">7 ชุด Prompt / วัน · Entertain &amp; Viral · FB · TikTok · IG · YouTube</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('prompts')">7 Prompt ชุด</div>
+  <div class="tab" onclick="switchTab('formats')">รูปแบบคอนเทนต์</div>
+  <div class="tab" onclick="switchTab('calendar')">Weekly Calendar</div>
+  <div class="tab" onclick="switchTab('rules')">กฎ &amp; วิธีใช้</div>
+  <div class="tab" onclick="switchTab('discord')">Discord Output</div>
+</div>
+
+<!-- PANEL: PROMPTS -->
+<div class="panel active" id="panel-prompts">
+<div class="section-label">กด Copy แล้วป้อนให้ Claude ผลิตคอนเทนต์ได้เลย</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">1</div>
+    <div class="slot-name">Hook Story — ดึงใจคนดูใน 3 วิแรก</div>
+    <span class="badge badge-purple">TikTok / Reels</span>
+  </div>
+  <div class="slot-prompt" id="p1">คุณคือมินนี่ นักเขียนของ Aqond แพลตฟอร์มหางานที่เข้าใจ Startup
+
+เป้าหมาย: สร้าง Hook Story สั้น สำหรับ TikTok/Reels (60-90 วินาที)
+Target: [คนหางานงาน / คนจ้างงาน] อายุ 22-35 ปี สนใจ Startup และ Freelance
+
+ธีมวันนี้: [ใส่ธีม เช่น "ถูก reject งาน 10 ครั้ง" / "จ้างผิดคน ขาดทุน 50,000"]
+
+Format ที่ต้องการ:
+- Hook (3 วิแรก): ประโยคที่ทำให้หยุดเลื่อน
+- เรื่องราว: 4-5 ประโยค เล่าปัญหา
+- Twist: จุดพลิก น่าแชร์
+- CTA: บอกให้ทำอะไรต่อ (comment / แชร์ / ลองแอป)
+
+โทน: เป็นกันเอง สนุก ไม่ขายของตรงๆ ใช้ภาษาคนรุ่นใหม่
+ห้ามใช้: คำว่า "โปรโมชั่น" "สมัครเลย" "ราคาพิเศษ"</div>
+  <button class="copy-btn" onclick="copyPrompt('p1', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">2</div>
+    <div class="slot-name">Myth Busting — ทำลายความเชื่อผิดๆ</div>
+    <span class="badge badge-teal">FB Page / IG</span>
+  </div>
+  <div class="slot-prompt" id="p2">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: โพสต์ Myth Busting ที่ทำให้คนอยาก Save &amp; Share
+ธีม: "ความเชื่อผิดๆ เกี่ยวกับ [Startup / หางาน / Freelance / การจ้างงาน]"
+
+โครงสร้าง:
+- หัวข้อ: "❌ [ความเชื่อผิด]" vs "✅ [ความจริง]" × 3-5 ข้อ
+- แต่ละข้อ: อธิบายใน 2 ประโยค ให้ชัด กระชับ
+- ปิดท้าย: ประโยค punch ที่แชร์ได้
+
+Platform: Facebook Page (ผู้ติดตาม 2.2 แสน)
+โทน: มั่นใจ ฉลาด แต่ไม่หยิ่ง ใช้ emoji พอดี
+ความยาว: ไม่เกิน 300 คำ</div>
+  <button class="copy-btn" onclick="copyPrompt('p2', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">3</div>
+    <div class="slot-name">Number Post — ตัวเลขที่ทำให้ตกใจ</div>
+    <span class="badge badge-amber">FB / IG / YouTube</span>
+  </div>
+  <div class="slot-prompt" id="p3">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: โพสต์ Data/ตัวเลขที่น่าตกใจ เกี่ยวกับตลาดงาน Startup ในไทย
+ธีม: [ใส่ธีม เช่น "ค่าจ้าง Freelance 2025" / "Startup ปิดตัว" / "งานที่ AI ยังแทนไม่ได้"]
+
+Format:
+- ตัวเลขหลัก: ใหญ่ โต โดดเด่น (สำหรับทำ graphic)
+- อธิบาย 2-3 ประโยคว่าทำไมถึงสำคัญ
+- เชื่อมกับ Aqond อย่างเนียนๆ (ไม่ขาย)
+- Hashtag 5-8 อัน ที่เหมาะกับ FB และ IG
+
+แหล่งข้อมูล: ถ้าไม่มีข้อมูลจริง ให้บอกว่า "อ้างอิงจาก [สร้างข้อมูลสมมติที่น่าเชื่อถือ]"
+โทน: น่าตื่นเต้น แต่น่าเชื่อถือ</div>
+  <button class="copy-btn" onclick="copyPrompt('p3', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">4</div>
+    <div class="slot-name">Before &amp; After — เปลี่ยนชีวิตได้จริง</div>
+    <span class="badge badge-pink">IG / TikTok</span>
+  </div>
+  <div class="slot-prompt" id="p4">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: สร้าง Before &amp; After Story ที่ทำให้คนรู้สึกว่า "นี่แหละตัวฉัน"
+ตัวละคร: [สร้างตัวละครสมมติ เช่น "เมย์ 27 ปี Graphic Designer Freelance"]
+
+Before (ก่อนใช้ Aqond):
+- ปัญหาที่เจอ 2-3 ข้อ (realistic ไม่เว่อร์)
+- ความรู้สึก (frustration, uncertainty)
+
+After (หลังใช้ Aqond):
+- สิ่งที่เปลี่ยนไป 2-3 ข้อ
+- ตัวเลขถ้าได้ (เช่น "รายได้เพิ่ม X%")
+
+Format: Script สำหรับ TikTok หรือ Caption IG
+โทน: จริงใจ อบอุ่น ไม่ดูเป็นโฆษณา
+ความยาว script: 60-90 วินาที</div>
+  <button class="copy-btn" onclick="copyPrompt('p4', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">5</div>
+    <div class="slot-name">Tips List — ความรู้ที่ Save ได้</div>
+    <span class="badge badge-blue">IG Carousel / FB</span>
+  </div>
+  <div class="slot-prompt" id="p5">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: สร้าง Tips Content ที่คนอยาก Save ไว้ดูทีหลัง
+หัวข้อ: "[X] สิ่งที่ [กลุ่มเป้าหมาย] ต้องรู้เรื่อง [ธีม]"
+ตัวอย่าง: "5 สิ่งที่ Startup Founder ต้องรู้ก่อนจ้างคนแรก"
+
+Format IG Carousel (7-10 สไลด์):
+- สไลด์ 1: หัวข้อหลัก + Hook
+- สไลด์ 2-6: แต่ละ tip (หัวข้อ + อธิบาย 2-3 ประโยค + ตัวอย่าง)
+- สไลด์ 7: สรุป + CTA
+
+โทน: เป็นผู้เชี่ยวชาญที่เป็นเพื่อน ให้คำแนะนำจริงๆ
+เพิ่ม: Caption สำหรับโพสต์ + Hashtag 10 อัน</div>
+  <button class="copy-btn" onclick="copyPrompt('p5', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">6</div>
+    <div class="slot-name">Trending Comment — ขี่กระแส</div>
+    <span class="badge badge-green">TikTok / YouTube</span>
+  </div>
+  <div class="slot-prompt" id="p6">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: ทำคอนเทนต์ขี่กระแส Trending ในแวดวง Startup / Work / Finance
+ข่าว/เทรนด์วันนี้: [วาง URL หรือสรุปข่าวที่นี่]
+
+สิ่งที่ต้องสร้าง:
+1. Script TikTok (60 วิ): เชื่อมข่าวกับชีวิตผู้ใช้ Aqond
+2. Caption FB: 150-200 คำ มีความเห็นของ Aqond
+3. Comment template: 3 comment ที่ทีมไปคอมเมนต์ในโพสต์อื่น
+
+โทน: ทันสมัย มีความเห็นของตัวเอง กล้าพูดความจริง
+ห้าม: ด่าคู่แข่ง, พูดเรื่องการเมืองตรงๆ</div>
+  <button class="copy-btn" onclick="copyPrompt('p6', this)">Copy Prompt</button>
+</div>
+
+<div class="slot-card">
+  <div class="slot-head">
+    <div class="slot-num">7</div>
+    <div class="slot-name">Engagement Bait — กระตุ้นคนคุย</div>
+    <span class="badge badge-coral">FB / IG Story</span>
+  </div>
+  <div class="slot-prompt" id="p7">คุณคือมินนี่ นักเขียนของ Aqond
+
+เป้าหมาย: โพสต์ที่กระตุ้น Comment &amp; Share สูง สำหรับ Algorithm
+ธีม: [เลือก: Poll / This or That / Fill in the blank / Unpopular opinion]
+
+สร้าง 3 เวอร์ชัน:
+A) โพสต์ FB (มี poll หรือคำถามชวนเถียง)
+B) IG Story (Interactive sticker: poll/slider/question)
+C) TikTok Caption (ถามคำถามให้ duet/stitch)
+
+ทุกชิ้นต้องมี: คำถามที่ไม่มีคำตอบถูก/ผิด ทำให้คนอยากแสดงความเห็น
+เชื่อมกับ: ชีวิตการทำงาน, Startup culture, Freelance lifestyle
+โทน: สนุก provoke นิดๆ ไม่ offensive</div>
+  <button class="copy-btn" onclick="copyPrompt('p7', this)">Copy Prompt</button>
+</div>
+</div>
+
+<!-- PANEL: FORMATS -->
+<div class="panel" id="panel-formats">
+<div class="section-label">รูปแบบที่รองรับทุก Platform</div>
+<div class="format-grid">
+  <div class="format-card">
+    <div class="format-icon">📘</div>
+    <div class="format-label">Facebook Page</div>
+    <div class="format-desc">Caption 150-300 คำ + Hashtag + Hook บรรทัดแรก</div>
+  </div>
+  <div class="format-card">
+    <div class="format-icon">🎵</div>
+    <div class="format-label">TikTok Script</div>
+    <div class="format-desc">Script 60-90 วิ พร้อม Hook / Twist / CTA</div>
+  </div>
+  <div class="format-card">
+    <div class="format-icon">📸</div>
+    <div class="format-label">IG Carousel</div>
+    <div class="format-desc">7-10 สไลด์ + Caption + Hashtag 10+ อัน</div>
+  </div>
+  <div class="format-card">
+    <div class="format-icon">▶️</div>
+    <div class="format-label">YouTube Reels</div>
+    <div class="format-desc">Title SEO + Description + Tags + Script</div>
+  </div>
+  <div class="format-card">
+    <div class="format-icon">💬</div>
+    <div class="format-label">IG Story</div>
+    <div class="format-desc">Text overlay + Sticker suggestion + Link</div>
+  </div>
+  <div class="format-card">
+    <div class="format-icon">✍️</div>
+    <div class="format-label">Discord Draft</div>
+    <div class="format-desc">ฟอร์แมตพร้อมส่ง #minnie-content</div>
+  </div>
+</div>
+
+<div class="section-label" style="margin-top:1rem">ตารางจับคู่ Prompt × Platform</div>
+<table style="width:100%; font-size:12px; border-collapse:collapse;">
+  <thead>
+    <tr style="border-bottom:0.5px solid var(--color-border-secondary);">
+      <th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500;">ชุด Prompt</th>
+      <th style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);font-weight:500;">FB</th>
+      <th style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);font-weight:500;">TikTok</th>
+      <th style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);font-weight:500;">IG</th>
+      <th style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);font-weight:500;">YT</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">1 Hook Story</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+    </tr>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">2 Myth Busting</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+    </tr>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">3 Number Post</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+    </tr>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">4 Before &amp; After</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+    </tr>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">5 Tips List</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+    </tr>
+    <tr style="border-bottom:0.5px solid var(--color-border-tertiary);">
+      <td style="padding:8px 6px;color:var(--color-text-primary);">6 Trending</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 6px;color:var(--color-text-primary);">7 Engagement</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓</td>
+      <td style="text-align:center;padding:8px 4px;color:#1A7A40;">✓✓</td>
+      <td style="text-align:center;padding:8px 4px;color:var(--color-text-secondary);">—</td>
+    </tr>
+  </tbody>
+</table>
+<div style="font-size:11px;color:var(--color-text-secondary);margin-top:8px;">✓✓ = เหมาะมาก · ✓ = ใช้ได้ · — = ไม่แนะนำ</div>
+</div>
+
+<!-- PANEL: CALENDAR -->
+<div class="panel" id="panel-calendar">
+<div class="section-label">Weekly Content Calendar — วันละ 7 ชุด</div>
+<div class="cal-grid">
+  <div class="cal-day">
+    <div class="cal-day-name">จันทร์</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Hook Story</div>
+    <div class="cal-item" style="background:#D6F8F5;color:#0A8A85;">2 Myth Busting</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Number Post</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 B&amp;A Story</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips List</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 Trending</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Engage</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">อังคาร</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Hook (Employer)</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 B&amp;A (Talent)</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips (Freelance)</div>
+    <div class="cal-item" style="background:#D6F8F5;color:#0A8A85;">2 Myth (HR)</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Numbers</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Poll</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 News</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">พุธ</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 This or That</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Story (Startup)</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 Trending</div>
+    <div class="cal-item" style="background:#D6F8F5;color:#0A8A85;">2 Myth Bust</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 Before/After</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Data Post</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">พฤหัส</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips (Boss)</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Hook (Money)</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Numbers</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 Trending</div>
+    <div class="cal-item" style="background:#D6F8F5;color:#0A8A85;">2 Myth (Pay)</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Fill Blank</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 B&amp;A</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">ศุกร์</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 Weekly Recap</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 Success Story</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Hook (Weekend)</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Numbers</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips (Interview)</div>
+    <div class="cal-item" style="background:#D6F8F5;color:#0A8A85;">2 Myth</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Poll Friday</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">เสาร์</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Weekend Q</div>
+    <div class="cal-item" style="background:#EDE9FF;color:#5B40C2;">1 Chill Story</div>
+    <div class="cal-item" style="background:#E0F5E6;color:#1A7A40;">6 Lite News</div>
+    <div class="cal-item" style="background:#FFE8F5;color:#A3005A;">4 Inspire</div>
+    <div style="font-size:9px;color:var(--color-text-secondary);padding:4px 2px;">Light day — 4 ชิ้น</div>
+  </div>
+  <div class="cal-day">
+    <div class="cal-day-name">อาทิตย์</div>
+    <div class="cal-item" style="background:#FFF3D6;color:#9A6800;">3 Week Preview</div>
+    <div class="cal-item" style="background:#E0F0FF;color:#1557A0;">5 Tips (Monday)</div>
+    <div class="cal-item" style="background:#FFE8E0;color:#A83820;">7 Engage</div>
+    <div style="font-size:9px;color:var(--color-text-secondary);padding:4px 2px;">Prep day — 3 ชิ้น</div>
+  </div>
+</div>
+<div style="font-size:11px;color:var(--color-text-secondary);margin-top:10px;">จ-ศ: 7 ชิ้นเต็ม · เสาร์: 4 ชิ้น · อาทิตย์: 3 ชิ้น Prep → รวม ~42 ชิ้น/สัปดาห์</div>
+</div>
+
+<!-- PANEL: RULES -->
+<div class="panel" id="panel-rules">
+<div class="section-label">กฎการใช้งาน Prompt System</div>
+<div class="rule-row">
+  <div class="rule-icon">📌</div>
+  <div>
+    <div class="rule-text">เติม [วงเล็บ] ก่อนใช้ทุกครั้ง</div>
+    <div class="rule-sub">ใส่ธีมวันนั้น, ชื่อตัวละคร, หรือข่าวที่ต้องการ — Prompt จะ work ทันที</div>
+  </div>
+</div>
+<div class="rule-row">
+  <div class="rule-icon">🎯</div>
+  <div>
+    <div class="rule-text">ใช้ 1 Prompt ต่อ 1 ชิ้นงาน</div>
+    <div class="rule-sub">อย่ายัดหลายชุดในครั้งเดียว — แยก conversation ให้ Claude โฟกัส</div>
+  </div>
+</div>
+<div class="rule-row">
+  <div class="rule-icon">🔄</div>
+  <div>
+    <div class="rule-text">Regenerate ได้ไม่จำกัดด้วย "เวอร์ชัน 2"</div>
+    <div class="rule-sub">พิมพ์ต่อว่า "ทำให้ viral กว่านี้" หรือ "เปลี่ยน tone เป็น serious" — Claude จะปรับให้</div>
+  </div>
+</div>
+<div class="rule-row">
+  <div class="rule-icon">⏱️</div>
+  <div>
+    <div class="rule-text">เวลาต่อชุด: ~5-8 นาที</div>
+    <div class="rule-sub">7 ชุด × 7 นาที = ~50 นาที/วัน · แนะนำทำรวด 2-3 ชุดก่อน review</div>
+  </div>
+</div>
+<div class="rule-row">
+  <div class="rule-icon">💡</div>
+  <div>
+    <div class="rule-text">เก็บ Prompt ที่ work ไว้ใน Discord</div>
+    <div class="rule-sub">โพสต์ใน #minnie-content พร้อม Tag: [PROMPT-VERSION] เพื่อ iterate ครั้งหน้า</div>
+  </div>
+</div>
+<div class="rule-row">
+  <div class="rule-icon">🚫</div>
+  <div>
+    <div class="rule-text">ห้ามใช้ Prompt ชุด 6 โดยไม่มีข่าวจริง</div>
+    <div class="rule-sub">Trending ต้องมีแหล่งที่มาจริง — ไม่เช่นนั้นเสี่ยง misinformation</div>
+  </div>
+</div>
+</div>
+
+<!-- PANEL: DISCORD -->
+<div class="panel" id="panel-discord">
+<div class="section-label">Template ส่งเข้า Discord #✍️-minnie-content</div>
+<div class="discord-box">
+  <div class="discord-tag">#✍️-minnie-content</div>
+  <div class="discord-content">📝 **CONTENT BATCH — [วันที่]**
+━━━━━━━━━━━━━━━━━
+🎯 ธีมวัน: [ชื่อธีม เช่น "Startup ล้มแล้วลุกใหม่"]
+📅 โพสต์เวลา: [เวลา เช่น 10:00 / 17:00 / 20:00]
+━━━━━━━━━━━━━━━━━
+
+**ชุดที่ 1 — Hook Story [Platform: TikTok]**
+> [วางคอนเทนต์ที่ Claude ผลิตให้]
+Status: 🔵 Draft | ✅ Ready | 🟡 Review
+
+**ชุดที่ 2 — Myth Busting [Platform: FB Page]**
+> [วางคอนเทนต์]
+Status: ✅ Ready
+
+**ชุดที่ 3 — Number Post [Platform: IG + YT]**
+> [วางคอนเทนต์]
+Status: 🔵 Draft
+
+...และต่อไปจนครบ 7 ชุด
+
+━━━━━━━━━━━━━━━━━
+🖼️ Assets ที่ต้องการ: @rocky [รายการรูปที่ต้องการ]
+✏️ Review by: @[ชื่อ] ก่อน [เวลา]
+━━━━━━━━━━━━━━━━━</div>
+</div>
+<button class="copy-btn" style="margin-top:10px;" onclick="copyDiscord(this)">Copy Discord Template</button>
+</div>
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('panel-' + id).classList.add('active');
+}
+function copyPrompt(id, btn) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy Prompt'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+function copyDiscord(btn) {
+  const text = document.querySelector('.discord-content').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy Discord Template'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>

@@ -1,0 +1,32 @@
+# P78: Scheduled backup CronJob for Postgres (dev-lite)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aqond-postgres-backup
+  namespace: aqond-dev
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:15-alpine
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aqond-secrets
+                      key: POSTGRES_PASSWORD
+              command:
+                - /bin/sh
+                - -c
+                - pg_dump -h aqond-postgres -U admin_boss -d commerce -Fc -f /backup/commerce-$(date +%Y%m%d).dump
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              emptyDir: {}

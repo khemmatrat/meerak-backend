@@ -15,6 +15,7 @@ import { generateTaxRefIdForInsert } from './taxIdService.js';
 import { calcVipAdminFundSiphon } from './aqondPayFees.js';
 import { isPlatformCommissionWaivedForUser } from './brandAdviser.js';
 import { onJobCompleted } from './referralService.js';
+import { recordCampaignBuyerPurchase } from './brandAdviserCampaign.js';
 
 const VIP_TIERS = {
   none: { quotaPerMonth: 0, discountPercent: 0, priceMonthly: 0 },
@@ -448,7 +449,7 @@ export async function finalizeMatchJobFromStripePaymentIntent(pool, paymentInten
   const amountThb = ctx.finalPrice;
   const paymentMethod = 'stripe';
 
-    const {
+  const {
     job,
     jobPd,
     clientUser,
@@ -764,12 +765,24 @@ export async function finalizeMatchJobFromStripePaymentIntent(pool, paymentInten
            WHERE id = $2 AND user_id = $3 AND used_at IS NULL`,
           [jobId, maturityVoucherId, String(userId)]
         )
-        .catch(() => {});
+        .catch(() => { });
     }
 
     await dbClient.query('COMMIT');
 
-    setImmediate(() => onJobCompleted(pool, job.accepted_by, jobId, amountThb, new Date()).catch(() => {}));
+    setImmediate(() => onJobCompleted(pool, job.accepted_by, jobId, amountThb, new Date()).catch(() => { }));
+    const stripeBuyer = job.client_id || job.created_by;
+    if (stripeBuyer) {
+      setImmediate(() =>
+        recordCampaignBuyerPurchase(pool, {
+          buyerId: stripeBuyer,
+          sourceType: 'job',
+          sourceId: String(jobId),
+          grossAmount: finalPrice,
+          completedAt: new Date(),
+        }).catch(() => { }),
+      );
+    }
 
     return { ok: true, jobId, amountThb: finalPrice };
   } catch (e) {

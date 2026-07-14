@@ -1,22 +1,26 @@
 /**
  * Chat Messages Hook — Polling + Socket.IO refresh เมื่อมีข้อความใหม่
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { io, type Socket } from 'socket.io-client';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { io, type Socket } from "socket.io-client";
 import {
   getSupportTicketMessages,
   type SupportMessageRow,
   getAdminSocketOrigin,
   getAdminToken,
-} from '../services/adminApi';
+} from "../services/adminApi";
 
 export type ChatMessage = {
   id: string;
-  sender: 'USER' | 'ADMIN' | 'BOT' | 'PROVIDER';
+  sender: "USER" | "ADMIN" | "BOT" | "PROVIDER";
   message: string;
   timestamp: string;
-  source?: 'faq_match' | 'ai_generated';
+  source?: string;
   faqScore?: number | null;
+  aiActions?: string[];
+  diagnosticSummary?: string | null;
+  escalation?: { level?: string; reason?: string } | null;
+  feedback?: { helpful: boolean; reason?: string | null; at?: string };
 };
 
 const POLL_INTERVAL_MS = 12000;
@@ -24,15 +28,29 @@ const POLL_INTERVAL_MS = 12000;
 function toChatMessage(m: SupportMessageRow): ChatMessage {
   return {
     id: m.id,
-    sender: (m.sender === 'PROVIDER' ? 'PROVIDER' : m.sender) as ChatMessage['sender'],
+    sender: (m.sender === "PROVIDER"
+      ? "PROVIDER"
+      : m.sender) as ChatMessage["sender"],
     message: m.message,
-    timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    timestamp: m.timestamp
+      ? new Date(m.timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "",
     source: m.source,
     faqScore: m.faqScore,
+    aiActions: m.ai_actions || [],
+    diagnosticSummary: m.diagnostic_summary || null,
+    escalation: m.escalation || null,
+    feedback: m.feedback,
   };
 }
 
-export function useChatMessages(ticketId: string | null, getToken: () => string | null) {
+export function useChatMessages(
+  ticketId: string | null,
+  getToken: () => string | null,
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -60,27 +78,31 @@ export function useChatMessages(ticketId: string | null, getToken: () => string 
     }
     const origin = getAdminSocketOrigin();
     if (!origin) return;
-    const socket: Socket = io(origin, { path: '/socket.io', transports: ['websocket', 'polling'] });
+    const socket: Socket = io(origin, {
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+    });
     let cancelled = false;
     const join = () => {
       const t = getAdminToken();
-      if (t) socket.emit('joinAdminSupport', { token: t });
+      if (t) socket.emit("joinAdminSupport", { token: t });
     };
-    socket.on('connect', join);
+    socket.on("connect", join);
     const onRefresh = (p: { ticketId?: string }) => {
       if (p?.ticketId === ticketId) {
         getSupportTicketMessages(ticketId)
           .then((res) => {
-            if (!cancelled) setMessages((res.messages || []).map(toChatMessage));
+            if (!cancelled)
+              setMessages((res.messages || []).map(toChatMessage));
           })
           .catch(() => {});
       }
     };
-    socket.on('support_messages_refresh', onRefresh);
+    socket.on("support_messages_refresh", onRefresh);
     return () => {
       cancelled = true;
-      socket.off('connect', join);
-      socket.off('support_messages_refresh', onRefresh);
+      socket.off("connect", join);
+      socket.off("support_messages_refresh", onRefresh);
       socket.disconnect();
     };
   }, [ticketId, getToken]);
@@ -109,7 +131,7 @@ export function useChatMessages(ticketId: string | null, getToken: () => string 
 
   // Scroll to bottom เมื่อมีข้อความใหม่
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   return { messages, setMessages, fetchMessages, loading, messagesEndRef };

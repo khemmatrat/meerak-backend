@@ -81,7 +81,7 @@ export const SavedJobs: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="aqond-trust-theme jobboard-flow-theme space-y-8 pb-12 min-h-screen">
       {!isOnline && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 text-sm">
           <WifiOff size={18} />

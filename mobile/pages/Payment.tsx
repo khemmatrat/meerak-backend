@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { ServiceGuaranteeBadge } from "../components/ServiceGuaranteeBadge";
 import { PaymentBreakdown } from "../components/PaymentBreakdown";
+import { CrossSellSplitWidget } from "../components/growth/CrossSellSplitWidget";
 import { StripePaymentSection } from "../components/StripePaymentSection";
 import { playAqondSuccessSound } from "../utils/aqondPaymentSound";
 import {
@@ -872,6 +873,10 @@ export const Payment: React.FC = () => {
             </button>
           </div>
         </div>
+
+        <CrossSellSplitWidget
+          amountPaid={`฿ ${displayBreakdown.totalToPay.toLocaleString()}`}
+        />
 
         <div className="flex gap-3 w-full">
           <button

@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useNotification } from "../context/NotificationContext";
+import { useMobileAppConfig } from "../context/MobileAppConfigContext";
+import { resolveJobBoardCopy } from "../utils/jobBoardCopy";
 import {
   FileText,
   Target,
@@ -10,8 +12,19 @@ import {
   ChevronLeft,
   Check,
   Bookmark,
+  BookOpen,
 } from "lucide-react";
 import { createAdvanceJob, getAdvanceJobTemplates, saveAdvanceJobTemplate, JobServiceError } from "../services/jobService";
+import {
+  EMPLOYMENT_TYPE_OPTIONS,
+  JOBBOARD_CATEGORY_GROUPS,
+  JOBBOARD_MAIN_CATEGORIES,
+  THAI_PROVINCES,
+  getEmploymentTypeLabel,
+  getJobboardCategoryLabel,
+  getJobboardGroupLabel,
+  suggestRoutingByKeywords,
+} from "../constants/workTaxonomy";
 
 const STEPS = [
   { id: 1, label: "รายละเอียดงาน", icon: FileText },
@@ -19,29 +32,23 @@ const STEPS = [
   { id: 3, label: "งบประมาณ", icon: DollarSign },
 ];
 
-const CATEGORIES = [
-  "Design & Creative",
-  "Writing & Translation",
-  "Video & Animation",
-  "Programming & Tech",
-  "Marketing",
-  "Admin & Support",
-  "Other",
-];
-
 export const CreateJobAdvance: React.FC = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const { notify } = useNotification();
+  const { config } = useMobileAppConfig();
+  const jobBoardCopy = resolveJobBoardCopy(config.remote);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     title: "",
-    category: "Design & Creative",
+    category: JOBBOARD_MAIN_CATEGORIES[0],
     description: "",
     scope: "",
     budget_min: "",
     budget_max: "",
     duration_days: "7",
+    province: "กรุงเทพมหานคร",
+    employment_type: "project",
   });
   const [submitting, setSubmitting] = useState(false);
   const [postSuccess, setPostSuccess] = useState<{ jobId: string } | null>(null);
@@ -83,6 +90,22 @@ export const CreateJobAdvance: React.FC = () => {
   const minB = Number(form.budget_min) || 0;
   const maxB = Number(form.budget_max) || 0;
   const canNext3 = minB > 0 && maxB >= minB && Number(form.duration_days) > 0;
+  const routingSuggestion = useMemo(
+    () =>
+      suggestRoutingByKeywords(
+        [form.title, form.description, form.scope, form.category].join(" "),
+        {
+          verticalWeightOverrides: config.remote.routingWeightOverrides || null,
+        },
+      ),
+    [
+      form.title,
+      form.description,
+      form.scope,
+      form.category,
+      config.remote.routingWeightOverrides,
+    ],
+  );
 
   const handleNext = () => {
     if (step < 3) setStep(step + 1);
@@ -96,15 +119,28 @@ export const CreateJobAdvance: React.FC = () => {
     if (!user || !canNext1 || !canNext2 || !canNext3) return;
     setSubmitting(true);
     try {
+      const scopeWithHiringProfile = [
+        "Hiring Profile",
+        `- จังหวัดเป้าหมาย: ${form.province || "ไม่ระบุ"}`,
+        `- ลักษณะการจ้างงาน: ${getEmploymentTypeLabel(form.employment_type)}`,
+        "- ช่องทางลงงาน: Job Board",
+        "",
+        form.scope.trim(),
+      ]
+        .join("\n")
+        .trim();
       const job = await createAdvanceJob(
         {
           title: form.title.trim(),
           category: form.category,
           description: form.description.trim(),
-          scope: form.scope.trim(),
+          scope: scopeWithHiringProfile,
           min_budget: minB,
           max_budget: maxB,
           duration_days: Number(form.duration_days),
+          target_province: form.province,
+          employment_type: form.employment_type,
+          work_surface: "jobboard",
           status: "open",
         },
         token,
@@ -146,7 +182,7 @@ export const CreateJobAdvance: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="aqond-trust-theme space-y-8 pb-8">
       <h1 className="text-2xl font-bold text-slate-50">โพสต์งานแบบ Advance</h1>
 
       {/* Step indicator */}
@@ -209,7 +245,7 @@ export const CreateJobAdvance: React.FC = () => {
                 <option value="">— เลือก Template (ถ้าต้องการ) —</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} ({t.category})
+                    {t.name} ({getJobboardCategoryLabel(t.category)})
                   </option>
                 ))}
               </select>
@@ -232,19 +268,102 @@ export const CreateJobAdvance: React.FC = () => {
               onChange={(e) => update("category", e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 focus:ring-2 focus:ring-gold/30 outline-none"
             >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              {JOBBOARD_CATEGORY_GROUPS.map((g) => (
+                <optgroup key={g.group} label={getJobboardGroupLabel(g.group)}>
+                  {g.categories.map((c) => (
+                    <option key={c} value={c}>
+                      {getJobboardCategoryLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+          </div>
+          {routingSuggestion && routingSuggestion.surface !== "jobboard" && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+              <p className="text-xs font-semibold text-amber-300 uppercase tracking-wide">
+                Auto Route แนะนำ
+              </p>
+              <p className="text-sm text-slate-200 mt-1">
+                คำค้นนี้เหมาะกับ <b>{routingSuggestion.surface}</b> มากกว่า
+                Job Board ({(routingSuggestion.confidence * 100).toFixed(0)}%)
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/create-job")}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-100 text-xs"
+                >
+                  ไปหน้า Match Job
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/video-feed")}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-100 text-xs"
+                >
+                  ไป Video Feed
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                จังหวัดเป้าหมาย
+              </label>
+              <select
+                value={form.province}
+                onChange={(e) => update("province", e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 focus:ring-2 focus:ring-gold/30 outline-none"
+              >
+                {THAI_PROVINCES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                ลักษณะการจ้างงาน
+              </label>
+              <select
+                value={form.employment_type}
+                onChange={(e) => update("employment_type", e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 focus:ring-2 focus:ring-gold/30 outline-none"
+              >
+                {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <BookOpen size={20} className="text-blue-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-slate-100">ดูคู่มือจ้างงาน</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Routing Matrix, ตัวอย่างงาน และลำดับการจ้าง — เปิดเมื่อต้องการ
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/work-routing-matrix")}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 shrink-0"
+            >
+              เปิดคู่มือ
+            </button>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">คำบรรยายงาน *</label>
             <textarea
               value={form.description}
               onChange={(e) => update("description", e.target.value)}
-              placeholder="อธิบายงานที่ต้องการให้ชัดเจน..."
+              placeholder={jobBoardCopy.createJobDescPlaceholder}
               rows={5}
               className="w-full px-4 py-3 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-gold/30 focus:border-gold/50 outline-none resize-none"
             />

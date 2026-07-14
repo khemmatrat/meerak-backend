@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "provider": "veo",
+  "label": "Google Veo",
+  "prefix": "Cinematic product video generation.",
+  "spoken_wrapper": "{spoken_instruction} Narration: \"{spoken}\"",
+  "suffix": "Cinematic realism, natural motion, preserve subject identity, 9:16 vertical."
+}

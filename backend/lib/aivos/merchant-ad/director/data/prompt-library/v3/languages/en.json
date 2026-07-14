@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "en",
+  "spoken_instruction": "Speak clearly in natural English with authentic UGC creator tone.",
+  "placeholder_spoken": "Hi! {shop} introduces {product}. {offer} {cta}",
+  "motion_hint": "Handheld selfie, natural walk toward camera.",
+  "tone_hint": "Friendly, conversational, confident."
+}

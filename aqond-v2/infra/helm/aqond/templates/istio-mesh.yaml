@@ -1,0 +1,32 @@
+{{- if .Values.mesh.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: aqond-mtls
+  namespace: {{ .Values.global.namespace }}
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: order-svc-dr
+  namespace: {{ .Values.global.namespace }}
+spec:
+  host: order-svc
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 1000
+      http:
+        h2UpgradePolicy: UPGRADE
+        idleTimeout: 30s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+  # P70: mesh retries complement app pkg/circuit — mesh owns transport retries only
+{{- end }}

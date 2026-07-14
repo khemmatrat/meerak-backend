@@ -1,0 +1,11 @@
+/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_BACKEND_URL?: string;
+  /** แอปมือถือ / Web — ลิงก์สมัครสมาชิก */
+  readonly VITE_APP_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

@@ -1,0 +1,31 @@
+{
+  "tone_of_voice": [
+    "friendly",
+    "professional",
+    "no_slang",
+    "respectful"
+  ],
+  "legal_compliance": [
+    "no_false_claims",
+    "no_defamation",
+    "cite_sources_if_claims"
+  ],
+  "quality_rules": [
+    "content_must_align_with_market_intel",
+    "no_internal_secrets_in_content",
+    "brand_name_consistent"
+  ],
+  "score_weights": {
+    "tone": 30,
+    "legal": 40,
+    "alignment_with_navy_intel": 30
+  },
+  "approval_threshold_percent": 90,
+  "user_draft_approval_threshold_percent": 72,
+  "_comment_user_draft": "ไฟล์ user_draft_*.md จาก !draft — ข้าม Navy keyword + ใช้เกณฑ์นี้",
+  "high_risk_actions": [
+    "store_deployment",
+    "production_release",
+    "legal_commitment"
+  ]
+}

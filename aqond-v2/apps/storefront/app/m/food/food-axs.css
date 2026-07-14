@@ -1,0 +1,268 @@
+/**
+ * AQOND Food vertical — AXS token bridge (Sprint 23)
+ * Scoped to .axs-food — does not affect marketplace /m/*
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-food {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-bg-input: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-accent-text: #ffffff;
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  min-height: 100vh;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+/* Bottom nav gold accent when food vertical is active */
+.tt-shell:has(.axs-food) .tt-tabs a.active {
+  color: var(--axs-primary);
+}
+
+.tt-shell:has(.axs-food) .tt-tabs a.active .tt-tab-icon {
+  color: var(--axs-primary);
+}
+
+/* —— Home —— */
+.axs-food .tt-food-home-page {
+  background: var(--axs-bg);
+}
+
+.axs-food .tt-food-home-header {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-food .tt-food-home-loc-icon {
+  background: rgba(184, 134, 11, 0.15);
+}
+
+.axs-food .tt-food-service-toggle button.is-on {
+  background: rgba(184, 134, 11, 0.12);
+  border-color: var(--axs-primary);
+  color: var(--axs-primary-hover);
+}
+
+.axs-food .tt-food-home-search {
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-food .tt-food-home-search:focus-within {
+  border-color: var(--axs-primary);
+  box-shadow: 0 0 0 3px rgba(184, 134, 11, 0.15);
+}
+
+.axs-food .tt-header {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+}
+
+/* —— Cards —— */
+.axs-food .tt-food-card,
+.axs-food .tt-food-card--pro,
+.axs-food .tt-food-cart-card {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-food .tt-food-card-rail {
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-card);
+}
+
+.axs-food .tt-food-tag {
+  background: rgba(184, 134, 11, 0.1);
+  color: var(--axs-primary-hover);
+}
+
+.axs-food .tt-fee-free {
+  color: var(--axs-success);
+}
+
+/* —— CTAs —— */
+.axs-food .tt-btn-primary,
+.axs-food .tt-food-cart-checkout-cta {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+  transition: filter var(--axs-duration) var(--axs-ease-out);
+}
+
+.axs-food .tt-btn-primary:hover,
+.axs-food .tt-food-cart-checkout-cta:hover {
+  filter: brightness(1.05);
+}
+
+.axs-food .tt-food-cart-bar-inner {
+  background: var(--axs-gradient-gold);
+  border-radius: var(--axs-radius-button);
+  box-shadow: var(--axs-shadow-md);
+}
+
+.axs-food .tt-food-cart-count {
+  background: var(--axs-surface);
+  color: var(--axs-primary);
+  font-weight: 800;
+}
+
+/* —— Promo / banners —— */
+.axs-food .tt-food-promo-strip {
+  background: linear-gradient(135deg, #1c1917 0%, #44403c 100%);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-food .tt-food-promo-strip strong {
+  color: #fcd34d;
+}
+
+.axs-food .tt-food-banner-overlay strong {
+  color: #fff;
+}
+
+/* —— Checkout step bar —— */
+.axs-food .tt-checkout-step-item.is-done .tt-checkout-step-dot,
+.axs-food .tt-checkout-step-item.is-current .tt-checkout-step-dot {
+  background: var(--axs-primary);
+  border-color: var(--axs-primary);
+}
+
+.axs-food .tt-checkout-step-item.is-current .tt-checkout-step-label {
+  color: var(--axs-primary);
+}
+
+/* —— Cart page —— */
+.axs-food .tt-food-cart-page {
+  background: var(--axs-bg);
+}
+
+.axs-food .tt-food-cart-checkout-bar {
+  background: var(--axs-surface);
+  border-top-color: var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.08);
+}
+
+/* —— Track / timeline —— */
+.axs-food .tt-rider-live-badge,
+.axs-food .tt-rider-live-dot {
+  /* keep live indicator but gold-friendly */
+}
+
+.axs-food .tt-delivery-tl-fill {
+  background: var(--axs-gradient-gold);
+}
+
+.axs-food .tt-delivery-tl-item.active .tt-delivery-tl-dot,
+.axs-food .tt-delivery-tl-item.done .tt-delivery-tl-dot {
+  color: var(--axs-primary);
+}
+
+/* —— AXS food-specific blocks —— */
+.axs-food-loading {
+  padding: var(--axs-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-food-loading-banner {
+  border-radius: var(--axs-radius-card);
+  height: 140px;
+}
+
+.axs-food-loading-cats {
+  display: flex;
+  gap: var(--axs-space-2);
+  overflow: hidden;
+}
+
+.axs-food-loading-cat {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--axs-radius-card);
+  flex-shrink: 0;
+}
+
+/* —— Restaurant menu —— */
+.axs-food .tt-food-hero-fallback {
+  background: var(--axs-surface-2);
+}
+
+.axs-food .tt-food-header-over-hero {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+}
+
+.axs-food .tt-food-eta-pill {
+  background: rgba(184, 134, 11, 0.12);
+  color: var(--axs-primary-hover);
+}
+
+.axs-food .tt-food-menu-item {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+}
+
+.axs-food .tt-food-add {
+  background: var(--axs-gradient-gold);
+  color: #fff;
+  border: none;
+}
+
+.axs-food-section-badge {
+  margin-left: var(--axs-space-2);
+}
+
+.axs-food-open-badge {
+  vertical-align: middle;
+}
+
+.axs-food .tt-food-closed {
+  position: absolute;
+  top: var(--axs-space-3);
+  right: var(--axs-space-3);
+  z-index: 2;
+}
+
+.axs-food .tt-food-ad-badge {
+  position: absolute;
+  top: var(--axs-space-2);
+  left: var(--axs-space-2);
+  z-index: 2;
+}
+
+.axs-food .tt-food-home-search .aq-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.axs-food .tt-food-section-head h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--axs-space-2);
+}
+
+/* —— Add sheet —— */
+.axs-food .tt-food-add-sheet {
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-sheet) var(--axs-radius-sheet) 0 0;
+}
+
+.axs-food .tt-food-add-sheet .tt-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+}

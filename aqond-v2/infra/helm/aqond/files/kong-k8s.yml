@@ -1,0 +1,95 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: foundation-svc
+    url: http://foundation-svc:8101
+    routes:
+      - name: foundation-api
+        paths: [/api/v1/foundation]
+        strip_path: true
+
+  - name: catalog-svc
+    url: http://catalog-svc:8110
+    routes:
+      - name: catalog-api
+        paths: [/api/v1/catalog]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 1200, policy: local }
+
+  - name: inventory-svc
+    url: http://inventory-svc:8111
+    routes:
+      - name: inventory-api
+        paths: [/api/v1/inventory]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 1200, policy: local }
+
+  - name: order-svc
+    url: http://order-svc:8113
+    routes:
+      - name: order-api
+        paths: [/api/v1/orders]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 900, policy: local }
+
+  - name: wallet-svc
+    url: http://wallet-svc:8112
+    routes:
+      - name: wallet-api
+        paths: [/api/v1/wallet]
+        strip_path: true
+
+  - name: readmodel-svc
+    url: http://readmodel-svc:8114
+    routes:
+      - name: readmodel-api
+        paths: [/api/v1/read]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 3000, policy: local }
+
+  - name: feed-svc
+    url: http://feed-svc:8115
+    routes:
+      - name: feed-api
+        paths: [/api/v1/feed]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 3000, policy: local }
+
+  - name: video-svc
+    url: http://video-svc:8116
+    connect_timeout: 60000
+    read_timeout: 600000
+    routes:
+      - name: video-api
+        paths: [/api/v1/video]
+        strip_path: true
+
+  - name: rec-svc
+    url: http://rec-svc:8117
+    routes:
+      - name: rec-api
+        paths: [/api/v1/rec]
+        strip_path: true
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"]
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      headers:
+        - Authorization
+        - Content-Type
+        - X-Aqond-Region
+        - Idempotency-Key
+      credentials: true

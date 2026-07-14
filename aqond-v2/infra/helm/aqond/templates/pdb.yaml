@@ -1,0 +1,17 @@
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.enabled (gt ($svc.port | int) 0) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ if eq $svc.priority "hot" }}1{{ else }}0{{ end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}

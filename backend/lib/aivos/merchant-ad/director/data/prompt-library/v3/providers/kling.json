@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "provider": "kling",
+  "label": "Kling",
+  "prefix": "Natural human motion video.",
+  "spoken_wrapper": "{spoken_instruction} Spoken script: \"{spoken}\"",
+  "suffix": "Natural human motion, lip sync when script provided, mobile vertical format."
+}

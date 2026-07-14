@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "dimension": "language",
+  "entries": {
+    "th": {
+      "label": "Thai",
+      "spoken_instruction": "Speak clearly in natural Thai with appropriate polite particles.",
+      "placeholder_spoken": "สวัสดีค่ะ วันนี้มี {product} มาแนะนำ {offer} {cta}"
+    },
+    "en": {
+      "label": "English",
+      "spoken_instruction": "Speak clearly in natural English for international audience.",
+      "placeholder_spoken": "Hi everyone, check out {product}. {offer} {cta}"
+    },
+    "_default": {
+      "label": "Thai",
+      "spoken_instruction": "Speak clearly in natural Thai.",
+      "placeholder_spoken": "Introducing {product}. {offer} {cta}"
+    }
+  }
+}

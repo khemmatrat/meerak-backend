@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Live Chat — CF</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f0f0f; color: #fff; display: flex; flex-direction: column; height: 100vh; }
+    header { padding: 12px 16px; background: #161823; border-bottom: 1px solid #333; }
+    #msgs { flex: 1; overflow-y: auto; padding: 12px; }
+    .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 12px; max-width: 90%; }
+    .msg.me { background: #fe2c55; margin-left: auto; }
+    .msg.them { background: #2f2f2f; }
+    .msg.system { background: #1a3a2a; font-size: 0.9em; }
+    .card { background: #222; border: 1px solid #444; border-radius: 12px; padding: 12px; margin-top: 8px; }
+    .card img { max-width: 80px; border-radius: 8px; float: left; margin-right: 10px; }
+    .card button { background: #fe2c55; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; margin-top: 8px; }
+    footer { display: flex; gap: 8px; padding: 12px; background: #161823; }
+    input, select { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; }
+    button.send { background: #fe2c55; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; }
+    .hint { font-size: 0.85em; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>AQOND Live Chat</strong>
+    <div class="hint">พิมพ์ <b>F</b> หรือ <b>F1</b> เพื่อสั่งสินค้าที่ปักหมุด | Room: <span id="roomLabel">—</span></div>
+  </header>
+  <div id="msgs"></div>
+  <footer>
+    <input id="input" placeholder="พิมพ์ F หรือแชท..." />
+    <button class="send" id="sendBtn">ส่ง</button>
+  </footer>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get("room_id") || "demo-room";
+    const userId = params.get("user_id") || "buyer-" + Math.random().toString(36).slice(2, 8);
+    const userName = params.get("user_name") || userId;
+    document.getElementById("roomLabel").textContent = roomId;
+
+    const wsBase = location.origin.replace(/^http/, "ws") + "/api/v1/live-commerce/ws";
+    const ws = new WebSocket(`${wsBase}?room_id=${encodeURIComponent(roomId)}&user_id=${encodeURIComponent(userId)}&user_name=${encodeURIComponent(userName)}`);
+    const msgs = document.getElementById("msgs");
+
+    function addMsg(m, me) {
+      const el = document.createElement("div");
+      el.className = "msg " + (me ? "me" : m.user_name === "AQOND" ? "system" : "them");
+      el.innerHTML = `<small>${m.user_name || "—"}</small><br>${escapeHtml(m.body || "")}`;
+      if (m.payload && m.kind === "order_draft") renderDraft(el, m.payload);
+      if (m.payload && m.kind === "address_form") renderAddressForm(el, m.payload);
+      msgs.appendChild(el);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function renderDraft(el, p) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        ${p.image_url ? `<img src="${p.image_url}" alt="">` : ""}
+        <strong>${escapeHtml(p.title)}</strong><br>
+        ${p.f_code} — ${p.price_thb} บาท<br>
+        จำกัด ${p.purchase_limit_per_user || "ไม่จำกัด"} ต่อคน<br>
+        <label>จำนวน: <select id="qty-${p.draft_id}">${[...Array(Math.min(p.max_qty||5,10))].map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")}</select></label>
+        <button data-draft="${p.draft_id}">ยืนยันสั่งซื้อ</button>`;
+      card.querySelector("button").onclick = () => {
+        const qty = Number(document.getElementById(`qty-${p.draft_id}`).value) || 1;
+        ws.send(JSON.stringify({ type: "confirm_order", draft_id: p.draft_id, qty }));
+      };
+      el.appendChild(card);
+    }
+
+    function renderAddressForm(el, p) {
+      const card = document.createElement("div");
+      card.className = "card";
+      let html = `<strong>ที่อยู่จัดส่ง</strong><br>`;
+      if (p.saved_addresses?.length) {
+        html += `<select id="addr-${p.order_id}">`;
+        p.saved_addresses.forEach(a => {
+          html += `<option value="${a.id}">${escapeHtml(a.recipient)} — ${escapeHtml(a.line1)} ${a.postal_code}</option>`;
+        });
+        html += `</select><br>`;
+      }
+      html += `<textarea id="addrText-${p.order_id}" rows="3" placeholder="หรือวางที่อยู่ทั้งหมดให้ AI อ่าน..."></textarea><br>
+        <button data-order="${p.order_id}">บันทึกที่อยู่</button>`;
+      card.innerHTML = html;
+      card.querySelector("button").onclick = () => {
+        const sel = document.getElementById(`addr-${p.order_id}`);
+        const text = document.getElementById(`addrText-${p.order_id}`)?.value;
+        ws.send(JSON.stringify({
+          type: "submit_address",
+          order_id: p.order_id,
+          address_id: sel?.value,
+          parse_text: text || undefined,
+        }));
+      };
+      el.appendChild(card);
+    }
+
+    ws.onmessage = (ev) => {
+      const data = JSON.parse(ev.data);
+      if (data.type === "chat" && data.message) addMsg(data.message, data.message.user_id === userId);
+      if (data.type === "order_success") addMsg({ user_name: "AQOND", body: data.message }, false);
+      if (data.type === "address_form") addMsg({ user_name: "AQOND", body: "กรุณากรอกที่อยู่", kind: "address_form", payload: data }, false);
+      if (data.type === "shipment_notice") addMsg({ user_name: "AQOND", body: data.message }, false);
+      if (data.type === "confirm_result" && data.ok) addMsg({ user_name: "AQOND", body: "สั่งซื้อสำเร็จ!" }, false);
+    };
+
+    document.getElementById("sendBtn").onclick = send;
+    document.getElementById("input").onkeydown = (e) => { if (e.key === "Enter") send(); };
+    function send() {
+      const text = document.getElementById("input").value.trim();
+      if (!text) return;
+      ws.send(JSON.stringify({ type: "chat", text }));
+      addMsg({ user_name: userName, body: text }, true);
+      document.getElementById("input").value = "";
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+import './rider-axs.css';
+import { RiderShell } from '@/components/mobile/RiderShell';
+
+export default function RiderLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="axs-rider">
+      <RiderShell>{children}</RiderShell>
+    </div>
+  );
+}

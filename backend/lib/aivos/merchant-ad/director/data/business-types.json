@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "dimension": "business_type",
+  "entries": {
+    "marketplace": {
+      "label": "Marketplace seller",
+      "context": "Independent online shop selling products to mobile shoppers."
+    },
+    "food_shop": {
+      "label": "Food shop",
+      "context": "Restaurant or food stall promoting dishes and delivery."
+    },
+    "service_provider": {
+      "label": "Service provider",
+      "context": "Professional or local service business booking through the app."
+    },
+    "_default": {
+      "label": "General merchant",
+      "context": "Local merchant promoting products or services."
+    }
+  }
+}

@@ -1,7 +1,7 @@
 // Phase 4: Admin dashboard uses backend JWT (role from user_roles). No bypass.
-import React, { useState, useRef } from 'react';
-import { Lock, Mail, User, ArrowRight, Loader2, Shield } from 'lucide-react';
-import { AdminUser } from '../types';
+import React, { useState, useRef } from "react";
+import { Lock, Mail, User, ArrowRight, Loader2, Shield } from "lucide-react";
+import { AdminUser } from "../types";
 import {
   adminLogin,
   adminMfaSetupStart,
@@ -10,22 +10,22 @@ import {
   mapLoginUserToAdminUser,
   setAdminToken,
   type AdminLoginUser,
-} from '../services/adminApi';
+} from "../services/adminApi";
 
 interface LoginViewProps {
   onLogin: (user: AdminUser) => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const submittingRef = useRef(false);
 
   /** รหัสผ่านเท่านั้น | รอ TOTP | ลงทะเบียน Authenticator ครั้งแรก */
-  const [step, setStep] = useState<'password' | 'totp' | 'enroll'>('password');
+  const [step, setStep] = useState<"password" | "totp" | "enroll">("password");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [pendingUser, setPendingUser] = useState<AdminLoginUser | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -38,41 +38,46 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     e.preventDefault();
     if (submittingRef.current) return;
     submittingRef.current = true;
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
       const res = await adminLogin(email.trim(), password);
-      if ('access_token' in res && res.access_token) {
+      if ("access_token" in res && res.access_token) {
         setAdminToken(res.access_token);
         finishLogin(res.user);
         setLoading(false);
         submittingRef.current = false;
         return;
       }
-      if ('mfa_setup_required' in res && res.mfa_setup_required) {
+      if ("mfa_setup_required" in res && res.mfa_setup_required) {
         setMfaToken(res.mfa_token);
         setPendingUser(res.user);
         const start = await adminMfaSetupStart(res.mfa_token);
         setQrDataUrl(start.qr_data_url);
-        setStep('enroll');
-        setTotpCode('');
+        setStep("enroll");
+        setTotpCode("");
         setLoading(false);
         submittingRef.current = false;
         return;
       }
-      if ('mfa_required' in res && res.mfa_required) {
+      /* Backend ใช้ requires_totp — เก็บ mfa_required สำหรับรุ่น client/API ที่ normalize แล้ว */
+      const needsTotp =
+        ("requires_totp" in res &&
+          !!(res as { requires_totp?: boolean }).requires_totp) ||
+        ("mfa_required" in res && res.mfa_required);
+      if (needsTotp && res.mfa_token && res.user) {
         setMfaToken(res.mfa_token);
         setPendingUser(res.user);
-        setStep('totp');
-        setTotpCode('');
+        setStep("totp");
+        setTotpCode("");
         setLoading(false);
         submittingRef.current = false;
         return;
       }
-      setError('Unexpected login response');
+      setError("Unexpected login response");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid credentials';
+      const msg = err instanceof Error ? err.message : "Invalid credentials";
       setError(msg);
     }
     setLoading(false);
@@ -83,14 +88,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     e.preventDefault();
     if (!mfaToken || submittingRef.current) return;
     submittingRef.current = true;
-    setError('');
+    setError("");
     setLoading(true);
     try {
-      const res = await adminMfaVerify(mfaToken, totpCode.replace(/\s/g, ''));
+      const res = await adminMfaVerify(mfaToken, totpCode.replace(/\s/g, ""));
       setAdminToken(res.access_token);
       finishLogin(res.user);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Verification failed';
+      const msg = err instanceof Error ? err.message : "Verification failed";
       setError(msg);
     }
     setLoading(false);
@@ -101,14 +106,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     e.preventDefault();
     if (!mfaToken || submittingRef.current) return;
     submittingRef.current = true;
-    setError('');
+    setError("");
     setLoading(true);
     try {
-      const res = await adminMfaSetupFinish(mfaToken, totpCode.replace(/\s/g, ''));
+      const res = await adminMfaSetupFinish(
+        mfaToken,
+        totpCode.replace(/\s/g, ""),
+      );
       setAdminToken(res.access_token);
       finishLogin(res.user);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Setup failed';
+      const msg = err instanceof Error ? err.message : "Setup failed";
       setError(msg);
     }
     setLoading(false);
@@ -116,12 +124,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   };
 
   const backToPassword = () => {
-    setStep('password');
+    setStep("password");
     setMfaToken(null);
     setPendingUser(null);
     setQrDataUrl(null);
-    setTotpCode('');
-    setError('');
+    setTotpCode("");
+    setError("");
   };
 
   return (
@@ -134,10 +142,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
           <div className="relative z-10">
             <div className="bg-white/10 w-fit p-3 rounded-xl mb-6 backdrop-blur-sm border border-white/10">
-              <img src="/logo.png" alt="Aqond" className="w-12 h-12 object-contain" />
+              <img
+                src="/logo.png"
+                alt="Aqond"
+                className="w-12 h-12 object-contain"
+              />
             </div>
             <h1 className="text-3xl font-bold mb-2">Aqond Admin</h1>
-            <p className="text-indigo-200">Enterprise Backend Management System</p>
+            <p className="text-indigo-200">
+              Enterprise Backend Management System
+            </p>
           </div>
 
           <div className="relative z-10 space-y-4">
@@ -164,16 +178,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
         {/* Right */}
         <div className="md:w-1/2 p-12 flex flex-col justify-center">
-          {step === 'password' && (
+          {step === "password" && (
             <>
-              <h2 className="text-2xl font-bold text-slate-800 mb-2">Welcome Back</h2>
-              <p className="text-slate-500 mb-8">Please sign in to access the dashboard.</p>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                Welcome Back
+              </h2>
+              <p className="text-slate-500 mb-8">
+                Please sign in to access the dashboard.
+              </p>
 
               <form onSubmit={handlePasswordSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Email Address
+                  </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <Mail
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
                     <input
                       type="email"
                       value={email}
@@ -187,9 +210,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Password
+                  </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <Lock
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
                     <input
                       type="password"
                       value={password}
@@ -204,7 +232,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
                 {error && (
                   <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span> {error}
+                    <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>{" "}
+                    {error}
                   </div>
                 )}
 
@@ -214,30 +243,47 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     disabled={loading}
                     className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {loading ? <Loader2 size={20} className="animate-spin" /> : <>Sign In <ArrowRight size={18} /></>}
+                    {loading ? (
+                      <Loader2 size={20} className="animate-spin" />
+                    ) : (
+                      <>
+                        Sign In <ArrowRight size={18} />
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
             </>
           )}
 
-          {step === 'totp' && (
+          {step === "totp" && (
             <>
-              <h2 className="text-2xl font-bold text-slate-800 mb-2">Authenticator code</h2>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                Authenticator code
+              </h2>
               <p className="text-slate-500 mb-6">
-                Enter the 6-digit code from Google Authenticator or Authy for{' '}
-                <span className="font-medium text-slate-700">{pendingUser?.email}</span>.
+                Enter the 6-digit code from Google Authenticator or Authy for{" "}
+                <span className="font-medium text-slate-700">
+                  {pendingUser?.email}
+                </span>
+                .
               </p>
               <form onSubmit={handleTotpSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">6-digit code</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    6-digit code
+                  </label>
                   <input
                     type="text"
                     inputMode="numeric"
                     pattern="\d{6}"
                     maxLength={8}
                     value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      setTotpCode(
+                        e.target.value.replace(/[^\d]/g, "").slice(0, 6),
+                      )
+                    }
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg tracking-widest text-center text-lg font-mono focus:ring-2 focus:ring-indigo-500"
                     placeholder="000000"
                     required
@@ -245,7 +291,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                   />
                 </div>
                 {error && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg">{error}</div>
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg">
+                    {error}
+                  </div>
                 )}
                 <div className="flex gap-2 pt-2">
                   <button
@@ -260,34 +308,51 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     disabled={loading || totpCode.length !== 6}
                     className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold disabled:opacity-60"
                   >
-                    {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Verify'}
+                    {loading ? (
+                      <Loader2 size={20} className="animate-spin mx-auto" />
+                    ) : (
+                      "Verify"
+                    )}
                   </button>
                 </div>
               </form>
             </>
           )}
 
-          {step === 'enroll' && (
+          {step === "enroll" && (
             <>
-              <h2 className="text-2xl font-bold text-slate-800 mb-2">Set up Authenticator</h2>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                Set up Authenticator
+              </h2>
               <p className="text-slate-500 mb-4">
-                Scan this QR in Google Authenticator or Authy, then enter the 6-digit code to finish.
+                Scan this QR in Google Authenticator or Authy, then enter the
+                6-digit code to finish.
               </p>
               {qrDataUrl && (
                 <div className="mb-4 flex justify-center rounded-lg border border-slate-100 bg-white p-4">
-                  <img src={qrDataUrl} alt="Authenticator QR" className="max-h-48 w-48 object-contain" />
+                  <img
+                    src={qrDataUrl}
+                    alt="Authenticator QR"
+                    className="max-h-48 w-48 object-contain"
+                  />
                 </div>
               )}
               <form onSubmit={handleEnrollFinish} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Confirm 6-digit code</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Confirm 6-digit code
+                  </label>
                   <input
                     type="text"
                     inputMode="numeric"
                     pattern="\d{6}"
                     maxLength={8}
                     value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      setTotpCode(
+                        e.target.value.replace(/[^\d]/g, "").slice(0, 6),
+                      )
+                    }
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg tracking-widest text-center text-lg font-mono focus:ring-2 focus:ring-indigo-500"
                     placeholder="000000"
                     required
@@ -295,7 +360,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                   />
                 </div>
                 {error && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg">{error}</div>
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg">
+                    {error}
+                  </div>
                 )}
                 <div className="flex gap-2 pt-2">
                   <button
@@ -310,21 +377,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     disabled={loading || totpCode.length !== 6}
                     className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold disabled:opacity-60"
                   >
-                    {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Activate 2FA'}
+                    {loading ? (
+                      <Loader2 size={20} className="animate-spin mx-auto" />
+                    ) : (
+                      "Activate 2FA"
+                    )}
                   </button>
                 </div>
               </form>
             </>
           )}
 
-          {step === 'password' && (
+          {step === "password" && (
             <div className="mt-8 text-center">
               <p className="text-xs text-slate-400">
-                By logging in, you agree to the{' '}
+                By logging in, you agree to the{" "}
                 <a href="#" className="text-indigo-600 hover:underline">
                   Security Protocols
-                </a>{' '}
-                and{' '}
+                </a>{" "}
+                and{" "}
                 <a href="#" className="text-indigo-600 hover:underline">
                   Data Policy
                 </a>

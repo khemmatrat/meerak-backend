@@ -1,0 +1,7 @@
+{
+  "name": "aqond-v2-notify-service",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.21.0", "ioredis": "^5.4.0" }
+}

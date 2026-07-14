@@ -1,0 +1,51 @@
+{
+  "name": "AQOND Logistics 48h SLA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "logistics/pickup",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook 3PL Pickup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "amount": 48,
+        "unit": "hours"
+      },
+      "name": "Wait 48 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://escrow-service:8091/carrier/penalty",
+        "method": "POST",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={ \"carrier_code\": $json.carrier_code, \"penalty\": 5, \"reason\": \"48h SLA breach\" }"
+      },
+      "name": "Penalize Carrier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    }
+  ],
+  "connections": {
+    "Webhook 3PL Pickup": {
+      "main": [[{ "node": "Wait 48 Hours", "type": "main", "index": 0 }]]
+    },
+    "Wait 48 Hours": {
+      "main": [[{ "node": "Penalize Carrier", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "meta": {
+    "description": "Legacy carrier penalty only. Use order-sla-refund.json for full P6 HOLD→REFUND flow."
+  }
+}

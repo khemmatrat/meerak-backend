@@ -1,0 +1,67 @@
+/**
+ * AXS Shell — bridges legacy --tt-* tokens to AXS for /m/* mobile shell.
+ * Loaded after mobile-shop.css. Sprint 23.
+ */
+
+body.tt-body,
+body:has(.tt-shell) {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-bg-input: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-accent-text: #ffffff;
+  --tt-danger: var(--axs-danger);
+  --tt-success: var(--axs-success);
+  background: var(--axs-bg);
+  color: var(--axs-text);
+}
+
+.tt-shell {
+  background: var(--axs-bg);
+}
+
+.tt-header {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.tt-tabs {
+  background: var(--axs-surface);
+  border-top-color: var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.06);
+}
+
+.tt-tabs a.active .tt-tab-label {
+  color: var(--axs-primary);
+  font-weight: 700;
+}
+
+.tt-tabs a.active .tt-tab-icon svg {
+  color: var(--axs-primary);
+  stroke: var(--axs-primary);
+}
+
+.tt-btn-primary {
+  background: var(--axs-gradient-gold);
+  border-radius: var(--axs-radius-button);
+  color: #fff;
+}
+
+.tt-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.tt-btn-ghost {
+  border-color: var(--axs-border);
+  color: var(--axs-text);
+  border-radius: var(--axs-radius-button);
+}
+
+.tt-loading {
+  color: var(--axs-text-muted);
+}

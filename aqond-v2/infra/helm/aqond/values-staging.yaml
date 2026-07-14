@@ -1,0 +1,27 @@
+global:
+  env: staging
+  imageTag: staging
+  namespace: aqond-staging
+
+ingress:
+  host: aqond-staging.example.com
+  tls:
+    enabled: true
+    secretName: aqond-staging-tls
+
+autoscaling:
+  hpa:
+    minReplicas: 2
+    maxReplicas: 15
+  keda:
+    orderMinReplicas: 2
+    orderMaxReplicas: 15
+
+mesh:
+  enabled: true
+
+progressiveDelivery:
+  enabled: true
+
+observability:
+  enabled: true

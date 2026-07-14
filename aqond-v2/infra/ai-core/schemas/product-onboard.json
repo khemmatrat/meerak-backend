@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["title", "category", "price_thb", "inventory", "description"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "category": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "price_thb": { "type": "number", "minimum": 0 },
+    "inventory": { "type": "integer", "minimum": 0 },
+    "description": { "type": "string", "maxLength": 5000 },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}

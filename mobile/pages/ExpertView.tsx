@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
+import { adsService } from "../services/adsService";
+import { SponsoredPromoBanner, type SponsoredPromoItem } from "../components/SponsoredPromoBanner";
 import { useNotification } from "../context/NotificationContext";
 import FirebaseApi from "../services/firebase";
 import { gradeService, GradeData, GRADE_META } from "../services/gradeService";
@@ -24,8 +26,20 @@ import {
   Image,
   Wallet,
   GraduationCap,
+  Scissors,
+  Utensils,
+  Palette,
+  Shirt,
 } from "lucide-react";
-import { calcBookingEmployerTotal, calcBookingTalentBreakdown } from "../constants/bookingFeeStructure";
+import {
+  isServiceMerchantCategory,
+  getServiceMerchantMeta,
+} from "../constants/serviceMerchantCategories";
+import {
+  calcBookingEmployerTotal,
+  calcBookingTalentBreakdown,
+} from "../constants/bookingFeeStructure";
+import { useSlotBookingFees } from "../hooks/useSlotBookingFees";
 import { ChallengeSubmitModal } from "../components/ChallengeSubmitModal";
 import { bidsService, TalentOffer } from "../services/bidsService";
 import { PlaceBidModal } from "../components/PlaceBidModal";
@@ -82,16 +96,25 @@ type TabId = "about" | "videos" | "reviews";
 
 export const ExpertView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { notify } = useNotification();
   const { user } = useAuth();
+  const slotFees = useSlotBookingFees();
   const [profile, setProfile] = useState<ExpertProfile | null>(null);
   const [gradeData, setGradeData] = useState<GradeData | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewStats, setReviewStats] = useState<{ avg_overall: number; total_reviews: number } | null>(null);
-  const [workClips, setWorkClips] = useState<{ id: string; url: string; type?: string }[]>([]);
-  const [backendWorkClips, setBackendWorkClips] = useState<{ id: string; url: string; title?: string; description?: string }[]>([]);
+  const [reviewStats, setReviewStats] = useState<{
+    avg_overall: number;
+    total_reviews: number;
+  } | null>(null);
+  const [workClips, setWorkClips] = useState<
+    { id: string; url: string; type?: string }[]
+  >([]);
+  const [backendWorkClips, setBackendWorkClips] = useState<
+    { id: string; url: string; title?: string; description?: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>("about");
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
@@ -104,26 +127,56 @@ export const ExpertView: React.FC = () => {
   const [placeBidOffer, setPlaceBidOffer] = useState<TalentOffer | null>(null);
   const [bookedSlots, setBookedSlots] = useState<any[]>([]);
   const [challengeSlot, setChallengeSlot] = useState<any | null>(null);
-  const [slotBookModal, setSlotBookModal] = useState<{ slot: Slot; suggestedDeposit: number } | null>(null);
+  const [slotBookModal, setSlotBookModal] = useState<{
+    slot: Slot;
+    suggestedDeposit: number;
+  } | null>(null);
   const [depositInput, setDepositInput] = useState<string>("");
+  const [profilePromo, setProfilePromo] = useState<SponsoredPromoItem | null>(null);
+
+  useEffect(() => {
+    adsService.captureAdClickFromUrl(searchParams);
+  }, [searchParams]);
+
+  useEffect(() => {
+    api.get("/ads/placements/profile").then((r) => {
+      setProfilePromo(r.data?.promo || null);
+    }).catch(() => setProfilePromo(null));
+  }, [id]);
 
   // Build verified work clips: Backend talent_videos + Firestore + greeting_video + portfolio videos
   const buildWorkClips = useCallback(
-    (p: ExpertProfile): { id: string; url: string; title?: string; description?: string }[] => {
-      const clips: { id: string; url: string; title?: string; description?: string }[] = [];
+    (
+      p: ExpertProfile,
+    ): { id: string; url: string; title?: string; description?: string }[] => {
+      const clips: {
+        id: string;
+        url: string;
+        title?: string;
+        description?: string;
+      }[] = [];
       const seen = new Set<string>();
 
       // 1. Backend talent_videos (คลิปที่อัปโหลดจาก Story)
       backendWorkClips.forEach((c) => {
         if (c.url && !seen.has(c.url)) {
-          clips.push({ id: c.id, url: c.url, title: c.title, description: c.description });
+          clips.push({
+            id: c.id,
+            url: c.url,
+            title: c.title,
+            description: c.description,
+          });
           seen.add(c.url);
         }
       });
 
       // 2. Greeting video
       if (p.greeting_video_url && !seen.has(p.greeting_video_url)) {
-        clips.push({ id: "greeting", url: p.greeting_video_url, title: "Greeting" });
+        clips.push({
+          id: "greeting",
+          url: p.greeting_video_url,
+          title: "Greeting",
+        });
         seen.add(p.greeting_video_url);
       }
 
@@ -146,14 +199,17 @@ export const ExpertView: React.FC = () => {
 
       return clips;
     },
-    [workClips, backendWorkClips]
+    [workClips, backendWorkClips],
   );
 
   const allClips = profile ? buildWorkClips(profile) : [];
 
   // รูปผลงานจาก portfolio_urls (ไม่รวมวิดีโอ)
   const portfolioImages = (profile?.portfolio_urls || [])
-    .filter((url): url is string => typeof url === "string" && url.trim() !== "" && !VIDEO_EXT.test(url))
+    .filter(
+      (url): url is string =>
+        typeof url === "string" && url.trim() !== "" && !VIDEO_EXT.test(url),
+    )
     .map((url, i) => ({ id: `img-${i}`, url: url.trim() }));
 
   useEffect(() => {
@@ -161,24 +217,40 @@ export const ExpertView: React.FC = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const [profileRes, slotsRes, gradeRes, firestoreClips, backendVideos] = await Promise.all([
-          api.get(`/users/profile/${id}`).catch(() => ({ data: null })),
-          api.get(`/availability/${id}`).catch(() => ({ data: { slots: [] } })),
-          gradeService.getWorkerGrade(id).catch(() => null),
-          FirebaseApi.getProviderWorkClips(id),
-          videoService.getVideosByTalent(id),
-        ]);
+        const [profileRes, slotsRes, gradeRes, firestoreClips, backendVideos] =
+          await Promise.all([
+            api.get(`/users/profile/${id}`).catch(() => ({ data: null })),
+            api
+              .get(`/availability/${id}`)
+              .catch(() => ({ data: { slots: [] } })),
+            gradeService.getWorkerGrade(id).catch(() => null),
+            FirebaseApi.getProviderWorkClips(id),
+            videoService.getVideosByTalent(id),
+          ]);
 
         if (profileRes.data && typeof profileRes.data === "object") {
           setProfile(profileRes.data as ExpertProfile);
         }
-        setSlots(Array.isArray(slotsRes.data?.slots) ? slotsRes.data.slots : []);
+        setSlots(
+          Array.isArray(slotsRes.data?.slots) ? slotsRes.data.slots : [],
+        );
         setGradeData(gradeRes);
         setWorkClips(firestoreClips);
-        setBackendWorkClips((backendVideos || []).map((v) => ({ id: v.id, url: v.video_url, title: v.title || undefined, description: v.description || undefined })));
-        const offersRes = await bidsService.getOpenOffers(id).catch(() => ({ data: { offers: [] } }));
+        setBackendWorkClips(
+          (backendVideos || []).map((v) => ({
+            id: v.id,
+            url: v.video_url,
+            title: v.title || undefined,
+            description: v.description || undefined,
+          })),
+        );
+        const offersRes = await bidsService
+          .getOpenOffers(id)
+          .catch(() => ({ data: { offers: [] } }));
         setOpenOffers(offersRes.data?.offers ?? []);
-        const bookedRes = await api.get(`/talents/${id}/booked-slots`).catch(() => ({ data: { slots: [] } }));
+        const bookedRes = await api
+          .get(`/talents/${id}/booked-slots`)
+          .catch(() => ({ data: { slots: [] } }));
         setBookedSlots(bookedRes.data?.slots ?? []);
       } catch (e) {
         notify("โหลดไม่สำเร็จ", "error");
@@ -198,15 +270,20 @@ export const ExpertView: React.FC = () => {
         const stats = res.data?.stats;
         setReviewStats(
           stats
-            ? { avg_overall: parseFloat(stats.avg_overall) || 0, total_reviews: parseInt(stats.total_reviews) || 0 }
-            : null
+            ? {
+                avg_overall: parseFloat(stats.avg_overall) || 0,
+                total_reviews: parseInt(stats.total_reviews) || 0,
+              }
+            : null,
         );
       })
       .catch(() => {});
   }, [id, profile]);
 
   const openSlotBookModal = (slot: Slot) => {
-    const offerForSlot = openOffers.find((o) => o.slot_id && String(o.slot_id) === String(slot.id));
+    const offerForSlot = openOffers.find(
+      (o) => o.slot_id && String(o.slot_id) === String(slot.id),
+    );
     const suggestedDeposit = offerForSlot?.base_price ?? 500;
     setSlotBookModal({ slot, suggestedDeposit });
     setDepositInput(String(suggestedDeposit));
@@ -226,8 +303,17 @@ export const ExpertView: React.FC = () => {
     setBookingSlotId(slotId);
     setBooking(true);
     try {
-      await api.post("/bookings", { slot_id: slotId, talent_id: id, deposit_amount: depositAmount });
-      notify("จองคิวสำเร็จ — รอ Talent ยืนยัน แล้วชำระมัดจำที่ My Bookings", "success");
+      await api.post("/bookings", {
+        slot_id: slotId,
+        talent_id: id,
+        deposit_amount: depositAmount,
+        ...adsService.getAdClickPayloadForBooking(),
+        adSurface: adsService.getStoredClickAttribution()?.surface || "VIDEO_FEED",
+      });
+      notify(
+        "จองคิวสำเร็จ — รอ Talent ยืนยัน แล้วชำระมัดจำที่ My Bookings",
+        "success",
+      );
       setSlots((prev) => prev.filter((s) => s.id !== slotId));
       closeSlotBookModal();
     } catch (e: any) {
@@ -243,7 +329,12 @@ export const ExpertView: React.FC = () => {
     const d = new Date(start);
     const e = new Date(end);
     return {
-      date: d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "2-digit" }),
+      date: d.toLocaleDateString("th-TH", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "2-digit",
+      }),
       time: `${d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} – ${e.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`,
     };
   };
@@ -256,7 +347,8 @@ export const ExpertView: React.FC = () => {
   const closeStory = () => setStoryOpen(false);
 
   const goPrevStory = () => setStoryIndex((i) => Math.max(0, i - 1));
-  const goNextStory = () => setStoryIndex((i) => Math.min(allClips.length - 1, i + 1));
+  const goNextStory = () =>
+    setStoryIndex((i) => Math.min(allClips.length - 1, i + 1));
 
   // TikTok-style touch swipe (vertical: up = next, down = prev)
   const touchStartY = useRef(0);
@@ -272,12 +364,17 @@ export const ExpertView: React.FC = () => {
   };
 
   const handleBookNow = () => {
-    navigate(`/create-job?providerId=${id}&providerName=${encodeURIComponent(profile?.name || "")}`);
+    navigate(
+      `/create-job?providerId=${id}&providerName=${encodeURIComponent(profile?.name || "")}`,
+    );
   };
 
   const scrollToSlots = () => {
     setActiveTab("about");
-    setTimeout(() => slotsSectionRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    setTimeout(
+      () => slotsSectionRef.current?.scrollIntoView({ behavior: "smooth" }),
+      100,
+    );
   };
 
   if (loading && !profile) {
@@ -292,17 +389,25 @@ export const ExpertView: React.FC = () => {
     return (
       <div className="max-w-2xl mx-auto p-6 text-center min-h-[40vh] flex flex-col items-center justify-center">
         <p className="text-gray-500">ไม่พบโปรไฟล์นี้</p>
-        <Link to="/talents" className="mt-4 inline-flex items-center gap-2 text-amber-600 hover:underline">
+        <Link
+          to="/talents"
+          className="mt-4 inline-flex items-center gap-2 text-amber-600 hover:underline"
+        >
           <ArrowLeft size={18} /> กลับไปรายชื่อ Talents
         </Link>
       </div>
     );
   }
 
-  const avatarUrl = profile.avatar_url || "https://via.placeholder.com/200?text=Expert";
-  const displayRating = gradeData ? gradeData.avg_rating : profile.rating ?? 0;
-  const completedJobs = gradeData?.total_jobs ?? profile.completed_jobs_count ?? 0;
-  const showPlatinumBadge = profile.platinumBadge || profile.is_vip || gradeData?.grade === "A";
+  const avatarUrl =
+    profile.avatar_url || "https://via.placeholder.com/200?text=Expert";
+  const displayRating = gradeData
+    ? gradeData.avg_rating
+    : (profile.rating ?? 0);
+  const completedJobs =
+    gradeData?.total_jobs ?? profile.completed_jobs_count ?? 0;
+  const showPlatinumBadge =
+    profile.platinumBadge || profile.is_vip || gradeData?.grade === "A";
 
   const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: "about", label: "About", icon: <User size={16} /> },
@@ -312,9 +417,18 @@ export const ExpertView: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto pb-36 md:pb-24">
-      <Link to="/talents" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6">
+      <Link
+        to="/talents"
+        className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6"
+      >
         <ArrowLeft size={18} /> รายชื่อ Talents
       </Link>
+
+      {profilePromo ? (
+        <div className="mb-4">
+          <SponsoredPromoBanner item={profilePromo} surface="PROVIDER_PROFILE_PROMO" />
+        </div>
+      ) : null}
 
       {/* Header: Avatar + Name + Badges */}
       <div className="flex flex-col sm:flex-row gap-6 mb-6">
@@ -328,7 +442,8 @@ export const ExpertView: React.FC = () => {
             <div
               className="absolute -top-1 -right-1 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold shadow-lg"
               style={{
-                background: "linear-gradient(135deg, #D4AF37 0%, #F5E27D 50%, #B8860B 100%)",
+                background:
+                  "linear-gradient(135deg, #D4AF37 0%, #F5E27D 50%, #B8860B 100%)",
                 color: "#fff",
               }}
             >
@@ -337,7 +452,9 @@ export const ExpertView: React.FC = () => {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">{profile.name || "Expert"}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {profile.name || "Expert"}
+          </h1>
           {profile.verified_badge && (
             <div className="flex items-center gap-2 mt-1 text-amber-600">
               <Gem size={18} />
@@ -350,7 +467,11 @@ export const ExpertView: React.FC = () => {
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold text-white"
                 style={{ background: GRADE_META[gradeData.grade].bgColor }}
               >
-                {gradeData.grade === "A" ? <Crown size={12} fill="currentColor" /> : <ShieldCheck size={12} />}
+                {gradeData.grade === "A" ? (
+                  <Crown size={12} fill="currentColor" />
+                ) : (
+                  <ShieldCheck size={12} />
+                )}
                 {gradeData.grade === "A" ? "VVIP" : "Pro"}
               </span>
             </div>
@@ -358,10 +479,14 @@ export const ExpertView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 mt-2 text-gray-600">
             <span className="flex items-center gap-1">
               <Star size={18} className="text-amber-400 fill-amber-400" />
-              <span className="font-medium">{Number(displayRating).toFixed(1)}</span>
+              <span className="font-medium">
+                {Number(displayRating).toFixed(1)}
+              </span>
             </span>
             {reviewStats && (
-              <span className="text-sm text-gray-500">({reviewStats.total_reviews} รีวิว)</span>
+              <span className="text-sm text-gray-500">
+                ({reviewStats.total_reviews} รีวิว)
+              </span>
             )}
             {(profile.verified_hours ?? 0) >= 1 && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -371,7 +496,9 @@ export const ExpertView: React.FC = () => {
             )}
           </div>
           {profile.signature_service && (
-            <p className="mt-2 text-gray-600 text-sm line-clamp-2">{profile.signature_service}</p>
+            <p className="mt-2 text-gray-600 text-sm line-clamp-2">
+              {profile.signature_service}
+            </p>
           )}
         </div>
       </div>
@@ -419,7 +546,8 @@ export const ExpertView: React.FC = () => {
                       className="w-full h-full object-cover"
                       loading="lazy"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/200?text=Image";
+                        (e.target as HTMLImageElement).src =
+                          "https://via.placeholder.com/200?text=Image";
                       }}
                     />
                   </a>
@@ -432,34 +560,44 @@ export const ExpertView: React.FC = () => {
               <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
                 <Briefcase size={18} className="text-amber-500" /> The Journey
               </h3>
-              <p className="text-gray-600 text-sm whitespace-pre-wrap">{profile.the_journey}</p>
+              <p className="text-gray-600 text-sm whitespace-pre-wrap">
+                {profile.the_journey}
+              </p>
             </div>
           )}
-          {Array.isArray(profile.work_experience) && profile.work_experience.length > 0 && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Briefcase size={20} className="text-amber-500" />
-                ประสบการณ์ทำงาน
-              </h3>
-              <ul className="space-y-4">
-                {profile.work_experience.map((exp) => (
-                  <li key={exp.id} className="border-b border-gray-100 last:border-0 pb-4 last:pb-0">
-                    <p className="font-semibold text-gray-900">{exp.title}</p>
-                    <p className="text-sm text-gray-600">{exp.company}</p>
-                    {exp.location ? <p className="text-xs text-gray-500">{exp.location}</p> : null}
-                    <p className="text-xs text-gray-500 mt-1">
-                      {exp.startDate}
-                      {" — "}
-                      {exp.current ? "ปัจจุบัน" : exp.endDate || "—"}
-                    </p>
-                    {exp.description ? (
-                      <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{exp.description}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {Array.isArray(profile.work_experience) &&
+            profile.work_experience.length > 0 && (
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Briefcase size={20} className="text-amber-500" />
+                  ประสบการณ์ทำงาน
+                </h3>
+                <ul className="space-y-4">
+                  {profile.work_experience.map((exp) => (
+                    <li
+                      key={exp.id}
+                      className="border-b border-gray-100 last:border-0 pb-4 last:pb-0"
+                    >
+                      <p className="font-semibold text-gray-900">{exp.title}</p>
+                      <p className="text-sm text-gray-600">{exp.company}</p>
+                      {exp.location ? (
+                        <p className="text-xs text-gray-500">{exp.location}</p>
+                      ) : null}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {exp.startDate}
+                        {" — "}
+                        {exp.current ? "ปัจจุบัน" : exp.endDate || "—"}
+                      </p>
+                      {exp.description ? (
+                        <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
+                          {exp.description}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           {Array.isArray(profile.education) && profile.education.length > 0 && (
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -468,10 +606,15 @@ export const ExpertView: React.FC = () => {
               </h3>
               <ul className="space-y-4">
                 {profile.education.map((ed) => (
-                  <li key={ed.id} className="border-b border-gray-100 last:border-0 pb-4 last:pb-0">
+                  <li
+                    key={ed.id}
+                    className="border-b border-gray-100 last:border-0 pb-4 last:pb-0"
+                  >
                     <p className="font-semibold text-gray-900">{ed.school}</p>
                     {(ed.degree || ed.field) && (
-                      <p className="text-sm text-gray-600">{[ed.degree, ed.field].filter(Boolean).join(" · ")}</p>
+                      <p className="text-sm text-gray-600">
+                        {[ed.degree, ed.field].filter(Boolean).join(" · ")}
+                      </p>
                     )}
                     {(ed.startYear || ed.endYear) && (
                       <p className="text-xs text-gray-500 mt-1">
@@ -479,7 +622,9 @@ export const ExpertView: React.FC = () => {
                       </p>
                     )}
                     {ed.description ? (
-                      <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{ed.description}</p>
+                      <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
+                        {ed.description}
+                      </p>
                     ) : null}
                   </li>
                 ))}
@@ -489,12 +634,16 @@ export const ExpertView: React.FC = () => {
           {gradeData && (
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
-                <Award size={18} className="text-amber-500" /> Certifications & Ratings
+                <Award size={18} className="text-amber-500" /> Certifications &
+                Ratings
               </h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Grade</span>
-                  <p className="font-semibold" style={{ color: GRADE_META[gradeData.grade].color }}>
+                  <p
+                    className="font-semibold"
+                    style={{ color: GRADE_META[gradeData.grade].color }}
+                  >
                     {gradeData.grade} — {GRADE_META[gradeData.grade].badge}
                   </p>
                 </div>
@@ -504,7 +653,9 @@ export const ExpertView: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-gray-500">Success Rate</span>
-                  <p className="font-semibold">{gradeData.success_rate?.toFixed(0) ?? 0}%</p>
+                  <p className="font-semibold">
+                    {gradeData.success_rate?.toFixed(0) ?? 0}%
+                  </p>
                 </div>
                 <div>
                   <span className="text-gray-500">ใบเซอร์</span>
@@ -513,23 +664,64 @@ export const ExpertView: React.FC = () => {
               </div>
             </div>
           )}
+          {isServiceMerchantCategory(profile?.expert_category) &&
+            (() => {
+              const bookMeta = getServiceMerchantMeta(profile?.expert_category);
+              const cat = (profile?.expert_category || "").toLowerCase();
+              const BookIcon =
+                cat === "chef"
+                  ? Utensils
+                  : cat === "artist"
+                    ? Palette
+                    : cat === "tailor"
+                      ? Shirt
+                      : Scissors;
+              return (
+                <div className="mb-6 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-2">
+                    <BookIcon size={22} className="text-sky-600" />
+                    {bookMeta.bookingTitle}
+                  </h2>
+                  <p className="text-sm text-gray-600 mb-4">
+                    {bookMeta.bookingDescription}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/talents/${id}/beauty-booking`)}
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-sky-600 text-white font-semibold hover:bg-sky-700"
+                  >
+                    เริ่มจองบริการ
+                  </button>
+                </div>
+              );
+            })()}
           {/* Select Your Time */}
-          <div ref={slotsSectionRef} className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-xl p-6 sm:p-8">
+          <div
+            ref={slotsSectionRef}
+            className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-xl p-6 sm:p-8"
+          >
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
               <Calendar size={22} className="text-amber-500" />
               Select Your Time
             </h2>
-            <p className="text-sm text-gray-500 mb-6">เลือกช่วงเวลาที่ต้องการจองคิวกับ Expert คนนี้</p>
+            <p className="text-sm text-gray-500 mb-6">
+              เลือกช่วงเวลาที่ต้องการจองคิวกับ Expert คนนี้
+            </p>
             {slots.length === 0 ? (
               <div className="text-center py-10 text-gray-500 rounded-xl bg-white/5 border border-white/10">
                 <Clock size={40} className="mx-auto mb-2 opacity-60" />
                 <p>ยังไม่มีช่วงเวลาว่างในขณะนี้</p>
-                <p className="text-xs mt-1">ลองกลับมาดูภายหลังหรือติดต่อโดยตรง</p>
+                <p className="text-xs mt-1">
+                  ลองกลับมาดูภายหลังหรือติดต่อโดยตรง
+                </p>
               </div>
             ) : (
               <ul className="space-y-3">
                 {slots.map((slot) => {
-                  const { date, time } = formatSlot(slot.start_time, slot.end_time);
+                  const { date, time } = formatSlot(
+                    slot.start_time,
+                    slot.end_time,
+                  );
                   return (
                     <li
                       key={slot.id}
@@ -566,7 +758,9 @@ export const ExpertView: React.FC = () => {
                 <Zap size={22} className="text-amber-500" />
                 คิวที่ถูกจอง — ท้าชิงได้
               </h2>
-              <p className="text-sm text-gray-600 mb-4">เสนอราคาสูงกว่า 20% เพื่อท้าชิงคิวนี้</p>
+              <p className="text-sm text-gray-600 mb-4">
+                เสนอราคาสูงกว่า 20% เพื่อท้าชิงคิวนี้
+              </p>
               <ul className="space-y-3">
                 {bookedSlots.map((bs) => {
                   const { date, time } = formatSlot(bs.start_time, bs.end_time);
@@ -578,7 +772,9 @@ export const ExpertView: React.FC = () => {
                       <div>
                         <p className="font-medium text-gray-900">{date}</p>
                         <p className="text-sm text-gray-600">{time}</p>
-                        <p className="text-xs text-amber-600 mt-0.5">เดิม ฿{bs.deposit_amount?.toLocaleString()}</p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          เดิม ฿{bs.deposit_amount?.toLocaleString()}
+                        </p>
                       </div>
                       <button
                         onClick={() => user && setChallengeSlot(bs)}
@@ -601,7 +797,9 @@ export const ExpertView: React.FC = () => {
                 <Zap size={22} className="text-amber-500" />
                 Real-time Bidding (18:00–20:00)
               </h2>
-              <p className="text-sm text-gray-600 mb-4">วาง Bid สูงกว่าฐานเพื่อเพิ่มโอกาสถูกเลือก</p>
+              <p className="text-sm text-gray-600 mb-4">
+                วาง Bid สูงกว่าฐานเพื่อเพิ่มโอกาสถูกเลือก
+              </p>
               <div className="space-y-3">
                 {openOffers.map((offer) => (
                   <div
@@ -609,12 +807,20 @@ export const ExpertView: React.FC = () => {
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-white border border-amber-200"
                   >
                     <div>
-                      <p className="font-medium text-gray-900">{offer.title || 'Offer'}</p>
-                      <p className="text-sm text-amber-600 font-bold">Base: {offer.base_price.toLocaleString()} THB</p>
-                      <p className="text-xs text-gray-500">{offer.offer_date} • {offer.bid_count ?? 0} bids</p>
+                      <p className="font-medium text-gray-900">
+                        {offer.title || "Offer"}
+                      </p>
+                      <p className="text-sm text-amber-600 font-bold">
+                        Base: {offer.base_price.toLocaleString()} THB
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {offer.offer_date} • {offer.bid_count ?? 0} bids
+                      </p>
                     </div>
                     <button
-                      onClick={() => user ? setPlaceBidOffer(offer) : navigate('/login')}
+                      onClick={() =>
+                        user ? setPlaceBidOffer(offer) : navigate("/login")
+                      }
                       className="px-4 py-2 rounded-xl bg-amber-500 text-white font-semibold hover:bg-amber-600"
                     >
                       Place Bid
@@ -632,7 +838,10 @@ export const ExpertView: React.FC = () => {
           talentId={id}
           slot={challengeSlot}
           onClose={() => setChallengeSlot(null)}
-          onSuccess={() => { setChallengeSlot(null); notify("ส่งคำท้าชิงเรียบร้อย รอผู้จองคนแรกตอบกลับ", "success"); }}
+          onSuccess={() => {
+            setChallengeSlot(null);
+            notify("ส่งคำท้าชิงเรียบร้อย รอผู้จองคนแรกตอบกลับ", "success");
+          }}
         />
       )}
 
@@ -651,15 +860,34 @@ export const ExpertView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900">จองคิว — ชำระมัดจำ</h3>
-              <button onClick={closeSlotBookModal} className="p-2 rounded-lg hover:bg-gray-100">
+              <h3 className="text-lg font-bold text-gray-900">
+                จองคิว — ชำระมัดจำ
+              </h3>
+              <button
+                onClick={closeSlotBookModal}
+                className="p-2 rounded-lg hover:bg-gray-100"
+              >
                 <X size={20} />
               </button>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              {formatSlot(slotBookModal.slot.start_time, slotBookModal.slot.end_time).date} — {formatSlot(slotBookModal.slot.start_time, slotBookModal.slot.end_time).time}
+              {
+                formatSlot(
+                  slotBookModal.slot.start_time,
+                  slotBookModal.slot.end_time,
+                ).date
+              }{" "}
+              —{" "}
+              {
+                formatSlot(
+                  slotBookModal.slot.start_time,
+                  slotBookModal.slot.end_time,
+                ).time
+              }
             </p>
-            <label className="block text-sm font-medium text-gray-700 mb-2">จำนวนมัดจำ (บาท)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              จำนวนมัดจำ (บาท)
+            </label>
             <input
               type="number"
               min={1}
@@ -670,40 +898,68 @@ export const ExpertView: React.FC = () => {
             />
             {(() => {
               const deposit = Math.max(0, Number(depositInput) || 0);
-              const emp = calcBookingEmployerTotal(deposit, user?.vip_tier);
-              const talentBreakdown = calcBookingTalentBreakdown(deposit, deposit, undefined);
+              const emp = calcBookingEmployerTotal(
+                deposit,
+                user?.vip_tier,
+                slotFees ?? undefined,
+              );
+              const talentBreakdown = calcBookingTalentBreakdown(
+                deposit,
+                deposit,
+                undefined,
+                slotFees ?? undefined,
+              );
               return deposit >= 1 ? (
                 <div className="space-y-3 mb-6 p-4 rounded-xl bg-amber-50/80 border border-amber-200">
-                  <p className="font-medium text-amber-900 text-sm">Breakdown</p>
+                  <p className="font-medium text-amber-900 text-sm">
+                    Breakdown
+                  </p>
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between text-gray-700">
                       <span>ค่ามัดจำ</span>
-                      <span className="font-mono">฿{deposit.toLocaleString()}</span>
+                      <span className="font-mono">
+                        ฿{deposit.toLocaleString()}
+                      </span>
                     </div>
                     <div className="flex justify-between text-gray-700">
                       <span>Markup ({(emp.markupRate * 100).toFixed(0)}%)</span>
-                      <span className="font-mono">+฿{emp.markupAmount.toLocaleString()}</span>
+                      <span className="font-mono">
+                        +฿{emp.markupAmount.toLocaleString()}
+                      </span>
                     </div>
                     <hr className="border-amber-200" />
                     <div className="flex justify-between font-bold text-amber-900">
                       <span>ยอดที่คุณจ่าย</span>
-                      <span className="font-mono">฿{emp.totalToPay.toLocaleString()}</span>
+                      <span className="font-mono">
+                        ฿{emp.totalToPay.toLocaleString()}
+                      </span>
                     </div>
                   </div>
                   <details className="mt-2">
-                    <summary className="text-xs text-amber-700 cursor-pointer">Talent ได้รับ (หลังหัก Sourcing + Commission)</summary>
+                    <summary className="text-xs text-amber-700 cursor-pointer">
+                      Talent ได้รับ (หลังหัก Sourcing + Commission)
+                    </summary>
                     <div className="mt-2 space-y-1 text-xs text-gray-600">
                       <div className="flex justify-between">
                         <span>Sourcing (8%)</span>
-                        <span>-฿{talentBreakdown.sourcingFee.toLocaleString()}</span>
+                        <span>
+                          -฿{talentBreakdown.sourcingFee.toLocaleString()}
+                        </span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Commission ({(talentBreakdown.commissionRate * 100).toFixed(0)}%)</span>
-                        <span>-฿{talentBreakdown.commission.toLocaleString()}</span>
+                        <span>
+                          Commission (
+                          {(talentBreakdown.commissionRate * 100).toFixed(0)}%)
+                        </span>
+                        <span>
+                          -฿{talentBreakdown.commission.toLocaleString()}
+                        </span>
                       </div>
                       <div className="flex justify-between font-medium text-emerald-700">
                         <span>Talent ได้รับสุทธิ</span>
-                        <span>฿{talentBreakdown.talentPayout.toLocaleString()}</span>
+                        <span>
+                          ฿{talentBreakdown.talentPayout.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </details>
@@ -718,7 +974,12 @@ export const ExpertView: React.FC = () => {
                 ยกเลิก
               </button>
               <button
-                onClick={() => handleBook(slotBookModal.slot.id, Math.max(1, Number(depositInput) || 0))}
+                onClick={() =>
+                  handleBook(
+                    slotBookModal.slot.id,
+                    Math.max(1, Number(depositInput) || 0),
+                  )
+                }
                 disabled={booking || !depositInput || Number(depositInput) < 1}
                 className="flex-1 py-3 rounded-xl bg-amber-500 text-white font-semibold hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2"
               >
@@ -760,15 +1021,27 @@ export const ExpertView: React.FC = () => {
                         muted
                         playsInline
                         preload="metadata"
-                        onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                        onMouseEnter={(e) =>
+                          e.currentTarget.play().catch(() => {})
+                        }
                         onMouseLeave={(e) => {
                           e.currentTarget.pause();
                           e.currentTarget.currentTime = 0;
                         }}
                       />
                       <div className="absolute top-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black pointer-events-none">
-                        <img src="/logo.png" alt="" className="w-3 h-3 object-contain opacity-90" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        <span className="text-white font-bold text-[8px] tracking-wide">aqond</span>
+                        <img
+                          src="/logo.png"
+                          alt=""
+                          className="w-3 h-3 object-contain opacity-90"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
+                        <span className="text-white font-bold text-[8px] tracking-wide">
+                          aqond
+                        </span>
                       </div>
                     </>
                   ) : (
@@ -795,9 +1068,13 @@ export const ExpertView: React.FC = () => {
             <div className="flex items-center gap-4 mb-6 p-4 rounded-xl bg-amber-50 border border-amber-100">
               <div className="flex items-center gap-1">
                 <Star size={24} className="text-amber-400 fill-amber-400" />
-                <span className="text-2xl font-bold text-gray-900">{reviewStats.avg_overall.toFixed(1)}</span>
+                <span className="text-2xl font-bold text-gray-900">
+                  {reviewStats.avg_overall.toFixed(1)}
+                </span>
               </div>
-              <span className="text-gray-600">{reviewStats.total_reviews} รีวิว</span>
+              <span className="text-gray-600">
+                {reviewStats.total_reviews} รีวิว
+              </span>
             </div>
           )}
           {reviews.length === 0 ? (
@@ -805,22 +1082,35 @@ export const ExpertView: React.FC = () => {
           ) : (
             <ul className="space-y-4">
               {reviews.map((r) => (
-                <li key={r.id} className="border-b border-gray-100 pb-4 last:border-0">
+                <li
+                  key={r.id}
+                  className="border-b border-gray-100 pb-4 last:border-0"
+                >
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-gray-900">{r.reviewer_name}</span>
+                    <span className="font-medium text-gray-900">
+                      {r.reviewer_name}
+                    </span>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5].map((n) => (
                         <Star
                           key={n}
                           size={14}
-                          className={n <= (r.rating_overall || 0) ? "text-amber-400 fill-amber-400" : "text-gray-200"}
+                          className={
+                            n <= (r.rating_overall || 0)
+                              ? "text-amber-400 fill-amber-400"
+                              : "text-gray-200"
+                          }
                         />
                       ))}
                     </div>
                   </div>
-                  {r.comment && <p className="text-sm text-gray-600">{r.comment}</p>}
+                  {r.comment && (
+                    <p className="text-sm text-gray-600">{r.comment}</p>
+                  )}
                   <p className="text-xs text-gray-400 mt-1">
-                    {new Date(r.created_at).toLocaleDateString("th-TH", { dateStyle: "medium" })}
+                    {new Date(r.created_at).toLocaleDateString("th-TH", {
+                      dateStyle: "medium",
+                    })}
                   </p>
                 </li>
               ))}
@@ -897,13 +1187,18 @@ export const ExpertView: React.FC = () => {
             )}
           </div>
           {/* Title & Description overlay (TikTok-style) */}
-          {((allClips[storyIndex] as any).title || (allClips[storyIndex] as any).description) && (
+          {((allClips[storyIndex] as any).title ||
+            (allClips[storyIndex] as any).description) && (
             <div className="absolute bottom-16 left-0 right-0 px-4 text-left">
               {(allClips[storyIndex] as any).title && (
-                <p className="text-white font-semibold text-base drop-shadow-lg">{(allClips[storyIndex] as any).title}</p>
+                <p className="text-white font-semibold text-base drop-shadow-lg">
+                  {(allClips[storyIndex] as any).title}
+                </p>
               )}
               {(allClips[storyIndex] as any).description && (
-                <p className="text-white/90 text-sm mt-0.5 line-clamp-2 drop-shadow-lg">{(allClips[storyIndex] as any).description}</p>
+                <p className="text-white/90 text-sm mt-0.5 line-clamp-2 drop-shadow-lg">
+                  {(allClips[storyIndex] as any).description}
+                </p>
               )}
             </div>
           )}

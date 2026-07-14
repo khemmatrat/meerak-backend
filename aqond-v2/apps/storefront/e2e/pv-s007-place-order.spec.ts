@@ -142,35 +142,43 @@ test.describe('S007 — Place order', () => {
     await selectCod(page);
     await clickPlace(page);
     await expect(page).toHaveURL(/payment=cod/, { timeout: 30000 });
-    const orderId = await page.locator('[data-testid="order-success-id"]').innerText();
+    await expect(page.locator('[data-testid="order-success-id"]')).toBeVisible({ timeout: 15000 });
+    const orderId = (await page.locator('[data-testid="order-success-id"]').innerText()).trim();
+    await expect
+      .poll(async () => {
+        const ordersRes = await request.get(`/api/orders?buyer_id=${encodeURIComponent(E2E_OWNER)}`);
+        const ordersJson = await ordersRes.json();
+        return (ordersJson.orders || []).find(
+          (o: { order_id?: string; id?: string }) => String(o.order_id || o.id) === orderId,
+        );
+      })
+      .toBeTruthy();
     const ordersRes = await request.get(`/api/orders?buyer_id=${encodeURIComponent(E2E_OWNER)}`);
     const ordersJson = await ordersRes.json();
-    const hit = (ordersJson.orders || []).find((o: { order_id?: string }) => o.order_id === orderId);
-    expect(hit).toBeTruthy();
+    const hit = (ordersJson.orders || []).find(
+      (o: { order_id?: string; id?: string }) => String(o.order_id || o.id) === orderId,
+    );
     expect(hit.payment_status || hit.method).toMatch(/cod/i);
   });
 
   test('step 5: retry succeeds after temporary place failure', async ({ page }) => {
-    let failOnce = true;
-    await page.route('**/api/checkout/place', async (route) => {
-      if (failOnce) {
-        failOnce = false;
-        await route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'temporary', detail: 'PV retry test' }),
-        });
-        return;
-      }
-      await route.continue();
-    });
+    // Trigger the one-time failure via setExtraHTTPHeaders instead of page.route().
+    // On WebKit (iphone-safari) enabling request interception (page.route) for this
+    // checkout flow prevents the place fetch from firing at all (0 requests observed),
+    // so the retry path was never exercised on that engine. setExtraHTTPHeaders injects
+    // the x-pv-fail-once header at the protocol level (reliable on all engines) and
+    // drives the real server 503 → client error → retry path end-to-end.
+    await page.setExtraHTTPHeaders({ 'x-pv-fail-once': '1' });
     await openCheckout(page);
     await fillAddress(page);
     await selectCod(page);
     await clickPlace(page);
-    await expect(page.locator('[data-testid="checkout-address-error"], .tt-co-pro-error')).toBeVisible({
+    await expect(page.getByTestId('checkout-address-error')).toContainText('PV retry test', {
       timeout: 15000,
     });
+    // Clear the forced failure so the retry hits the real place endpoint and succeeds.
+    await page.setExtraHTTPHeaders({});
+    await expect(page.locator('[data-testid="checkout-place-cta"]')).toBeEnabled({ timeout: 5000 });
     await clickPlace(page);
     await expect(page).toHaveURL(/\/m\/orders\?placed=/, { timeout: 30000 });
   });

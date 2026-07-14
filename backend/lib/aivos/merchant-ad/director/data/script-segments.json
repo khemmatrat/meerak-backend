@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "layers": {
+    "business": {
+      "th": "จาก{shop} ขอแนะนำ{product}",
+      "en": "From {shop}, introducing {product}"
+    },
+    "strategy": {
+      "th": "เราเชื่อใน{strategy_primary}และ{strategy_secondary}",
+      "en": "We believe in {strategy_primary} and {strategy_secondary}"
+    },
+    "emotion": {
+      "th": "อยากให้คุณรู้สึก{emotion_primary}",
+      "en": "We want you to feel {emotion_primary}"
+    },
+    "hook": {
+      "by_strategy": {
+        "sell_memory": {
+          "th": "สวัสดีค่ะ ใครคิดถึงรสชาติที่คุ้นเคย ต้องลอง{product}",
+          "en": "Hi, if you miss familiar flavors, try {product}"
+        },
+        "sell_happiness": {
+          "th": "สวัสดีค่ะ วันนี้มีเรื่องดีๆ มาแชร์ความสุขกับ{product}",
+          "en": "Hi, sharing happiness with {product} today"
+        },
+        "sell_confidence": {
+          "th": "สวัสดีค่ะ อยากให้มั่นใจขึ้นทุกวัน ลอง{product} สิคะ",
+          "en": "Hi, boost your confidence with {product}"
+        },
+        "sell_beauty": {
+          "th": "สวัสดีค่ะ อยากสวยจากภายใน เริ่มที่{product}",
+          "en": "Hi, start your glow with {product}"
+        },
+        "sell_time": {
+          "th": "สวัสดีค่ะ ไม่มีเวลา? {product} ช่วยคุณได้",
+          "en": "Hi, no time? {product} helps you"
+        },
+        "sell_value": {
+          "th": "สวัสดีค่ะ {product} คุ้มค่าทุกบาท",
+          "en": "Hi, {product} is worth every baht"
+        },
+        "sell_health": {
+          "th": "สวัสดีค่ะ ดูแลสุขภาพด้วย{product}",
+          "en": "Hi, care for your health with {product}"
+        },
+        "sell_hope": {
+          "th": "สวัสดีค่ะ เริ่มต้นใหม่ได้ด้วย{product}",
+          "en": "Hi, a fresh start with {product}"
+        },
+        "sell_freedom": {
+          "th": "สวัสดีค่ะ ปลดปล่อยความกังวลด้วย{product}",
+          "en": "Hi, free yourself with {product}"
+        },
+        "sell_luxury": {
+          "th": "สวัสดีค่ะ สัมผัสความพรีเมียมกับ{product}",
+          "en": "Hi, experience premium {product}"
+        },
+        "sell_acceptance": {
+          "th": "สวัสดีค่ะ คนส่วนใหญ่เลือก{product} แล้วชอบมาก",
+          "en": "Hi, everyone loves {product}"
+        },
+        "_default": {
+          "th": "สวัสดีค่ะ วันนี้แนะนำ{product} จาก{shop}",
+          "en": "Hi, today we recommend {product} from {shop}"
+        }
+      }
+    },
+    "pain": {
+      "by_audience": {
+        "office": {
+          "th": "ทำงานหนักไม่มีเวลา หาของดีๆ ยาก",
+          "en": "Busy at work, hard to find good options"
+        },
+        "family": {
+          "th": "อยากดูแลครอบครัว แต่ไม่รู้จะเลือกอะไร",
+          "en": "Want the best for family but unsure what to pick"
+        },
+        "students": {
+          "th": "งบน้อย แต่อยากได้ของดี",
+          "en": "On a budget but want quality"
+        },
+        "women": {
+          "th": "อยากดูดี แต่ไม่รู้จะเริ่มยังไง",
+          "en": "Want to look great but don't know where to start"
+        },
+        "men": {
+          "th": "อยากได้ของดี ใช้งานง่าย ไม่ยุ่งยาก",
+          "en": "Want quality that just works"
+        },
+        "_default": {
+          "th": "หาของที่ใช่ ไม่เสียเวลา ไม่ใช่เรื่องง่าย",
+          "en": "Finding the right product isn't easy"
+        }
+      }
+    },
+    "solution": {
+      "th": "{product} {benefit}",
+      "en": "{product} {benefit}",
+      "benefits_by_industry": {
+        "food": { "th": "อร่อย สดใหม่ ทำสดทุกออเดอร์", "en": "delicious and freshly made" },
+        "beauty": { "th": "ช่วยให้ดูดี ใช้ง่าย เห็นผลจริง", "en": "easy to use, real results" },
+        "skincare": { "th": "บำรุงผิว อ่อนโยน เหมาะทุกวัน", "en": "gentle daily skincare" },
+        "fashion": { "th": "ใส่แล้วดูดี ใส่สบาย มีไซส์ครบ", "en": "stylish and comfortable" },
+        "services": { "th": "บริการมืออาชีพ จบงานไว ไว้ใจได้", "en": "professional fast service" },
+        "marketplace": { "th": "ของดี ราคาชัด ส่งไว", "en": "quality products, fast delivery" },
+        "_default": { "th": "คุณภาพดี ใช้งานง่าย คุ้มค่า", "en": "quality and great value" }
+      }
+    },
+    "offer": {
+      "with_price": { "th": "ราคา {price} บาท {promo}", "en": "Only {price} THB {promo}" },
+      "no_price": { "th": "{promo}", "en": "{promo}" }
+    },
+    "cta": {
+      "by_id": {
+        "order_now": { "th": "สั่งเลยวันนี้ กดสั่งในแอป AQOND", "en": "Order now in AQOND app" },
+        "dm": { "th": "ทักแชทสอบถามได้เลยค่ะ", "en": "Message us to order" },
+        "visit": { "th": "แวะมาที่ร้านได้ทุกวัน", "en": "Visit our shop today" },
+        "book": { "th": "กดจองคิวในแอปได้เลย", "en": "Book in the app" },
+        "call": { "th": "โทรหาเราได้เลยค่ะ", "en": "Call us today" },
+        "_default": { "th": "กดสั่งซื้อในแอป AQOND ได้เลย", "en": "Shop now in AQOND" }
+      }
+    }
+  }
+}

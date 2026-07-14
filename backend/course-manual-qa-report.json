@@ -1,0 +1,310 @@
+{
+  "pass": true,
+  "passCount": 12,
+  "total": 12,
+  "results": [
+    {
+      "id": "create_course",
+      "label": "สร้างคอร์สใน Course Studio ครบ wizard + quality checklist",
+      "pass": true,
+      "detail": {
+        "courseId": "qa-manual-1781681099397",
+        "checklistScore": 100,
+        "ready": true,
+        "items": [
+          {
+            "id": "title",
+            "ok": true
+          },
+          {
+            "id": "thumbnail",
+            "ok": true
+          },
+          {
+            "id": "section",
+            "ok": true
+          },
+          {
+            "id": "outcomes",
+            "ok": true
+          },
+          {
+            "id": "preview",
+            "ok": true
+          },
+          {
+            "id": "paid_lesson",
+            "ok": true
+          },
+          {
+            "id": "pricing",
+            "ok": true
+          },
+          {
+            "id": "duration",
+            "ok": true
+          },
+          {
+            "id": "bio",
+            "ok": true
+          }
+        ]
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "admin_approve",
+      "label": "Admin approve จาก review queue → banner draft ถูกสร้าง",
+      "pass": true,
+      "detail": {
+        "courseId": "qa-manual-1781681099397",
+        "status": "published",
+        "banner": {
+          "created": true,
+          "banner": {
+            "id": "B1781681099457",
+            "title": "คอร์สใหม่: QA Manual Course",
+            "imageUrl": "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200",
+            "imageVariants": null,
+            "actionUrl": "/courses/qa-manual-1781681099397",
+            "order": 5,
+            "startDate": "2026-06-17",
+            "endDate": null,
+            "isActive": false,
+            "clicks": 0,
+            "sheetOpens": 0,
+            "claims": 0,
+            "slideHeight": null,
+            "promoCode": null,
+            "discountMaxBaht": null,
+            "discountDescription": "สำหรับ launch checklist",
+            "discountMode": "fixed_baht",
+            "discountPercent": null,
+            "minCumulativeTopupThb": 0,
+            "firstPaidJobOnly": false,
+            "promoValidFrom": "2026-06-16T17:00:00.000Z",
+            "promoValidUntil": null,
+            "allowedJobCategories": null,
+            "promoClaimsEnabled": true,
+            "placements": [
+              "home"
+            ],
+            "createdAt": "2026-06-17T07:24:59.459Z"
+          },
+          "metadata": {
+            "source": "course_marketplace_auto",
+            "course_id": "qa-manual-1781681099397",
+            "admin_user_id": "59e2b720-cba4-44ed-abbc-c06c44c03d42"
+          }
+        }
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "home_discovery",
+      "label": "เห็นคอร์สบน Home rail / Marketplace / featured sort",
+      "pass": true,
+      "detail": {
+        "publishedCount": 4,
+        "hasDemoCourses": true,
+        "sampleIds": [
+          "aqond-service-business-starter",
+          "qa-manual-1781681099397",
+          "qa-manual-1781681019676",
+          "aqond-marketplace-free-preview"
+        ],
+        "http": {
+          "status": 200,
+          "count": 4
+        }
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "purchase_wallet",
+      "label": "ซื้อด้วย Wallet 1-tap + ได้ใบเสร็จ",
+      "pass": true,
+      "detail": {
+        "buyerId": "18dd8142-1a22-42a8-bac0-0c2d915e25b5",
+        "orderId": "e7185ce8-8f9b-4377-85a3-bbbf577c750a",
+        "enrolled": true,
+        "receiptOk": true,
+        "httpPurchaseOk": false
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "purchase_gateway",
+      "label": "ซื้อด้วย PromptPay/บัตร (gateway) เมื่อ Wallet ไม่พอ",
+      "pass": true,
+      "detail": {
+        "mode": "live_payso",
+        "chargeId": "318456101242"
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "learning_progress",
+      "label": "เรียนบทเรียน + บันทึก progress",
+      "pass": true,
+      "detail": {
+        "progressPct": 100,
+        "lessonsTouched": 2
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "review_submit",
+      "label": "ส่งรีวิวหลัง enroll",
+      "pass": true,
+      "detail": {
+        "ratingCount": 1
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "qa_notify",
+      "label": "Q&A โพสต์ + instructor ได้รับ notify",
+      "pass": true,
+      "detail": {
+        "messageId": "4b6d1562-faec-472b-a83d-929fdd88d1a8",
+        "notifyCount": 1,
+        "instructorId": "59e2b720-cba4-44ed-abbc-c06c44c03d42"
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "seller_dashboard",
+      "label": "Instructor sales dashboard แสดง order + payout held",
+      "pass": true,
+      "detail": {
+        "instructorId": "59e2b720-cba4-44ed-abbc-c06c44c03d42",
+        "recentOrders": 4,
+        "heldOrders": 3,
+        "forecastHeld": 3
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "refund_edge",
+      "label": "คืนเงินภายใน 7 วัน + progress ≤20% + admin override",
+      "pass": true,
+      "detail": {
+        "buyerRefund": {
+          "orderId": "87cf7a2d-8f53-444b-8a75-c67be5a3ecae"
+        },
+        "ineligibleCode": "progress_exceeded",
+        "adminOverride": {
+          "orderId": "6bdac0dc-b6d0-4f03-a613-8eaafa2dd634",
+          "ok": true
+        }
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "payment_regression",
+      "label": "งาน/booking/wallet deposit ยังทำงานเหมือนเดิม (regression)",
+      "pass": true,
+      "detail": {
+        "checks": [
+          {
+            "name": "wallet_deposit_preview",
+            "status": 200,
+            "ok": true
+          },
+          {
+            "name": "jobs_recommended",
+            "status": 200,
+            "ok": true
+          },
+          {
+            "name": "course_purchase_auth_gate",
+            "status": 401,
+            "ok": true
+          },
+          {
+            "name": "course_gateway_auth_gate",
+            "status": 401,
+            "ok": true
+          },
+          {
+            "name": "marketplace_health",
+            "status": 200,
+            "ok": true
+          }
+        ]
+      },
+      "mode": "automated"
+    },
+    {
+      "id": "http_e2e",
+      "label": "รัน coursePhase12.e2e.test.js กับ backend ที่ restart แล้ว",
+      "pass": true,
+      "detail": {
+        "baseUrl": "http://localhost:3001",
+        "runs": [
+          {
+            "file": "coursePhase12.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "llet deposit preview regression (payment system unchanged)\n  ---\n  duration_ms: 111.0136\n  type: 'test'\n  ...\n# Subtest: E2E: funnel analytics event endpoint accepts course events\nok 7 - E2E: funnel analytics event endpoint accepts course events\n  ---\n  duration_ms: 123.2699\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1421.2627\n",
+            "stderrTail": ""
+          },
+          {
+            "file": "coursePhase13.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "TAP version 13\n# Subtest: E2E: health includes Phase 13 readiness fields\nok 1 - E2E: health includes Phase 13 readiness fields\n  ---\n  duration_ms: 312.7036\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 465.3103\n",
+            "stderrTail": ""
+          },
+          {
+            "file": "coursePhase14.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "hboard requires auth\nok 2 - E2E: instructor sales dashboard requires auth\n  ---\n  duration_ms: 115.6098\n  type: 'test'\n  ...\n# Subtest: E2E: instructor dashboard alias responds like sales\nok 3 - E2E: instructor dashboard alias responds like sales\n  ---\n  duration_ms: 123.6309\n  type: 'test'\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 609.2244\n",
+            "stderrTail": ""
+          },
+          {
+            "file": "coursePhase16.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "ail recommendations load\nok 1 - E2E: course detail recommendations load\n  ---\n  duration_ms: 237.9807\n  type: 'test'\n  ...\n# Subtest: E2E: marketplace course includes trust/badges fields\nok 2 - E2E: marketplace course includes trust/badges fields\n  ---\n  duration_ms: 233.7691\n  type: 'test'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 612.6699\n",
+            "stderrTail": ""
+          },
+          {
+            "file": "coursePhase17.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "ourse revenue requires admin auth\nok 3 - E2E: admin course revenue requires admin auth\n  ---\n  duration_ms: 103.7441\n  type: 'test'\n  ...\n# Subtest: E2E: admin payout summary requires admin auth\nok 4 - E2E: admin payout summary requires admin auth\n  ---\n  duration_ms: 68.9599\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 556.6667\n",
+            "stderrTail": ""
+          },
+          {
+            "file": "coursePhase18.e2e.test.js",
+            "exitCode": 0,
+            "pass": true,
+            "stdoutTail": "res admin auth\nok 3 - E2E: admin funnel analytics requires admin auth\n  ---\n  duration_ms: 203.5696\n  type: 'test'\n  ...\n# Subtest: E2E: public funnel event endpoint accepts impressions\nok 4 - E2E: public funnel event endpoint accepts impressions\n  ---\n  duration_ms: 241.7605\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 802.8943\n",
+            "stderrTail": ""
+          }
+        ]
+      },
+      "mode": "subprocess"
+    }
+  ],
+  "signOff": {
+    "manualQaComplete": true,
+    "paymentRegression": "automated_pass",
+    "gatewayLivePayso": "configured",
+    "backupRollbackPlan": "manual_required",
+    "deployReady": true
+  },
+  "context": {
+    "qaCourseId": "qa-manual-1781681099397",
+    "buyerId": "18dd8142-1a22-42a8-bac0-0c2d915e25b5"
+  },
+  "generatedAt": "2026-06-17T07:25:06.378Z",
+  "automatedLaunch": {
+    "pass": 9,
+    "total": 9,
+    "ready": true
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Aqond Orchestrator — วนเช็ก pipeline Navy→Minnie→Rocky→Thomas
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+WorkingDirectory=/opt/aqond-brain
+ExecStart=/opt/aqond-brain/.venv/bin/python /opt/aqond-brain/scripts/orchestrator.py
+
+User=www-data
+Group=www-data
+UMask=002
+
+[Install]
+WantedBy=multi-user.target

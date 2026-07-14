@@ -1,0 +1,163 @@
+{
+  "schema_version": 2,
+  "updated_at": "2026-07-02T12:00:00Z",
+  "max_pickup_radius_km": 12,
+  "parcel_fallback_enabled": true,
+  "capabilities": {
+    "express_rider": { "enabled": true },
+    "food_rider": { "enabled": false },
+    "parcel_fallback": { "enabled": true },
+    "future_courier": { "enabled": false },
+    "same_day_delivery": { "enabled": false },
+    "scheduled_delivery": { "enabled": false },
+    "local_delivery": { "enabled": true }
+  },
+  "matching": {
+    "sort_priority": [
+      "distance_km",
+      "rider_available",
+      "score",
+      "avg_accept_seconds",
+      "acceptance_rate"
+    ]
+  },
+  "provinces": [
+    {
+      "province_code": "10",
+      "name_th": "กรุงเทพมหานคร",
+      "name_en": "Bangkok",
+      "rollout_phase": 1,
+      "enabled": true,
+      "express_enabled": true,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "11",
+      "name_th": "สมุทรปราการ",
+      "name_en": "Samut Prakan",
+      "rollout_phase": 1,
+      "enabled": true,
+      "express_enabled": true,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "12",
+      "name_th": "นนทบุรี",
+      "name_en": "Nonthaburi",
+      "rollout_phase": 1,
+      "enabled": true,
+      "express_enabled": true,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "13",
+      "name_th": "ปทุมธานี",
+      "name_en": "Pathum Thani",
+      "rollout_phase": 1,
+      "enabled": true,
+      "express_enabled": true,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "74",
+      "name_th": "สมุทรสาคร",
+      "name_en": "Samut Sakhon",
+      "rollout_phase": 1,
+      "enabled": true,
+      "express_enabled": true,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "83",
+      "name_th": "ภูเก็ต",
+      "name_en": "Phuket",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "81",
+      "name_th": "กระบี่",
+      "name_en": "Krabi",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "50",
+      "name_th": "เชียงใหม่",
+      "name_en": "Chiang Mai",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "30",
+      "name_th": "นครราชสีมา",
+      "name_en": "Nakhon Ratchasima",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "40",
+      "name_th": "ขอนแก่น",
+      "name_en": "Khon Kaen",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "84",
+      "name_th": "สุราษฎร์ธานี",
+      "name_en": "Surat Thani",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "90",
+      "name_th": "สงขลา",
+      "name_en": "Songkhla",
+      "alias_en": "Hat Yai",
+      "alias_th": "หาดใหญ่",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "70",
+      "name_th": "ราชบุรี",
+      "name_en": "Ratchaburi",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "20",
+      "name_th": "ชลบุรี",
+      "name_en": "Chonburi",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    },
+    {
+      "province_code": "21",
+      "name_th": "ระยอง",
+      "name_en": "Rayong",
+      "rollout_phase": 2,
+      "enabled": true,
+      "express_enabled": false,
+      "parcel_fallback": true
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND — ออเดอร์จากไลฟ์</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f5f5; }
+    header { background: #161823; color: #fff; padding: 16px 24px; }
+    .wrap { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
+    th { background: #fafafa; }
+    .btn { background: #fe2c55; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+    .btn.secondary { background: #333; }
+    input { padding: 8px; margin-right: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    #slipInput { display: none; }
+  </style>
+</head>
+<body>
+  <header><strong>AQOND</strong> — ออเดอร์จากไลฟ์ (หลังบ้านร้าน)</header>
+  <div class="wrap">
+    <p>
+      <input id="merchantId" placeholder="merchant_id" value="merchant-demo" />
+      <input id="roomId" placeholder="room_id (optional)" />
+      <button class="btn secondary" onclick="loadOrders()">โหลดออเดอร์</button>
+    </p>
+    <table>
+      <thead><tr><th>เวลา</th><th>ลูกค้า</th><th>F-Code</th><th>จำนวน</th><th>สถานะ</th><th>Order ID</th><th>จัดการ</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <input type="file" id="slipInput" accept="image/*" />
+  </div>
+  <script>
+    const API = "/api/v1/live-commerce";
+    let slipOrderId = null;
+
+    async function loadOrders() {
+      const mid = document.getElementById("merchantId").value;
+      const room = document.getElementById("roomId").value;
+      let url = `${API}/v1/live/merchant/orders?merchant_id=${encodeURIComponent(mid)}`;
+      if (room) url += `&room_id=${encodeURIComponent(room)}`;
+      const r = await fetch(url, { headers: { "X-Live-Merchant-Api-Key": window.__LIVE_MERCHANT_API_KEY__ || "" } });
+      const data = await r.json();
+      const tb = document.getElementById("tbody");
+      tb.innerHTML = "";
+      (data.orders || []).forEach(o => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${new Date(o.created_at).toLocaleString("th-TH")}</td>
+          <td>${o.buyer_name || o.buyer_id}</td>
+          <td>${o.f_code}</td>
+          <td>${o.qty}</td>
+          <td>${o.status} / ${o.fulfillment_status || "—"}</td>
+          <td><small>${o.order_id || "—"}</small></td>
+          <td>
+            ${o.order_id ? `<button class="btn" onclick="confirmShip('${o.order_id}')">ปริ้น Label</button>
+            <button class="btn secondary" onclick="uploadSlip('${o.order_id}')">อัปสลิปส่ง</button>` : ""}
+          </td>`;
+        tb.appendChild(tr);
+      });
+    }
+
+    async function confirmShip(orderId) {
+      const mid = document.getElementById("merchantId").value;
+      const r = await fetch(`${API}/v1/live/merchant/confirm-ship`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Live-Merchant-Api-Key": window.__LIVE_MERCHANT_API_KEY__ || "" },
+        body: JSON.stringify({ order_id: orderId, merchant_id: mid, show_carrier_header: true }),
+      });
+      const data = await r.json();
+      if (data.label?.shipment_id) {
+        window.open(`${API.replace("/live-commerce","")}/shipping/v1/shipping/label/${data.label.shipment_id}/html`, "_blank");
+      }
+      alert(data.ok ? "สร้าง Label แล้ว: " + (data.label?.tracking_no || "") : JSON.stringify(data));
+      loadOrders();
+    }
+
+    function uploadSlip(orderId) {
+      slipOrderId = orderId;
+      document.getElementById("slipInput").click();
+    }
+
+    document.getElementById("slipInput").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file || !slipOrderId) return;
+      const b64 = await new Promise((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.readAsDataURL(file);
+      });
+      const mid = document.getElementById("merchantId").value;
+      const r = await fetch(`${API}/v1/live/merchant/slip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Live-Merchant-Api-Key": window.__LIVE_MERCHANT_API_KEY__ || "" },
+        body: JSON.stringify({ order_id: slipOrderId, merchant_id: mid, image_base64: b64 }),
+      });
+      const data = await r.json();
+      alert(data.ok ? "อ่านสลิปแล้ว ส่งแจ้งลูกค้าในแชท" : JSON.stringify(data));
+      loadOrders();
+    };
+
+    loadOrders();
+  </script>
+</body>
+</html>

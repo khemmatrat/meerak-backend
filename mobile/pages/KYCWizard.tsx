@@ -1,20 +1,20 @@
 /**
  * Phase 2: KYC Wizard - Step-by-Step Verification
- * 
+ *
  * Multi-step KYC process with driver license & vehicle registration
  * for fraud prevention and identity verification
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { 
-  User, 
-  CreditCard, 
-  Camera, 
-  Car, 
-  FileText, 
-  CheckCircle, 
-  ChevronRight, 
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  User,
+  CreditCard,
+  Camera,
+  Car,
+  FileText,
+  CheckCircle,
+  ChevronRight,
   ChevronLeft,
   AlertCircle,
   Upload,
@@ -24,16 +24,22 @@ import {
   Truck,
   Bike,
   RefreshCw,
-} from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { validateThaiID } from '../utils/encryption';
-import { uploadDocumentToSecure, isBlobUrl, DOCUMENT_UPLOAD_SIMPLE_RETRY_MESSAGE, revokeBlobUrl } from '../services/secureDocumentUploadService';
-import axios from 'axios';
-import { MockApi } from '../services/mockApi';
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { validateThaiID } from "../utils/encryption";
+import {
+  uploadDocumentToSecure,
+  isBlobUrl,
+  DOCUMENT_UPLOAD_SIMPLE_RETRY_MESSAGE,
+  revokeBlobUrl,
+} from "../services/secureDocumentUploadService";
+import { shrinkImageForDocumentUpload } from "../utils/shrinkImageForDocumentUpload";
+import axios from "axios";
+import { MockApi } from "../services/mockApi";
 
 /** ให้ผู้ใช้อ่านเข้าใจเมื่อ POST /kyc/submit / เครือข่ายล้ม (ไม่ต้องอ้าง CORS พร็อกซีในหน้าจอ) */
 const KYC_SUBMIT_RETRY_MESSAGE =
-  'ไม่สามารถส่งข้อมูลในครั้งนี้ได้ — ลองใหม่ในอินเทอร์เน็ตที่นิ่งกว่านี้ถ้ายังอยู่ หรือรอแล้วกดส่งอีกครั้ง';
+  "ไม่สามารถส่งข้อมูลในครั้งนี้ได้ — ลองใหม่ในอินเทอร์เน็ตที่นิ่งกว่านี้ถ้ายังอยู่ หรือรอแล้วกดส่งอีกครั้ง";
 
 function transientKycSubmitFailure(err: unknown): boolean {
   if (!axios.isAxiosError(err)) return false;
@@ -46,18 +52,25 @@ function friendlyKycSubmitErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return KYC_SUBMIT_RETRY_MESSAGE;
   const s = err.response?.status;
   if (s === 413) {
-    return 'ขนาดไฟล์รวมใหญ่เกินที่ระบบรับไหวในคราวเดียว — กรุณาเลือกรูปที่เล็กลงในแต่ละขั้นตอน แล้วกดส่งใหม่';
+    return "ขนาดไฟล์รวมใหญ่เกินที่ระบบรับไหวในคราวเดียว — กรุณาเลือกรูปที่เล็กลงในแต่ละขั้นตอน แล้วกดส่งใหม่";
   }
   if (s === 401 || s === 403) {
-    return 'เซสชันหมดอายุหรือสิทธิ์ไม่ตรง — กรุณาเข้าสู่ระบบใหม่แล้วส่ง KYC อีกครั้ง';
+    return "เซสชันหมดอายุหรือสิทธิ์ไม่ตรง — กรุณาเข้าสู่ระบบใหม่แล้วส่ง KYC อีกครั้ง";
   }
-  const raw = err.response?.data as { error?: string; message?: string } | undefined;
-  if (raw && typeof raw === 'object') {
-    const m = typeof raw.error === 'string' && raw.error.trim() ? raw.error : typeof raw.message === 'string' ? raw.message : '';
+  const raw = err.response?.data as
+    | { error?: string; message?: string }
+    | undefined;
+  if (raw && typeof raw === "object") {
+    const m =
+      typeof raw.error === "string" && raw.error.trim()
+        ? raw.error
+        : typeof raw.message === "string"
+          ? raw.message
+          : "";
     const t = m.trim();
     if (t.length > 0 && t.length < 420) return t.slice(0, 420);
   }
-  const axMsg = typeof err.message === 'string' ? err.message.trim() : '';
+  const axMsg = typeof err.message === "string" ? err.message.trim() : "";
   if (
     axMsg &&
     axMsg.length < 400 &&
@@ -72,16 +85,20 @@ function friendlyKycSubmitErrorMessage(err: unknown): string {
 interface KYCFormData {
   // Personal Info
   national_id: string;
+  id_card_expiry_date: string;
   first_name: string;
   last_name: string;
   date_of_birth: string;
   address: string;
-  
+  current_address?: string;
+  contact_phone?: string;
+  contact_email?: string;
+
   // Documents
   id_card_front_url?: string;
   id_card_back_url?: string;
   selfie_url?: string;
-  
+
   // Driver License (Optional)
   has_driver_license: boolean;
   driver_license?: {
@@ -92,12 +109,12 @@ interface KYCFormData {
     expiry_date: string;
     license_photo_url?: string;
   };
-  
+
   // Vehicle (Optional)
   has_vehicle: boolean;
   vehicles?: Array<{
     license_plate: string;
-    vehicle_type: 'car' | 'motorcycle' | 'truck' | 'tricycle';
+    vehicle_type: "car" | "motorcycle" | "truck" | "tricycle";
     vehicle_brand: string;
     vehicle_model: string;
     vehicle_year: number;
@@ -109,11 +126,32 @@ interface KYCFormData {
     is_owner: boolean;
     relationship_to_owner?: string;
   }>;
+
+  /** รถสาธารณะ (ป้ายเหลือง) — เก็บใน KYC ไม่ต้องส่งซ้ำ */
+  wants_public_transport: boolean;
+  yellow_plate_photo_url?: string;
+  public_transport_license_front_url?: string;
+  public_transport_license_back_url?: string;
 }
+
+type WizardStep =
+  | "personal"
+  | "id-card"
+  | "selfie"
+  | "driver-license"
+  | "vehicle"
+  | "review"
+  | "public-transport-supplement"
+  | "review-supplement";
 
 type PersonalDraftFields = Pick<
   KYCFormData,
-  'national_id' | 'first_name' | 'last_name' | 'date_of_birth' | 'address'
+  | "national_id"
+  | "id_card_expiry_date"
+  | "first_name"
+  | "last_name"
+  | "date_of_birth"
+  | "address"
 >;
 
 function personalDraftStorageKey(userId: string): string {
@@ -125,13 +163,15 @@ function loadPersonalDraft(userId: string): PersonalDraftFields | null {
     const raw = localStorage.getItem(personalDraftStorageKey(userId));
     if (!raw) return null;
     const p = JSON.parse(raw) as Partial<PersonalDraftFields>;
-    if (!p || typeof p !== 'object') return null;
+    if (!p || typeof p !== "object") return null;
     return {
-      national_id: typeof p.national_id === 'string' ? p.national_id : '',
-      first_name: typeof p.first_name === 'string' ? p.first_name : '',
-      last_name: typeof p.last_name === 'string' ? p.last_name : '',
-      date_of_birth: typeof p.date_of_birth === 'string' ? p.date_of_birth : '',
-      address: typeof p.address === 'string' ? p.address : '',
+      national_id: typeof p.national_id === "string" ? p.national_id : "",
+      id_card_expiry_date:
+        typeof p.id_card_expiry_date === "string" ? p.id_card_expiry_date : "",
+      first_name: typeof p.first_name === "string" ? p.first_name : "",
+      last_name: typeof p.last_name === "string" ? p.last_name : "",
+      date_of_birth: typeof p.date_of_birth === "string" ? p.date_of_birth : "",
+      address: typeof p.address === "string" ? p.address : "",
     };
   } catch {
     return null;
@@ -155,41 +195,59 @@ interface KycWizardServerGate {
   kycAdminInstruction: string | null;
   kycResubmissionDeadline: string | null;
   kycRequiredSteps: string[];
+  kycSupplementMode: boolean;
+  kycSupplementDocs: string[];
 }
 
-const emptyKycWizardGate = (): Omit<KycWizardServerGate, 'loading' | 'fetchError'> => ({
-  kycStatus: '',
+const emptyKycWizardGate = (): Omit<
+  KycWizardServerGate,
+  "loading" | "fetchError"
+> => ({
+  kycStatus: "",
   kycRejectionReason: null,
   kycAdminInstruction: null,
   kycResubmissionDeadline: null,
   kycRequiredSteps: [],
+  kycSupplementMode: false,
+  kycSupplementDocs: [],
 });
 
 const KYCWizard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const deeplinkReason = searchParams.get('reason');
+  const deeplinkReason = searchParams.get("reason");
+  const compassMode = searchParams.get("compass") === "1";
+  const compassCategory = searchParams.get("category") || "delivery";
+  const initialStep = searchParams.get("step") as WizardStep | null;
   const userId = user?.id ?? null;
-  
-  const [currentStep, setCurrentStep] = useState<WizardStep>('personal');
+
+  const [currentStep, setCurrentStep] = useState<WizardStep>(
+    initialStep && ["personal", "id-card", "selfie"].includes(initialStep)
+      ? initialStep
+      : "personal",
+  );
   const [formData, setFormData] = useState<KYCFormData>({
-    national_id: '',
-    first_name: '',
-    last_name: '',
-    date_of_birth: '',
-    address: '',
+    national_id: "",
+    id_card_expiry_date: "",
+    first_name: "",
+    last_name: "",
+    date_of_birth: "",
+    address: "",
     has_driver_license: false,
     has_vehicle: false,
-    vehicles: []
+    vehicles: [],
+    wants_public_transport: false,
   });
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   /** ข้อความข้อผิดพลาดหลังส่ง KYC แสดงในหน้าแทน alert อย่างเดียว */
   const [submitBanner, setSubmitBanner] = useState<string | null>(null);
-  const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string | null>(null);
+  const [submitSuccessMessage, setSubmitSuccessMessage] = useState<
+    string | null
+  >(null);
   /** จดจำข้อมูลส่วนตัว (เฉพาะเครื่องนี้ — localStorage) */
   const [rememberPersonal, setRememberPersonal] = useState(false);
   /** เก็บไฟล์ต้นฉบับสำหรับ POST /api/kyc/submit (backend รับ multipart ไม่รับแค่ URL) */
@@ -204,9 +262,15 @@ const KYCWizard: React.FC = () => {
   const loadKycServerStatus = useCallback(async () => {
     const uid =
       user?.id ??
-      (typeof localStorage !== 'undefined' ? localStorage.getItem('meerak_user_id') : null);
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("meerak_user_id")
+        : null);
     if (!uid) {
-      setKycServerGate({ loading: false, fetchError: false, ...emptyKycWizardGate() });
+      setKycServerGate({
+        loading: false,
+        fetchError: false,
+        ...emptyKycWizardGate(),
+      });
       return;
     }
     setKycServerGate((prev) => ({ ...prev, loading: true, fetchError: false }));
@@ -215,16 +279,28 @@ const KYCWizard: React.FC = () => {
       setKycServerGate({
         loading: false,
         fetchError: false,
-        kycStatus: String(st?.kycStatus || ''),
+        kycStatus: String(st?.kycStatus || ""),
         kycRejectionReason: st?.kycRejectionReason ?? null,
         kycAdminInstruction: st?.kycAdminInstruction ?? null,
         kycResubmissionDeadline: st?.kycResubmissionDeadline ?? null,
         kycRequiredSteps: Array.isArray(st?.kycRequiredSteps)
           ? st.kycRequiredSteps.map((x: unknown) => String(x))
           : [],
+        kycSupplementMode: !!st?.kycSupplementMode,
+        kycSupplementDocs: Array.isArray(
+          st?.kycSupplementRequest?.requested_docs,
+        )
+          ? st.kycSupplementRequest.requested_docs.map((x: unknown) =>
+              String(x),
+            )
+          : [],
       });
     } catch {
-      setKycServerGate({ loading: false, fetchError: true, ...emptyKycWizardGate() });
+      setKycServerGate({
+        loading: false,
+        fetchError: true,
+        ...emptyKycWizardGate(),
+      });
     }
   }, [user?.id]);
 
@@ -239,15 +315,15 @@ const KYCWizard: React.FC = () => {
   useEffect(() => {
     let t: number;
     const bump = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== "visible") return;
       window.clearTimeout(t);
       t = window.setTimeout(() => void loadKycServerStatus(), 850);
     };
-    document.addEventListener('visibilitychange', bump);
-    window.addEventListener('focus', bump);
+    document.addEventListener("visibilitychange", bump);
+    window.addEventListener("focus", bump);
     return () => {
-      document.removeEventListener('visibilitychange', bump);
-      window.removeEventListener('focus', bump);
+      document.removeEventListener("visibilitychange", bump);
+      window.removeEventListener("focus", bump);
       window.clearTimeout(t);
     };
   }, [loadKycServerStatus]);
@@ -259,6 +335,8 @@ const KYCWizard: React.FC = () => {
     setFormData((prev) => ({
       ...prev,
       national_id: draft.national_id || prev.national_id,
+      id_card_expiry_date:
+        draft.id_card_expiry_date || prev.id_card_expiry_date,
       first_name: draft.first_name || prev.first_name,
       last_name: draft.last_name || prev.last_name,
       date_of_birth: draft.date_of_birth || prev.date_of_birth,
@@ -271,6 +349,7 @@ const KYCWizard: React.FC = () => {
     if (!userId || !rememberPersonal) return;
     savePersonalDraft(userId, {
       national_id: formData.national_id,
+      id_card_expiry_date: formData.id_card_expiry_date,
       first_name: formData.first_name,
       last_name: formData.last_name,
       date_of_birth: formData.date_of_birth,
@@ -280,6 +359,7 @@ const KYCWizard: React.FC = () => {
     userId,
     rememberPersonal,
     formData.national_id,
+    formData.id_card_expiry_date,
     formData.first_name,
     formData.last_name,
     formData.date_of_birth,
@@ -293,6 +373,7 @@ const KYCWizard: React.FC = () => {
       if (nextRemember) {
         savePersonalDraft(userId, {
           national_id: formData.national_id,
+          id_card_expiry_date: formData.id_card_expiry_date,
           first_name: formData.first_name,
           last_name: formData.last_name,
           date_of_birth: formData.date_of_birth,
@@ -302,51 +383,106 @@ const KYCWizard: React.FC = () => {
         clearPersonalDraft(userId);
       }
     },
-    [userId, formData.national_id, formData.first_name, formData.last_name, formData.date_of_birth, formData.address],
+    [
+      userId,
+      formData.national_id,
+      formData.first_name,
+      formData.last_name,
+      formData.date_of_birth,
+      formData.address,
+    ],
   );
-  
-  const steps: Array<{ id: WizardStep; label: string; icon: React.ReactNode }> = [
-    { id: 'personal', label: 'ข้อมูลส่วนตัว', icon: <User size={20} /> },
-    { id: 'id-card', label: 'บัตรประชาชน', icon: <CreditCard size={20} /> },
-    { id: 'selfie', label: 'ถ่ายรูปใบหน้า', icon: <Camera size={20} /> },
-    { id: 'driver-license', label: 'ใบขับขี่ (ถ้ามี)', icon: <FileText size={20} /> },
-    { id: 'vehicle', label: 'ทะเบียนรถ (ถ้ามี)', icon: <Car size={20} /> },
-    { id: 'review', label: 'ตรวจสอบ', icon: <CheckCircle size={20} /> }
+
+  const isSupplementMode =
+    !kycServerGate.loading &&
+    !kycServerGate.fetchError &&
+    (kycServerGate.kycSupplementMode ||
+      kycServerGate.kycStatus === "supplement_required");
+
+  useEffect(() => {
+    if (!isSupplementMode) return;
+    setFormData((prev) => ({ ...prev, wants_public_transport: true }));
+    setCurrentStep("public-transport-supplement");
+  }, [isSupplementMode]);
+
+  const fullSteps: Array<{
+    id: WizardStep;
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    { id: "personal", label: "ข้อมูลส่วนตัว", icon: <User size={20} /> },
+    { id: "id-card", label: "บัตรประชาชน", icon: <CreditCard size={20} /> },
+    { id: "selfie", label: "ถ่ายรูปใบหน้า", icon: <Camera size={20} /> },
+    {
+      id: "driver-license",
+      label: "ใบขับขี่ (ถ้ามี)",
+      icon: <FileText size={20} />,
+    },
+    { id: "vehicle", label: "ทะเบียนรถ (ถ้ามี)", icon: <Car size={20} /> },
+    { id: "review", label: "ตรวจสอบ", icon: <CheckCircle size={20} /> },
   ];
-  
-  const getCurrentStepIndex = () => steps.findIndex(s => s.id === currentStep);
-  
+
+  const supplementSteps: Array<{
+    id: WizardStep;
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    {
+      id: "public-transport-supplement",
+      label: "เอกสารรถสาธารณะ",
+      icon: <Truck size={20} />,
+    },
+    {
+      id: "review-supplement",
+      label: "ตรวจสอบ",
+      icon: <CheckCircle size={20} />,
+    },
+  ];
+
+  const steps = isSupplementMode
+    ? supplementSteps
+    : compassMode && compassCategory === "delivery"
+      ? fullSteps.filter((s) => s.id !== "driver-license" && s.id !== "vehicle")
+      : fullSteps;
+
+  const getCurrentStepIndex = () =>
+    steps.findIndex((s) => s.id === currentStep);
+
   const handleClearUpload = useCallback((field: string) => {
     delete kycFileByFieldRef.current[field];
     setErrors((prev) => {
       const next = { ...prev };
       delete next[field];
-      if (field.startsWith('vehicle_photo_')) delete next[field];
+      if (field.startsWith("vehicle_photo_")) delete next[field];
+      if (field === "driver_license_photo") delete next.license_photo;
       return next;
     });
 
-    if (field === 'driver_license_photo') {
+    if (field === "driver_license_photo") {
       setFormData((prev) => {
         const u = prev.driver_license?.license_photo_url;
-        if (typeof u === 'string' && u.startsWith('blob:')) revokeBlobUrl(u);
+        if (typeof u === "string" && u.startsWith("blob:")) revokeBlobUrl(u);
         if (!prev.driver_license) return prev;
         return {
           ...prev,
-          driver_license: { ...prev.driver_license, license_photo_url: undefined },
+          driver_license: {
+            ...prev.driver_license,
+            license_photo_url: undefined,
+          },
         };
       });
       return;
     }
 
-    if (field.startsWith('vehicle_photo_')) {
-      const index = parseInt(field.split('_')[2], 10);
+    if (field.startsWith("vehicle_photo_")) {
+      const index = parseInt(field.split("_")[2], 10);
       if (!Number.isFinite(index)) return;
       setFormData((prev) => {
         const vehicles = [...(prev.vehicles || [])];
         const row = vehicles[index];
         if (row) {
           const u = row.registration_book_photo_url;
-          if (typeof u === 'string' && u.startsWith('blob:')) revokeBlobUrl(u);
+          if (typeof u === "string" && u.startsWith("blob:")) revokeBlobUrl(u);
           vehicles[index] = { ...row, registration_book_photo_url: undefined };
         }
         return { ...prev, vehicles };
@@ -354,10 +490,34 @@ const KYCWizard: React.FC = () => {
       return;
     }
 
-    if (field === 'id_card_front_url' || field === 'id_card_back_url' || field === 'selfie_url') {
+    if (
+      field === "yellow_plate_photo" ||
+      field === "public_transport_license_front" ||
+      field === "public_transport_license_back"
+    ) {
+      const urlKey =
+        field === "yellow_plate_photo"
+          ? "yellow_plate_photo_url"
+          : field === "public_transport_license_front"
+            ? "public_transport_license_front_url"
+            : "public_transport_license_back_url";
+      setFormData((prev) => {
+        const old = prev[urlKey as keyof KYCFormData] as string | undefined;
+        if (typeof old === "string" && old.startsWith("blob:"))
+          revokeBlobUrl(old);
+        return { ...prev, [urlKey]: undefined };
+      });
+      return;
+    }
+
+    if (
+      field === "id_card_front_url" ||
+      field === "id_card_back_url" ||
+      field === "selfie_url"
+    ) {
       setFormData((prev) => {
         const u = prev[field];
-        if (typeof u === 'string' && u.startsWith('blob:')) revokeBlobUrl(u);
+        if (typeof u === "string" && u.startsWith("blob:")) revokeBlobUrl(u);
         return { ...prev, [field]: undefined };
       });
     }
@@ -376,128 +536,248 @@ const KYCWizard: React.FC = () => {
 
   // Handle image upload
   const handleImageUpload = async (file: File, field: string) => {
+    const errorKey = field === "driver_license_photo" ? "license_photo" : field;
     setUploadingImage(true);
     setErrors((prev) => {
       const next = { ...prev };
-      delete next[field];
+      delete next[errorKey];
       return next;
     });
-    kycFileByFieldRef.current[field] = file;
+
+    let fileToSend = file;
     try {
-      const { url } = await uploadDocumentToSecure(file, `kyc_${field}`, { allowBlobFallback: true });
+      fileToSend = await shrinkImageForDocumentUpload(file);
+    } catch (_) {
+      /* ใช้ไฟล์ต้นฉบับเมื่อบีบอัดไม่รองรับ (เช่น HEIC) */
+    }
+    kycFileByFieldRef.current[field] = fileToSend;
+
+    const applyUrl = (nextUrl: string) => {
+      if (field === "driver_license_photo") {
+        setFormData((prev) => {
+          const old = prev.driver_license?.license_photo_url;
+          if (
+            typeof old === "string" &&
+            old.startsWith("blob:") &&
+            old !== nextUrl
+          )
+            revokeBlobUrl(old);
+          return {
+            ...prev,
+            driver_license: {
+              ...prev.driver_license!,
+              license_photo_url: nextUrl,
+            },
+          };
+        });
+      } else if (field.startsWith("vehicle_photo_")) {
+        const index = parseInt(field.split("_")[2], 10);
+        setFormData((prev) => {
+          const newVehicles = [...(prev.vehicles || [])];
+          const row = newVehicles[index];
+          if (row) {
+            const old = row.registration_book_photo_url;
+            if (
+              typeof old === "string" &&
+              old.startsWith("blob:") &&
+              old !== nextUrl
+            )
+              revokeBlobUrl(old);
+            newVehicles[index] = {
+              ...row,
+              registration_book_photo_url: nextUrl,
+            };
+          }
+          return { ...prev, vehicles: newVehicles };
+        });
+      } else if (
+        field === "yellow_plate_photo" ||
+        field === "public_transport_license_front" ||
+        field === "public_transport_license_back"
+      ) {
+        const urlKey =
+          field === "yellow_plate_photo"
+            ? "yellow_plate_photo_url"
+            : field === "public_transport_license_front"
+              ? "public_transport_license_front_url"
+              : "public_transport_license_back_url";
+        setFormData((prev) => {
+          const old = prev[urlKey as keyof KYCFormData] as string | undefined;
+          if (
+            typeof old === "string" &&
+            old.startsWith("blob:") &&
+            old !== nextUrl
+          )
+            revokeBlobUrl(old);
+          return { ...prev, [urlKey]: nextUrl };
+        });
+      } else if (
+        field === "id_card_front_url" ||
+        field === "id_card_back_url" ||
+        field === "selfie_url"
+      ) {
+        setFormData((prev) => {
+          const old = prev[field];
+          if (
+            typeof old === "string" &&
+            old.startsWith("blob:") &&
+            old !== nextUrl
+          )
+            revokeBlobUrl(old);
+          return { ...prev, [field]: nextUrl };
+        });
+      }
+    };
+
+    /** ให้เห็นภาพที่จะส่งจริง (หลังบีบอัดถ้ามี) แล้วสลับเป็น URL จากเซิร์ฟเวอร์เมื่ออัปโหลดสำเร็จ */
+    const localPreview = URL.createObjectURL(fileToSend);
+    applyUrl(localPreview);
+
+    try {
+      const { url } = await uploadDocumentToSecure(fileToSend, `kyc_${field}`, {
+        allowBlobFallback: false,
+      });
       if (!url) {
         delete kycFileByFieldRef.current[field];
         throw new Error(DOCUMENT_UPLOAD_SIMPLE_RETRY_MESSAGE);
       }
 
-      const applyUrl = (nextUrl: string) => {
-        if (field === 'driver_license_photo') {
-          setFormData((prev) => {
-            const old = prev.driver_license?.license_photo_url;
-            if (typeof old === 'string' && old.startsWith('blob:') && old !== nextUrl) revokeBlobUrl(old);
-            return {
-              ...prev,
-              driver_license: {
-                ...prev.driver_license!,
-                license_photo_url: nextUrl,
-              },
-            };
-          });
-        } else if (field.startsWith('vehicle_photo_')) {
-          const index = parseInt(field.split('_')[2], 10);
-          setFormData((prev) => {
-            const newVehicles = [...(prev.vehicles || [])];
-            const row = newVehicles[index];
-            if (row) {
-              const old = row.registration_book_photo_url;
-              if (typeof old === 'string' && old.startsWith('blob:') && old !== nextUrl) revokeBlobUrl(old);
-              newVehicles[index] = { ...row, registration_book_photo_url: nextUrl };
-            }
-            return { ...prev, vehicles: newVehicles };
-          });
-        } else if (field === 'id_card_front_url' || field === 'id_card_back_url' || field === 'selfie_url') {
-          setFormData((prev) => {
-            const old = prev[field];
-            if (typeof old === 'string' && old.startsWith('blob:') && old !== nextUrl) revokeBlobUrl(old);
-            return { ...prev, [field]: nextUrl };
-          });
-        }
-      };
-
       applyUrl(url);
-      console.log(`✅ Image ready: ${field} → ${isBlobUrl(url) ? 'local preview' : url}`);
+
+      console.log(
+        `✅ Image ready: ${field} → ${isBlobUrl(url) ? "local preview" : url}`,
+      );
     } catch (error) {
-      console.error('Image upload failed:', error);
-      delete kycFileByFieldRef.current[field];
+      console.error("Image upload failed:", error);
+      handleClearUpload(field);
       const message =
         error instanceof Error
           ? error.message
-          : typeof error === 'string'
+          : typeof error === "string"
             ? error
             : DOCUMENT_UPLOAD_SIMPLE_RETRY_MESSAGE;
-      setErrors((prev) => ({ ...prev, [field]: message }));
+      setErrors((prev) => ({ ...prev, [errorKey]: message }));
     } finally {
       setUploadingImage(false);
     }
   };
-  
+
   // Validate current step
   const validateStep = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
     switch (currentStep) {
-      case 'personal':
-        if (!formData.first_name) newErrors.first_name = 'กรุณากรอกชื่อจริง';
-        if (!formData.last_name) newErrors.last_name = 'กรุณากรอกนามสกุล';
+      case "personal":
+        if (!formData.first_name) newErrors.first_name = "กรุณากรอกชื่อจริง";
+        if (!formData.last_name) newErrors.last_name = "กรุณากรอกนามสกุล";
         if (!formData.national_id) {
-          newErrors.national_id = 'กรุณากรอกเลขบัตรประชาชน';
+          newErrors.national_id = "กรุณากรอกเลขบัตรประชาชน";
         } else if (!validateThaiID(formData.national_id)) {
-          newErrors.national_id = 'เลขบัตรประชาชนไม่ถูกต้อง';
+          newErrors.national_id = "เลขบัตรประชาชนไม่ถูกต้อง";
         }
-        if (!formData.date_of_birth) newErrors.date_of_birth = 'กรุณาเลือกวันเกิด';
-        if (!formData.address) newErrors.address = 'กรุณากรอกที่อยู่';
-        break;
-        
-      case 'id-card':
-        if (!formData.id_card_front_url) newErrors.id_card_front_url = 'กรุณาอัปโหลดรูปบัตรประชาชนด้านหน้า';
-        if (!formData.id_card_back_url) newErrors.id_card_back_url = 'กรุณาอัปโหลดรูปบัตรประชาชนด้านหลัง';
-        break;
-        
-      case 'selfie':
-        if (!formData.selfie_url) newErrors.selfie_url = 'กรุณาถ่ายรูปใบหน้า';
-        break;
-        
-      case 'driver-license':
-        if (formData.has_driver_license && formData.driver_license) {
-          if (!formData.driver_license.license_number) {
-            newErrors.license_number = 'กรุณากรอกเลขใบขับขี่';
+        if (!formData.date_of_birth)
+          newErrors.date_of_birth = "กรุณาเลือกวันเกิด";
+        if (!formData.address) newErrors.address = "กรุณากรอกที่อยู่";
+        if (compassMode) {
+          if (!formData.current_address?.trim()) {
+            newErrors.current_address = "กรุณากรอกที่อยู่ปัจจุบัน";
           }
-          if (!formData.driver_license.expiry_date) {
-            newErrors.expiry_date = 'กรุณาเลือกวันหมดอายุ';
+          if (!formData.contact_phone?.trim()) {
+            newErrors.contact_phone = "กรุณากรอกเบอร์ติดต่อ";
           }
-          if (!formData.driver_license.license_photo_url) {
-            newErrors.license_photo = 'กรุณาอัปโหลดรูปใบขับขี่';
+          if (!formData.contact_email?.trim()) {
+            newErrors.contact_email = "กรุณากรอกอีเมลติดต่อ";
           }
-        }
-        break;
-        
-      case 'vehicle':
-        if (formData.has_vehicle && (!formData.vehicles || formData.vehicles.length === 0)) {
-          newErrors.vehicles = 'กรุณาเพิ่มข้อมูลรถอย่างน้อย 1 คัน';
         }
         break;
 
-      case 'review': {
-        if (!formData.id_card_front_url) newErrors.id_card_front_url = 'กรุณาอัปโหลดรูปบัตรประชาชนด้านหน้า';
-        if (!formData.id_card_back_url) newErrors.id_card_back_url = 'กรุณาอัปโหลดรูปบัตรประชาชนด้านหลัง';
-        if (!formData.selfie_url) newErrors.selfie_url = 'กรุณาถ่ายรูปใบหน้า';
+      case "id-card":
+        if (!formData.id_card_front_url)
+          newErrors.id_card_front_url = "กรุณาอัปโหลดรูปบัตรประชาชนด้านหน้า";
+        if (!formData.id_card_back_url)
+          newErrors.id_card_back_url = "กรุณาอัปโหลดรูปบัตรประชาชนด้านหลัง";
+        break;
+
+      case "selfie":
+        if (!formData.selfie_url) newErrors.selfie_url = "กรุณาถ่ายรูปใบหน้า";
+        break;
+
+      case "driver-license":
+        if (formData.has_driver_license && formData.driver_license) {
+          if (!formData.driver_license.license_number) {
+            newErrors.license_number = "กรุณากรอกเลขใบขับขี่";
+          }
+          if (!formData.driver_license.expiry_date) {
+            newErrors.expiry_date = "กรุณาเลือกวันหมดอายุ";
+          }
+          if (!formData.driver_license.license_photo_url) {
+            newErrors.license_photo = "กรุณาอัปโหลดรูปใบขับขี่";
+          }
+        }
+        break;
+
+      case "vehicle":
+        if (
+          formData.has_vehicle &&
+          (!formData.vehicles || formData.vehicles.length === 0)
+        ) {
+          newErrors.vehicles = "กรุณาเพิ่มข้อมูลรถอย่างน้อย 1 คัน";
+        }
+        if (formData.wants_public_transport) {
+          if (!formData.yellow_plate_photo_url) {
+            newErrors.yellow_plate_photo = "กรุณาถ่ายรูปป้ายเหลือง";
+          }
+          if (!formData.public_transport_license_front_url) {
+            newErrors.public_transport_license_front =
+              "กรุณาแนบใบขับขี่สาธารณะ (หน้า)";
+          }
+        }
+        break;
+
+      case "public-transport-supplement": {
+        const docs = kycServerGate.kycSupplementDocs;
+        const needYellow = docs.length === 0 || docs.includes("yellow_plate");
+        const needFront =
+          docs.length === 0 || docs.includes("public_transport_license_front");
+        if (needYellow && !formData.yellow_plate_photo_url) {
+          newErrors.yellow_plate_photo = "กรุณาถ่ายรูปป้ายเหลือง";
+        }
+        if (needFront && !formData.public_transport_license_front_url) {
+          newErrors.public_transport_license_front =
+            "กรุณาแนบใบขับขี่สาธารณะ (หน้า)";
+        }
+        break;
+      }
+
+      case "review-supplement": {
+        const docs = kycServerGate.kycSupplementDocs;
+        const needYellow = docs.length === 0 || docs.includes("yellow_plate");
+        const needFront =
+          docs.length === 0 || docs.includes("public_transport_license_front");
+        if (needYellow && !formData.yellow_plate_photo_url) {
+          newErrors.yellow_plate_photo = "กรุณาถ่ายรูปป้ายเหลือง";
+        }
+        if (needFront && !formData.public_transport_license_front_url) {
+          newErrors.public_transport_license_front =
+            "กรุณาแนบใบขับขี่สาธารณะ (หน้า)";
+        }
+        break;
+      }
+
+      case "review": {
+        if (!formData.id_card_front_url)
+          newErrors.id_card_front_url = "กรุณาอัปโหลดรูปบัตรประชาชนด้านหน้า";
+        if (!formData.id_card_back_url)
+          newErrors.id_card_back_url = "กรุณาอัปโหลดรูปบัตรประชาชนด้านหลัง";
+        if (!formData.selfie_url) newErrors.selfie_url = "กรุณาถ่ายรูปใบหน้า";
         /** ต้องมีไฟล์ต้นฉบับสำหรับ POST /kyc/submit — ยกเว้นกรณีมี URL จากเซิร์ฟเวอร์จริง (รีเฟรชหน้าแล้ว ref หาย) */
         const missingRef =
-          !kycFileByFieldRef.current['id_card_front_url'] ||
-          !kycFileByFieldRef.current['id_card_back_url'] ||
-          !kycFileByFieldRef.current['selfie_url'];
+          !kycFileByFieldRef.current["id_card_front_url"] ||
+          !kycFileByFieldRef.current["id_card_back_url"] ||
+          !kycFileByFieldRef.current["selfie_url"];
         const looksLikeServerUrl = (u?: string) =>
-          typeof u === 'string' && (u.startsWith('https://') || u.startsWith('http://'));
+          typeof u === "string" &&
+          (u.startsWith("https://") || u.startsWith("http://"));
         if (
           missingRef &&
           !(
@@ -507,26 +787,26 @@ const KYCWizard: React.FC = () => {
           )
         ) {
           newErrors._kyc_files =
-            'ไฟล์รูปต้นฉบับยังไม่ครบสำหรับส่งตรวจ — กรุณาอัปโหลดบัตรด้านหน้า/ด้านหลัง และรูปเซลฟี่ใหม่อีกครั้ง';
+            "ไฟล์รูปต้นฉบับยังไม่ครบสำหรับส่งตรวจ — กรุณาอัปโหลดบัตรด้านหน้า/ด้านหลัง และรูปเซลฟี่ใหม่อีกครั้ง";
         }
         break;
       }
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  
+
   // Navigate to next step
   const handleNext = () => {
     if (!validateStep()) return;
-    
+
     const currentIndex = getCurrentStepIndex();
     if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1].id);
     }
   };
-  
+
   // Navigate to previous step
   const handleBack = () => {
     const currentIndex = getCurrentStepIndex();
@@ -534,7 +814,7 @@ const KYCWizard: React.FC = () => {
       setCurrentStep(steps[currentIndex - 1].id);
     }
   };
-  
+
   // Submit KYC
   const handleSubmit = async () => {
     if (!validateStep()) return;
@@ -543,24 +823,26 @@ const KYCWizard: React.FC = () => {
 
     const uid =
       user?.id ??
-      (typeof localStorage !== 'undefined' ? localStorage.getItem('meerak_user_id') : null);
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("meerak_user_id")
+        : null);
     if (!uid) {
-      setSubmitBanner('ไม่พบบัญชีผู้ใช้ กรุณาเข้าสู่ระบบใหม่');
+      setSubmitBanner("ไม่พบบัญชีผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
       return;
     }
 
-    const idFront = kycFileByFieldRef.current['id_card_front_url'];
-    const idBack = kycFileByFieldRef.current['id_card_back_url'];
-    const selfie = kycFileByFieldRef.current['selfie_url'];
+    const idFront = kycFileByFieldRef.current["id_card_front_url"];
+    const idBack = kycFileByFieldRef.current["id_card_back_url"];
+    const selfie = kycFileByFieldRef.current["selfie_url"];
     if (!idFront || !idBack || !selfie) {
       const hasServerPreview =
-        /^https?:\/\//.test(String(formData.id_card_front_url || '')) &&
-        /^https?:\/\//.test(String(formData.id_card_back_url || '')) &&
-        /^https?:\/\//.test(String(formData.selfie_url || ''));
+        /^https?:\/\//.test(String(formData.id_card_front_url || "")) &&
+        /^https?:\/\//.test(String(formData.id_card_back_url || "")) &&
+        /^https?:\/\//.test(String(formData.selfie_url || ""));
       setSubmitBanner(
         hasServerPreview
-          ? 'กรุณากลับไปขั้นตอน “บัตรประชาชน” และ “ถ่ายรูปใบหน้า” แล้วเลือกรูปจากเครื่องอีกครั้ง (หากรีเฟรชหน้า อาจต้องอัปโหลดใหม่เพื่อส่งตรวจ)'
-          : 'ไม่พบไฟล์รูปในหน่วยความจำสำหรับส่ง KYC — กรุณาเลือกรูปบัตรด้านหน้า / ด้านหลัง และรูปเซลฟี่ใหม่',
+          ? "กรุณากลับไปขั้นตอน “บัตรประชาชน” และ “ถ่ายรูปใบหน้า” แล้วเลือกรูปจากเครื่องอีกครั้ง (หากรีเฟรชหน้า อาจต้องอัปโหลดใหม่เพื่อส่งตรวจ)"
+          : "ไม่พบไฟล์รูปในหน่วยความจำสำหรับส่ง KYC — กรุณาเลือกรูปบัตรด้านหน้า / ด้านหลัง และรูปเซลฟี่ใหม่",
       );
       return;
     }
@@ -568,8 +850,9 @@ const KYCWizard: React.FC = () => {
     setLoading(true);
     try {
       const dlFront =
-        formData.has_driver_license && formData.driver_license?.license_photo_url
-          ? kycFileByFieldRef.current['driver_license_photo']
+        formData.has_driver_license &&
+        formData.driver_license?.license_photo_url
+          ? kycFileByFieldRef.current["driver_license_photo"]
           : undefined;
 
       const vehiclesJson =
@@ -579,13 +862,82 @@ const KYCWizard: React.FC = () => {
           ? JSON.stringify(formData.vehicles)
           : undefined;
 
+      const rf = String(formData.id_card_front_url || "").trim();
+      const rb = String(formData.id_card_back_url || "").trim();
+      const sf = String(formData.selfie_url || "").trim();
+      const vehiclesAllHttps =
+        !formData.has_vehicle ||
+        !(formData.vehicles || []).some(
+          (v) =>
+            String(v.registration_book_photo_url || "").trim() !== "" &&
+            !/^https:\/\//i.test(
+              String(v.registration_book_photo_url || "").trim(),
+            ),
+        );
+      const dlTrim = formData.has_driver_license
+        ? String(formData.driver_license?.license_photo_url || "").trim()
+        : "";
+      const dlOk =
+        !formData.has_driver_license ||
+        dlTrim === "" ||
+        /^https:\/\//i.test(dlTrim);
+      const ptYellow = String(formData.yellow_plate_photo_url || "").trim();
+      const ptFront = String(
+        formData.public_transport_license_front_url || "",
+      ).trim();
+      const ptBack = String(
+        formData.public_transport_license_back_url || "",
+      ).trim();
+      const ptOk =
+        !formData.wants_public_transport ||
+        (/^https:\/\//i.test(ptYellow) &&
+          /^https:\/\//i.test(ptFront) &&
+          (ptBack === "" || /^https:\/\//i.test(ptBack)));
+
+      /** รูปทุกอย่างอัปโหลดขึ้นเซิร์ฟเวอร์แล้ว — ขั้นสุดท้ายใช้ JSON ไม่ยัด multipart ซ้ำ */
+      const reuseOk =
+        /^https:\/\//i.test(rf) &&
+        /^https:\/\//i.test(rb) &&
+        /^https:\/\//i.test(sf) &&
+        vehiclesAllHttps &&
+        dlOk &&
+        ptOk;
+
       const submitPayload = {
         userId: uid,
         fullName: `${formData.first_name} ${formData.last_name}`.trim(),
         birthDate: formData.date_of_birth,
         idCardNumber: formData.national_id,
-        address: formData.address?.trim() || undefined,
+        address: compassMode
+          ? [
+              `ที่อยู่ตามบัตร: ${formData.address}`,
+              `ที่อยู่ปัจจุบัน: ${formData.current_address || ""}`,
+              `เบอร์: ${formData.contact_phone || ""}`,
+              `อีเมล: ${formData.contact_email || ""}`,
+            ].join("\n")
+          : formData.address?.trim() || undefined,
         vehiclesJson,
+        wantsPublicTransport: formData.wants_public_transport,
+        yellowPlatePhotoUrl: ptYellow || undefined,
+        publicTransportLicenseFrontUrl: ptFront || undefined,
+        publicTransportLicenseBackUrl: ptBack || undefined,
+        driverLicenseNumber: formData.driver_license?.license_number,
+        driverLicenseType: formData.driver_license?.license_type,
+        driverLicenseClass: formData.driver_license?.license_class,
+        idCardExpiryDate: formData.id_card_expiry_date || undefined,
+        driverLicenseExpiry: formData.driver_license?.expiry_date || undefined,
+        ...(reuseOk
+          ? {
+              reuseHttpsUrls: {
+                idCardFront: rf,
+                idCardBack: rb,
+                selfiePhoto: sf,
+                ...(formData.has_driver_license && dlTrim
+                  ? { drivingLicenseFront: dlTrim }
+                  : {}),
+              },
+            }
+          : {}),
         idCardFront: idFront,
         idCardBack: idBack,
         selfiePhoto: selfie,
@@ -607,28 +959,87 @@ const KYCWizard: React.FC = () => {
         clearPersonalDraft(uid);
         kycFileByFieldRef.current = {};
         setSubmitBanner(null);
-        setSubmitSuccessMessage(result.message || 'ส่งข้อมูล KYC สำเร็จ — รอการตรวจสอบจากเจ้าหน้าที่');
+        setSubmitSuccessMessage(
+          result.message || "ส่งข้อมูล KYC สำเร็จ — รอการตรวจสอบจากเจ้าหน้าที่",
+        );
         void loadKycServerStatus();
+        if (compassMode) {
+          setTimeout(() => navigate("/compass", { replace: true }), 1200);
+        }
       } else {
-        const raw = typeof result?.error === 'string' && result.error.trim() ? result.error : result?.message;
+        const raw =
+          typeof result?.error === "string" && result.error.trim()
+            ? result.error
+            : result?.message;
         setSubmitBanner(
-          typeof raw === 'string' && raw.trim().length && raw.trim().length < 500
+          typeof raw === "string" &&
+            raw.trim().length &&
+            raw.trim().length < 500
             ? String(raw).trim()
             : KYC_SUBMIT_RETRY_MESSAGE,
         );
       }
     } catch (error: unknown) {
-      console.error('KYC submission error:', error);
+      console.error("KYC submission error:", error);
       setSubmitBanner(friendlyKycSubmitErrorMessage(error));
     } finally {
       setLoading(false);
     }
   };
-  
+
+  const handleSubmitSupplement = async () => {
+    if (!validateStep()) return;
+    setSubmitBanner(null);
+    setSubmitSuccessMessage(null);
+
+    const uid =
+      user?.id ??
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("meerak_user_id")
+        : null);
+    if (!uid) {
+      setSubmitBanner("ไม่พบบัญชีผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await MockApi.submitKycSupplement({
+        userId: uid,
+        yellowPlatePhotoUrl: formData.yellow_plate_photo_url,
+        publicTransportLicenseFrontUrl:
+          formData.public_transport_license_front_url,
+        publicTransportLicenseBackUrl:
+          formData.public_transport_license_back_url,
+        requestedDocs: kycServerGate.kycSupplementDocs,
+      });
+
+      if (result.success) {
+        kycFileByFieldRef.current = {};
+        setSubmitBanner(null);
+        setSubmitSuccessMessage(
+          result.message || "ส่งเอกสารเพิ่มสำเร็จ — รอการตรวจสอบจากเจ้าหน้าที่",
+        );
+        void loadKycServerStatus();
+      } else {
+        setSubmitBanner(
+          typeof result?.error === "string" && result.error.trim()
+            ? result.error
+            : KYC_SUBMIT_RETRY_MESSAGE,
+        );
+      }
+    } catch (error: unknown) {
+      console.error("KYC supplement submission error:", error);
+      setSubmitBanner(friendlyKycSubmitErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Render current step content
   const renderStepContent = () => {
     switch (currentStep) {
-      case 'personal':
+      case "personal":
         return (
           <StepPersonalInfo
             formData={formData}
@@ -636,9 +1047,10 @@ const KYCWizard: React.FC = () => {
             errors={errors}
             rememberPersonal={rememberPersonal}
             onRememberPersonalChange={persistRememberPreference}
+            compassMode={compassMode}
           />
         );
-      case 'id-card':
+      case "id-card":
         return (
           <StepIDCard
             formData={formData}
@@ -648,7 +1060,7 @@ const KYCWizard: React.FC = () => {
             errors={errors}
           />
         );
-      case 'selfie':
+      case "selfie":
         return (
           <StepSelfie
             formData={formData}
@@ -658,7 +1070,7 @@ const KYCWizard: React.FC = () => {
             errors={errors}
           />
         );
-      case 'driver-license':
+      case "driver-license":
         return (
           <StepDriverLicense
             formData={formData}
@@ -669,7 +1081,7 @@ const KYCWizard: React.FC = () => {
             errors={errors}
           />
         );
-      case 'vehicle':
+      case "vehicle":
         return (
           <StepVehicle
             formData={formData}
@@ -681,13 +1093,32 @@ const KYCWizard: React.FC = () => {
             errors={errors}
           />
         );
-      case 'review':
+      case "public-transport-supplement":
+        return (
+          <StepPublicTransportSupplement
+            formData={formData}
+            requestedDocs={kycServerGate.kycSupplementDocs}
+            adminInstruction={kycServerGate.kycAdminInstruction}
+            onUpload={handleImageUpload}
+            onClearUpload={handleClearUpload}
+            uploading={uploadingImage}
+            errors={errors}
+          />
+        );
+      case "review-supplement":
+        return (
+          <StepReviewSupplement
+            formData={formData}
+            requestedDocs={kycServerGate.kycSupplementDocs}
+          />
+        );
+      case "review":
         return <StepReview formData={formData} />;
       default:
         return null;
     }
   };
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -697,7 +1128,7 @@ const KYCWizard: React.FC = () => {
             <Shield size={32} className="text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            ยืนยันตัวตน (KYC)
+            {compassMode ? "ขั้นยืนยันตัวตน — เส้นทางรับงาน" : "ยืนยันตัวตน (KYC)"}
           </h1>
           <p className="text-gray-600">
             กรอกข้อมูลเพื่อยืนยันตัวตนและเพิ่มวงเงินการใช้งาน
@@ -733,14 +1164,49 @@ const KYCWizard: React.FC = () => {
 
         {!kycServerGate.loading &&
           !kycServerGate.fetchError &&
-          (kycServerGate.kycStatus === 'rejected' ||
-            kycServerGate.kycStatus === 'resubmission_required') && (
+          kycServerGate.kycStatus === "supplement_required" && (
+            <div
+              id="kyc-admin-reason"
+              className="mb-6 rounded-2xl border-2 border-yellow-400 bg-gradient-to-br from-yellow-50 to-amber-50/90 p-5 shadow-md scroll-mt-24"
+              role="alert"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Truck size={26} className="text-yellow-700 shrink-0" />
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    ทีมงานขอเอกสารเพิ่ม (รถสาธารณะ)
+                  </h2>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    ส่งเฉพาะป้ายเหลือง / ใบขับขี่สาธารณะ —
+                    ไม่ต้องกรอกข้อมูลส่วนตัวหรือบัตรประชาชนใหม่
+                  </p>
+                </div>
+              </div>
+              {kycServerGate.kycAdminInstruction && (
+                <p className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed bg-white/60 rounded-xl px-4 py-3 border border-white/80">
+                  {kycServerGate.kycAdminInstruction}
+                </p>
+              )}
+              {kycServerGate.kycRequiredSteps.length > 0 && (
+                <ul className="mt-3 list-disc list-inside text-sm text-gray-800 space-y-0.5">
+                  {kycServerGate.kycRequiredSteps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+        {!kycServerGate.loading &&
+          !kycServerGate.fetchError &&
+          (kycServerGate.kycStatus === "rejected" ||
+            kycServerGate.kycStatus === "resubmission_required") && (
             <div
               id="kyc-admin-reason"
               className={`mb-6 rounded-2xl border-2 p-5 shadow-md scroll-mt-24 ${
-                kycServerGate.kycStatus === 'resubmission_required'
-                  ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50/90'
-                  : 'border-rose-300 bg-gradient-to-br from-rose-50 to-red-50/80'
+                kycServerGate.kycStatus === "resubmission_required"
+                  ? "border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50/90"
+                  : "border-rose-300 bg-gradient-to-br from-rose-50 to-red-50/80"
               }`}
               role="alert"
             >
@@ -748,20 +1214,21 @@ const KYCWizard: React.FC = () => {
                 <div className="flex items-center gap-2 text-left">
                   <AlertCircle
                     className={
-                      kycServerGate.kycStatus === 'resubmission_required'
-                        ? 'text-amber-600'
-                        : 'text-rose-600'
+                      kycServerGate.kycStatus === "resubmission_required"
+                        ? "text-amber-600"
+                        : "text-rose-600"
                     }
                     size={26}
                   />
                   <div>
                     <h2 className="text-lg font-bold text-gray-900">
-                      {kycServerGate.kycStatus === 'resubmission_required'
-                        ? 'ทีมงานขอเอกสารเพิ่ม / กรุณายืนยันตัวตนใหม่'
-                        : 'การยืนยันตัวตนไม่ผ่านการตรวจ'}
+                      {kycServerGate.kycStatus === "resubmission_required"
+                        ? "ทีมงานขอเอกสารเพิ่ม / กรุณายืนยันตัวตนใหม่"
+                        : "การยืนยันตัวตนไม่ผ่านการตรวจ"}
                     </h2>
                     <p className="text-xs text-gray-600 mt-0.5">
-                      ข้อความด้านล่างจากเจ้าหน้าที่ — กรุณาอ่านแล้วดำเนินการตามขั้นตอนใน Wizard
+                      ข้อความด้านล่างจากเจ้าหน้าที่ —
+                      กรุณาอ่านแล้วดำเนินการตามขั้นตอนใน Wizard
                     </p>
                   </div>
                 </div>
@@ -774,17 +1241,22 @@ const KYCWizard: React.FC = () => {
                 </button>
               </div>
 
-              {(kycServerGate.kycAdminInstruction || kycServerGate.kycRejectionReason) && (
+              {(kycServerGate.kycAdminInstruction ||
+                kycServerGate.kycRejectionReason) && (
                 <p className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed bg-white/60 rounded-xl px-4 py-3 border border-white/80">
-                  {kycServerGate.kycStatus === 'resubmission_required'
-                    ? kycServerGate.kycAdminInstruction || kycServerGate.kycRejectionReason
-                    : kycServerGate.kycRejectionReason || kycServerGate.kycAdminInstruction}
+                  {kycServerGate.kycStatus === "resubmission_required"
+                    ? kycServerGate.kycAdminInstruction ||
+                      kycServerGate.kycRejectionReason
+                    : kycServerGate.kycRejectionReason ||
+                      kycServerGate.kycAdminInstruction}
                 </p>
               )}
 
               {kycServerGate.kycRequiredSteps.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-xs font-semibold text-gray-700 mb-1">รายการที่ต้องดำเนินการ</p>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">
+                    รายการที่ต้องดำเนินการ
+                  </p>
                   <ul className="list-disc list-inside text-sm text-gray-800 space-y-0.5">
                     {kycServerGate.kycRequiredSteps.map((s, i) => (
                       <li key={i}>{s}</li>
@@ -795,41 +1267,50 @@ const KYCWizard: React.FC = () => {
 
               {kycServerGate.kycResubmissionDeadline && (
                 <p className="text-xs text-gray-600 mt-3 font-medium">
-                  กำหนดส่ง:{' '}
-                  {new Date(kycServerGate.kycResubmissionDeadline).toLocaleString('th-TH', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
+                  กำหนดส่ง:{" "}
+                  {new Date(
+                    kycServerGate.kycResubmissionDeadline,
+                  ).toLocaleString("th-TH", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
                   })}
                 </p>
               )}
 
               <div className="mt-4 rounded-xl border border-gray-200/80 bg-white/70 px-3 py-2.5 text-xs text-gray-800 leading-relaxed">
-                <p className="font-semibold text-gray-900 mb-1">ผลต่อการใช้งานแอป</p>
-                {kycServerGate.kycStatus === 'resubmission_required' ? (
+                <p className="font-semibold text-gray-900 mb-1">
+                  ผลต่อการใช้งานแอป
+                </p>
+                {kycServerGate.kycStatus === "resubmission_required" ? (
                   <p>
-                    จนกว่าจะส่งเอกสารใหม่และได้รับอนุมัติ ฟีเจอร์ที่ต้องยืนยันตัวตน (เช่น ถอนเงิน หรือรับงานบางประเภท)
+                    จนกว่าจะส่งเอกสารใหม่และได้รับอนุมัติ
+                    ฟีเจอร์ที่ต้องยืนยันตัวตน (เช่น ถอนเงิน หรือรับงานบางประเภท)
                     อาจถูกจำกัดตามนโยบายของแพลตฟอร์ม
                   </p>
                 ) : (
                   <p>
-                    สถานะปฏิเสธถาวร — ฟีเจอร์ถอนเงินและงานที่ต้องยืนยันตัวตนมักไม่พร้อมใช้งานจนกว่าจะมีการติดต่อ/แก้ไขกับทีมงาน
+                    สถานะปฏิเสธถาวร —
+                    ฟีเจอร์ถอนเงินและงานที่ต้องยืนยันตัวตนมักไม่พร้อมใช้งานจนกว่าจะมีการติดต่อ/แก้ไขกับทีมงาน
                   </p>
                 )}
               </div>
             </div>
           )}
 
-        {!kycServerGate.loading && !kycServerGate.fetchError && kycServerGate.kycStatus === 'pending_review' && (
-          <div className="mb-6 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-sm text-sky-950 flex items-start gap-2 shadow-sm">
-            <Shield size={18} className="shrink-0 text-sky-600 mt-0.5" />
-            <div>
-              <p className="font-semibold">คำขอของคุณอยู่ระหว่างการตรวจสอบ</p>
-              <p className="text-sky-900/90 mt-1">
-                หากทีมงานต้องการเอกสารเพิ่ม สถานะจะอัปเดตที่นี่ — ไม่ต้องส่งซ้ำจนกว่าจะได้รับแจ้ง
-              </p>
+        {!kycServerGate.loading &&
+          !kycServerGate.fetchError &&
+          kycServerGate.kycStatus === "pending_review" && (
+            <div className="mb-6 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-sm text-sky-950 flex items-start gap-2 shadow-sm">
+              <Shield size={18} className="shrink-0 text-sky-600 mt-0.5" />
+              <div>
+                <p className="font-semibold">คำขอของคุณอยู่ระหว่างการตรวจสอบ</p>
+                <p className="text-sky-900/90 mt-1">
+                  หากทีมงานต้องการเอกสารเพิ่ม สถานะจะอัปเดตที่นี่ —
+                  ไม่ต้องส่งซ้ำจนกว่าจะได้รับแจ้ง
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {submitSuccessMessage && (
           <div
@@ -837,18 +1318,25 @@ const KYCWizard: React.FC = () => {
             role="status"
           >
             <span className="flex items-start gap-2 min-w-0">
-              <CheckCircle size={20} className="shrink-0 text-emerald-600 mt-0.5" />
+              <CheckCircle
+                size={20}
+                className="shrink-0 text-emerald-600 mt-0.5"
+              />
               <span className="min-w-0">{submitSuccessMessage}</span>
             </span>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => document.getElementById('kyc-admin-reason')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() =>
+                  document
+                    .getElementById("kyc-admin-reason")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
                 className="text-xs font-semibold text-emerald-800 underline-offset-2 hover:underline disabled:opacity-40 disabled:no-underline"
                 disabled={
                   !(
-                    kycServerGate.kycStatus === 'rejected' ||
-                    kycServerGate.kycStatus === 'resubmission_required'
+                    kycServerGate.kycStatus === "rejected" ||
+                    kycServerGate.kycStatus === "resubmission_required"
                   )
                 }
               >
@@ -856,7 +1344,7 @@ const KYCWizard: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/profile')}
+                onClick={() => navigate("/profile")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
               >
                 ไปโปรไฟล์
@@ -871,14 +1359,23 @@ const KYCWizard: React.FC = () => {
             role="alert"
           >
             <span className="flex items-start gap-2 min-w-0">
-              <AlertCircle size={20} className="shrink-0 text-rose-600 mt-0.5" />
-              <span className="whitespace-pre-wrap min-w-0">{submitBanner}</span>
+              <AlertCircle
+                size={20}
+                className="shrink-0 text-rose-600 mt-0.5"
+              />
+              <span className="whitespace-pre-wrap min-w-0">
+                {submitBanner}
+              </span>
             </span>
-            {(kycServerGate.kycStatus === 'rejected' ||
-              kycServerGate.kycStatus === 'resubmission_required') && (
+            {(kycServerGate.kycStatus === "rejected" ||
+              kycServerGate.kycStatus === "resubmission_required") && (
               <button
                 type="button"
-                onClick={() => document.getElementById('kyc-admin-reason')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() =>
+                  document
+                    .getElementById("kyc-admin-reason")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
                 className="text-xs font-semibold text-rose-800 underline-offset-2 hover:underline shrink-0"
               >
                 ดูเหตุผลจากเจ้าหน้าที่
@@ -886,21 +1383,23 @@ const KYCWizard: React.FC = () => {
             )}
           </div>
         )}
-        
+
         {/* Progress Steps */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between">
             {steps.map((step, index) => (
               <div key={step.id} className="flex items-center flex-1">
-                <div className={`flex flex-col items-center flex-1 ${index < steps.length - 1 ? 'relative' : ''}`}>
+                <div
+                  className={`flex flex-col items-center flex-1 ${index < steps.length - 1 ? "relative" : ""}`}
+                >
                   {/* Step Circle */}
                   <div
                     className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all ${
                       getCurrentStepIndex() === index
-                        ? 'bg-blue-500 border-blue-500 text-white scale-110'
+                        ? "bg-blue-500 border-blue-500 text-white scale-110"
                         : getCurrentStepIndex() > index
-                        ? 'bg-green-500 border-green-500 text-white'
-                        : 'bg-gray-100 border-gray-300 text-gray-400'
+                          ? "bg-green-500 border-green-500 text-white"
+                          : "bg-gray-100 border-gray-300 text-gray-400"
                     }`}
                   >
                     {getCurrentStepIndex() > index ? (
@@ -909,21 +1408,27 @@ const KYCWizard: React.FC = () => {
                       step.icon
                     )}
                   </div>
-                  
+
                   {/* Step Label */}
-                  <span className={`text-xs mt-2 text-center ${
-                    getCurrentStepIndex() === index ? 'text-blue-600 font-semibold' : 'text-gray-500'
-                  }`}>
+                  <span
+                    className={`text-xs mt-2 text-center ${
+                      getCurrentStepIndex() === index
+                        ? "text-blue-600 font-semibold"
+                        : "text-gray-500"
+                    }`}
+                  >
                     {step.label}
                   </span>
-                  
+
                   {/* Connector Line */}
                   {index < steps.length - 1 && (
                     <div
                       className={`absolute top-6 left-1/2 w-full h-0.5 ${
-                        getCurrentStepIndex() > index ? 'bg-green-500' : 'bg-gray-300'
+                        getCurrentStepIndex() > index
+                          ? "bg-green-500"
+                          : "bg-gray-300"
                       }`}
-                      style={{ transform: 'translateX(50%)' }}
+                      style={{ transform: "translateX(50%)" }}
                     />
                   )}
                 </div>
@@ -931,15 +1436,17 @@ const KYCWizard: React.FC = () => {
             ))}
           </div>
         </div>
-        
+
         {/* Step Content */}
         <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
           {renderStepContent()}
           {errors._kyc_files && (
-            <p className="mt-4 text-sm text-red-600 font-medium">{errors._kyc_files}</p>
+            <p className="mt-4 text-sm text-red-600 font-medium">
+              {errors._kyc_files}
+            </p>
           )}
         </div>
-        
+
         {/* Navigation Buttons */}
         <div className="flex justify-between">
           <button
@@ -950,10 +1457,14 @@ const KYCWizard: React.FC = () => {
             <ChevronLeft size={20} className="mr-2" />
             ย้อนกลับ
           </button>
-          
-          {currentStep === 'review' ? (
+
+          {currentStep === "review" || currentStep === "review-supplement" ? (
             <button
-              onClick={handleSubmit}
+              onClick={
+                currentStep === "review-supplement"
+                  ? handleSubmitSupplement
+                  : handleSubmit
+              }
               disabled={loading}
               className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50 flex items-center font-semibold"
             >
@@ -965,7 +1476,9 @@ const KYCWizard: React.FC = () => {
               ) : (
                 <>
                   <CheckCircle size={20} className="mr-2" />
-                  ส่งข้อมูล KYC
+                  {currentStep === "review-supplement"
+                    ? "ส่งเอกสารเพิ่ม"
+                    : "ส่งข้อมูล KYC"}
                 </>
               )}
             </button>
@@ -991,13 +1504,19 @@ const StepPersonalInfo: React.FC<{
   errors: Record<string, string>;
   rememberPersonal: boolean;
   onRememberPersonalChange: (remember: boolean) => void;
-}> = ({ formData, setFormData, errors, rememberPersonal, onRememberPersonalChange }) => {
+  compassMode?: boolean;
+}> = ({
+  formData,
+  setFormData,
+  errors,
+  rememberPersonal,
+  onRememberPersonalChange,
+  compassMode = false,
+}) => {
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">
-        ข้อมูลส่วนตัว
-      </h2>
-      
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">ข้อมูลส่วนตัว</h2>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* ชื่อจริง */}
         <div>
@@ -1007,9 +1526,11 @@ const StepPersonalInfo: React.FC<{
           <input
             type="text"
             value={formData.first_name}
-            onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, first_name: e.target.value }))
+            }
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-              errors.first_name ? 'border-red-500' : 'border-gray-300'
+              errors.first_name ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="สมชาย"
           />
@@ -1017,7 +1538,7 @@ const StepPersonalInfo: React.FC<{
             <p className="mt-1 text-sm text-red-500">{errors.first_name}</p>
           )}
         </div>
-        
+
         {/* นามสกุล */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1026,9 +1547,11 @@ const StepPersonalInfo: React.FC<{
           <input
             type="text"
             value={formData.last_name}
-            onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, last_name: e.target.value }))
+            }
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-              errors.last_name ? 'border-red-500' : 'border-gray-300'
+              errors.last_name ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="ใจดี"
           />
@@ -1036,7 +1559,7 @@ const StepPersonalInfo: React.FC<{
             <p className="mt-1 text-sm text-red-500">{errors.last_name}</p>
           )}
         </div>
-        
+
         {/* เลขบัตรประชาชน */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1046,11 +1569,11 @@ const StepPersonalInfo: React.FC<{
             type="text"
             value={formData.national_id}
             onChange={(e) => {
-              const value = e.target.value.replace(/\D/g, '').slice(0, 13);
-              setFormData(prev => ({ ...prev, national_id: value }));
+              const value = e.target.value.replace(/\D/g, "").slice(0, 13);
+              setFormData((prev) => ({ ...prev, national_id: value }));
             }}
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-              errors.national_id ? 'border-red-500' : 'border-gray-300'
+              errors.national_id ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="1234567890123"
             maxLength={13}
@@ -1060,7 +1583,28 @@ const StepPersonalInfo: React.FC<{
           )}
           <p className="mt-1 text-xs text-gray-500">13 หลัก</p>
         </div>
-        
+
+        {/* วันหมดอายุบัตรประชาชน */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            วันหมดอายุบัตรประชาชน
+          </label>
+          <input
+            type="date"
+            value={formData.id_card_expiry_date}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                id_card_expiry_date: e.target.value,
+              }))
+            }
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            ใช้แจ้งเตือนเมื่อบัตรหมดอายุ — กรอกจากบัตรหรือ OCR
+          </p>
+        </div>
+
         {/* วันเกิด */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1069,28 +1613,36 @@ const StepPersonalInfo: React.FC<{
           <input
             type="date"
             value={formData.date_of_birth}
-            onChange={(e) => setFormData(prev => ({ ...prev, date_of_birth: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                date_of_birth: e.target.value,
+              }))
+            }
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-              errors.date_of_birth ? 'border-red-500' : 'border-gray-300'
+              errors.date_of_birth ? "border-red-500" : "border-gray-300"
             }`}
-            max={new Date().toISOString().split('T')[0]}
+            max={new Date().toISOString().split("T")[0]}
           />
           {errors.date_of_birth && (
             <p className="mt-1 text-sm text-red-500">{errors.date_of_birth}</p>
           )}
         </div>
       </div>
-      
+
       {/* ที่อยู่ */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          ที่อยู่ <span className="text-red-500">*</span>
+          {compassMode ? "ที่อยู่ตามบัตร / ถิ่นกำเนิด" : "ที่อยู่"}{" "}
+          <span className="text-red-500">*</span>
         </label>
         <textarea
           value={formData.address}
-          onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, address: e.target.value }))
+          }
           className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-            errors.address ? 'border-red-500' : 'border-gray-300'
+            errors.address ? "border-red-500" : "border-gray-300"
           }`}
           placeholder="123 ถนนสุขุมวิท แขวงคลองเตย เขตคลองเตย กรุงเทพมหานคร 10110"
           rows={3}
@@ -1099,6 +1651,82 @@ const StepPersonalInfo: React.FC<{
           <p className="mt-1 text-sm text-red-500">{errors.address}</p>
         )}
       </div>
+
+      {compassMode && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ที่อยู่ปัจจุบัน <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={formData.current_address || ""}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  current_address: e.target.value,
+                }))
+              }
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                errors.current_address ? "border-red-500" : "border-gray-300"
+              }`}
+              rows={2}
+            />
+            {errors.current_address && (
+              <p className="mt-1 text-sm text-red-500">
+                {errors.current_address}
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                เบอร์ติดต่อ <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                value={formData.contact_phone || ""}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    contact_phone: e.target.value,
+                  }))
+                }
+                className={`w-full px-4 py-3 border rounded-lg ${
+                  errors.contact_phone ? "border-red-500" : "border-gray-300"
+                }`}
+              />
+              {errors.contact_phone && (
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.contact_phone}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                อีเมลติดต่อ <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={formData.contact_email || ""}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    contact_email: e.target.value,
+                  }))
+                }
+                className={`w-full px-4 py-3 border rounded-lg ${
+                  errors.contact_email ? "border-red-500" : "border-gray-300"
+                }`}
+              />
+              {errors.contact_email && (
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.contact_email}
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <label className="flex items-start gap-3 cursor-pointer select-none rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-3">
         <input
@@ -1110,18 +1738,24 @@ const StepPersonalInfo: React.FC<{
         <span className="text-sm text-gray-800">
           <span className="font-medium">จดจำข้อมูลในขั้นตอนนี้</span>
           <span className="block text-xs text-gray-500 mt-1">
-            เก็บชื่อ เลขบัตร วันเกิด และที่อยู่ไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น เพื่อกรอกซ้ำในครั้งถัดไป (ไม่ส่งไปเซิร์ฟเวอร์จนกว่าคุณจะส่ง KYC)
+            เก็บชื่อ เลขบัตร วันเกิด
+            และที่อยู่ไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น
+            เพื่อกรอกซ้ำในครั้งถัดไป (ไม่ส่งไปเซิร์ฟเวอร์จนกว่าคุณจะส่ง KYC)
           </span>
         </span>
       </label>
-      
+
       {/* Info Box */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
-        <AlertCircle className="text-blue-600 mr-3 flex-shrink-0 mt-0.5" size={20} />
+        <AlertCircle
+          className="text-blue-600 mr-3 flex-shrink-0 mt-0.5"
+          size={20}
+        />
         <div className="text-sm text-blue-800">
           <p className="font-medium">ข้อมูลจะถูกเข้ารหัสก่อนบันทึก</p>
           <p className="text-blue-700 mt-1">
-            ข้อมูลส่วนตัวทั้งหมดจะถูกเข้ารหัสด้วย AES-256-GCM ก่อนบันทึกลงฐานข้อมูล
+            ข้อมูลส่วนตัวทั้งหมดจะถูกเข้ารหัสด้วย AES-256-GCM
+            ก่อนบันทึกลงฐานข้อมูล
           </p>
         </div>
       </div>
@@ -1144,26 +1778,51 @@ const StepIDCard: React.FC<{
       </h2>
 
       <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 space-y-3">
-        <h3 className="font-semibold text-emerald-950 text-sm">วิธีอัปโหลดให้ผ่านง่ายๆ</h3>
+        <h3 className="font-semibold text-emerald-950 text-sm">
+          วิธีอัปโหลดให้ผ่านง่ายๆ
+        </h3>
         <ol className="text-sm text-emerald-900 space-y-1.5 list-decimal list-inside leading-relaxed">
-          <li>วางบัตรบนพื้นหลังเรียบ สีอ่อน (เช่น กระดาษขาว โต๊ะเรียบ) ลดเงาและแสงสะท้อน</li>
-          <li>ถ่ายให้เห็น<strong>บัตรเต็มใบ</strong> ขอบบัตรไม่ถูกตัด ไม่มุมเอียงจนเกินไป</li>
-          <li>ใช้แสงสว่างพอดี ไม่มืดหรือสว่างจ้า — ตัวอักษรและรูปบนบัตรต้อง<strong>อ่านชัด ไม่เบลอ</strong></li>
-          <li>ใช้รูป<strong>ต้นฉบับจากกล้องหรือแกลเลอรี</strong> ไม่ใช้รูปที่ครอปจนเหลือแค่ส่วนข้อความ หรือรูปถ่ายจากจอมอนิเตอร์</li>
-          <li>อัปโหลด<strong>ด้านหน้าและด้านหลังแยกกัน</strong> ตามช่องที่ระบบ</li>
+          <li>
+            วางบัตรบนพื้นหลังเรียบ สีอ่อน (เช่น กระดาษขาว โต๊ะเรียบ)
+            ลดเงาและแสงสะท้อน
+          </li>
+          <li>
+            ถ่ายให้เห็น<strong>บัตรเต็มใบ</strong> ขอบบัตรไม่ถูกตัด
+            ไม่มุมเอียงจนเกินไป
+          </li>
+          <li>
+            ใช้แสงสว่างพอดี ไม่มืดหรือสว่างจ้า — ตัวอักษรและรูปบนบัตรต้อง
+            <strong>อ่านชัด ไม่เบลอ</strong>
+          </li>
+          <li>
+            ใช้รูป<strong>ต้นฉบับจากกล้องหรือแกลเลอรี</strong>{" "}
+            ไม่ใช้รูปที่ครอปจนเหลือแค่ส่วนข้อความ หรือรูปถ่ายจากจอมอนิเตอร์
+          </li>
+          <li>
+            อัปโหลด<strong>ด้านหน้าและด้านหลังแยกกัน</strong> ตามช่องที่ระบบ
+          </li>
         </ol>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <div className="rounded-lg border border-emerald-200 bg-white/80 p-3 flex gap-2">
-            <CheckCircle className="text-emerald-600 shrink-0 mt-0.5" size={18} />
+            <CheckCircle
+              className="text-emerald-600 shrink-0 mt-0.5"
+              size={18}
+            />
             <div>
-              <p className="text-xs font-semibold text-gray-900">ตัวอย่างที่ดี</p>
+              <p className="text-xs font-semibold text-gray-900">
+                ตัวอย่างที่ดี
+              </p>
               <p className="text-xs text-gray-600 mt-1 leading-snug">
                 บัตรวางราบ กล้องอยู่ด้านบน มองลงมา — เห็นขอบบัตรครบ ตัวหนังสือคม
               </p>
             </div>
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 flex gap-2">
-            <X className="text-amber-700 shrink-0 mt-0.5" size={18} strokeWidth={2.5} />
+            <X
+              className="text-amber-700 shrink-0 mt-0.5"
+              size={18}
+              strokeWidth={2.5}
+            />
             <div>
               <p className="text-xs font-semibold text-gray-900">ควรเลี่ยง</p>
               <p className="text-xs text-gray-600 mt-1 leading-snug">
@@ -1178,8 +1837,8 @@ const StepIDCard: React.FC<{
         <ImageUploadBox
           label="ด้านหน้า"
           imageUrl={formData.id_card_front_url}
-          onUpload={(file) => onUpload(file, 'id_card_front_url')}
-          onRemove={() => onClearUpload('id_card_front_url')}
+          onUpload={(file) => onUpload(file, "id_card_front_url")}
+          onRemove={() => onClearUpload("id_card_front_url")}
           uploading={uploading}
           error={errors.id_card_front_url}
         />
@@ -1187,8 +1846,8 @@ const StepIDCard: React.FC<{
         <ImageUploadBox
           label="ด้านหลัง"
           imageUrl={formData.id_card_back_url}
-          onUpload={(file) => onUpload(file, 'id_card_back_url')}
-          onRemove={() => onClearUpload('id_card_back_url')}
+          onUpload={(file) => onUpload(file, "id_card_back_url")}
+          onRemove={() => onClearUpload("id_card_back_url")}
           uploading={uploading}
           error={errors.id_card_back_url}
         />
@@ -1197,7 +1856,12 @@ const StepIDCard: React.FC<{
       <div className="bg-amber-50/90 border border-amber-200 rounded-lg p-4">
         <h3 className="font-medium text-amber-950 text-sm mb-2">หมายเหตุ</h3>
         <p className="text-sm text-amber-900 leading-relaxed">
-          หากเห็นข้อความให้อัปโหลดใหม่ ให้เลือกรูปจากเครื่องอีกครั้ง — ถ้าส่งขึ้นเซิร์ฟเวอร์ไม่สำเร็จช่วงสั้นๆ แอปยังเก็บรูปเป็นตัวอย่างบนเครื่องให้ เพื่อไม่ให้ติดค้าง และคุณยัง<strong>เลือกรูปใหม่หรือกดปุ่มลบแล้วอัปโหลดซ้ำ</strong>ได้
+          เมื่ออัปโหลดสำเร็จจะเห็นตัวอย่างจากลิงก์เซิร์ฟเวอร์จริง —
+          ถ้าเครือข่ายขาดหรือผิดพลาด ช่องนี้จะแจ้งให้อัปโหลดใหม่ และ{" "}
+          <strong>
+            จะไม่ทำเป็น “ผ่านปลอมๆ” ด้วยรูประบายบนเครื่องโดยไม่ส่งไฟล์ไปเก็บ
+          </strong>{" "}
+          (กดลบแล้วเลือกรูปใหม่ได้ทุกเมื่อ)
         </p>
       </div>
     </div>
@@ -1214,22 +1878,20 @@ const StepSelfie: React.FC<{
 }> = ({ formData, onUpload, onClearUpload, uploading, errors }) => {
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">
-        ถ่ายรูปใบหน้า
-      </h2>
-      
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">ถ่ายรูปใบหน้า</h2>
+
       <div className="max-w-md mx-auto">
         <ImageUploadBox
           label="รูปถ่ายใบหน้า"
           imageUrl={formData.selfie_url}
-          onUpload={(file) => onUpload(file, 'selfie_url')}
-          onRemove={() => onClearUpload('selfie_url')}
+          onUpload={(file) => onUpload(file, "selfie_url")}
+          onRemove={() => onClearUpload("selfie_url")}
           uploading={uploading}
           error={errors.selfie_url}
           aspectRatio="square"
         />
       </div>
-      
+
       {/* Instructions */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h3 className="font-medium text-blue-900 mb-2">คำแนะนำ:</h3>
@@ -1252,13 +1914,20 @@ const StepDriverLicense: React.FC<{
   onClearUpload: (field: string) => void;
   uploading: boolean;
   errors: Record<string, string>;
-}> = ({ formData, setFormData, onUpload, onClearUpload, uploading, errors }) => {
+}> = ({
+  formData,
+  setFormData,
+  onUpload,
+  onClearUpload,
+  uploading,
+  errors,
+}) => {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900 mb-4">
         ใบขับขี่ (ถ้ามี)
       </h2>
-      
+
       {/* Has Driver License Toggle */}
       <div className="flex items-center">
         <input
@@ -1266,25 +1935,30 @@ const StepDriverLicense: React.FC<{
           id="has_driver_license"
           checked={formData.has_driver_license}
           onChange={(e) => {
-            setFormData(prev => ({
+            setFormData((prev) => ({
               ...prev,
               has_driver_license: e.target.checked,
-              driver_license: e.target.checked ? {
-                license_number: '',
-                license_type: 'ถาวร',
-                license_class: [],
-                issue_date: '',
-                expiry_date: ''
-              } : undefined
+              driver_license: e.target.checked
+                ? {
+                    license_number: "",
+                    license_type: "ถาวร",
+                    license_class: [],
+                    issue_date: "",
+                    expiry_date: "",
+                  }
+                : undefined,
             }));
           }}
           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
         />
-        <label htmlFor="has_driver_license" className="ml-2 text-sm font-medium text-gray-700">
+        <label
+          htmlFor="has_driver_license"
+          className="ml-2 text-sm font-medium text-gray-700"
+        >
           ฉันมีใบขับขี่
         </label>
       </div>
-      
+
       {formData.has_driver_license && (
         <div className="space-y-6 mt-6">
           {/* License Number */}
@@ -1294,40 +1968,42 @@ const StepDriverLicense: React.FC<{
             </label>
             <input
               type="text"
-              value={formData.driver_license?.license_number || ''}
+              value={formData.driver_license?.license_number || ""}
               onChange={(e) => {
-                setFormData(prev => ({
+                setFormData((prev) => ({
                   ...prev,
                   driver_license: {
                     ...prev.driver_license!,
-                    license_number: e.target.value
-                  }
+                    license_number: e.target.value,
+                  },
                 }));
               }}
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                errors.license_number ? 'border-red-500' : 'border-gray-300'
+                errors.license_number ? "border-red-500" : "border-gray-300"
               }`}
               placeholder="12345678"
             />
             {errors.license_number && (
-              <p className="mt-1 text-sm text-red-500">{errors.license_number}</p>
+              <p className="mt-1 text-sm text-red-500">
+                {errors.license_number}
+              </p>
             )}
           </div>
-          
+
           {/* License Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               ประเภทใบขับขี่
             </label>
             <select
-              value={formData.driver_license?.license_type || 'ถาวร'}
+              value={formData.driver_license?.license_type || "ถาวร"}
               onChange={(e) => {
-                setFormData(prev => ({
+                setFormData((prev) => ({
                   ...prev,
                   driver_license: {
                     ...prev.driver_license!,
-                    license_type: e.target.value
-                  }
+                    license_type: e.target.value,
+                  },
                 }));
               }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -1337,7 +2013,7 @@ const StepDriverLicense: React.FC<{
               <option value="สากล">สากล (International)</option>
             </select>
           </div>
-          
+
           {/* Expiry Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1345,26 +2021,26 @@ const StepDriverLicense: React.FC<{
             </label>
             <input
               type="date"
-              value={formData.driver_license?.expiry_date || ''}
+              value={formData.driver_license?.expiry_date || ""}
               onChange={(e) => {
-                setFormData(prev => ({
+                setFormData((prev) => ({
                   ...prev,
                   driver_license: {
                     ...prev.driver_license!,
-                    expiry_date: e.target.value
-                  }
+                    expiry_date: e.target.value,
+                  },
                 }));
               }}
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                errors.expiry_date ? 'border-red-500' : 'border-gray-300'
+                errors.expiry_date ? "border-red-500" : "border-gray-300"
               }`}
-              min={new Date().toISOString().split('T')[0]}
+              min={new Date().toISOString().split("T")[0]}
             />
             {errors.expiry_date && (
               <p className="mt-1 text-sm text-red-500">{errors.expiry_date}</p>
             )}
           </div>
-          
+
           {/* License Photo */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1373,15 +2049,15 @@ const StepDriverLicense: React.FC<{
             <ImageUploadBox
               label="อัปโหลดรูปใบขับขี่"
               imageUrl={formData.driver_license?.license_photo_url}
-              onUpload={(file) => onUpload(file, 'driver_license_photo')}
-              onRemove={() => onClearUpload('driver_license_photo')}
+              onUpload={(file) => onUpload(file, "driver_license_photo")}
+              onRemove={() => onClearUpload("driver_license_photo")}
               uploading={uploading}
               error={errors.license_photo}
             />
           </div>
         </div>
       )}
-      
+
       {!formData.has_driver_license && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
           <FileText size={48} className="text-gray-400 mx-auto mb-3" />
@@ -1396,6 +2072,136 @@ const StepDriverLicense: React.FC<{
 };
 
 // Component for Step 5: Vehicle Registration (Optional)
+const StepPublicTransportSupplement: React.FC<{
+  formData: KYCFormData;
+  requestedDocs: string[];
+  adminInstruction: string | null;
+  onUpload: (file: File, field: string) => void;
+  onClearUpload: (field: string) => void;
+  uploading: boolean;
+  errors: Record<string, string>;
+}> = ({
+  formData,
+  requestedDocs,
+  adminInstruction,
+  onUpload,
+  onClearUpload,
+  uploading,
+  errors,
+}) => {
+  const docs = requestedDocs.length
+    ? requestedDocs
+    : ["yellow_plate", "public_transport_license_front"];
+  const showYellow = docs.includes("yellow_plate");
+  const showFront = docs.includes("public_transport_license_front");
+  const showBack = docs.includes("public_transport_license_back");
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">
+        เอกสารรถสาธารณะ (ป้ายเหลือง)
+      </h2>
+      <p className="text-sm text-gray-600">
+        ทีมงานขอเอกสารเพิ่มเติมเท่านั้น —
+        ข้อมูลส่วนตัวและบัตรประชาชนเดิมยังคงอยู่ในระบบ
+      </p>
+      {adminInstruction && (
+        <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 whitespace-pre-wrap">
+          {adminInstruction}
+        </p>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {showYellow && (
+          <ImageUploadBox
+            label="รูปป้ายเหลือง *"
+            imageUrl={formData.yellow_plate_photo_url}
+            onUpload={(file) => onUpload(file, "yellow_plate_photo")}
+            onRemove={() => onClearUpload("yellow_plate_photo")}
+            uploading={uploading}
+            error={errors.yellow_plate_photo}
+          />
+        )}
+        {showFront && (
+          <ImageUploadBox
+            label="ใบขับขี่สาธารณะ (หน้า) *"
+            imageUrl={formData.public_transport_license_front_url}
+            onUpload={(file) =>
+              onUpload(file, "public_transport_license_front")
+            }
+            onRemove={() => onClearUpload("public_transport_license_front")}
+            uploading={uploading}
+            error={errors.public_transport_license_front}
+          />
+        )}
+        {showBack && (
+          <ImageUploadBox
+            label="ใบขับขี่สาธารณะ (หลัง)"
+            imageUrl={formData.public_transport_license_back_url}
+            onUpload={(file) => onUpload(file, "public_transport_license_back")}
+            onRemove={() => onClearUpload("public_transport_license_back")}
+            uploading={uploading}
+            error={errors.public_transport_license_back}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StepReviewSupplement: React.FC<{
+  formData: KYCFormData;
+  requestedDocs: string[];
+}> = ({ formData, requestedDocs }) => {
+  const docs = requestedDocs.length
+    ? requestedDocs
+    : ["yellow_plate", "public_transport_license_front"];
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">
+        ตรวจสอบเอกสารที่จะส่ง
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {docs.includes("yellow_plate") && formData.yellow_plate_photo_url && (
+          <div>
+            <p className="text-sm text-gray-600 mb-2">ป้ายเหลือง</p>
+            <KycThumbImg
+              src={formData.yellow_plate_photo_url}
+              alt="Yellow plate"
+              className="h-32 w-full rounded-lg border bg-gray-100 object-contain"
+            />
+          </div>
+        )}
+        {docs.includes("public_transport_license_front") &&
+          formData.public_transport_license_front_url && (
+            <div>
+              <p className="text-sm text-gray-600 mb-2">
+                ใบขับขี่สาธารณะ (หน้า)
+              </p>
+              <KycThumbImg
+                src={formData.public_transport_license_front_url}
+                alt="PT license front"
+                className="h-32 w-full rounded-lg border bg-gray-100 object-contain"
+              />
+            </div>
+          )}
+        {docs.includes("public_transport_license_back") &&
+          formData.public_transport_license_back_url && (
+            <div>
+              <p className="text-sm text-gray-600 mb-2">
+                ใบขับขี่สาธารณะ (หลัง)
+              </p>
+              <KycThumbImg
+                src={formData.public_transport_license_back_url}
+                alt="PT license back"
+                className="h-32 w-full rounded-lg border bg-gray-100 object-contain"
+              />
+            </div>
+          )}
+      </div>
+    </div>
+  );
+};
+
 const StepVehicle: React.FC<{
   formData: KYCFormData;
   setFormData: React.Dispatch<React.SetStateAction<KYCFormData>>;
@@ -1404,34 +2210,42 @@ const StepVehicle: React.FC<{
   onRemoveVehicleAt: (index: number) => void;
   uploading: boolean;
   errors: Record<string, string>;
-}> = ({ formData, setFormData, onUpload, onClearUpload, onRemoveVehicleAt, uploading, errors }) => {
+}> = ({
+  formData,
+  setFormData,
+  onUpload,
+  onClearUpload,
+  onRemoveVehicleAt,
+  uploading,
+  errors,
+}) => {
   const addVehicle = () => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       vehicles: [
         ...(prev.vehicles || []),
         {
-          license_plate: '',
-          vehicle_type: 'car',
-          vehicle_brand: '',
-          vehicle_model: '',
+          license_plate: "",
+          vehicle_type: "car",
+          vehicle_brand: "",
+          vehicle_model: "",
           vehicle_year: new Date().getFullYear(),
-          vehicle_color: '',
-          vehicle_province: 'กรุงเทพมหานคร',
-          registration_expiry_date: '',
-          owner_name: '',
-          is_owner: true
-        }
-      ]
+          vehicle_color: "",
+          vehicle_province: "กรุงเทพมหานคร",
+          registration_expiry_date: "",
+          owner_name: "",
+          is_owner: true,
+        },
+      ],
     }));
   };
-  
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900 mb-4">
         ทะเบียนรถ (ถ้ามี)
       </h2>
-      
+
       {/* Has Vehicle Toggle */}
       <div className="flex items-center">
         <input
@@ -1439,26 +2253,35 @@ const StepVehicle: React.FC<{
           id="has_vehicle"
           checked={formData.has_vehicle}
           onChange={(e) => {
-            setFormData(prev => ({
+            setFormData((prev) => ({
               ...prev,
               has_vehicle: e.target.checked,
-              vehicles: e.target.checked ? prev.vehicles : []
+              vehicles: e.target.checked ? prev.vehicles : [],
             }));
-            if (e.target.checked && (!formData.vehicles || formData.vehicles.length === 0)) {
+            if (
+              e.target.checked &&
+              (!formData.vehicles || formData.vehicles.length === 0)
+            ) {
               addVehicle();
             }
           }}
           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
         />
-        <label htmlFor="has_vehicle" className="ml-2 text-sm font-medium text-gray-700">
+        <label
+          htmlFor="has_vehicle"
+          className="ml-2 text-sm font-medium text-gray-700"
+        >
           ฉันมีรถยนต์/รถจักรยานยนต์
         </label>
       </div>
-      
+
       {formData.has_vehicle && (
         <div className="space-y-6 mt-6">
           {formData.vehicles?.map((vehicle, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-6 bg-gray-50">
+            <div
+              key={index}
+              className="border border-gray-200 rounded-lg p-6 bg-gray-50"
+            >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
                   รถคันที่ {index + 1}
@@ -1473,7 +2296,7 @@ const StepVehicle: React.FC<{
                   </button>
                 )}
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* License Plate */}
                 <div className="col-span-2">
@@ -1486,13 +2309,16 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].license_plate = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="กก 1234 กรุงเทพมหานคร"
                   />
                 </div>
-                
+
                 {/* Vehicle Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1503,7 +2329,10 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].vehicle_type = e.target.value as any;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
@@ -1513,7 +2342,7 @@ const StepVehicle: React.FC<{
                     <option value="tricycle">สามล้อ / ตุ๊กตุ๊ก</option>
                   </select>
                 </div>
-                
+
                 {/* Brand & Model */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1525,13 +2354,16 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].vehicle_brand = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Toyota"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     รุ่น
@@ -1542,14 +2374,17 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].vehicle_model = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Camry"
                   />
                 </div>
               </div>
-              
+
               {/* Additional Fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 {/* Year */}
@@ -1562,15 +2397,20 @@ const StepVehicle: React.FC<{
                     value={vehicle.vehicle_year}
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
-                      newVehicles[index].vehicle_year = parseInt(e.target.value);
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      newVehicles[index].vehicle_year = parseInt(
+                        e.target.value,
+                      );
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     min={1980}
                     max={new Date().getFullYear() + 1}
                   />
                 </div>
-                
+
                 {/* Color */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1582,13 +2422,16 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].vehicle_color = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Silver"
                   />
                 </div>
-                
+
                 {/* Province */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1600,13 +2443,16 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].vehicle_province = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="กรุงเทพมหานคร"
                   />
                 </div>
-                
+
                 {/* Registration Expiry */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1617,15 +2463,19 @@ const StepVehicle: React.FC<{
                     value={vehicle.registration_expiry_date}
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
-                      newVehicles[index].registration_expiry_date = e.target.value;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      newVehicles[index].registration_expiry_date =
+                        e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    min={new Date().toISOString().split('T')[0]}
+                    min={new Date().toISOString().split("T")[0]}
                   />
                 </div>
               </div>
-              
+
               {/* Registration Book Photo */}
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1640,7 +2490,7 @@ const StepVehicle: React.FC<{
                   error={errors[`vehicle_photo_${index}`]}
                 />
               </div>
-              
+
               {/* Is Owner */}
               <div className="mt-4">
                 <div className="flex items-center">
@@ -1651,15 +2501,21 @@ const StepVehicle: React.FC<{
                     onChange={(e) => {
                       const newVehicles = [...formData.vehicles!];
                       newVehicles[index].is_owner = e.target.checked;
-                      setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        vehicles: newVehicles,
+                      }));
                     }}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
-                  <label htmlFor={`is_owner_${index}`} className="ml-2 text-sm text-gray-700">
+                  <label
+                    htmlFor={`is_owner_${index}`}
+                    className="ml-2 text-sm text-gray-700"
+                  >
                     ฉันเป็นเจ้าของรถคันนี้
                   </label>
                 </div>
-                
+
                 {/* Owner Name (if not owner) */}
                 {!vehicle.is_owner && (
                   <div className="mt-4">
@@ -1672,21 +2528,28 @@ const StepVehicle: React.FC<{
                       onChange={(e) => {
                         const newVehicles = [...formData.vehicles!];
                         newVehicles[index].owner_name = e.target.value;
-                        setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                        setFormData((prev) => ({
+                          ...prev,
+                          vehicles: newVehicles,
+                        }));
                       }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="สมชาย ใจดี"
                     />
-                    
+
                     <label className="block text-sm font-medium text-gray-700 mb-2 mt-4">
                       ความสัมพันธ์กับเจ้าของ
                     </label>
                     <select
-                      value={vehicle.relationship_to_owner || ''}
+                      value={vehicle.relationship_to_owner || ""}
                       onChange={(e) => {
                         const newVehicles = [...formData.vehicles!];
-                        newVehicles[index].relationship_to_owner = e.target.value;
-                        setFormData(prev => ({ ...prev, vehicles: newVehicles }));
+                        newVehicles[index].relationship_to_owner =
+                          e.target.value;
+                        setFormData((prev) => ({
+                          ...prev,
+                          vehicles: newVehicles,
+                        }));
                       }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
@@ -1704,7 +2567,7 @@ const StepVehicle: React.FC<{
               </div>
             </div>
           ))}
-          
+
           <button
             onClick={addVehicle}
             className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors flex items-center justify-center"
@@ -1714,7 +2577,7 @@ const StepVehicle: React.FC<{
           </button>
         </div>
       )}
-      
+
       {!formData.has_vehicle && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
           <Car size={48} className="text-gray-400 mx-auto mb-3" />
@@ -1724,7 +2587,63 @@ const StepVehicle: React.FC<{
           </p>
         </div>
       )}
-      
+
+      <div className="border border-amber-200 rounded-lg p-5 bg-amber-50/80 space-y-4">
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.wants_public_transport}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                wants_public_transport: e.target.checked,
+              }))
+            }
+            className="mt-1 w-4 h-4 text-amber-600 border-gray-300 rounded"
+          />
+          <span>
+            <span className="font-medium text-amber-950 block">
+              ต้องการขับขี่โดยสารสาธารณะ (ป้ายเหลือง)
+            </span>
+            <span className="text-sm text-amber-900/80">
+              อัปโหลดครั้งเดียว — แอดมินตรวจใน KYC Review ไม่ต้องส่งซ้ำ
+            </span>
+          </span>
+        </label>
+        {formData.wants_public_transport && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ImageUploadBox
+              label="รูปป้ายเหลือง *"
+              imageUrl={formData.yellow_plate_photo_url}
+              onUpload={(file) => onUpload(file, "yellow_plate_photo")}
+              onRemove={() => onClearUpload("yellow_plate_photo")}
+              uploading={uploading}
+              error={errors.yellow_plate_photo}
+            />
+            <ImageUploadBox
+              label="ใบขับขี่สาธารณะ (หน้า) *"
+              imageUrl={formData.public_transport_license_front_url}
+              onUpload={(file) =>
+                onUpload(file, "public_transport_license_front")
+              }
+              onRemove={() => onClearUpload("public_transport_license_front")}
+              uploading={uploading}
+              error={errors.public_transport_license_front}
+            />
+            <ImageUploadBox
+              label="ใบขับขี่สาธารณะ (หลัง)"
+              imageUrl={formData.public_transport_license_back_url}
+              onUpload={(file) =>
+                onUpload(file, "public_transport_license_back")
+              }
+              onRemove={() => onClearUpload("public_transport_license_back")}
+              uploading={uploading}
+              error={errors.public_transport_license_back}
+            />
+          </div>
+        )}
+      </div>
+
       {/* Why We Need This */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
         <h3 className="font-medium text-amber-900 mb-2 flex items-center">
@@ -1742,23 +2661,57 @@ const StepVehicle: React.FC<{
   );
 };
 
+/** ภาพตัวอย่างใน KYC — บังคับรีเมาต์เมื่อ URL เปลี่ยน + แจ้งเมื่อโหลดภาพไม่สำเร็จ */
+const KycThumbImg: React.FC<{
+  src: string;
+  alt: string;
+  className?: string;
+}> = ({ src, alt, className }) => {
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    setBroken(false);
+  }, [src]);
+  if (broken) {
+    return (
+      <div
+        className={`flex min-h-[5rem] items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-2 text-center text-xs leading-snug text-amber-900 ${className ?? ""}`}
+      >
+        โหลดภาพตัวอย่างไม่สำเร็จ — กรุณาอัปโหลดช่องนี้อีกครั้ง
+      </div>
+    );
+  }
+  return (
+    <img
+      key={src}
+      src={src}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+    />
+  );
+};
+
 // Component for Step 6: Review
 const StepReview: React.FC<{
   formData: KYCFormData;
 }> = ({ formData }) => {
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">
-        ตรวจสอบข้อมูล
-      </h2>
-      
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">ตรวจสอบข้อมูล</h2>
+
       {/* Personal Info */}
       <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">ข้อมูลส่วนตัว</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          ข้อมูลส่วนตัว
+        </h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-gray-600">ชื่อ-นามสกุล:</span>
-            <p className="font-medium">{formData.first_name} {formData.last_name}</p>
+            <p className="font-medium">
+              {formData.first_name} {formData.last_name}
+            </p>
           </div>
           <div>
             <span className="text-gray-600">เลขบัตรประชาชน:</span>
@@ -1774,7 +2727,7 @@ const StepReview: React.FC<{
           </div>
         </div>
       </div>
-      
+
       {/* Documents */}
       <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">เอกสาร</h3>
@@ -1782,24 +2735,36 @@ const StepReview: React.FC<{
           {formData.id_card_front_url && (
             <div>
               <p className="text-sm text-gray-600 mb-2">บัตรประชาชน (หน้า)</p>
-              <img src={formData.id_card_front_url} alt="ID Front" className="w-full h-24 object-cover rounded-lg border" />
+              <KycThumbImg
+                src={formData.id_card_front_url}
+                alt="ID Front"
+                className="h-24 w-full rounded-lg border bg-gray-100 object-contain"
+              />
             </div>
           )}
           {formData.id_card_back_url && (
             <div>
               <p className="text-sm text-gray-600 mb-2">บัตรประชาชน (หลัง)</p>
-              <img src={formData.id_card_back_url} alt="ID Back" className="w-full h-24 object-cover rounded-lg border" />
+              <KycThumbImg
+                src={formData.id_card_back_url}
+                alt="ID Back"
+                className="h-24 w-full rounded-lg border bg-gray-100 object-contain"
+              />
             </div>
           )}
           {formData.selfie_url && (
             <div>
               <p className="text-sm text-gray-600 mb-2">รูปถ่ายใบหน้า</p>
-              <img src={formData.selfie_url} alt="Selfie" className="w-full h-24 object-cover rounded-lg border" />
+              <KycThumbImg
+                src={formData.selfie_url}
+                alt="Selfie"
+                className="h-24 w-full rounded-lg border bg-gray-100 object-contain"
+              />
             </div>
           )}
         </div>
       </div>
-      
+
       {/* Driver License */}
       {formData.has_driver_license && formData.driver_license && (
         <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
@@ -1807,80 +2772,104 @@ const StepReview: React.FC<{
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-600">เลขใบขับขี่:</span>
-              <p className="font-medium">{formData.driver_license.license_number}</p>
+              <p className="font-medium">
+                {formData.driver_license.license_number}
+              </p>
             </div>
             <div>
               <span className="text-gray-600">ประเภท:</span>
-              <p className="font-medium">{formData.driver_license.license_type}</p>
+              <p className="font-medium">
+                {formData.driver_license.license_type}
+              </p>
             </div>
             <div>
               <span className="text-gray-600">วันหมดอายุ:</span>
-              <p className="font-medium">{formData.driver_license.expiry_date}</p>
+              <p className="font-medium">
+                {formData.driver_license.expiry_date}
+              </p>
             </div>
           </div>
         </div>
       )}
-      
+
       {/* Vehicles */}
-      {formData.has_vehicle && formData.vehicles && formData.vehicles.length > 0 && (
-        <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">รถยนต์</h3>
-          {formData.vehicles.map((vehicle, index) => (
-            <div key={index} className="mb-6 last:mb-0 pb-4 border-b border-gray-300 last:border-0">
-              <p className="font-medium text-gray-900 mb-3 flex items-center">
-                <Car size={18} className="mr-2 text-blue-600" />
-                รถคันที่ {index + 1}
-              </p>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">ทะเบียน:</span>
-                  <p className="font-medium">{vehicle.license_plate}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">ประเภท:</span>
-                  <p className="font-medium">
-                    {vehicle.vehicle_type === 'car' ? 'รถยนต์' : 
-                     vehicle.vehicle_type === 'motorcycle' ? 'มอเตอร์ไซค์' : 
-                     vehicle.vehicle_type === 'tricycle' ? 'สามล้อ/ตุ๊กตุ๊ก' : 'รถกระบะ'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-gray-600">ยี่ห้อ/รุ่น:</span>
-                  <p className="font-medium">{vehicle.vehicle_brand} {vehicle.vehicle_model}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">ปี/สี:</span>
-                  <p className="font-medium">{vehicle.vehicle_year} / {vehicle.vehicle_color}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">จังหวัด:</span>
-                  <p className="font-medium">{vehicle.vehicle_province}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">เจ้าของ:</span>
-                  <p className="font-medium">
-                    {vehicle.is_owner ? '✅ ฉันเอง' : `${vehicle.owner_name} (${vehicle.relationship_to_owner})`}
-                  </p>
-                </div>
-                {vehicle.registration_book_photo_url && (
-                  <div className="col-span-2">
-                    <span className="text-gray-600">เล่มทะเบียนรถ:</span>
-                    <img 
-                      src={vehicle.registration_book_photo_url} 
-                      alt="Registration Book" 
-                      className="mt-2 w-32 h-20 object-cover rounded border"
-                    />
+      {formData.has_vehicle &&
+        formData.vehicles &&
+        formData.vehicles.length > 0 && (
+          <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">รถยนต์</h3>
+            {formData.vehicles.map((vehicle, index) => (
+              <div
+                key={index}
+                className="mb-6 last:mb-0 pb-4 border-b border-gray-300 last:border-0"
+              >
+                <p className="font-medium text-gray-900 mb-3 flex items-center">
+                  <Car size={18} className="mr-2 text-blue-600" />
+                  รถคันที่ {index + 1}
+                </p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">ทะเบียน:</span>
+                    <p className="font-medium">{vehicle.license_plate}</p>
                   </div>
-                )}
+                  <div>
+                    <span className="text-gray-600">ประเภท:</span>
+                    <p className="font-medium">
+                      {vehicle.vehicle_type === "car"
+                        ? "รถยนต์"
+                        : vehicle.vehicle_type === "motorcycle"
+                          ? "มอเตอร์ไซค์"
+                          : vehicle.vehicle_type === "tricycle"
+                            ? "สามล้อ/ตุ๊กตุ๊ก"
+                            : "รถกระบะ"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">ยี่ห้อ/รุ่น:</span>
+                    <p className="font-medium">
+                      {vehicle.vehicle_brand} {vehicle.vehicle_model}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">ปี/สี:</span>
+                    <p className="font-medium">
+                      {vehicle.vehicle_year} / {vehicle.vehicle_color}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">จังหวัด:</span>
+                    <p className="font-medium">{vehicle.vehicle_province}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">เจ้าของ:</span>
+                    <p className="font-medium">
+                      {vehicle.is_owner
+                        ? "✅ ฉันเอง"
+                        : `${vehicle.owner_name} (${vehicle.relationship_to_owner})`}
+                    </p>
+                  </div>
+                  {vehicle.registration_book_photo_url && (
+                    <div className="col-span-2">
+                      <span className="text-gray-600">เล่มทะเบียนรถ:</span>
+                      <KycThumbImg
+                        src={vehicle.registration_book_photo_url}
+                        alt="Registration Book"
+                        className="mt-2 h-20 w-32 rounded border bg-gray-100 object-contain"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-      
+            ))}
+          </div>
+        )}
+
       {/* Confirmation */}
       <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start">
-        <CheckCircle className="text-green-600 mr-3 flex-shrink-0 mt-0.5" size={20} />
+        <CheckCircle
+          className="text-green-600 mr-3 flex-shrink-0 mt-0.5"
+          size={20}
+        />
         <div className="text-sm text-green-800">
           <p className="font-medium">พร้อมส่งข้อมูลแล้ว</p>
           <p className="text-green-700 mt-1">
@@ -1900,12 +2889,20 @@ const ImageUploadBox: React.FC<{
   onRemove?: () => void;
   uploading: boolean;
   error?: string;
-  aspectRatio?: 'card' | 'square';
-}> = ({ label, imageUrl, onUpload, onRemove, uploading, error, aspectRatio = 'card' }) => {
+  aspectRatio?: "card" | "square";
+}> = ({
+  label,
+  imageUrl,
+  onUpload,
+  onRemove,
+  uploading,
+  error,
+  aspectRatio = "card",
+}) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
-    if (!imageUrl && fileInputRef.current) fileInputRef.current.value = '';
+    if (!imageUrl && fileInputRef.current) fileInputRef.current.value = "";
   }, [imageUrl]);
 
   return (
@@ -1918,7 +2915,7 @@ const ImageUploadBox: React.FC<{
           if (!uploading) fileInputRef.current?.click();
         }}
         onKeyDown={(e) => {
-          if (!uploading && (e.key === 'Enter' || e.key === ' ')) {
+          if (!uploading && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             fileInputRef.current?.click();
           }
@@ -1926,12 +2923,16 @@ const ImageUploadBox: React.FC<{
         role="button"
         tabIndex={0}
         className={`relative border-2 border-dashed rounded-lg transition-all ${
-          uploading ? 'cursor-wait opacity-80' : 'cursor-pointer'
+          uploading ? "cursor-wait opacity-80" : "cursor-pointer"
         } ${
-          error ? 'border-red-500' : imageUrl ? 'border-green-500' : 'border-gray-300 hover:border-blue-500'
-        } ${aspectRatio === 'square' ? 'aspect-square' : 'aspect-video'}`}
+          error
+            ? "border-red-500"
+            : imageUrl
+              ? "border-green-500"
+              : "border-gray-300 hover:border-blue-500"
+        } ${aspectRatio === "square" ? "aspect-square" : "aspect-video"}`}
       >
-        {imageUrl && !uploading && typeof onRemove === 'function' ? (
+        {imageUrl && !uploading && typeof onRemove === "function" ? (
           <button
             type="button"
             title="ลบรูปที่แนบ"
@@ -1946,10 +2947,10 @@ const ImageUploadBox: React.FC<{
           </button>
         ) : null}
         {imageUrl ? (
-          <img
+          <KycThumbImg
             src={imageUrl}
             alt={label}
-            className="w-full h-full object-cover rounded-lg pointer-events-none"
+            className="pointer-events-none h-full w-full rounded-lg bg-gray-100 object-contain"
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500">
@@ -1979,9 +2980,7 @@ const ImageUploadBox: React.FC<{
           className="hidden"
         />
       </div>
-      {error && (
-        <p className="mt-1 text-sm text-red-500">{error}</p>
-      )}
+      {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
     </div>
   );
 };

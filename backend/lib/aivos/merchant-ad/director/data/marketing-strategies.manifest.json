@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "canonical_doc": "docs/aqond-os/products/brain/MARKETING_STRATEGIES.md",
+  "data_file": "marketing-strategies.json",
+  "description": "Script Strategy Engine loads strategies from data_file; MARKETING_STRATEGIES.md is the human-readable catalog."
+}

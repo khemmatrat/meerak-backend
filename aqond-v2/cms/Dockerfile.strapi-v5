@@ -1,0 +1,11 @@
+# Future Strapi v5 CMS — replace cms-service stub when ready
+# Build: docker build -f Dockerfile.strapi-v5 -t aqond-strapi-v5 .
+#
+# FROM node:20-alpine
+# WORKDIR /app
+# RUN npx create-strapi-app@latest . --quickstart --no-run
+# ENV DATABASE_CLIENT=postgres
+# ENV DATABASE_HOST=aqond-db
+# ENV DATABASE_NAME=strapi
+# EXPOSE 1337
+# CMD ["npm", "run", "develop"]

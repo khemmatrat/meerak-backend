@@ -13,9 +13,13 @@ export default {
         slate600: '#475569',
         // Accent color (Gold/Platinum)
         accent: '#D4AF37', // Golden hue
+        brandGreen: '#00A859',
+        footerInk: '#1F2937',
+        footerMuted: '#4B5563',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+        inter: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       animation: {

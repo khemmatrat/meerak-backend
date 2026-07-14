@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "mission_id": "RETURN-REFUND-CORE",
+  "core_version": "0.1.0",
+  "updated_at": "2026-07-02T15:00:00Z",
+  "vertical": "marketplace",
+  "escrow": {
+    "adapter": "existing_escrow",
+    "rewrite_allowed": false
+  },
+  "auto_refund_policy": {
+    "enabled": true,
+    "rules": [
+      {
+        "id": "merchant_silence_after_return_delivered",
+        "trigger": "return_delivered_to_merchant",
+        "merchant_response_hours": 48,
+        "action": "auto_approve_refund"
+      },
+      {
+        "id": "max_return_window",
+        "trigger": "return_requested",
+        "max_days": 5,
+        "action": "auto_refund_if_merchant_no_action"
+      }
+    ]
+  },
+  "return_methods": {
+    "home_pickup": { "enabled": true, "provider": "aqond_pickup" },
+    "post_office": { "enabled": true, "provider": "thailand_post" },
+    "flash": { "enabled": true, "provider": "flash" },
+    "kerry": { "enabled": true, "provider": "kerry" },
+    "jt": { "enabled": true, "provider": "jt" },
+    "other_carrier": { "enabled": true, "provider": "generic_carrier" },
+    "self_dropoff": { "enabled": true, "provider": "self" },
+    "ninja_van": { "enabled": false, "provider": "ninja_van" },
+    "scg": { "enabled": false, "provider": "scg" },
+    "best_express": { "enabled": false, "provider": "best_express" },
+    "lalamove": { "enabled": false, "provider": "lalamove" },
+    "dhl": { "enabled": false, "provider": "dhl" },
+    "ems": { "enabled": false, "provider": "ems" }
+  },
+  "order_tabs": [
+    "all",
+    "awaiting_payment",
+    "preparing",
+    "shipping",
+    "received",
+    "completed",
+    "return",
+    "refund",
+    "cancelled",
+    "dispute",
+    "must_receive",
+    "must_review"
+  ],
+  "capabilities": {
+    "return_request": { "enabled": true, "phase": 1 },
+    "refund_request": { "enabled": true, "phase": 1 },
+    "exchange_request": { "enabled": false, "phase": 2 },
+    "cancel_order": { "enabled": false, "phase": 1 },
+    "escrow_release": { "enabled": true, "phase": 1 },
+    "escrow_refund": { "enabled": true, "phase": 1 },
+    "pickup_scheduling": { "enabled": false, "phase": 2 },
+    "courier_return": { "enabled": false, "phase": 2 },
+    "return_tracking": { "enabled": false, "phase": 2 },
+    "merchant_decision": { "enabled": false, "phase": 1 },
+    "aqond_mediation": { "enabled": false, "phase": 3 },
+    "auto_refund": { "enabled": false, "phase": 1 },
+    "wallet_settlement": { "enabled": false, "phase": 2 },
+    "evidence_center": { "enabled": false, "phase": 1 },
+    "timeline": { "enabled": false, "phase": 1 },
+    "dispute_center": { "enabled": false, "phase": 2 },
+    "audit": { "enabled": false, "phase": 1 },
+    "ai_assistance": { "enabled": false, "phase": 3 }
+  }
+}

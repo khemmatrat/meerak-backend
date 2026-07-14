@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+} from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Navigation,
@@ -51,14 +57,26 @@ import {
 } from "lucide-react";
 // UPDATED IMPORT PATHS
 import { MockApi } from "../services/mockApi";
-import { BackendPaymentService, type PaymentProcessError } from "../services/backendPaymentService";
+import {
+  BackendPaymentService,
+  type PaymentProcessError,
+} from "../services/backendPaymentService";
 import { getBackendBase, api } from "../services/api";
 import {
   createUserSupportTicket,
   getUserSupportMessages,
   mapSupportMessagesToStaffUi,
+  postSupportAiBridgeReply,
+  postSupportAiFeedback,
   postUserSupportMessage,
+  selfUnlockRateLimit,
+  startSupportCareReroute,
+  type SupportCareTimelineEvent,
+  type SupportQuickAction,
+  type SupportRerouteSla,
+  type SupportSituationCard,
 } from "../services/supportTicketApi";
+import { sendSupportAiMessage } from "../services/supportAiApi";
 import { subscribeSupportTicketRoom } from "../services/supportSocket";
 import {
   Job,
@@ -125,7 +143,9 @@ import {
   BrandAdviserSuspendBanner,
   BrandAdviserProgramOffNotice,
 } from "../components/BrandAdviserBadge";
-import EarningsReceipt, { type ReceiptData } from "../components/EarningsReceipt";
+import EarningsReceipt, {
+  type ReceiptData,
+} from "../components/EarningsReceipt";
 import { createPortal } from "react-dom";
 import { validateJobProofImage } from "../utils/imageProofValidation";
 import { capturePhotoFromCamera } from "../utils/captureJobPhoto";
@@ -147,7 +167,10 @@ import {
   estimateMatchTalentBreakdown,
   type FeeEstimatesResponse,
 } from "../services/feeEstimatesService";
-import { fetchBrandAdviserRules, type BrandAdviserRules } from "../services/brandAdviserRulesService";
+import {
+  fetchBrandAdviserRules,
+  type BrandAdviserRules,
+} from "../services/brandAdviserRulesService";
 import {
   getTravelEtaWithFallback,
   fetchOsrmDrivingRouteGeometry,
@@ -173,7 +196,8 @@ import {
 function readJobMeetCodeRequired(): boolean {
   const viteVal = import.meta.env?.VITE_JOB_MEET_CODE_REQUIRED;
   const legacy =
-    typeof process !== "undefined" && process.env?.REACT_APP_JOB_MEET_CODE_REQUIRED;
+    typeof process !== "undefined" &&
+    process.env?.REACT_APP_JOB_MEET_CODE_REQUIRED;
   const raw =
     viteVal !== undefined && String(viteVal).trim() !== ""
       ? viteVal
@@ -222,8 +246,14 @@ const HELP_TOPIC_TKEYS = [
 ] as const;
 
 /** หัวข้อย่อยต่อหมวด (สไตล์ Lineman — radio ก่อนแชทเจ้าหน้าที่) */
-const HELP_SUB_BY_TOPIC: Record<(typeof HELP_TOPIC_TKEYS)[number], readonly string[]> = {
-  "detail.help_topic_unblock": ["detail.help_sub_unblock_1", "detail.help_sub_unblock_2"],
+const HELP_SUB_BY_TOPIC: Record<
+  (typeof HELP_TOPIC_TKEYS)[number],
+  readonly string[]
+> = {
+  "detail.help_topic_unblock": [
+    "detail.help_sub_unblock_1",
+    "detail.help_sub_unblock_2",
+  ],
   "detail.help_topic_complaint": [
     "detail.help_sub_complaint_1",
     "detail.help_sub_complaint_2",
@@ -265,7 +295,10 @@ const HELP_SUB_BY_TOPIC: Record<(typeof HELP_TOPIC_TKEYS)[number], readonly stri
     "detail.help_sub_otherreq_5",
     "detail.help_sub_otherreq_6",
   ],
-  "detail.help_topic_foreign": ["detail.help_sub_foreign_1", "detail.help_sub_foreign_2"],
+  "detail.help_topic_foreign": [
+    "detail.help_sub_foreign_1",
+    "detail.help_sub_foreign_2",
+  ],
   "detail.help_topic_finance": [
     "detail.help_sub_finance_1",
     "detail.help_sub_finance_2",
@@ -304,13 +337,15 @@ function HelpOrderSummaryCard({
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
-        }
+        },
       );
     } catch {
       return "—";
     }
   })();
-  const statusUpper = String(job.status || "").replace(/_/g, " ").toUpperCase();
+  const statusUpper = String(job.status || "")
+    .replace(/_/g, " ")
+    .toUpperCase();
   const completed = String(job.status).toLowerCase() === "completed";
   const addr = formatJobPrimaryAddress(job) || t("detail.loc_unknown");
 
@@ -347,11 +382,17 @@ function HelpOrderSummaryCard({
       </div>
       <div className="space-y-2 pt-3 text-sm text-slate-800">
         <div className="flex gap-2">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden />
+          <MapPin
+            className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
+            aria-hidden
+          />
           <span className="min-w-0 font-medium leading-snug">{job.title}</span>
         </div>
         <div className="flex gap-2 text-xs text-slate-600">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+          <MapPin
+            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+            aria-hidden
+          />
           <span className="min-w-0 leading-snug">{addr}</span>
         </div>
       </div>
@@ -359,7 +400,11 @@ function HelpOrderSummaryCard({
   );
 }
 
-function PreAcceptBoundsFitter({ positions }: { positions: [number, number][] }) {
+function PreAcceptBoundsFitter({
+  positions,
+}: {
+  positions: [number, number][];
+}) {
   const map = useMap();
   useEffect(() => {
     if (positions.length < 2) return;
@@ -413,6 +458,13 @@ type StaffSupportMsg = {
   timestamp: number;
   /** ข้อความกลางจอ (เช่น เจ้าหน้าที่เข้าร่วม) */
   variant?: "system";
+  quickActions?: SupportQuickAction[];
+  diagnosticSummary?: string | null;
+  aiActions?: string[];
+  source?: string;
+  careTimeline?: SupportCareTimelineEvent[];
+  situationCards?: SupportSituationCard[];
+  rerouteSla?: SupportRerouteSla | null;
 };
 
 export const JobDetails: React.FC = () => {
@@ -436,19 +488,27 @@ export const JobDetails: React.FC = () => {
   /** แชท | แจ้งปัญหา / ศูนย์ช่วยเหลือ (สไตล์ Lineman) */
   const [chatOverlayTab, setChatOverlayTab] = useState<"chat" | "help">("chat");
   /** ศูนย์ช่วยเหลือ — หมวดที่เลือก (หน้า Lineman ย่อย) */
-  const [helpSelectedTopicKey, setHelpSelectedTopicKey] = useState<string | null>(null);
-  const [helpSelectedSubKey, setHelpSelectedSubKey] = useState<string | null>(null);
+  const [helpSelectedTopicKey, setHelpSelectedTopicKey] = useState<
+    string | null
+  >(null);
+  const [helpSelectedSubKey, setHelpSelectedSubKey] = useState<string | null>(
+    null,
+  );
   /** แชทกับเจ้าหน้าที่ — โฟลว์เชื่อมต่อ → คิว → แชท → CSAT */
-  const [staffSupportPhase, setStaffSupportPhase] = useState<StaffSupportPhase>(null);
+  const [staffSupportPhase, setStaffSupportPhase] =
+    useState<StaffSupportPhase>(null);
   const [staffSupportPrefill, setStaffSupportPrefill] = useState("");
   const [queueAheadDisplay, setQueueAheadDisplay] = useState("—");
-  const [staffSupportMessages, setStaffSupportMessages] = useState<StaffSupportMsg[]>([]);
+  const [staffSupportMessages, setStaffSupportMessages] = useState<
+    StaffSupportMsg[]
+  >([]);
   const [staffChatInput, setStaffChatInput] = useState("");
   const [staffCsatStars, setStaffCsatStars] = useState(0);
   /** Ticket ฝั่ง backend — เดียวกับที่ nexus-admin-core (Support) ดู */
-  const [staffSupportTicketId, setStaffSupportTicketId] = useState<string | null>(
-    null
-  );
+  const [staffSupportTicketId, setStaffSupportTicketId] = useState<
+    string | null
+  >(null);
+  const [staffAiSessionId, setStaffAiSessionId] = useState<string | null>(null);
   /** กดแจ้งปัญหา — แสดง bottom sheet ยืนยันก่อนเข้าศูนย์ช่วยเหลือ (แบบ Lineman) */
   const [showHelpCenterGateModal, setShowHelpCenterGateModal] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{
@@ -474,14 +534,16 @@ export const JobDetails: React.FC = () => {
   const [reviewTags, setReviewTags] = useState<string[]>([]);
   const [submittingReview, setSubmittingReview] = useState(false);
   /** ผู้จ้างให้รีวิวผู้รับงานแล้วหรือยัง — ใช้โชว์ปุ่มให้คะแนน (LINE MAN สไตล์) */
-  const [employerHasReviewed, setEmployerHasReviewed] = useState<boolean | null>(
-    null
-  );
+  const [employerHasReviewed, setEmployerHasReviewed] = useState<
+    boolean | null
+  >(null);
 
   // Tip Modal State
   const [showTipModal, setShowTipModal] = useState(false);
   const [tipAmount, setTipAmount] = useState("");
-  const [tipPresetSelected, setTipPresetSelected] = useState<number | null>(null);
+  const [tipPresetSelected, setTipPresetSelected] = useState<number | null>(
+    null,
+  );
   const [sendingTip, setSendingTip] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
@@ -489,7 +551,8 @@ export const JobDetails: React.FC = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelSeconds, setCancelSeconds] = useState(10);
   /** เหมาข้ามจังหวัด: ค่าธรรมเนียมยกเลิกก่อนนับถอยหลัง */
-  const [showIntercityCancelFeeModal, setShowIntercityCancelFeeModal] = useState(false);
+  const [showIntercityCancelFeeModal, setShowIntercityCancelFeeModal] =
+    useState(false);
   const [pendingIntercityCancelFee, setPendingIntercityCancelFee] = useState<{
     totalFeeThb?: number;
     reason?: string;
@@ -497,8 +560,10 @@ export const JobDetails: React.FC = () => {
   } | null>(null);
 
   /** มิเตอร์/ทางด่วน + สรุปเก็บเงิน ก่อนส่งมอบงาน */
-  const [showCompletionExtrasModal, setShowCompletionExtrasModal] = useState(false);
-  const [showCompletionSummaryModal, setShowCompletionSummaryModal] = useState(false);
+  const [showCompletionExtrasModal, setShowCompletionExtrasModal] =
+    useState(false);
+  const [showCompletionSummaryModal, setShowCompletionSummaryModal] =
+    useState(false);
   const [pendingCompletionExtras, setPendingCompletionExtras] = useState<
     JobCompletionExtras | undefined
   >(undefined);
@@ -511,7 +576,8 @@ export const JobDetails: React.FC = () => {
   // Dispute Modal State
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [disputeReason, setDisputeReason] = useState("");
-  const [useInsuranceClaimInDispute, setUseInsuranceClaimInDispute] = useState(false);
+  const [useInsuranceClaimInDispute, setUseInsuranceClaimInDispute] =
+    useState(false);
   const [submittingDispute, setSubmittingDispute] = useState(false);
 
   // Share Modal State
@@ -531,17 +597,30 @@ export const JobDetails: React.FC = () => {
 
   // 📍 Phase 3: Arrival Confirmation State
   const [confirmingArrival, setConfirmingArrival] = useState(false);
-  const [distanceToDestination, setDistanceToDestination] = useState<number | null>(null);
-  const [currentProviderLocation, setCurrentProviderLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [distanceToDestination, setDistanceToDestination] = useState<
+    number | null
+  >(null);
+  const [currentProviderLocation, setCurrentProviderLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   // 📸 Phase 4: Before/After Photos State
   const [beforePhoto, setBeforePhoto] = useState<File | null>(null);
   const [afterPhoto, setAfterPhoto] = useState<File | null>(null);
-  const [beforePhotoPreview, setBeforePhotoPreview] = useState<string | null>(null);
-  const [afterPhotoPreview, setAfterPhotoPreview] = useState<string | null>(null);
-  const [cameraHelpOpen, setCameraHelpOpen] = useState<null | "before" | "after">(null);
+  const [beforePhotoPreview, setBeforePhotoPreview] = useState<string | null>(
+    null,
+  );
+  const [afterPhotoPreview, setAfterPhotoPreview] = useState<string | null>(
+    null,
+  );
+  const [cameraHelpOpen, setCameraHelpOpen] = useState<
+    null | "before" | "after"
+  >(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
-  const [capturingProof, setCapturingProof] = useState<"before" | "after" | null>(null);
+  const [capturingProof, setCapturingProof] = useState<
+    "before" | "after" | null
+  >(null);
 
   // ต้องประกาศก่อน setHasInsurance เพราะใช้ใน useCallback
   const isOwner = user?.id === job?.created_by;
@@ -549,30 +628,44 @@ export const JobDetails: React.FC = () => {
   // 💰 Insurance (เบี้ยประกัน) — ค้างติ๊กไว้เมื่อสลับหน้า (localStorage)
   const insuranceStorageKey = (jid: string) => `job_insurance_${jid}`;
   const [hasInsurance, setHasInsuranceState] = useState(false);
-  const setHasInsurance = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
-    setHasInsuranceState(prev => {
-      const next = typeof v === 'function' ? v(prev) : v;
-      if (id) {
-        try { localStorage.setItem(insuranceStorageKey(id), String(next)); } catch (_) {}
-        if (user?.id === job?.created_by) BackendPaymentService.saveInsurancePreference(id, next).catch(() => {});
-      }
-      return next;
-    });
-  }, [id, user?.id, job?.created_by]);
+  const setHasInsurance = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      setHasInsuranceState((prev) => {
+        const next = typeof v === "function" ? v(prev) : v;
+        if (id) {
+          try {
+            localStorage.setItem(insuranceStorageKey(id), String(next));
+          } catch (_) {}
+          if (user?.id === job?.created_by)
+            BackendPaymentService.saveInsurancePreference(id, next).catch(
+              () => {},
+            );
+        }
+        return next;
+      });
+    },
+    [id, user?.id, job?.created_by],
+  );
   const [insuranceRatePercent, setInsuranceRatePercent] = useState(10);
 
   // 🛡️ Insurance Claim State
   const [insuranceClaim, setInsuranceClaim] = useState<{
-    id: string; claim_status: string; original_price: number;
-    replacement_payout: number; reserve_amount: number;
-    evidence_text?: string; claimed_at?: string;
+    id: string;
+    claim_status: string;
+    original_price: number;
+    replacement_payout: number;
+    reserve_amount: number;
+    evidence_text?: string;
+    claimed_at?: string;
   } | null>(null);
   const [showClaimModal, setShowClaimModal] = useState(false);
-  const [claimEvidenceText, setClaimEvidenceText] = useState('');
+  const [claimEvidenceText, setClaimEvidenceText] = useState("");
   const [submittingClaim, setSubmittingClaim] = useState(false);
 
   // 💰 Phase 5: Escrow Payment State
-  const [disputeWindowRemaining, setDisputeWindowRemaining] = useState<string | null>(null);
+  const [disputeWindowRemaining, setDisputeWindowRemaining] = useState<
+    string | null
+  >(null);
   const [filingDispute, setFilingDispute] = useState(false);
   /** ผู้จ้างสร้างรหัสพบกัน — แสดง QR / รหัสให้ผู้รับงาน */
   const [employerMeet, setEmployerMeet] = useState<{
@@ -582,10 +675,15 @@ export const JobDetails: React.FC = () => {
   } | null>(null);
   const [creatingMeetCode, setCreatingMeetCode] = useState(false);
   const [providerMeetCodeInput, setProviderMeetCodeInput] = useState("");
-  const [providerMeetCodeVerifying, setProviderMeetCodeVerifying] = useState(false);
-  const [providerMeetCodeVerified, setProviderMeetCodeVerified] = useState(false);
-  const [providerMeetCodeVerifyError, setProviderMeetCodeVerifyError] = useState<string | null>(null);
-  const [feeEstimates, setFeeEstimates] = useState<FeeEstimatesResponse | null>(null);
+  const [providerMeetCodeVerifying, setProviderMeetCodeVerifying] =
+    useState(false);
+  const [providerMeetCodeVerified, setProviderMeetCodeVerified] =
+    useState(false);
+  const [providerMeetCodeVerifyError, setProviderMeetCodeVerifyError] =
+    useState<string | null>(null);
+  const [feeEstimates, setFeeEstimates] = useState<FeeEstimatesResponse | null>(
+    null,
+  );
   const [baRules, setBaRules] = useState<BrandAdviserRules | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -593,14 +691,18 @@ export const JobDetails: React.FC = () => {
   const staffChatScrollRef = useRef<HTMLDivElement>(null);
   const uploadedPhotosRef = useRef<{ before?: string; after?: string }>({});
   useEffect(() => {
-    if (job?.before_photo_url) uploadedPhotosRef.current.before = job.before_photo_url;
-    if (job?.after_photo_url) uploadedPhotosRef.current.after = job.after_photo_url;
+    if (job?.before_photo_url)
+      uploadedPhotosRef.current.before = job.before_photo_url;
+    if (job?.after_photo_url)
+      uploadedPhotosRef.current.after = job.after_photo_url;
   }, [job?.before_photo_url, job?.after_photo_url]);
   useEffect(() => {
     if (id) uploadedPhotosRef.current = {};
   }, [id]);
   useEffect(() => {
-    void fetchFeeEstimates().then(setFeeEstimates).catch(() => {});
+    void fetchFeeEstimates()
+      .then(setFeeEstimates)
+      .catch(() => {});
   }, []);
   useEffect(() => {
     fetchBrandAdviserRules()
@@ -660,7 +762,7 @@ export const JobDetails: React.FC = () => {
 
   const paymentBadgeVariant = useMemo(
     () => getJobPaymentBadgeVariant(job),
-    [job]
+    [job],
   );
 
   const providerNavDest = useMemo(() => {
@@ -680,16 +782,16 @@ export const JobDetails: React.FC = () => {
 
   const isDemoJobLike = Boolean(
     job &&
-      // จำกัดเฉพาะ marker ที่ตั้งใจใช้กับงาน demo/review จริงๆ เท่านั้น
-      // (เดิม match กว้างเกินไปจนบล็อกงานจริง ทำให้กล่องรหัสพบกันไม่ขึ้น)
-      ((job.created_by_name &&
-        /(demo employer|apple review|apple_review|demo_employer)/i.test(
-          String(job.created_by_name)
-        )) ||
-        (job.title &&
-          /(apple review|apple_review|demo employer|demo_employer)/i.test(
-            String(job.title)
-          )))
+    // จำกัดเฉพาะ marker ที่ตั้งใจใช้กับงาน demo/review จริงๆ เท่านั้น
+    // (เดิม match กว้างเกินไปจนบล็อกงานจริง ทำให้กล่องรหัสพบกันไม่ขึ้น)
+    ((job.created_by_name &&
+      /(demo employer|apple review|apple_review|demo_employer)/i.test(
+        String(job.created_by_name),
+      )) ||
+      (job.title &&
+        /(apple review|apple_review|demo employer|demo_employer)/i.test(
+          String(job.title),
+        ))),
   );
 
   // #region agent log
@@ -697,29 +799,33 @@ export const JobDetails: React.FC = () => {
     if (!job) return;
     try {
       const st = String(job.status || "").toLowerCase();
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "1d8d58",
-        },
-        body: JSON.stringify({
-          sessionId: "1d8d58",
-          runId: "meetcode-missing-1",
-          hypothesisId: "H_env_or_conditions",
-          location: "JobDetails.tsx:meet_code_gate",
-          message: "meet_code_render_gates",
-          data: {
-            meetCodeRequired: !!MEET_CODE_REQUIRED,
-            isDemoJobLike: !!isDemoJobLike,
-            isAssignedProvider: !!isAssignedProvider,
-            jobStatus: st,
-            jobStatusIsAcceptedOrInProgress: st === "accepted" || st === "in_progress",
-            hasProviderMeetInput: true,
+      fetch(
+        "http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "1d8d58",
           },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+          body: JSON.stringify({
+            sessionId: "1d8d58",
+            runId: "meetcode-missing-1",
+            hypothesisId: "H_env_or_conditions",
+            location: "JobDetails.tsx:meet_code_gate",
+            message: "meet_code_render_gates",
+            data: {
+              meetCodeRequired: !!MEET_CODE_REQUIRED,
+              isDemoJobLike: !!isDemoJobLike,
+              isAssignedProvider: !!isAssignedProvider,
+              jobStatus: st,
+              jobStatusIsAcceptedOrInProgress:
+                st === "accepted" || st === "in_progress",
+              hasProviderMeetInput: true,
+            },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
     } catch {
       /* ignore */
     }
@@ -763,7 +869,8 @@ export const JobDetails: React.FC = () => {
     const pd = job.payment_details;
     if (!pd || typeof pd !== "object") return null;
     const src = (pd as { transport_source?: string }).transport_source;
-    const tc = (pd as { transport_contract?: { job_kind?: string } }).transport_contract;
+    const tc = (pd as { transport_contract?: { job_kind?: string } })
+      .transport_contract;
     if (src !== "transport_hub" && !tc) return null;
     return (tc?.job_kind as string) || "local_on_demand";
   }, [job]);
@@ -772,13 +879,15 @@ export const JobDetails: React.FC = () => {
     if (!job || !id) return false;
     if (job.status !== JobStatus.OPEN) return false;
     if (transportHubJobKind !== "intercity_charter") return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      id,
+    );
   }, [job, id, transportHubJobKind]);
 
   /** รหัสอ้างอิงแบบ PREFIX-YYMMDD-XXXXXX — แยกตามหมวด (แสดง/คัดลอก ไม่แทน UUID ภายใน) */
   const jobReferenceCode = useMemo(
     () => (job ? formatJobReferenceCode(job) : ""),
-    [job]
+    [job],
   );
 
   const copyJobReference = useCallback(async () => {
@@ -803,7 +912,9 @@ export const JobDetails: React.FC = () => {
       (job as any)?.employer_profile?.phone ||
       (job as any)?.employer_profile?.phone_number ||
       null;
-    const raw = isOwner ? job.accepted_by_phone || fallbackProviderPhone : job.created_by_phone || fallbackOwnerPhone;
+    const raw = isOwner
+      ? job.accepted_by_phone || fallbackProviderPhone
+      : job.created_by_phone || fallbackOwnerPhone;
     return String(raw || "").trim();
   }, [job, isOwner]);
 
@@ -818,7 +929,9 @@ export const JobDetails: React.FC = () => {
     if (!job?.completed_at) return null;
     const d = new Date(job.completed_at);
     if (isNaN(d.getTime())) return null;
-    const graceH = Number(import.meta.env.VITE_POST_JOB_PHONE_GRACE_HOURS ?? 24);
+    const graceH = Number(
+      import.meta.env.VITE_POST_JOB_PHONE_GRACE_HOURS ?? 24,
+    );
     const hrs = Number.isFinite(graceH) && graceH > 0 ? graceH : 24;
     return new Date(d.getTime() + hrs * 3600000);
   }, [job]);
@@ -873,7 +986,10 @@ export const JobDetails: React.FC = () => {
       try {
         const res = await MockApi.acceptJobBid(id, bidId, uid);
         if (res.job) setJob(res.job as Job);
-        notify("เลือกผู้รับงานแล้ว — ราคาตกลงตามข้อเสนอ (รวมค่าบริการแพลตฟอร์มแล้ว)", "success");
+        notify(
+          "เลือกผู้รับงานแล้ว — ราคาตกลงตามข้อเสนอ (รวมค่าบริการแพลตฟอร์มแล้ว)",
+          "success",
+        );
         await refreshIntercityBids();
       } catch (e: unknown) {
         const fb = getEmployerBidAcceptFeedback(e);
@@ -909,7 +1025,7 @@ export const JobDetails: React.FC = () => {
         setAcceptingBidId(null);
       }
     },
-    [id, user?.id, notify, refreshIntercityBids]
+    [id, user?.id, notify, refreshIntercityBids],
   );
 
   const handleSubmitCounterOffer = useCallback(async () => {
@@ -939,10 +1055,20 @@ export const JobDetails: React.FC = () => {
     } finally {
       setSubmittingBid(false);
     }
-  }, [id, user?.id, counterOfferAmount, intercityBidFloor?.min_job_fee_thb, notify, refreshIntercityBids]);
+  }, [
+    id,
+    user?.id,
+    counterOfferAmount,
+    intercityBidFloor?.min_job_fee_thb,
+    notify,
+    refreshIntercityBids,
+  ]);
 
   const verifyProofAfterUpload = useCallback(
-    async (uploadedUrl: string, phase: "before" | "after"): Promise<boolean> => {
+    async (
+      uploadedUrl: string,
+      phase: "before" | "after",
+    ): Promise<boolean> => {
       const uid = user?.id || localStorage.getItem("meerak_user_id");
       if (!id || !uid) return true;
       try {
@@ -957,7 +1083,9 @@ export const JobDetails: React.FC = () => {
           imageUrl: uploadedUrl,
           phase,
           compareUrl,
-          ...(capLat != null && capLng != null ? { captureLat: capLat, captureLng: capLng } : {}),
+          ...(capLat != null && capLng != null
+            ? { captureLat: capLat, captureLng: capLng }
+            : {}),
         });
         return true;
       } catch (e: any) {
@@ -965,7 +1093,15 @@ export const JobDetails: React.FC = () => {
         return false;
       }
     },
-    [id, job?.before_photo_url, user?.id, currentLocation, currentProviderLocation, notify, t]
+    [
+      id,
+      job?.before_photo_url,
+      user?.id,
+      currentLocation,
+      currentProviderLocation,
+      notify,
+      t,
+    ],
   );
 
   const uploadProofFileAndSave = useCallback(
@@ -976,7 +1112,8 @@ export const JobDetails: React.FC = () => {
         const url = await FirebaseApi.uploadJobProof(id, file, phase);
         const ok = await verifyProofAfterUpload(url, phase);
         if (!ok) return false;
-        const field = phase === "before" ? "before_photo_url" : "after_photo_url";
+        const field =
+          phase === "before" ? "before_photo_url" : "after_photo_url";
         await setDoc(
           doc(db, "jobs", id),
           {
@@ -984,7 +1121,7 @@ export const JobDetails: React.FC = () => {
             photos_uploaded_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
-          { merge: true }
+          { merge: true },
         );
         uploadedPhotosRef.current[phase] = url;
         setJob((prev) => (prev ? { ...prev, [field]: url } : null));
@@ -999,7 +1136,7 @@ export const JobDetails: React.FC = () => {
           phase === "before"
             ? t("detail.proof_upload_before_ok")
             : t("detail.proof_upload_after_ok"),
-          "success"
+          "success",
         );
         return true;
       } catch (err) {
@@ -1010,7 +1147,7 @@ export const JobDetails: React.FC = () => {
         setUploadingPhotos(false);
       }
     },
-    [id, notify, t, verifyProofAfterUpload]
+    [id, notify, t, verifyProofAfterUpload],
   );
 
   const roleStr = (user?.role as string)?.toLowerCase?.() || "";
@@ -1036,7 +1173,8 @@ export const JobDetails: React.FC = () => {
         isExpired,
         userId: user?.id,
         jobCreatedBy: job?.created_by,
-        shouldShowButton: canAcceptJob && job.status === JobStatus.OPEN && !isExpired
+        shouldShowButton:
+          canAcceptJob && job.status === JobStatus.OPEN && !isExpired,
       });
     }
   }, [job, user, canAcceptJob, isExpired]);
@@ -1111,7 +1249,7 @@ export const JobDetails: React.FC = () => {
         setPreAcceptRouteCoords(null);
         setPreAcceptUserLatLng(null);
       },
-      { enableHighAccuracy: true, timeout: 14000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 14000, maximumAge: 60000 },
     );
     return () => {
       cancelled = true;
@@ -1130,7 +1268,7 @@ export const JobDetails: React.FC = () => {
   // เพิ่มฟังก์ชันนี้ก่อน return statement
   const calculateDistance = (
     loc1: { lat: number; lng: number },
-    loc2: { lat: number; lng: number }
+    loc2: { lat: number; lng: number },
   ): number => {
     const R = 6371; // Radius of the earth in km
     const dLat = deg2rad(loc2.lat - loc1.lat);
@@ -1192,7 +1330,7 @@ export const JobDetails: React.FC = () => {
         (error) => {
           reject(error);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 10000 },
       );
     });
   };
@@ -1272,10 +1410,16 @@ export const JobDetails: React.FC = () => {
   // เบี้ยประกัน: ดึง % จาก Backend ตามหมวดงาน (job.category) — เชื่อมกับ InsuranceManager (Admin เปลี่ยนแล้วยอดตรง)
   const fetchInsuranceRate = useCallback(() => {
     const base = getBackendBase();
-    const category = job?.category ? encodeURIComponent(String(job.category).trim()) : "";
-    const url = category ? `${base}/api/settings/insurance-rate?category=${category}` : `${base}/api/settings/insurance-rate`;
+    const category = job?.category
+      ? encodeURIComponent(String(job.category).trim())
+      : "";
+    const url = category
+      ? `${base}/api/settings/insurance-rate?category=${category}`
+      : `${base}/api/settings/insurance-rate`;
     fetch(url)
-      .then((r) => (r.headers.get("content-type")?.includes("json") ? r.json() : {}))
+      .then((r) =>
+        r.headers.get("content-type")?.includes("json") ? r.json() : {},
+      )
       .then((d) => setInsuranceRatePercent(d?.insurance_rate_percent ?? 10))
       .catch(() => setInsuranceRatePercent(10));
   }, [job?.category]);
@@ -1287,21 +1431,28 @@ export const JobDetails: React.FC = () => {
   // เมื่อผู้ใช้กลับมาเปิดแท็บ (เช่น ไปแก้อัตราใน Admin แล้วกลับมา) ให้ดึงอัตราประกันล่าสุด
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible" && job?.id) fetchInsuranceRate();
+      if (document.visibilityState === "visible" && job?.id)
+        fetchInsuranceRate();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [job?.id, fetchInsuranceRate]);
 
   // 🛡️ ดึงสถานะ Insurance Claim (ถ้างานมีประกัน)
   useEffect(() => {
     if (!job?.id || !job?.has_insurance) return;
     const base = getBackendBase();
-    const token = localStorage.getItem('meerak_token') || localStorage.getItem('authToken') || '';
+    const token =
+      localStorage.getItem("meerak_token") ||
+      localStorage.getItem("authToken") ||
+      "";
     fetch(`${base}/api/insurance/claim/${job.id}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => (r.headers.get("content-type")?.includes("json") ? r.json() : {}))
+      .then((r) =>
+        r.headers.get("content-type")?.includes("json") ? r.json() : {},
+      )
       .then((d) => setInsuranceClaim(d?.claim || null))
       .catch(() => {});
   }, [job?.id, job?.has_insurance]);
@@ -1312,41 +1463,59 @@ export const JobDetails: React.FC = () => {
     setSubmittingClaim(true);
     try {
       const base = getBackendBase();
-      const token = localStorage.getItem('meerak_token') || localStorage.getItem('authToken') || '';
+      const token =
+        localStorage.getItem("meerak_token") ||
+        localStorage.getItem("authToken") ||
+        "";
       const res = await fetch(`${base}/api/insurance/claim`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ job_id: job.id, evidence_text: claimEvidenceText }),
+        body: JSON.stringify({
+          job_id: job.id,
+          evidence_text: claimEvidenceText,
+        }),
       });
       const text = await res.text();
       const data = text && text.startsWith("{") ? JSON.parse(text) : {};
-      if (!res.ok) throw new Error(data.error || 'ไม่สามารถยื่นเคลมได้');
+      if (!res.ok) throw new Error(data.error || "ไม่สามารถยื่นเคลมได้");
       setInsuranceClaim({
-        id: data.claim_id, claim_status: 'pending',
+        id: data.claim_id,
+        claim_status: "pending",
         original_price: data.original_price,
         replacement_payout: data.replacement_payout,
         reserve_amount: data.reserve_amount,
         claimed_at: new Date().toISOString(),
       });
       setShowClaimModal(false);
-      setClaimEvidenceText('');
-      notify('✅ ยื่นเคลมประกันเรียบร้อย ทีมงานจะพิจารณาภายใน 24-48 ชั่วโมง', 'success');
+      setClaimEvidenceText("");
+      notify(
+        "✅ ยื่นเคลมประกันเรียบร้อย ทีมงานจะพิจารณาภายใน 24-48 ชั่วโมง",
+        "success",
+      );
     } catch (err: any) {
-      notify(`❌ ${err.message}`, 'error');
+      notify(`❌ ${err.message}`, "error");
     } finally {
       setSubmittingClaim(false);
     }
   };
 
   // 💰 Phase 5: Dispute Window Countdown Timer (รองรับ submitted_at สำหรับงานจาก Backend)
-  const disputeEndsAt = job?.dispute_window_ends_at || (job?.submitted_at
-    ? new Date(new Date(job.submitted_at).getTime() + 5 * 60 * 1000).toISOString()
-    : null);
+  const disputeEndsAt =
+    job?.dispute_window_ends_at ||
+    (job?.submitted_at
+      ? new Date(
+          new Date(job.submitted_at).getTime() + 5 * 60 * 1000,
+        ).toISOString()
+      : null);
   useEffect(() => {
-    if (!job || job.status !== JobStatus.WAITING_FOR_APPROVAL || !disputeEndsAt) {
+    if (
+      !job ||
+      job.status !== JobStatus.WAITING_FOR_APPROVAL ||
+      !disputeEndsAt
+    ) {
       setDisputeWindowRemaining(null);
       return;
     }
@@ -1363,30 +1532,45 @@ export const JobDetails: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    MockApi.getJobDetails(id).then((j) => {
-      if (cancelled) return;
-      if (j) {
-        setJob(j);
-      } else {
-        navigate("/jobs");
-      }
-      setLoading(false);
-    }).catch(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => { cancelled = true; };
+    MockApi.getJobDetails(id)
+      .then((j) => {
+        if (cancelled) return;
+        if (j) {
+          setJob(j);
+        } else {
+          navigate("/jobs");
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id, navigate]);
 
   // ค้างติ๊กประกัน: โหลดจาก localStorage หรือ job.has_insurance เมื่อ job โหลด
   useEffect(() => {
     if (!id || !job) return;
     const fromJob = !!(job as any).has_insurance;
-    const fromStorage = (() => { try { return localStorage.getItem(insuranceStorageKey(id)) === 'true'; } catch { return false; } })();
+    const fromStorage = (() => {
+      try {
+        return localStorage.getItem(insuranceStorageKey(id)) === "true";
+      } catch {
+        return false;
+      }
+    })();
     setHasInsuranceState(fromJob || fromStorage);
   }, [id, job?.id]);
 
   // --- POLLING สำหรับงานจาก Backend (real-time ฝั่งผู้จ้าง — งานไม่มีใน Firestore)
-  const ACTIVE_STATUSES = ["accepted", "in_progress", "waiting_for_approval", "waiting_for_payment"];
+  const ACTIVE_STATUSES = [
+    "accepted",
+    "in_progress",
+    "waiting_for_approval",
+    "waiting_for_payment",
+  ];
   useEffect(() => {
     if (!id || !job) return;
     const status = (job.status || "").toLowerCase();
@@ -1396,7 +1580,16 @@ export const JobDetails: React.FC = () => {
       try {
         const refreshed = await MockApi.getJobDetails(id);
         if (refreshed) {
-          setJob((prev) => (prev ? { ...prev, ...refreshed, provider_profile: refreshed.provider_profile ?? prev.provider_profile } : refreshed));
+          setJob((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...refreshed,
+                  provider_profile:
+                    refreshed.provider_profile ?? prev.provider_profile,
+                }
+              : refreshed,
+          );
         }
       } catch (_) {}
     };
@@ -1405,13 +1598,27 @@ export const JobDetails: React.FC = () => {
   }, [id, job?.status]);
 
   // เมื่อ provider อยู่หน้า completed job — poll งานเพื่อจับ tips_amount + รอ profile poll ด้านบนจับ wallet
-  const isProviderViewingCompleted = !isOwner && job?.accepted_by && String(job.accepted_by) === String(user?.id) && (job.status || "").toLowerCase() === "completed";
+  const isProviderViewingCompleted =
+    !isOwner &&
+    job?.accepted_by &&
+    String(job.accepted_by) === String(user?.id) &&
+    (job.status || "").toLowerCase() === "completed";
   useEffect(() => {
     if (!id || !isProviderViewingCompleted) return;
     const poll = async () => {
       try {
         const refreshed = await MockApi.getJobDetails(id);
-        if (refreshed) setJob((prev) => (prev ? { ...prev, ...refreshed, provider_profile: refreshed.provider_profile ?? prev?.provider_profile } : refreshed));
+        if (refreshed)
+          setJob((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...refreshed,
+                  provider_profile:
+                    refreshed.provider_profile ?? prev?.provider_profile,
+                }
+              : refreshed,
+          );
       } catch (_) {}
     };
     const iv = setInterval(poll, 12000);
@@ -1439,7 +1646,10 @@ export const JobDetails: React.FC = () => {
 
     const unsubChat = MockApi.subscribeToMessages(id, (msgs) => {
       // ใช้ meerak_user_id เดียวกับ sendMessage เพื่อให้ is_me ตรงกัน
-      const myId = localStorage.getItem("meerak_user_id") || user?.id || (user as any)?.userId;
+      const myId =
+        localStorage.getItem("meerak_user_id") ||
+        user?.id ||
+        (user as any)?.userId;
       const myIdStr = myId ? String(myId).trim().toLowerCase() : "";
       const withIsMe = (msgs || []).map((m: any) => {
         const sid = m.sender_id ? String(m.sender_id).trim().toLowerCase() : "";
@@ -1488,12 +1698,15 @@ export const JobDetails: React.FC = () => {
     if (!job?.id || !user?.id || !token) return;
     const status = (job.status || "").toLowerCase();
     if (status !== "completed") return;
-    const isProvider = job.accepted_by && String(job.accepted_by) === String(user.id);
+    const isProvider =
+      job.accepted_by && String(job.accepted_by) === String(user.id);
     if (!isProvider) return;
     const doRefresh = () => {
-      MockApi.getProfile(user.id, { refresh: true }).then((fresh) => {
-        login(fresh, token);
-      }).catch(() => {});
+      MockApi.getProfile(user.id, { refresh: true })
+        .then((fresh) => {
+          login(fresh, token);
+        })
+        .catch(() => {});
     };
     doRefresh();
     const iv = setInterval(doRefresh, 15000); // ทุก 15 วินาที จับทิปที่เข้ามา
@@ -1547,24 +1760,24 @@ export const JobDetails: React.FC = () => {
       user?.id &&
       job?.id &&
       isAssignedProvider &&
-      (job.status === 'accepted' || job.status === 'in_progress') &&
+      (job.status === "accepted" || job.status === "in_progress") &&
       !locationWatchId
     ) {
-      console.log('🚀 Starting location tracking for Provider:', user.id);
-      
+      console.log("🚀 Starting location tracking for Provider:", user.id);
+
       const watchId = LocationService.startTracking(
         user.id,
         job.id,
         (error) => {
-          console.error('❌ Geolocation error:', error);
-          notify('ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาเปิด GPS', 'error');
-        }
+          console.error("❌ Geolocation error:", error);
+          notify("ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาเปิด GPS", "error");
+        },
       );
-      
+
       if (watchId) {
         setLocationWatchId(watchId);
         setIsLocationTracking(true);
-        notify('📍 เริ่มติดตามตำแหน่งแล้ว', 'success');
+        notify("📍 เริ่มติดตามตำแหน่งแล้ว", "success");
       }
     }
 
@@ -1572,9 +1785,9 @@ export const JobDetails: React.FC = () => {
     if (
       locationWatchId &&
       job?.status &&
-      !['accepted', 'in_progress'].includes(job.status)
+      !["accepted", "in_progress"].includes(job.status)
     ) {
-      console.log('🛑 Stopping location tracking');
+      console.log("🛑 Stopping location tracking");
       LocationService.stopTracking(locationWatchId);
       setLocationWatchId(null);
       setIsLocationTracking(false);
@@ -1592,7 +1805,8 @@ export const JobDetails: React.FC = () => {
 
   // 📍 Calculate distance to destination for arrival confirmation
   useEffect(() => {
-    if (!isAssignedProvider || !job?.location || job.status !== 'accepted') return;
+    if (!isAssignedProvider || !job?.location || job.status !== "accepted")
+      return;
 
     // Subscribe to provider's location to check distance
     const unsubscribe = LocationService.subscribeToProviderLocation(
@@ -1604,14 +1818,14 @@ export const JobDetails: React.FC = () => {
             location.lat,
             location.lng,
             job.location.lat,
-            job.location.lng
+            job.location.lng,
           );
           setDistanceToDestination(distance);
           setCurrentProviderLocation({ lat: location.lat, lng: location.lng });
-          
-          console.log('📏 Distance to destination:', distance, 'km');
+
+          console.log("📏 Distance to destination:", distance, "km");
         }
-      }
+      },
     );
 
     return () => unsubscribe();
@@ -1620,7 +1834,7 @@ export const JobDetails: React.FC = () => {
   // Expiration Timer Logic — งาน open มีเวลา 36 ชม. ให้ผู้รับกดรับ
   useEffect(() => {
     if (!job) return;
-    if ((job.status || '').toLowerCase() === 'expired') {
+    if ((job.status || "").toLowerCase() === "expired") {
       setIsExpired(true);
       setExpirationTime("00:00:00");
       return;
@@ -1645,7 +1859,7 @@ export const JobDetails: React.FC = () => {
           setIsExpired(true);
           setExpirationTime("00:00:00");
           clearInterval(timer);
-          
+
           // 🔥 Auto-cancel job when expired
           if (id && job.status === JobStatus.OPEN) {
             MockApi.cancelJob(id, "Job expired after 36 hours")
@@ -1659,7 +1873,7 @@ export const JobDetails: React.FC = () => {
           setExpirationTime(
             `${hours.toString().padStart(2, "0")}:${minutes
               .toString()
-              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`,
           );
         }
       }, 1000);
@@ -1701,6 +1915,7 @@ export const JobDetails: React.FC = () => {
     setStaffChatInput("");
     setStaffCsatStars(0);
     setStaffSupportTicketId(null);
+    setStaffAiSessionId(null);
   }, []);
 
   /** เริ่มแชทกับเจ้าหน้าที่: สร้าง ticket จริง → คิว (UX) → ดึงข้อความจาก API (แอดมินเห็นใน nexus-admin-core) */
@@ -1736,13 +1951,39 @@ export const JobDetails: React.FC = () => {
             jobId: id ?? null,
           });
           setStaffSupportTicketId(ticket.id);
+          try {
+            const ai = await sendSupportAiMessage({
+              message: prefill,
+              session_id: null,
+              ticket_id: ticket.id,
+              job_id: id ?? null,
+              source: "job_details",
+            });
+            setStaffAiSessionId(ai.session_id);
+            await postSupportAiBridgeReply(ticket.id, ai.message, {
+              source: ai.source || "support_ai_bridge",
+              score: ai.score ?? null,
+              ai_actions: ai.actions || [],
+              quick_actions: ai.quick_actions || [],
+              diagnostic_summary: ai.diagnostic_summary || null,
+              escalation: ai.escalation || null,
+              job_id: id ?? null,
+            });
+            const rows = await getUserSupportMessages(ticket.id);
+            setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
+          } catch {
+            /* Keep human support flow working if the isolated AI service is unavailable. */
+          }
           await new Promise((r) => setTimeout(r, 1400));
           setStaffSupportPhase("queueing");
           setQueueAheadDisplay(String(Math.floor(Math.random() * 3) + 1));
           await new Promise((r) => setTimeout(r, 1800));
           setStaffSupportPhase("chat");
         } catch (err: unknown) {
-          const ax = err as { response?: { data?: { error?: string } }; message?: string };
+          const ax = err as {
+            response?: { data?: { error?: string } };
+            message?: string;
+          };
           const msg =
             ax?.response?.data?.error ||
             ax?.message ||
@@ -1754,7 +1995,7 @@ export const JobDetails: React.FC = () => {
         }
       })();
     },
-    [user, jobReferenceCode, id, language, notify, resetStaffSupportFlow]
+    [user, jobReferenceCode, id, language, notify, resetStaffSupportFlow],
   );
 
   /** ปุ่มซ้าย: ย้อนกลับแบบสอบถาม / จบแชท → CSAT / ยกเลิกเชื่อมต่อ */
@@ -1782,7 +2023,7 @@ export const JobDetails: React.FC = () => {
   const finishStaffSupportAfterCsat = useCallback(() => {
     notify(
       language === "th" ? "ขอบคุณสำหรับฟีดแบค" : "Thank you for your feedback",
-      "success"
+      "success",
     );
     resetStaffSupportFlow();
     setHelpSelectedTopicKey(null);
@@ -1799,26 +2040,59 @@ export const JobDetails: React.FC = () => {
           language === "th"
             ? "ยังไม่มีเซสชันแชท — กรุณาเริ่มใหม่"
             : "No chat session — please start again.",
-          "error"
+          "error",
         );
         return;
       }
       setStaffChatInput("");
       try {
         await postUserSupportMessage(staffSupportTicketId, text);
+        try {
+          const ai = await sendSupportAiMessage({
+            message: text,
+            session_id: staffAiSessionId,
+            ticket_id: staffSupportTicketId,
+            job_id: id ?? null,
+            source: "job_details",
+          });
+          setStaffAiSessionId(ai.session_id);
+          await postSupportAiBridgeReply(staffSupportTicketId, ai.message, {
+            source: ai.source || "support_ai_bridge",
+            score: ai.score ?? null,
+            ai_actions: ai.actions || [],
+            quick_actions: ai.quick_actions || [],
+            diagnostic_summary: ai.diagnostic_summary || null,
+            escalation: ai.escalation || null,
+            job_id: id ?? null,
+          });
+        } catch {
+          /* Human support ticket remains the fallback path. */
+        }
         const rows = await getUserSupportMessages(staffSupportTicketId);
         setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
       } catch (err: unknown) {
-        const ax = err as { response?: { data?: { error?: string } }; message?: string };
+        const ax = err as {
+          response?: { data?: { error?: string } };
+          message?: string;
+        };
         notify(
           ax?.response?.data?.error ||
             ax?.message ||
-            (language === "th" ? "ส่งข้อความไม่สำเร็จ" : "Failed to send message"),
-          "error"
+            (language === "th"
+              ? "ส่งข้อความไม่สำเร็จ"
+              : "Failed to send message"),
+          "error",
         );
       }
     },
-    [staffChatInput, staffSupportTicketId, notify, language]
+    [
+      staffChatInput,
+      staffSupportTicketId,
+      staffAiSessionId,
+      id,
+      notify,
+      language,
+    ],
   );
 
   /** ดึงข้อความจาก API — Socket.IO แบบเรียลไทม์ + fallback polling */
@@ -1828,7 +2102,8 @@ export const JobDetails: React.FC = () => {
     const load = async () => {
       try {
         const rows = await getUserSupportMessages(staffSupportTicketId);
-        if (!cancelled) setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
+        if (!cancelled)
+          setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
       } catch {
         /* คงข้อความเดิม */
       }
@@ -1836,11 +2111,17 @@ export const JobDetails: React.FC = () => {
     void load();
     const token =
       typeof window !== "undefined"
-        ? localStorage.getItem("meerak_token") || localStorage.getItem("authToken") || ""
+        ? localStorage.getItem("meerak_token") ||
+          localStorage.getItem("authToken") ||
+          ""
         : "";
-    const unsub = subscribeSupportTicketRoom(staffSupportTicketId, token || null, () => {
-      void load();
-    });
+    const unsub = subscribeSupportTicketRoom(
+      staffSupportTicketId,
+      token || null,
+      () => {
+        void load();
+      },
+    );
     const iv = window.setInterval(load, 20000);
     return () => {
       cancelled = true;
@@ -1851,8 +2132,191 @@ export const JobDetails: React.FC = () => {
 
   useEffect(() => {
     if (!staffChatScrollRef.current) return;
-    staffChatScrollRef.current.scrollTop = staffChatScrollRef.current.scrollHeight;
+    staffChatScrollRef.current.scrollTop =
+      staffChatScrollRef.current.scrollHeight;
   }, [staffSupportMessages, staffSupportPhase]);
+
+  const renderSupportMessageText = useCallback((text: string) => {
+    const parts = String(text || "").split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, idx) =>
+      /^https?:\/\//.test(part) ? (
+        <a
+          key={`${part}-${idx}`}
+          href={part}
+          className="font-semibold text-emerald-700 underline break-all"
+        >
+          {part}
+        </a>
+      ) : (
+        <React.Fragment key={idx}>{part}</React.Fragment>
+      ),
+    );
+  }, []);
+
+  const handleStaffQuickAction = useCallback(
+    async (action: SupportQuickAction, message?: StaffSupportMsg) => {
+      if (action.type === "self_unlock_rate_limit") {
+        try {
+          const res = await selfUnlockRateLimit();
+          const remaining = res.unlock?.self_unlocks_remaining_today;
+          setStaffSupportMessages((prev) => [
+            ...prev,
+            {
+              id: `self-unlock-${Date.now()}`,
+              text:
+                remaining != null
+                  ? `ปลดล็อก Rate Limit แล้ว เหลือสิทธิ์วันนี้ ${remaining} ครั้ง`
+                  : res.message || "ปลดล็อก Rate Limit แล้ว",
+              isMe: false,
+              timestamp: Date.now(),
+              source: "self_unlock_rate_limit",
+            },
+          ]);
+        } catch (e: any) {
+          setStaffSupportMessages((prev) => [
+            ...prev,
+            {
+              id: `self-unlock-failed-${Date.now()}`,
+              text:
+                e?.response?.data?.message ||
+                e?.message ||
+                "ปลดล็อก Rate Limit ไม่สำเร็จ",
+              isMe: false,
+              timestamp: Date.now(),
+              source: "self_unlock_rate_limit_failed",
+            },
+          ]);
+        }
+        return;
+      }
+      if (action.type === "feedback_not_helpful") {
+        if (staffSupportTicketId) {
+          await postSupportAiFeedback(staffSupportTicketId, {
+            message_id: message?.id,
+            helpful: false,
+            reason: action.label,
+          }).catch(() => null);
+          const rows = await getUserSupportMessages(staffSupportTicketId);
+          setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
+        }
+        return;
+      }
+      if (action.type === "check_account_status") {
+        setStaffChatInput(
+          "ช่วยตรวจสถานะบัญชี KYC และสิทธิ์การใช้งานของฉันให้หน่อย",
+        );
+        return;
+      }
+      if (action.type === "refresh_session") {
+        setStaffSupportMessages((prev) => [
+          ...prev,
+          {
+            id: `refresh-session-${Date.now()}`,
+            text: "แนะนำให้ออกจากระบบแล้วเข้าสู่ระบบใหม่เพื่อรีเฟรชสิทธิ์ หากยังไม่หายกดส่งให้เจ้าหน้าที่ได้เลยค่ะ",
+            isMe: false,
+            timestamp: Date.now(),
+            source: "refresh_session_guidance",
+          },
+        ]);
+        return;
+      }
+      if (action.type === "open_job_detail") {
+        if (id) navigate(`/jobs/${id}`);
+        return;
+      }
+      if (action.type === "open_ticket") {
+        if (action.id === "urgent_reroute" && staffSupportTicketId) {
+          try {
+            const res = await startSupportCareReroute(staffSupportTicketId, {
+              job_id: id ?? null,
+            });
+            const rows = await getUserSupportMessages(staffSupportTicketId);
+            setStaffSupportMessages(mapSupportMessagesToStaffUi(rows));
+            notify(
+              res.candidate_count != null
+                ? `ระบบตรวจผู้รับงานว่างแล้ว พบ ${res.candidate_count} คน`
+                : "เริ่มจับคู่ใหม่ด่วนแล้ว",
+              "success",
+            );
+          } catch (e: any) {
+            notify(
+              e?.response?.data?.error ||
+                e?.message ||
+                "ยังไม่สามารถเริ่มจับคู่ใหม่ได้",
+              "error",
+            );
+          }
+          return;
+        }
+        setStaffChatInput(
+          action.id === "urgent_reroute"
+            ? "ต้องการจับคู่ใหม่ด่วน งานนี้ใกล้ถึงเวลาเริ่มแล้ว"
+            : "ต้องการให้เจ้าหน้าที่ช่วยดูเคสนี้แบบเร่งด่วน",
+        );
+        return;
+      }
+      if (action.url) window.location.href = action.url;
+    },
+    [id, navigate, notify, staffSupportTicketId],
+  );
+
+  const renderStaffCareTimeline = useCallback((msg: StaffSupportMsg) => {
+    const timeline = msg.careTimeline || [];
+    const cards = msg.situationCards || [];
+    if (timeline.length === 0 && cards.length === 0) return null;
+    return (
+      <div className="mt-2 space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/70 p-2">
+        {msg.rerouteSla?.accept_deadline_at && (
+          <p className="rounded-lg bg-white/80 px-2 py-1 text-[10px] font-semibold text-emerald-800">
+            ส่งคำเชิญแล้ว {msg.rerouteSla.invited_count ?? 0} คน · รอตอบรับถึง{" "}
+            {new Date(msg.rerouteSla.accept_deadline_at).toLocaleTimeString(
+              "th-TH",
+            )}
+          </p>
+        )}
+        {timeline.length > 0 && (
+          <div>
+            <p className="mb-1 text-[11px] font-bold text-emerald-800">
+              Care Timeline
+            </p>
+            <div className="space-y-1">
+              {timeline.slice(-5).map((event, idx) => (
+                <div
+                  key={event.id || `${event.stage}-${idx}`}
+                  className="flex gap-2 text-[11px] text-emerald-900"
+                >
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                  <span>
+                    <strong>{event.label}</strong>
+                    {event.candidate_count != null
+                      ? ` · พบ ${event.candidate_count} คน`
+                      : ""}
+                    {event.detail ? ` · ${event.detail}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {cards.length > 0 && (
+          <div className="grid gap-1">
+            {cards.slice(0, 4).map((card) => (
+              <div
+                key={card.id}
+                className="rounded-lg border border-white/70 bg-white px-2 py-1.5"
+              >
+                <p className="text-[11px] font-bold text-slate-800">
+                  {card.recommended ? "แนะนำ: " : ""}
+                  {card.title}
+                </p>
+                <p className="text-[10px] text-slate-500">{card.description}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }, []);
 
   const closeChatOverlay = useCallback(() => {
     resetStaffSupportFlow();
@@ -1863,7 +2327,7 @@ export const JobDetails: React.FC = () => {
     if (location.hash === "#chat") {
       navigate(
         { pathname: location.pathname, search: location.search, hash: "" },
-        { replace: true }
+        { replace: true },
       );
     }
   }, [
@@ -1878,7 +2342,7 @@ export const JobDetails: React.FC = () => {
     setChatOverlayOpen(true);
     navigate(
       { pathname: location.pathname, search: location.search, hash: "#chat" },
-      { replace: true }
+      { replace: true },
     );
   }, [location.pathname, location.search, navigate]);
 
@@ -1895,7 +2359,7 @@ export const JobDetails: React.FC = () => {
     setChatOverlayOpen(true);
     navigate(
       { pathname: location.pathname, search: location.search, hash: "#chat" },
-      { replace: true }
+      { replace: true },
     );
   }, [location.pathname, location.search, navigate]);
 
@@ -1912,7 +2376,7 @@ export const JobDetails: React.FC = () => {
       const file = e.target.files[0];
       try {
         notify("Uploading image...", "info");
-        const url = await MockApi.uploadImage(file);
+        const url = await MockApi.uploadImage(file, "chat");
         await MockApi.sendMessage(id, url, MessageType.IMAGE);
         notify("Image sent", "success");
       } catch (err) {
@@ -1926,19 +2390,33 @@ export const JobDetails: React.FC = () => {
     try {
       await MockApi.acceptJob(id, { forceIgnoreConflict });
       try {
-        const effIns = hasInsurance || (() => { try { return localStorage.getItem(insuranceStorageKey(id)) === 'true'; } catch { return false; } })();
+        const effIns =
+          hasInsurance ||
+          (() => {
+            try {
+              return localStorage.getItem(insuranceStorageKey(id)) === "true";
+            } catch {
+              return false;
+            }
+          })();
         const holdSuccess = await MockApi.holdPayment(id, undefined, effIns);
-        if (!holdSuccess) console.warn('Hold payment returned false');
+        if (!holdSuccess) console.warn("Hold payment returned false");
       } catch (holdErr: any) {
         const msg = holdErr?.response?.data?.message || holdErr?.message;
-        if (holdErr?.response?.status === 400 && holdErr?.response?.data?.error === 'insufficient_balance') {
-          notify('⚠️ ผู้จ้างยอด Wallet ไม่พอ — กรุณาให้ผู้จ้างเติมเงินก่อนรับงาน', 'error');
+        if (
+          holdErr?.response?.status === 400 &&
+          holdErr?.response?.data?.error === "insufficient_balance"
+        ) {
+          notify(
+            "⚠️ ผู้จ้างยอด Wallet ไม่พอ — กรุณาให้ผู้จ้างเติมเงินก่อนรับงาน",
+            "error",
+          );
           throw holdErr;
         }
-        console.warn('Hold payment skipped or failed:', msg);
+        console.warn("Hold payment skipped or failed:", msg);
       }
       notify("✅ " + t("detail.action_success"), "success");
-      console.log('✅ Job accepted');
+      console.log("✅ Job accepted");
       setShowConflictModal(false);
       // รีเฟรชงานจาก Backend — งานอยู่ที่ Backend ไม่มีใน Firestore ดังนั้น subscribeToJob จะไม่อัปเดต
       const refreshed = await MockApi.getJobDetails(id);
@@ -1992,7 +2470,7 @@ export const JobDetails: React.FC = () => {
         setShowConflictModal(true);
         return;
       }
-      console.error('❌ Error accepting job:', err);
+      console.error("❌ Error accepting job:", err);
       notify(err.message || "Failed to accept job", "error");
     }
   };
@@ -2017,7 +2495,10 @@ export const JobDetails: React.FC = () => {
 
     // ✅ ตรวจสอบระยะทาง (ต้องใกล้จุดหมาย < 0.5 km หรือ 500 เมตร)
     if (distanceToDestination !== null && distanceToDestination > 0.5) {
-      notify(`⚠️ คุณยังอยู่ห่างจากจุดหมาย ${distanceToDestination.toFixed(2)} km กรุณาเดินทางให้ใกล้กว่า 500 เมตรก่อน`, 'error');
+      notify(
+        `⚠️ คุณยังอยู่ห่างจากจุดหมาย ${distanceToDestination.toFixed(2)} km กรุณาเดินทางให้ใกล้กว่า 500 เมตรก่อน`,
+        "error",
+      );
       return;
     }
 
@@ -2027,16 +2508,14 @@ export const JobDetails: React.FC = () => {
       /** ตรงกับ mockApi.getJobDetails: Firebase-only id = alphanumeric ยาว ~20 ไม่มีขีด */
       const firestoreJobIdPattern = /^[a-zA-Z0-9]{19,22}$/;
       const isFirestoreOnlyJob =
-        !!id &&
-        firestoreJobIdPattern.test(id) &&
-        !id.includes("-");
+        !!id && firestoreJobIdPattern.test(id) && !id.includes("-");
 
       if (isFirestoreOnlyJob) {
         await FirebaseApi.confirmArrival(id, user.id);
       } else {
         const res = await api.post<{ success?: boolean }>(
           `/jobs/${encodeURIComponent(id)}/confirm-arrival`,
-          { userId: user.id }
+          { userId: user.id },
         );
         if (!res.data?.success) {
           throw new Error("ไม่สามารถยืนยันการมาถึงได้");
@@ -2045,30 +2524,32 @@ export const JobDetails: React.FC = () => {
 
       const refreshed = await MockApi.getJobDetails(id);
       if (refreshed) setJob(refreshed);
-      
+
       // Update provider location status to 'arrived'
       if (currentProviderLocation) {
-        await LocationService.updateProviderStatus(user.id, id, 'arrived');
+        await LocationService.updateProviderStatus(user.id, id, "arrived");
       }
-      
-      notify('✅ ยืนยันการมาถึงสำเร็จ! เริ่มทำงานได้เลย', 'success');
-      
-      console.log('✅ Arrival confirmed at:', new Date().toISOString());
+
+      notify("✅ ยืนยันการมาถึงสำเร็จ! เริ่มทำงานได้เลย", "success");
+
+      console.log("✅ Arrival confirmed at:", new Date().toISOString());
     } catch (error) {
-      console.error('❌ Error confirming arrival:', error);
+      console.error("❌ Error confirming arrival:", error);
       const axErr = error as {
         response?: { data?: { error?: string; message?: string } };
         message?: string;
       };
       const upstream =
-        (typeof axErr.response?.data?.error === 'string' && axErr.response.data.error) ||
-        (typeof axErr.response?.data?.message === 'string' && axErr.response.data.message) ||
-        '';
+        (typeof axErr.response?.data?.error === "string" &&
+          axErr.response.data.error) ||
+        (typeof axErr.response?.data?.message === "string" &&
+          axErr.response.data.message) ||
+        "";
       const msg =
         upstream ||
-        (error instanceof Error && error.message ? error.message : '') ||
-        'ไม่สามารถยืนยันการมาถึงได้';
-      notify(msg, 'error');
+        (error instanceof Error && error.message ? error.message : "") ||
+        "ไม่สามารถยืนยันการมาถึงได้";
+      notify(msg, "error");
     } finally {
       setConfirmingArrival(false);
     }
@@ -2153,7 +2634,9 @@ export const JobDetails: React.FC = () => {
     return Math.round(n * 100) / 100;
   };
 
-  const buildExtrasFromInputs = useCallback((): JobCompletionExtras | undefined => {
+  const buildExtrasFromInputs = useCallback(():
+    | JobCompletionExtras
+    | undefined => {
     const meter = parseThbInput(completionMeter);
     const toll = parseThbInput(completionToll);
     const parking = parseThbInput(completionParking);
@@ -2168,7 +2651,13 @@ export const JobDetails: React.FC = () => {
       other_thb: other,
       ...(note ? { note } : {}),
     };
-  }, [completionMeter, completionToll, completionParking, completionOther, completionExtrasNote]);
+  }, [
+    completionMeter,
+    completionToll,
+    completionParking,
+    completionOther,
+    completionExtrasNote,
+  ]);
 
   const handleVerifyProviderMeetCode = useCallback(async () => {
     if (!id || !providerMeetCodeInput.trim()) return;
@@ -2176,15 +2665,20 @@ export const JobDetails: React.FC = () => {
     setProviderMeetCodeVerified(false);
     setProviderMeetCodeVerifyError(null);
     try {
-      const { data } = await api.post<{ ok: boolean; error?: string; message?: string }>(
-        `/jobs/${encodeURIComponent(id)}/meet-code/verify`,
-        { meetCode: providerMeetCodeInput.trim() }
-      );
+      const { data } = await api.post<{
+        ok: boolean;
+        error?: string;
+        message?: string;
+      }>(`/jobs/${encodeURIComponent(id)}/meet-code/verify`, {
+        meetCode: providerMeetCodeInput.trim(),
+      });
       if (data?.ok) {
         setProviderMeetCodeVerified(true);
         notify("ยืนยันรหัสพบกันสำเร็จ — เชื่อมกับผู้จ้างแล้ว", "success");
       } else {
-        setProviderMeetCodeVerifyError(data?.message || "ไม่สามารถตรวจสอบรหัสได้");
+        setProviderMeetCodeVerifyError(
+          data?.message || "ไม่สามารถตรวจสอบรหัสได้",
+        );
       }
     } catch (e: any) {
       const msg =
@@ -2214,22 +2708,33 @@ export const JobDetails: React.FC = () => {
       return;
     }
     if (MEET_CODE_REQUIRED && !providerMeetCodeVerified) {
-      notify("❌ กดปุ่มใหญ่ «ยืนยันรหัสพบกันผู้จ้าง» ให้สำเร็จก่อน จึงจะส่งมอบงานได้", "error");
+      notify(
+        "❌ กดปุ่มใหญ่ «ยืนยันรหัสพบกันผู้จ้าง» ให้สำเร็จก่อน จึงจะส่งมอบงานได้",
+        "error",
+      );
       return;
     }
     setShowCompletionExtrasModal(true);
   };
 
-  const runSubmitWorkWithExtras = async (extras: JobCompletionExtras | undefined) => {
+  const runSubmitWorkWithExtras = async (
+    extras: JobCompletionExtras | undefined,
+  ) => {
     if (!id || !job) return;
     if (submittingWork || gpsVerifying) return;
     setShowCompletionExtrasModal(false);
     setShowCompletionSummaryModal(false);
     setSubmittingWork(true);
 
-    const meetCodeForApi = MEET_CODE_REQUIRED ? providerMeetCodeInput.trim() : undefined;
+    const meetCodeForApi = MEET_CODE_REQUIRED
+      ? providerMeetCodeInput.trim()
+      : undefined;
 
-    const doSubmit = async (providerLocation: { lat: number; lng: number; timestamp?: number }) => {
+    const doSubmit = async (providerLocation: {
+      lat: number;
+      lng: number;
+      timestamp?: number;
+    }) => {
       const loc = {
         ...providerLocation,
         timestamp: providerLocation.timestamp ?? Date.now(),
@@ -2240,7 +2745,7 @@ export const JobDetails: React.FC = () => {
           loc,
           completionOtp.trim() || undefined,
           meetCodeForApi,
-          extras
+          extras,
         );
         try {
           console.log("⏱️ Starting 5-minute dispute window...");
@@ -2248,7 +2753,12 @@ export const JobDetails: React.FC = () => {
         } catch (dwErr) {
           console.warn("Dispute window (optional):", dwErr);
         }
-        notify("✅ " + t("detail.action_success") + " — รอให้ผู้จ้างตรวจสอบและกดอนุมัติ", "success");
+        notify(
+          "✅ " +
+            t("detail.action_success") +
+            " — รอให้ผู้จ้างตรวจสอบและกดอนุมัติ",
+          "success",
+        );
       } catch (err: any) {
         console.error("❌ Error submitting work:", err);
         notify(messageForJobCompleteError(err, t), "error");
@@ -2258,7 +2768,11 @@ export const JobDetails: React.FC = () => {
       }
     };
 
-    if (isDemoJobLike && job?.location?.lat != null && job?.location?.lng != null) {
+    if (
+      isDemoJobLike &&
+      job?.location?.lat != null &&
+      job?.location?.lng != null
+    ) {
       setGpsVerifying(true);
       doSubmit({
         lat: job.location.lat,
@@ -2282,7 +2796,7 @@ export const JobDetails: React.FC = () => {
           setGpsVerifying(false);
           setSubmittingWork(false);
           notify(t("detail.err_gps_required"), "error");
-        }
+        },
       );
     } else {
       setSubmittingWork(false);
@@ -2295,13 +2809,19 @@ export const JobDetails: React.FC = () => {
     setCreatingMeetCode(true);
     try {
       const base = getBackendBase();
-      const res = await fetch(`${base}/api/jobs/${encodeURIComponent(id)}/meet-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id }),
-      });
+      const res = await fetch(
+        `${base}/api/jobs/${encodeURIComponent(id)}/meet-code`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id }),
+        },
+      );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || data.error || t("detail.employer_meet_fail"));
+      if (!res.ok)
+        throw new Error(
+          data.message || data.error || t("detail.employer_meet_fail"),
+        );
       setEmployerMeet({
         code: String(data.code),
         expiresAt: data.expiresAt || "",
@@ -2341,22 +2861,30 @@ export const JobDetails: React.FC = () => {
         }
 
         // 2. โอนเงินให้ผู้รับงาน — ส่ง has_insurance ถ้าติ๊กซื้อประกัน (ใช้ localStorage fallback)
-        const effIns = hasInsurance || (() => { try { return localStorage.getItem(insuranceStorageKey(id)) === 'true'; } catch { return false; } })();
-        await MockApi.processPayment(
-          id,
-          PaymentMethod.WALLET,
-          0,
-          effIns
-        );
+        const effIns =
+          hasInsurance ||
+          (() => {
+            try {
+              return localStorage.getItem(insuranceStorageKey(id)) === "true";
+            } catch {
+              return false;
+            }
+          })();
+        await MockApi.processPayment(id, PaymentMethod.WALLET, 0, effIns);
 
         // 2b. ปล่อย pending → balance หลังครบช่วงกันเงิน (backend: provider_release_after)
         void MockApi.pollReleasePayment(id)
           .then((ok) => {
             if (ok) {
-              notify("ระบบปล่อยเงินให้ผู้รับงานแล้ว (ครบช่วงกันเงินตามกลาง)", "success");
+              notify(
+                "ระบบปล่อยเงินให้ผู้รับงานแล้ว (ครบช่วงกันเงินตามกลาง)",
+                "success",
+              );
             }
             if (token && user?.id) {
-              MockApi.getProfile(user.id, { refresh: true }).then((u) => login(u, token)).catch(() => {});
+              MockApi.getProfile(user.id, { refresh: true })
+                .then((u) => login(u, token))
+                .catch(() => {});
             }
           })
           .catch((releaseErr: any) => {
@@ -2365,23 +2893,31 @@ export const JobDetails: React.FC = () => {
 
         if (token) {
           // รีเฟรช profile เพื่อให้ wallet แสดงยอดล่าสุดหลังหักเงิน
-          const freshUser = await MockApi.getProfile(user.id, { refresh: true });
+          const freshUser = await MockApi.getProfile(user.id, {
+            refresh: true,
+          });
           login(freshUser, token);
 
           // ✅ 3. อัปเดต status เป็น COMPLETED (สำคัญมาก!)
-          console.log('✅ Updating job status to COMPLETED...');
+          console.log("✅ Updating job status to COMPLETED...");
           try {
-            await updateDoc(doc(db, 'jobs', id), {
+            await updateDoc(doc(db, "jobs", id), {
               status: JobStatus.COMPLETED,
               completed_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
             });
           } catch (fireErr) {
             // งานจาก Backend อาจไม่มีใน Firestore — ไม่เป็นไร
-            console.warn('Firestore update (optional):', (fireErr as Error)?.message);
+            console.warn(
+              "Firestore update (optional):",
+              (fireErr as Error)?.message,
+            );
           }
 
-          notify("อนุมัติงานแล้ว — เงินอยู่ระหว่างกันตามกลาง 5 นาที ก่อนโอนเข้าผู้รับงาน", "success");
+          notify(
+            "อนุมัติงานแล้ว — เงินอยู่ระหว่างกันตามกลาง 5 นาที ก่อนโอนเข้าผู้รับงาน",
+            "success",
+          );
 
           // 4. แสดง modal รีวิวหลังจากอนุมัติ
           setTimeout(() => {
@@ -2389,7 +2925,9 @@ export const JobDetails: React.FC = () => {
           }, 1500);
 
           // 5. รีเฟรช profile อีกครั้งเพื่อให้ wallet ตรงกับ DB
-          const finalUser = await MockApi.getProfile(user.id, { refresh: true });
+          const finalUser = await MockApi.getProfile(user.id, {
+            refresh: true,
+          });
           login(finalUser, token);
         } else {
           notify("โอนเงินไม่สำเร็จ", "error");
@@ -2401,7 +2939,7 @@ export const JobDetails: React.FC = () => {
             t("detail.cash_delta_insufficient")
               .replace("{delta}", String(pe.required_delta ?? "—"))
               .replace("{balance}", String(pe.balance ?? "—")),
-            "error"
+            "error",
           );
         } else {
           notify(error.message || "อนุมัติงานไม่สำเร็จ", "error");
@@ -2417,11 +2955,16 @@ export const JobDetails: React.FC = () => {
     const icIntercity =
       transportHubJobKind === "intercity_charter" &&
       isOwner &&
-      (job.status === JobStatus.ACCEPTED || job.status === JobStatus.IN_PROGRESS);
+      (job.status === JobStatus.ACCEPTED ||
+        job.status === JobStatus.IN_PROGRESS);
     if (icIntercity) {
       try {
         const q = await MockApi.getJobCancelQuote(id, user.id);
-        if (q.applies && q.cancel_fee && (Number(q.cancel_fee.totalFeeThb) || 0) > 0) {
+        if (
+          q.applies &&
+          q.cancel_fee &&
+          (Number(q.cancel_fee.totalFeeThb) || 0) > 0
+        ) {
           setPendingIntercityCancelFee(q.cancel_fee);
           setShowIntercityCancelFeeModal(true);
           return;
@@ -2438,7 +2981,8 @@ export const JobDetails: React.FC = () => {
   const performCancellation = useCallback(async () => {
     if (!id || !job) return;
     const needConfirm =
-      !!pendingIntercityCancelFee && (Number(pendingIntercityCancelFee.totalFeeThb) || 0) > 0;
+      !!pendingIntercityCancelFee &&
+      (Number(pendingIntercityCancelFee.totalFeeThb) || 0) > 0;
     try {
       await MockApi.cancelJob(id, undefined, user?.id, {
         confirmIntercityCancelFee: needConfirm,
@@ -2486,14 +3030,14 @@ export const JobDetails: React.FC = () => {
 
     if (jobRequiresProofPhotos(job) && !hasReviewedProof) {
       alert(
-        "Please review the proof of work image in the chat before approving."
+        "Please review the proof of work image in the chat before approving.",
       );
       return;
     }
 
     const confirmMsg = t("detail.auto_pay_confirm").replace(
       "{amount}",
-      String(hasInsurance ? totalPrice : jobFeeRounded)
+      String(hasInsurance ? totalPrice : jobFeeRounded),
     );
     if (window.confirm(confirmMsg)) {
       setProcessingPay(true);
@@ -2506,27 +3050,43 @@ export const JobDetails: React.FC = () => {
         }
 
         // 2. โอนเงินให้ผู้รับงาน — ส่ง has_insurance ถ้าติ๊กซื้อประกัน (ใช้ localStorage fallback)
-        const effIns = hasInsurance || (() => { try { return localStorage.getItem(insuranceStorageKey(id)) === 'true'; } catch { return false; } })();
-        await MockApi.processPayment(
-          id,
-          PaymentMethod.WALLET,
-          0,
-          effIns
-        );
+        const effIns =
+          hasInsurance ||
+          (() => {
+            try {
+              return localStorage.getItem(insuranceStorageKey(id)) === "true";
+            } catch {
+              return false;
+            }
+          })();
+        await MockApi.processPayment(id, PaymentMethod.WALLET, 0, effIns);
         void MockApi.pollReleasePayment(id)
           .then((ok) => {
-            if (ok) notify("ระบบปล่อยเงินให้ผู้รับงานแล้ว (ครบช่วงกันเงินตามกลาง)", "success");
+            if (ok)
+              notify(
+                "ระบบปล่อยเงินให้ผู้รับงานแล้ว (ครบช่วงกันเงินตามกลาง)",
+                "success",
+              );
             if (token && user?.id) {
-              MockApi.getProfile(user.id, { refresh: true }).then((u) => login(u, token)).catch(() => {});
+              MockApi.getProfile(user.id, { refresh: true })
+                .then((u) => login(u, token))
+                .catch(() => {});
             }
           })
-          .catch((releaseErr: any) => console.warn("pollReleasePayment:", releaseErr?.message));
+          .catch((releaseErr: any) =>
+            console.warn("pollReleasePayment:", releaseErr?.message),
+          );
         // รีเฟรช profile เพื่อให้ wallet แสดงยอดล่าสุด
         if (token && user?.id) {
-          const freshUser = await MockApi.getProfile(user.id, { refresh: true });
+          const freshUser = await MockApi.getProfile(user.id, {
+            refresh: true,
+          });
           login(freshUser, token);
         }
-        notify("อนุมัติแล้ว — เงินอยู่ระหว่างกันตามกลาง 5 นาที ก่อนโอนเข้าผู้รับงาน", "success");
+        notify(
+          "อนุมัติแล้ว — เงินอยู่ระหว่างกันตามกลาง 5 นาที ก่อนโอนเข้าผู้รับงาน",
+          "success",
+        );
         if (job.accepted_by) {
           setTimeout(() => {
             setShowReviewModal(true);
@@ -2539,7 +3099,7 @@ export const JobDetails: React.FC = () => {
             t("detail.cash_delta_insufficient")
               .replace("{delta}", String(pe.required_delta ?? "—"))
               .replace("{balance}", String(pe.balance ?? "—")),
-            "error"
+            "error",
           );
         } else {
           notify(error.message || "Payment failed", "error");
@@ -2593,15 +3153,15 @@ export const JobDetails: React.FC = () => {
       await ReviewService.submitReview({
         job_id: id,
         reviewer_id: user.id,
-        reviewer_name: user.name || 'ผู้ใช้งาน',
+        reviewer_name: user.name || "ผู้ใช้งาน",
         reviewee_id: job.accepted_by,
-        reviewer_type: 'employer',
-        reviewee_type: 'provider',
+        reviewer_type: "employer",
+        reviewee_type: "provider",
         target_user_id: job.accepted_by,
         rating: reviewRating,
         comment: reviewComment,
         tags: reviewTags,
-        is_verified_job: true
+        is_verified_job: true,
       });
 
       notify(`✅ ส่งรีวิวสำเร็จ! คุณให้ ${reviewRating} ดาว`, "success");
@@ -2624,7 +3184,7 @@ export const JobDetails: React.FC = () => {
           created_at: new Date().toISOString(),
         });
       } catch (notifErr) {
-        console.log('Notification failed (non-critical):', notifErr);
+        console.log("Notification failed (non-critical):", notifErr);
       }
 
       // ปิด modal รีวิว → แสดง modal ส่งทิป (optional) และรีเซ็ตข้อมูล
@@ -2667,10 +3227,16 @@ export const JobDetails: React.FC = () => {
     if (!id || !user || !job || !disputeReason.trim()) return;
     setSubmittingDispute(true);
     try {
-      const isOwnerDispute = isOwner && job.status === JobStatus.WAITING_FOR_APPROVAL;
+      const isOwnerDispute =
+        isOwner && job.status === JobStatus.WAITING_FOR_APPROVAL;
       if (isOwnerDispute) {
         try {
-          await MockApi.createDisputeSupportTicket(id, user.id, disputeReason, useInsuranceClaimInDispute);
+          await MockApi.createDisputeSupportTicket(
+            id,
+            user.id,
+            disputeReason,
+            useInsuranceClaimInDispute,
+          );
         } catch (apiErr) {
           await PaymentService.fileDispute(id, user.id, disputeReason);
         }
@@ -2682,36 +3248,43 @@ export const JobDetails: React.FC = () => {
       if (useInsuranceClaimInDispute && hasIns) {
         try {
           const base = getBackendBase();
-          const token = localStorage.getItem('meerak_token') || localStorage.getItem('authToken') || '';
+          const token =
+            localStorage.getItem("meerak_token") ||
+            localStorage.getItem("authToken") ||
+            "";
           const res = await fetch(`${base}/api/insurance/claim`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ job_id: id, evidence_text: disputeReason }),
           });
           const text = await res.text();
           const data = text && text.startsWith("{") ? JSON.parse(text) : {};
-          if (!res.ok) throw new Error(data.error || 'ไม่สามารถยื่นเคลมได้');
+          if (!res.ok) throw new Error(data.error || "ไม่สามารถยื่นเคลมได้");
           setInsuranceClaim({
-            id: data.claim_id, claim_status: 'pending',
+            id: data.claim_id,
+            claim_status: "pending",
             original_price: data.original_price,
             replacement_payout: data.replacement_payout,
             reserve_amount: data.reserve_amount,
             claimed_at: new Date().toISOString(),
           });
         } catch (claimErr) {
-          console.warn('Insurance claim in dispute failed:', claimErr);
+          console.warn("Insurance claim in dispute failed:", claimErr);
         }
       }
-      notify('✅ ยื่น Dispute สำเร็จ - ระบบจะพิจารณาภายใน 24-48 ชั่วโมง', 'success');
+      notify(
+        "✅ ยื่น Dispute สำเร็จ - ระบบจะพิจารณาภายใน 24-48 ชั่วโมง",
+        "success",
+      );
       setShowDisputeModal(false);
-      setDisputeReason('');
+      setDisputeReason("");
       setUseInsuranceClaimInDispute(false);
     } catch (err: any) {
-      console.error('Error filing dispute:', err);
-      notify(err.message || 'ไม่สามารถยื่น dispute ได้', 'error');
+      console.error("Error filing dispute:", err);
+      notify(err.message || "ไม่สามารถยื่น dispute ได้", "error");
     } finally {
       setSubmittingDispute(false);
     }
@@ -2720,7 +3293,15 @@ export const JobDetails: React.FC = () => {
   // เฉพาะนายจ้าง→ผู้รับงาน เท่านั้น (ผู้รับงานส่งทิปให้นายจ้างไม่ได้)
   const handleSendTip = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !job || !user || !tipAmount || isNaN(Number(tipAmount)) || !isOwner) return;
+    if (
+      !id ||
+      !job ||
+      !user ||
+      !tipAmount ||
+      isNaN(Number(tipAmount)) ||
+      !isOwner
+    )
+      return;
     if (!paymentsEnabled) {
       notify("การชำระเงินถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning");
       return;
@@ -2753,9 +3334,19 @@ export const JobDetails: React.FC = () => {
       if (user && token) {
         const bal = tipRes.employer_wallet_balance;
         if (bal != null) {
-          login({ ...user, wallet_balance: bal, wallet_pending: tipRes.employer_wallet_pending ?? user.wallet_pending }, token);
+          login(
+            {
+              ...user,
+              wallet_balance: bal,
+              wallet_pending:
+                tipRes.employer_wallet_pending ?? user.wallet_pending,
+            },
+            token,
+          );
         } else {
-          const updatedProfile = await MockApi.getProfile(user.id, { refresh: true });
+          const updatedProfile = await MockApi.getProfile(user.id, {
+            refresh: true,
+          });
           login(updatedProfile, token);
         }
         const refreshedJob = await MockApi.getJobDetails(id);
@@ -2795,7 +3386,7 @@ export const JobDetails: React.FC = () => {
   const openSocialShare = (platform: "facebook" | "twitter" | "line") => {
     const url = encodeURIComponent(window.location.href);
     const text = encodeURIComponent(
-      `Check out this job: ${job?.title} on Meerak!`
+      `Check out this job: ${job?.title} on Meerak!`,
     );
     let shareUrl = "";
 
@@ -2817,7 +3408,14 @@ export const JobDetails: React.FC = () => {
 
   const [progressUpdateOpen, setProgressUpdateOpen] = useState(false);
   const [progressUpdatePreset, setProgressUpdatePreset] = useState<
-    "on_the_way" | "arrived" | "working" | "need_more_info" | "delayed" | "done_soon" | "custom" | null
+    | "on_the_way"
+    | "arrived"
+    | "working"
+    | "need_more_info"
+    | "delayed"
+    | "done_soon"
+    | "custom"
+    | null
   >(null);
   const [progressUpdateNote, setProgressUpdateNote] = useState("");
 
@@ -2826,12 +3424,15 @@ export const JobDetails: React.FC = () => {
     setChatOverlayOpen(true);
     navigate(
       { pathname: location.pathname, search: location.search, hash: "#chat" },
-      { replace: true }
+      { replace: true },
     );
     // #region agent log
     fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1d8d58" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "1d8d58",
+      },
       body: JSON.stringify({
         sessionId: "1d8d58",
         runId: "tools-open-chat",
@@ -2858,28 +3459,40 @@ export const JobDetails: React.FC = () => {
       done_soon: "ใกล้เสร็จแล้ว",
       custom: "อัปเดทความคืบหน้า",
     };
-    const headline = preset ? map[preset] || "อัปเดทความคืบหน้า" : "อัปเดทความคืบหน้า";
+    const headline = preset
+      ? map[preset] || "อัปเดทความคืบหน้า"
+      : "อัปเดทความคืบหน้า";
     const msg = note ? `📍 ${headline}\n${note}` : `📍 ${headline}`;
     try {
       // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1d8d58" },
-        body: JSON.stringify({
-          sessionId: "1d8d58",
-          runId: "tools-update-progress",
-          hypothesisId: "H_progress_update_to_chat",
-          location: "JobDetails.tsx:submitProgressUpdate",
-          message: "provider_tools_submit_progress",
-          data: { jobId: id, preset: preset || null, hasNote: !!note },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      fetch(
+        "http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "1d8d58",
+          },
+          body: JSON.stringify({
+            sessionId: "1d8d58",
+            runId: "tools-update-progress",
+            hypothesisId: "H_progress_update_to_chat",
+            location: "JobDetails.tsx:submitProgressUpdate",
+            message: "provider_tools_submit_progress",
+            data: { jobId: id, preset: preset || null, hasNote: !!note },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       await MockApi.sendMessage(id, msg);
 
       let employerBellNotified = false;
-      const uidLocal = user?.id || (typeof window !== "undefined" ? localStorage.getItem("meerak_user_id") : null);
+      const uidLocal =
+        user?.id ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("meerak_user_id")
+          : null);
 
       const notifyEmployerBellFallback = async () => {
         const employerKey = job.created_by ? String(job.created_by).trim() : "";
@@ -2898,11 +3511,14 @@ export const JobDetails: React.FC = () => {
 
       if (uidLocal) {
         try {
-          await api.post(`/jobs/${encodeURIComponent(id)}/notify-employer-progress`, {
-            userId: uidLocal,
-            headline,
-            note,
-          });
+          await api.post(
+            `/jobs/${encodeURIComponent(id)}/notify-employer-progress`,
+            {
+              userId: uidLocal,
+              headline,
+              note,
+            },
+          );
           employerBellNotified = true;
         } catch {
           try {
@@ -2920,19 +3536,25 @@ export const JobDetails: React.FC = () => {
       }
 
       // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1d8d58" },
-        body: JSON.stringify({
-          sessionId: "1d8d58",
-          runId: "progress-employer-notify",
-          hypothesisId: "H_employer_bell_on_progress",
-          location: "JobDetails.tsx:submitProgressUpdate:afterNotify",
-          message: "employer_progress_notification_result",
-          data: { jobId: id, employerBellNotified },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      fetch(
+        "http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "1d8d58",
+          },
+          body: JSON.stringify({
+            sessionId: "1d8d58",
+            runId: "progress-employer-notify",
+            hypothesisId: "H_employer_bell_on_progress",
+            location: "JobDetails.tsx:submitProgressUpdate:afterNotify",
+            message: "employer_progress_notification_result",
+            data: { jobId: id, employerBellNotified },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
       // #endregion
 
       notify(
@@ -2943,7 +3565,7 @@ export const JobDetails: React.FC = () => {
           : language === "en"
             ? "Sent in chat — bell notification unavailable; employer can still read chat."
             : "ส่งในแชทแล้ว — แจ้งเตือนกระดิ่งไม่สำเร็จ ให้ผู้จ้างเปิดแชทของงาน",
-        employerBellNotified ? "success" : "warning"
+        employerBellNotified ? "success" : "warning",
       );
       setProgressUpdateOpen(false);
       setProgressUpdatePreset(null);
@@ -2971,7 +3593,10 @@ export const JobDetails: React.FC = () => {
     // #region agent log
     fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1d8d58" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "1d8d58",
+      },
       body: JSON.stringify({
         sessionId: "1d8d58",
         runId: "tools-update-progress-open",
@@ -3000,14 +3625,19 @@ export const JobDetails: React.FC = () => {
   // 💰 Phase 5: Handle Dispute Filing — Backend jobs ใช้ API, Firestore jobs ใช้ fileDispute
   const handleFileDispute = async () => {
     if (!id || !user || !job || !disputeReason.trim()) {
-      notify('❌ กรุณาระบุเหตุผลในการยื่น dispute', 'error');
+      notify("❌ กรุณาระบุเหตุผลในการยื่น dispute", "error");
       return;
     }
 
     try {
       setFilingDispute(true);
       try {
-        await MockApi.createDisputeSupportTicket(id, user.id, disputeReason, useInsuranceClaimInDispute);
+        await MockApi.createDisputeSupportTicket(
+          id,
+          user.id,
+          disputeReason,
+          useInsuranceClaimInDispute,
+        );
       } catch (apiErr) {
         await PaymentService.fileDispute(id, user.id, disputeReason);
       }
@@ -3015,24 +3645,43 @@ export const JobDetails: React.FC = () => {
       if (useInsuranceClaimInDispute && hasIns) {
         try {
           const base = getBackendBase();
-          const token = localStorage.getItem('meerak_token') || localStorage.getItem('authToken') || '';
+          const token =
+            localStorage.getItem("meerak_token") ||
+            localStorage.getItem("authToken") ||
+            "";
           const res = await fetch(`${base}/api/insurance/claim`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
             body: JSON.stringify({ job_id: id, evidence_text: disputeReason }),
           });
           const text = await res.text();
           const data = text && text.startsWith("{") ? JSON.parse(text) : {};
-          if (res.ok) setInsuranceClaim({ id: data.claim_id, claim_status: 'pending', original_price: data.original_price, replacement_payout: data.replacement_payout, reserve_amount: data.reserve_amount, claimed_at: new Date().toISOString() });
-        } catch (claimErr) { console.warn('Insurance claim in dispute failed:', claimErr); }
+          if (res.ok)
+            setInsuranceClaim({
+              id: data.claim_id,
+              claim_status: "pending",
+              original_price: data.original_price,
+              replacement_payout: data.replacement_payout,
+              reserve_amount: data.reserve_amount,
+              claimed_at: new Date().toISOString(),
+            });
+        } catch (claimErr) {
+          console.warn("Insurance claim in dispute failed:", claimErr);
+        }
       }
-      notify('✅ ยื่น Dispute สำเร็จ - ระบบจะพิจารณาภายใน 24-48 ชั่วโมง', 'success');
+      notify(
+        "✅ ยื่น Dispute สำเร็จ - ระบบจะพิจารณาภายใน 24-48 ชั่วโมง",
+        "success",
+      );
       setShowDisputeModal(false);
-      setDisputeReason('');
+      setDisputeReason("");
       setUseInsuranceClaimInDispute(false);
     } catch (err: any) {
-      console.error('❌ Error filing dispute:', err);
-      notify(err.message || 'ไม่สามารถยื่น dispute ได้', 'error');
+      console.error("❌ Error filing dispute:", err);
+      notify(err.message || "ไม่สามารถยื่น dispute ได้", "error");
     } finally {
       setFilingDispute(false);
     }
@@ -3043,7 +3692,7 @@ export const JobDetails: React.FC = () => {
     if (!id || !user || !job) return;
 
     if (!job.payment_released) {
-      notify('❌ ยังไม่สามารถถอนเงินได้ กรุณารอการอนุมัติงาน', 'error');
+      notify("❌ ยังไม่สามารถถอนเงินได้ กรุณารอการอนุมัติงาน", "error");
       return;
     }
 
@@ -3057,14 +3706,14 @@ export const JobDetails: React.FC = () => {
         })
       ) {
         notify(
-          'ยืนยันตัวตน (KYC) ครบถึงจะถอนเงินได้ — กรุณาทำ KYC ให้ครบก่อน',
-          'warning',
+          "ยืนยันตัวตน (KYC) ครบถึงจะถอนเงินได้ — กรุณาทำ KYC ให้ครบก่อน",
+          "warning",
         );
-        navigate('/kyc?reason=withdraw');
+        navigate("/kyc?reason=withdraw");
         return;
       }
     } catch {
-      notify('ไม่สามารถตรวจสถานะ KYC ได้ ลองใหม่อีกครั้ง', 'error');
+      notify("ไม่สามารถตรวจสถานะ KYC ได้ ลองใหม่อีกครั้ง", "error");
       return;
     }
 
@@ -3073,23 +3722,20 @@ export const JobDetails: React.FC = () => {
 
     try {
       await PaymentService.requestWithdrawal(id, user.id);
-      notify('✅ ขอถอนเงินสำเร็จ - ระบบจะโอนเงินภายใน 24 ชั่วโมง', 'success');
+      notify("✅ ขอถอนเงินสำเร็จ - ระบบจะโอนเงินภายใน 24 ชั่วโมง", "success");
     } catch (err: any) {
-      console.error('❌ Error requesting withdrawal:', err);
-      notify(err.message || 'ไม่สามารถขอถอนเงินได้', 'error');
+      console.error("❌ Error requesting withdrawal:", err);
+      notify(err.message || "ไม่สามารถขอถอนเงินได้", "error");
     }
   };
 
-  const proofPhotosRequired = useMemo(
-    () => jobRequiresProofPhotos(job),
-    [job]
-  );
+  const proofPhotosRequired = useMemo(() => jobRequiresProofPhotos(job), [job]);
 
   const hasBothProofImages =
     (!!job?.before_photo_url && !!job?.after_photo_url) ||
     (!!uploadedPhotosRef.current.before && !!uploadedPhotosRef.current.after);
   const hasProofFromChat = messages.some(
-    (m) => m.sender_id === user?.id && m.type === MessageType.IMAGE
+    (m) => m.sender_id === user?.id && m.type === MessageType.IMAGE,
   );
 
   /** งาน Driver ไม่บังคับรูป — ถือว่าผ่านขั้นหลักฐานใน flow */
@@ -3178,24 +3824,34 @@ export const JobDetails: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [jobFlow, job]);
 
-  const round2 = (v: number) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+  const round2 = (v: number) =>
+    Math.round((Number(v) + Number.EPSILON) * 100) / 100;
   const jobFeeRounded = job != null ? round2(job.price) : 0;
 
   const talentPreviewBreakdown = useMemo(() => {
     if (feeEstimates?.fee_rates) {
-      return estimateMatchTalentBreakdown(jobFeeRounded, user?.vip_tier, feeEstimates.fee_rates);
+      return estimateMatchTalentBreakdown(
+        jobFeeRounded,
+        user?.vip_tier,
+        feeEstimates.fee_rates,
+      );
     }
     return calcMatchJobTalentBreakdown(jobFeeRounded, user?.vip_tier);
   }, [jobFeeRounded, user?.vip_tier, feeEstimates]);
   const employerQuestionsPreview = useMemo(
     () => (job ? getEmployerQuestionsForProvider(job) : []),
-    [job]
+    [job],
   );
   const preAcceptMapModel = useMemo(() => {
-    if (!job || !canAcceptJob || job.status !== JobStatus.OPEN || isExpired) return null;
+    if (!job || !canAcceptJob || job.status !== JobStatus.OPEN || isExpired)
+      return null;
     const stops = getDriverTransportStops(job);
     if (isDriverCategory(job) && stops.pickup && stops.dropoff) {
-      return { kind: "two" as const, pickup: stops.pickup, dropoff: stops.dropoff };
+      return {
+        kind: "two" as const,
+        pickup: stops.pickup,
+        dropoff: stops.dropoff,
+      };
     }
     if (job.location?.lat != null && job.location?.lng != null) {
       return {
@@ -3238,18 +3894,33 @@ export const JobDetails: React.FC = () => {
       job.status === JobStatus.OPEN &&
       !isExpired);
   // Use job.insurance_amount only when job was PAID with insurance; otherwise compute from rate when hasInsurance ticked
-  const insuranceAmount = (job?.has_insurance && job?.insurance_amount != null && Number(job.insurance_amount) > 0)
-    ? round2(Number(job.insurance_amount))
-    : (job && hasInsurance ? round2(jobFeeRounded * (insuranceRatePercent / 100)) : 0);
+  const insuranceAmount =
+    job?.has_insurance &&
+    job?.insurance_amount != null &&
+    Number(job.insurance_amount) > 0
+      ? round2(Number(job.insurance_amount))
+      : job && hasInsurance
+        ? round2(jobFeeRounded * (insuranceRatePercent / 100))
+        : 0;
   // For Insurance Price Breakdown card: same logic — use job data only when paid; else compute from rate
-  const cardInsuranceAmount = (job?.has_insurance && job?.insurance_amount != null && Number(job.insurance_amount) > 0)
-    ? round2(Number(job.insurance_amount))
-    : (job && (job?.has_insurance || hasInsurance) ? round2(jobFeeRounded * (insuranceRatePercent / 100)) : 0);
+  const cardInsuranceAmount =
+    job?.has_insurance &&
+    job?.insurance_amount != null &&
+    Number(job.insurance_amount) > 0
+      ? round2(Number(job.insurance_amount))
+      : job && (job?.has_insurance || hasInsurance)
+        ? round2(jobFeeRounded * (insuranceRatePercent / 100))
+        : 0;
   // Final Price = (Job Fee + Insurance) × (1 + markup%) — sync กับ payout_config / fee-estimates
-  const paymentMarkupPercent = feeEstimates?.fee_rates?.payment_markup_percent ?? 5;
+  const paymentMarkupPercent =
+    feeEstimates?.fee_rates?.payment_markup_percent ?? 5;
   const markupRate = paymentMarkupPercent / 100;
-  const totalPrice = job ? round2((jobFeeRounded + insuranceAmount) * (1 + markupRate)) : 0;
-  const cardTotalPrice = job ? round2((jobFeeRounded + cardInsuranceAmount) * (1 + markupRate)) : 0;
+  const totalPrice = job
+    ? round2((jobFeeRounded + insuranceAmount) * (1 + markupRate))
+    : 0;
+  const cardTotalPrice = job
+    ? round2((jobFeeRounded + cardInsuranceAmount) * (1 + markupRate))
+    : 0;
   const canAutoPay = (user?.wallet_balance || 0) >= totalPrice;
 
   /** แชท/ติดต่อซ้ำ: ถ้ามีการ์ดลูกค้าในแผนที่ (โทร·แชท·ปฏิทิน) แล้ว ไม่ต้องแสดงแถบแชทสีเขียวด้านบน */
@@ -3263,130 +3934,129 @@ export const JobDetails: React.FC = () => {
       ? "ring-2 ring-emerald-500/35 shadow-md scroll-mt-24 transition-shadow duration-300 rounded-2xl"
       : "";
 
-  const jobDetailsBlock =
-    job ? (
-      <>
-        <div className="flex items-start space-x-4">
-          <div className="flex-shrink-0">
-            <img
-              src={
-                job.created_by_avatar ||
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                  job.created_by_name || "U"
-                )}`
-              }
-              alt="User"
-              className="w-12 h-12 rounded-full border-2 border-white shadow-sm"
-            />
-          </div>
-          <div>
-            <p className="text-sm text-slate-600">{t("detail.posted_by")}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium text-slate-900 m-0">
-                {job.created_by_name || t("detail.unverified")}
-              </p>
-              {showJobBaBadge(employerBa) && (
-                <BrandAdviserBadge
-                  isBrandAdviser
-                  adviserStatus={employerBa?.adviser_status}
-                  tone="light"
-                />
-              )}
-            </div>
-            <div className="flex items-center text-emerald-600 text-xs mt-1">
-              <Shield size={12} className="mr-1" /> {t("detail.kyc")}
-            </div>
-          </div>
+  const jobDetailsBlock = job ? (
+    <>
+      <div className="flex items-start space-x-4">
+        <div className="flex-shrink-0">
+          <img
+            src={
+              job.created_by_avatar ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                job.created_by_name || "U",
+              )}`
+            }
+            alt="User"
+            className="w-12 h-12 rounded-full border-2 border-white shadow-sm"
+          />
         </div>
-
         <div>
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
-            {t("create.desc")}
-          </h3>
-          <p className="text-description text-gray-700 leading-relaxed">{job.description}</p>
-        </div>
-
-        <div className="job-detail-info-cards grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="job-detail-info-card info-box-item p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center text-gray-500 mb-1">
-              <Clock size={16} className="mr-2" />
-              <span className="text-xs font-medium uppercase">
-                {t("detail.time")}
-              </span>
-            </div>
-            <p className="text-gray-900 font-medium leading-snug">
-              {new Date(job.datetime).toLocaleString(
-                language === "th" ? "th-TH" : "en-US",
-                {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                }
-              )}
+          <p className="text-sm text-slate-600">{t("detail.posted_by")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium text-slate-900 m-0">
+              {job.created_by_name || t("detail.unverified")}
             </p>
-            {job.duration_hours && (
-              <p className="text-xs text-gray-500 mt-1">
-                Duration: {job.duration_hours} hrs
-              </p>
+            {showJobBaBadge(employerBa) && (
+              <BrandAdviserBadge
+                isBrandAdviser
+                adviserStatus={employerBa?.adviser_status}
+                tone="light"
+              />
             )}
           </div>
-          <div
-            className={`job-detail-info-card info-box-item p-4 bg-gray-50 rounded-lg ${
-              locationDisplayLines.isTransportRoute ? "sm:col-span-2" : ""
-            }`}
-          >
-            <div className="flex items-center text-gray-500 mb-1">
-              <MapPin size={16} className="mr-2" />
-              <span className="text-xs font-medium uppercase">
-                {t("detail.loc")}
-              </span>
-            </div>
-            {locationDisplayLines.isTransportRoute ? (
-              <div className="space-y-2 text-sm text-gray-900">
-                <p className="flex gap-2">
-                  <span className="text-red-500 shrink-0" aria-hidden>
-                    ●
-                  </span>
-                  <span>{locationDisplayLines.line1}</span>
-                </p>
-                <p className="flex gap-2">
-                  <span className="text-emerald-600 shrink-0" aria-hidden>
-                    ●
-                  </span>
-                  <span>{locationDisplayLines.line2}</span>
-                </p>
-              </div>
-            ) : (
-              <p className="text-gray-900 font-medium leading-relaxed">
-                {formatJobPrimaryAddress(job) ||
-                  t("detail.loc_unknown") ||
-                  "—"}
-              </p>
-            )}
+          <div className="flex items-center text-emerald-600 text-xs mt-1">
+            <Shield size={12} className="mr-1" /> {t("detail.kyc")}
           </div>
         </div>
-      </>
-    ) : null;
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+          {t("create.desc")}
+        </h3>
+        <p className="text-description text-gray-700 leading-relaxed">
+          {job.description}
+        </p>
+      </div>
+
+      <div className="job-detail-info-cards grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="job-detail-info-card info-box-item p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center text-gray-500 mb-1">
+            <Clock size={16} className="mr-2" />
+            <span className="text-xs font-medium uppercase">
+              {t("detail.time")}
+            </span>
+          </div>
+          <p className="text-gray-900 font-medium leading-snug">
+            {new Date(job.datetime).toLocaleString(
+              language === "th" ? "th-TH" : "en-US",
+              {
+                dateStyle: "medium",
+                timeStyle: "short",
+              },
+            )}
+          </p>
+          {job.duration_hours && (
+            <p className="text-xs text-gray-500 mt-1">
+              Duration: {job.duration_hours} hrs
+            </p>
+          )}
+        </div>
+        <div
+          className={`job-detail-info-card info-box-item p-4 bg-gray-50 rounded-lg ${
+            locationDisplayLines.isTransportRoute ? "sm:col-span-2" : ""
+          }`}
+        >
+          <div className="flex items-center text-gray-500 mb-1">
+            <MapPin size={16} className="mr-2" />
+            <span className="text-xs font-medium uppercase">
+              {t("detail.loc")}
+            </span>
+          </div>
+          {locationDisplayLines.isTransportRoute ? (
+            <div className="space-y-2 text-sm text-gray-900">
+              <p className="flex gap-2">
+                <span className="text-red-500 shrink-0" aria-hidden>
+                  ●
+                </span>
+                <span>{locationDisplayLines.line1}</span>
+              </p>
+              <p className="flex gap-2">
+                <span className="text-emerald-600 shrink-0" aria-hidden>
+                  ●
+                </span>
+                <span>{locationDisplayLines.line2}</span>
+              </p>
+            </div>
+          ) : (
+            <p className="text-gray-900 font-medium leading-relaxed">
+              {formatJobPrimaryAddress(job) || t("detail.loc_unknown") || "—"}
+            </p>
+          )}
+        </div>
+      </div>
+    </>
+  ) : null;
 
   const otherAvatar = isOwner
     ? (job as any).provider_profile?.avatar_url ||
       `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        job.accepted_by_name || "Provider"
+        job.accepted_by_name || "Provider",
       )}&background=pink&color=fff`
     : isAssignedProvider
-    ? job.created_by_avatar ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        job.created_by_name || "User"
-      )}&background=pink&color=fff`
-    : `https://ui-avatars.com/api/?name=User&background=pink&color=fff`;
+      ? job.created_by_avatar ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+          job.created_by_name || "User",
+        )}&background=pink&color=fff`
+      : `https://ui-avatars.com/api/?name=User&background=pink&color=fff`;
   // 1. เอาไปวางไว้ใต้ useState ทั้งหมด แต่ก่อน return JSX
 
   // Phase 3: Luxury UI — CSS variables for theming (Glassmorphism, high contrast, typography)
   const luxuryVars = {
-    '--luxury-glass': 'rgba(255,255,255,0.72)',
-    '--luxury-glass-border': 'rgba(255,255,255,0.9)',
-    '--luxury-text': '#0f172a',
-    '--luxury-text-muted': '#475569',
-    '--luxury-accent': '#059669',
+    "--luxury-glass": "rgba(255,255,255,0.72)",
+    "--luxury-glass-border": "rgba(255,255,255,0.9)",
+    "--luxury-text": "#0f172a",
+    "--luxury-text-muted": "#475569",
+    "--luxury-accent": "#059669",
   } as React.CSSProperties;
 
   return (
@@ -3396,9 +4066,12 @@ export const JobDetails: React.FC = () => {
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-base font-bold text-slate-900">เปิดกล้องไม่ได้</div>
+                <div className="text-base font-bold text-slate-900">
+                  เปิดกล้องไม่ได้
+                </div>
                 <div className="mt-1 text-xs leading-relaxed text-slate-600">
-                  ถ้ายังไม่อนุญาตสิทธิ์กล้อง ให้เปิดสิทธิ์กล้องของเบราว์เซอร์ แล้วกลับมาถ่ายรูปอีกครั้ง
+                  ถ้ายังไม่อนุญาตสิทธิ์กล้อง ให้เปิดสิทธิ์กล้องของเบราว์เซอร์
+                  แล้วกลับมาถ่ายรูปอีกครั้ง
                 </div>
               </div>
               <button
@@ -3440,9 +4113,13 @@ export const JobDetails: React.FC = () => {
                 onClick={() => {
                   const ua = String(navigator?.userAgent || "").toLowerCase();
                   const isAndroid = ua.includes("android");
-                  const isChrome = ua.includes("chrome") || ua.includes("crios");
+                  const isChrome =
+                    ua.includes("chrome") || ua.includes("crios");
                   // Android Chrome รองรับ deep-link ไปหน้าตั้งค่ากล้องได้บางกรณี
-                  const target = isAndroid && isChrome ? "chrome://settings/content/camera" : "https://support.google.com/chrome/answer/2693767";
+                  const target =
+                    isAndroid && isChrome
+                      ? "chrome://settings/content/camera"
+                      : "https://support.google.com/chrome/answer/2693767";
                   window.open(target, "_blank", "noopener,noreferrer");
                 }}
               >
@@ -3452,3561 +4129,4674 @@ export const JobDetails: React.FC = () => {
           </div>
         </div>
       )}
-    <VipThemeWrapper vip_tier={user?.vip_tier}>
-      <div
-        className="min-h-screen antialiased font-sans selection:bg-emerald-500/20 text-slate-900"
-        style={luxuryVars}
-      >
-        {/* Glassmorphism background + high contrast (Platinum: overridden by .vip-theme-platinum .job-detail-page in CSS) */}
-        <div className="job-detail-page job-detail-container min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/90 bg-[length:100%_100%] scroll-mt-20">
-          <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 pb-24 md:pb-10 scroll-mt-20">
-    <div className="grid grid-cols-1 gap-6 relative">
-      <BackendBannersSection
-        variant="compact"
-        placement="job_detail"
-        jobCategory={job?.category}
-        className="col-span-full"
-      />
-      {/* Share Modal */}
-      {showShareModal && (
+      <VipThemeWrapper vip_tier={user?.vip_tier}>
         <div
-          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
-          onClick={() => setShowShareModal(false)}
+          className="min-h-screen antialiased font-sans selection:bg-emerald-500/20 text-slate-900"
+          style={luxuryVars}
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in slide-in-from-bottom-10 sm:zoom-in-95"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900">
-                {t("detail.share_via")}
-              </h3>
-              <button onClick={() => setShowShareModal(false)}>
-                <XCircle className="text-gray-400" />
-              </button>
-            </div>
-            <div className="grid grid-cols-4 gap-4 mb-4">
-              <button
-                onClick={() => openSocialShare("facebook")}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center">
-                  <Facebook size={24} />
-                </div>
-                <span className="text-xs font-medium text-gray-600">
-                  Facebook
-                </span>
-              </button>
-              <button
-                onClick={() => openSocialShare("line")}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-12 h-12 bg-[#00C300] text-white rounded-full flex items-center justify-center">
-                  <MessageCircle size={24} />
-                </div>
-                <span className="text-xs font-medium text-gray-600">LINE</span>
-              </button>
-              <button
-                onClick={() => openSocialShare("twitter")}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-12 h-12 bg-sky-500 text-white rounded-full flex items-center justify-center">
-                  <Twitter size={24} />
-                </div>
-                <span className="text-xs font-medium text-gray-600">
-                  Twitter
-                </span>
-              </button>
-              <button
-                onClick={copyToClipboard}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-12 h-12 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center">
-                  <Copy size={24} />
-                </div>
-                <span className="text-xs font-medium text-gray-600">Copy</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* แจ้งปัญหา — bottom sheet ยืนยันก่อนเข้าศูนย์ช่วยเหลือ (แบบ Lineman) */}
-      {showHelpCenterGateModal && (
-        <div className="fixed inset-0 z-[61] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-            aria-label={t("detail.chat_close")}
-            onClick={() => setShowHelpCenterGateModal(false)}
-          />
-          <div
-            className="relative z-10 w-full max-w-lg animate-in slide-in-from-bottom rounded-t-[24px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_40px_rgba(0,0,0,0.14)] duration-300 sm:rounded-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="help-gate-title"
-          >
-            <div className="mb-2 flex justify-end">
-              <button
-                type="button"
-                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
-                onClick={() => setShowHelpCenterGateModal(false)}
-                aria-label={t("detail.chat_close")}
-              >
-                <X size={22} />
-              </button>
-            </div>
-            <h3
-              id="help-gate-title"
-              className="mb-1 px-2 text-center text-lg font-bold text-slate-900"
-            >
-              {t("detail.help_contact_sheet_title")}
-            </h3>
-            <p className="mb-5 px-2 text-center text-sm text-slate-500">
-              {t("detail.help_contact_sheet_sub")}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setShowHelpCenterGateModal(false);
-                openHelpCenterOverlay();
-              }}
-              className="mb-2 w-full rounded-2xl bg-pink-500 py-3.5 text-center text-base font-bold text-white shadow-lg shadow-pink-200 transition-colors hover:bg-pink-600"
-            >
-              {t("detail.help_contact_primary")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowHelpCenterGateModal(false)}
-              className="mb-4 w-full rounded-2xl bg-slate-100 py-3.5 text-center text-base font-semibold text-slate-800 transition-colors hover:bg-slate-200"
-            >
-              {t("detail.help_contact_back")}
-            </button>
-            <p className="text-center text-[11px] leading-relaxed text-slate-500">
-              {t("detail.help_contact_footer")}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Tip Modal — bottom sheet สไตล์ Lineman + ธีมชมพู Meerak */}
-      {showTipModal && (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-            aria-label={t("chat_close")}
-            onClick={() => {
-              setShowTipModal(false);
-              setTipAmount("");
-              setTipPresetSelected(null);
-            }}
-          />
-          <div
-            className="relative z-10 flex max-h-[min(90vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_-8px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom duration-300 sm:rounded-3xl sm:shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="tip-sheet-title"
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 pb-3 pt-5">
-              <div className="min-w-0 pr-2">
-                <div className="mb-1 flex items-center gap-2">
-                  <Heart className="h-5 w-5 shrink-0 fill-pink-500 text-pink-500" aria-hidden />
-                  <h3 id="tip-sheet-title" className="text-lg font-bold leading-tight text-gray-900">
-                    {t("detail.tip_modal_title")}
-                  </h3>
-                </div>
-                <p className="text-sm leading-snug text-gray-500">
-                  {t("detail.tip_modal_subtitle")}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100"
-                onClick={() => {
-                  setShowTipModal(false);
-                  setTipAmount("");
-                  setTipPresetSelected(null);
-                }}
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleSendTip}
-              className="flex min-h-0 flex-1 flex-col"
-            >
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-2 pt-4">
-                <div className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50 to-white px-4 py-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-pink-600">
-                    {t("detail.tip_wallet_balance_label")}
+          {/* Glassmorphism background + high contrast (Platinum: overridden by .vip-theme-platinum .job-detail-page in CSS) */}
+          <div className="job-detail-page job-detail-container min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/90 bg-[length:100%_100%] scroll-mt-20">
+            <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 pb-24 md:pb-10 scroll-mt-20">
+              <div className="grid grid-cols-1 gap-6 relative">
+                <BackendBannersSection
+                  variant="compact"
+                  placement="job_detail"
+                  jobCategory={job?.category}
+                  className="col-span-full"
+                />
+                {/* Share Modal */}
+                {showShareModal && (
+                  <div
+                    className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
+                    onClick={() => setShowShareModal(false)}
+                  >
+                    <div
+                      className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in slide-in-from-bottom-10 sm:zoom-in-95"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-gray-900">
+                          {t("detail.share_via")}
+                        </h3>
+                        <button onClick={() => setShowShareModal(false)}>
+                          <XCircle className="text-gray-400" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-4 mb-4">
+                        <button
+                          onClick={() => openSocialShare("facebook")}
+                          className="flex flex-col items-center gap-2"
+                        >
+                          <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center">
+                            <Facebook size={24} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-600">
+                            Facebook
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => openSocialShare("line")}
+                          className="flex flex-col items-center gap-2"
+                        >
+                          <div className="w-12 h-12 bg-[#00C300] text-white rounded-full flex items-center justify-center">
+                            <MessageCircle size={24} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-600">
+                            LINE
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => openSocialShare("twitter")}
+                          className="flex flex-col items-center gap-2"
+                        >
+                          <div className="w-12 h-12 bg-sky-500 text-white rounded-full flex items-center justify-center">
+                            <Twitter size={24} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-600">
+                            Twitter
+                          </span>
+                        </button>
+                        <button
+                          onClick={copyToClipboard}
+                          className="flex flex-col items-center gap-2"
+                        >
+                          <div className="w-12 h-12 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center">
+                            <Copy size={24} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-600">
+                            Copy
+                          </span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xl font-bold tabular-nums text-pink-900">
-                    {(user?.wallet_balance ?? 0).toLocaleString()} THB
-                  </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  {TIP_PRESET_AMOUNTS.map((amt) => {
-                    const selected = tipPresetSelected === amt;
-                    return (
+                {/* แจ้งปัญหา — bottom sheet ยืนยันก่อนเข้าศูนย์ช่วยเหลือ (แบบ Lineman) */}
+                {showHelpCenterGateModal && (
+                  <div className="fixed inset-0 z-[61] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200">
+                    <button
+                      type="button"
+                      className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+                      aria-label={t("detail.chat_close")}
+                      onClick={() => setShowHelpCenterGateModal(false)}
+                    />
+                    <div
+                      className="relative z-10 w-full max-w-lg animate-in slide-in-from-bottom rounded-t-[24px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_40px_rgba(0,0,0,0.14)] duration-300 sm:rounded-2xl"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="help-gate-title"
+                    >
+                      <div className="mb-2 flex justify-end">
+                        <button
+                          type="button"
+                          className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+                          onClick={() => setShowHelpCenterGateModal(false)}
+                          aria-label={t("detail.chat_close")}
+                        >
+                          <X size={22} />
+                        </button>
+                      </div>
+                      <h3
+                        id="help-gate-title"
+                        className="mb-1 px-2 text-center text-lg font-bold text-slate-900"
+                      >
+                        {t("detail.help_contact_sheet_title")}
+                      </h3>
+                      <p className="mb-5 px-2 text-center text-sm text-slate-500">
+                        {t("detail.help_contact_sheet_sub")}
+                      </p>
                       <button
-                        key={amt}
                         type="button"
                         onClick={() => {
-                          setTipPresetSelected(amt);
-                          setTipAmount(String(amt));
+                          setShowHelpCenterGateModal(false);
+                          openHelpCenterOverlay();
                         }}
-                        className={`rounded-2xl py-3.5 text-center text-base font-semibold transition-all ${
-                          selected
-                            ? "bg-pink-500 text-white shadow-md shadow-pink-200"
-                            : "border border-gray-200 bg-gray-50 text-gray-900 hover:border-pink-200 hover:bg-pink-50/60"
-                        }`}
+                        className="mb-2 w-full rounded-2xl bg-pink-500 py-3.5 text-center text-base font-bold text-white shadow-lg shadow-pink-200 transition-colors hover:bg-pink-600"
                       >
-                        ฿{amt}
+                        {t("detail.help_contact_primary")}
                       </button>
-                    );
-                  })}
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="tip-custom-amount"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500"
-                  >
-                    {t("detail.tip_custom_label")}
-                  </label>
-                  <div className="flex items-center border-b-2 border-pink-200 pb-1.5 transition-colors focus-within:border-pink-500">
-                    <span className="select-none pr-2 text-xl font-bold text-pink-500" aria-hidden>
-                      ฿
-                    </span>
-                    <input
-                      id="tip-custom-amount"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      placeholder={t("detail.tip_placeholder")}
-                      className="min-w-0 flex-1 border-0 bg-transparent text-lg font-semibold text-gray-900 outline-none placeholder:text-gray-400"
-                      value={tipAmount}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/[^\d]/g, "");
-                        setTipPresetSelected(null);
-                        setTipAmount(v);
-                      }}
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-gray-500">{t("detail.tip_max_hint")}</p>
-                </div>
-
-                <div>
-                  <div className="mb-2 text-sm font-bold text-gray-900">
-                    {t("detail.tip_payment_method")}
-                  </div>
-                  <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3.5">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pink-100">
-                        <Wallet className="text-pink-600" size={20} />
-                      </div>
-                      <span className="truncate font-medium text-gray-900">
-                        {t("detail.tip_pay_from_wallet")}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowHelpCenterGateModal(false)}
+                        className="mb-4 w-full rounded-2xl bg-slate-100 py-3.5 text-center text-base font-semibold text-slate-800 transition-colors hover:bg-slate-200"
+                      >
+                        {t("detail.help_contact_back")}
+                      </button>
+                      <p className="text-center text-[11px] leading-relaxed text-slate-500">
+                        {t("detail.help_contact_footer")}
+                      </p>
                     </div>
-                    <ChevronRight className="shrink-0 text-gray-300" size={20} aria-hidden />
-                  </div>
-                </div>
-              </div>
-
-              <div className="shrink-0 border-t border-gray-100 bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
-                {(() => {
-                  const parsed = Number(tipAmount);
-                  const wallet = user?.wallet_balance ?? 0;
-                  const tipOk =
-                    tipAmount !== "" &&
-                    Number.isFinite(parsed) &&
-                    parsed >= 10 &&
-                    parsed <= TIP_MAX_AMOUNT &&
-                    parsed <= wallet;
-                  return (
-                    <button
-                      type="submit"
-                      disabled={sendingTip || !tipOk}
-                      className="flex w-full items-center justify-center rounded-2xl py-3.5 text-base font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-white enabled:bg-pink-500 enabled:shadow-lg enabled:shadow-pink-200 enabled:hover:bg-pink-600"
-                    >
-                      {sendingTip ? (
-                        <>
-                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                          กำลังโอนเงิน...
-                        </>
-                      ) : (
-                        t("detail.tip_confirm")
-                      )}
-                    </button>
-                  );
-                })()}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Intercity — แจ้งค่าธรรมเนียมยกเลิกก่อนนับถอยหลัง */}
-      {showIntercityCancelFeeModal && pendingIntercityCancelFee && (
-        <div className="fixed inset-0 z-[61] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-            <h3 className="text-lg font-bold text-amber-900 mb-2 flex items-center gap-2">
-              <AlertTriangle className="text-amber-500" size={22} />
-              ยืนยันยกเลิกงาน
-            </h3>
-            <p className="text-sm text-slate-700 leading-relaxed mb-4">
-              การยกเลิกงานนี้จะมีค่าธรรมเนียม{" "}
-              <span className="font-mono font-bold text-amber-900">
-                {Number(pendingIntercityCancelFee.totalFeeThb || 0).toLocaleString()}
-              </span>{" "}
-              บาท เนื่องจากคนขับเตรียมออกเดินทางแล้ว ยืนยันหรือไม่?
-            </p>
-            {pendingIntercityCancelFee.reason ? (
-              <p className="text-xs text-slate-500 mb-4">({pendingIntercityCancelFee.reason})</p>
-            ) : null}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowIntercityCancelFeeModal(false);
-                  setPendingIntercityCancelFee(null);
-                }}
-                className="flex-1 py-3 border border-slate-300 text-slate-800 font-bold rounded-xl hover:bg-slate-50"
-              >
-                ไม่ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowIntercityCancelFeeModal(false);
-                  setCancelSeconds(10);
-                  setShowCancelModal(true);
-                }}
-                className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl"
-              >
-                ยืนยัน
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cancellation Countdown Modal */}
-      {showCompletionExtrasModal && isAssignedProvider && job && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-2 mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">{t("detail.completion_extras_title")}</h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{t("detail.completion_extras_sub")}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCompletionExtrasModal(false)}
-                className="p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Close"
-              >
-                <X size={22} className="text-slate-500" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              {(
-                [
-                  { key: "meter", label: t("detail.completion_meter"), val: completionMeter, set: setCompletionMeter },
-                  { key: "toll", label: t("detail.completion_toll"), val: completionToll, set: setCompletionToll },
-                  { key: "park", label: t("detail.completion_parking"), val: completionParking, set: setCompletionParking },
-                  { key: "other", label: t("detail.completion_other"), val: completionOther, set: setCompletionOther },
-                ] as const
-              ).map((row) => (
-                <div key={row.key}>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">{row.label}</label>
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    <span className="text-slate-500 text-sm">฿</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={row.val}
-                      onChange={(e) => row.set(e.target.value.replace(/[^\d.,]/g, ""))}
-                      className="flex-1 min-w-0 bg-transparent text-slate-900 font-semibold tabular-nums outline-none"
-                    />
-                  </div>
-                </div>
-              ))}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{t("detail.completion_note")}</label>
-                <textarea
-                  value={completionExtrasNote}
-                  onChange={(e) => setCompletionExtrasNote(e.target.value.slice(0, 500))}
-                  rows={2}
-                  placeholder={t("detail.completion_note_ph")}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400"
-                />
-              </div>
-            </div>
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingCompletionExtras(undefined);
-                  setShowCompletionExtrasModal(false);
-                  setShowCompletionSummaryModal(true);
-                }}
-                className="w-full py-3 rounded-xl border-2 border-slate-200 text-slate-800 font-semibold hover:bg-slate-50"
-              >
-                {t("detail.completion_skip_extras")}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingCompletionExtras(buildExtrasFromInputs());
-                  setShowCompletionExtrasModal(false);
-                  setShowCompletionSummaryModal(true);
-                }}
-                className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-md"
-              >
-                {t("detail.completion_next_summary")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCompletionSummaryModal && isAssignedProvider && job && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 p-5 sm:p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-1">{t("detail.completion_summary_title")}</h3>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">{t("detail.completion_summary_sub")}</p>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-2 text-sm mb-4">
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-600">{t("detail.job_fee")}</span>
-                <span className="font-semibold tabular-nums">฿{jobFeeRounded.toLocaleString()}</span>
-              </div>
-              {pendingCompletionExtras ? (
-                <>
-                  {(pendingCompletionExtras.meter_thb || 0) > 0 && (
-                    <div className="flex justify-between gap-3 text-xs">
-                      <span className="text-slate-500">{t("detail.completion_meter")}</span>
-                      <span className="tabular-nums">+฿{(pendingCompletionExtras.meter_thb || 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {(pendingCompletionExtras.toll_thb || 0) > 0 && (
-                    <div className="flex justify-between gap-3 text-xs">
-                      <span className="text-slate-500">{t("detail.completion_toll")}</span>
-                      <span className="tabular-nums">+฿{(pendingCompletionExtras.toll_thb || 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {(pendingCompletionExtras.parking_thb || 0) > 0 && (
-                    <div className="flex justify-between gap-3 text-xs">
-                      <span className="text-slate-500">{t("detail.completion_parking")}</span>
-                      <span className="tabular-nums">+฿{(pendingCompletionExtras.parking_thb || 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {(pendingCompletionExtras.other_thb || 0) > 0 && (
-                    <div className="flex justify-between gap-3 text-xs">
-                      <span className="text-slate-500">{t("detail.completion_other")}</span>
-                      <span className="tabular-nums">+฿{(pendingCompletionExtras.other_thb || 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {pendingCompletionExtras.note ? (
-                    <p className="text-xs text-slate-600 pt-1 border-t border-slate-200">{pendingCompletionExtras.note}</p>
-                  ) : null}
-                </>
-              ) : (
-                <p className="text-xs text-slate-500">{t("detail.completion_no_extras")}</p>
-              )}
-            </div>
-            <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 mb-4">
-              <p className="text-[11px] font-semibold text-amber-900 uppercase tracking-wide">{t("payment.method")}</p>
-              <p className="text-sm font-bold text-amber-950 mt-0.5">
-                {getJobPaymentBadgeVariant(job)?.variant === "cash"
-                  ? t("detail.payment_badge_cash")
-                  : getJobPaymentBadgeVariant(job)?.variant === "wallet"
-                  ? t("detail.payment_badge_wallet")
-                  : t("detail.payment_badge_online")}
-              </p>
-              <p className="text-xs text-amber-900/90 mt-2 leading-relaxed">{t("detail.completion_collect_hint")}</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCompletionSummaryModal(false);
-                  setShowCompletionExtrasModal(true);
-                }}
-                className="flex-1 py-3 rounded-xl border border-slate-200 font-semibold text-slate-800 hover:bg-slate-50"
-              >
-                {t("detail.completion_back")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void runSubmitWorkWithExtras(pendingCompletionExtras)}
-                disabled={submittingWork || gpsVerifying}
-                className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {submittingWork || gpsVerifying ? (
-                  <Loader2 className="inline animate-spin" size={18} />
-                ) : (
-                  t("detail.completion_confirm_submit")
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCancelModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 text-center p-8">
-            <div className="w-20 h-20 rounded-full border-4 border-red-500 flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl font-bold text-red-600">
-                {cancelSeconds}
-              </span>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
-              {t("detail.cancelling_title")}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {t("detail.cancelling_desc")} {cancelSeconds}s
-            </p>
-            <button
-              onClick={() => {
-                setShowCancelModal(false);
-                setPendingIntercityCancelFee(null);
-              }}
-              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-colors"
-            >
-              {t("detail.keep_job")}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Dispute Modal */}
-      {showDisputeModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900 flex items-center">
-                <AlertOctagon className="text-red-500 mr-2" />{" "}
-                {t("detail.report")}
-              </h3>
-              <button onClick={() => setShowDisputeModal(false)}>
-                <XCircle className="text-gray-400" />
-              </button>
-            </div>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {(
-                [
-                  "detail.report_preset_late",
-                  "detail.report_preset_quality",
-                  "detail.report_preset_payment",
-                  "detail.report_preset_safety",
-                ] as const
-              ).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() =>
-                    setDisputeReason((prev) => {
-                      const line = t(key);
-                      if (!line || line === key) return prev;
-                      return prev?.trim()
-                        ? `${prev.trim()}\n• ${line}`
-                        : `• ${line}`;
-                    })
-                  }
-                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white"
-                >
-                  {t(key)}
-                </button>
-              ))}
-            </div>
-            <textarea
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none"
-              rows={4}
-              placeholder={t("detail.dispute_placeholder")}
-              value={disputeReason}
-              onChange={(e) => setDisputeReason(e.target.value)}
-            />
-            {(job?.has_insurance || hasInsurance) && isOwner && (
-              <>
-                {useInsuranceClaimInDispute && (
-                  <div className="mb-4 p-3 bg-slate-100 border border-slate-300 rounded-lg text-[11px] text-slate-700">
-                    <p className="font-semibold text-slate-800">📋 นโยบายความมั่นคงของแพลตฟอร์ม</p>
-                    <p>According to the Platform Stability Policy, 60% of the guarantee fund is reserved for network security and liquidity maintenance. Only 40% is eligible for immediate disbursement.</p>
                   </div>
                 )}
-                <label className="flex items-center gap-4 p-4 mb-4 rounded-xl border-2 border-amber-300/90 bg-gradient-to-br from-amber-50 via-yellow-50/70 to-amber-50 cursor-pointer select-none hover:from-amber-100/90 hover:to-amber-100/70 transition-all duration-200 shadow-lg shadow-amber-300/25 hover:shadow-xl hover:shadow-amber-400/30 ring-1 ring-amber-200/60">
-                  <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/50">
-                    <Shield size={30} className="text-yellow-500 drop-shadow-md" strokeWidth={2.5} fill="currentColor" />
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={useInsuranceClaimInDispute}
-                    onChange={(e) => setUseInsuranceClaimInDispute(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-bold text-amber-900 tracking-tight">
-                      ใช้สิทธิประกันที่ตนได้ซื้อไว้
-                    </p>
-                    <p className="text-xs text-amber-800/80 mt-0.5 font-medium">
-                      Premium Protect — มีใบการันตีรองรับ (40% เบิกจ่ายได้ทันที)
-                    </p>
-                  </div>
-                  <div className={`flex-shrink-0 w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all ${useInsuranceClaimInDispute ? 'border-amber-600 bg-amber-500 text-white shadow-inner' : 'border-amber-400 bg-white'}`}>
-                    {useInsuranceClaimInDispute && <span className="font-bold">✓</span>}
-                  </div>
-                </label>
-              </>
-            )}
-            <button
-              onClick={handleDisputeModalSubmit}
-              disabled={submittingDispute || !disputeReason.trim()}
-              className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center"
-            >
-              {submittingDispute ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                t("detail.report")
-              )}
-            </button>
-          </div>
-        </div>
-      )}
 
-      {/* Collision Conflict Modal — Power to the User: 24hr ban warning */}
-      {showConflictModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-amber-800 flex items-center">
-                <AlertTriangle className="text-amber-500 mr-2" /> งานทับซ้อน
-              </h3>
-              <button onClick={() => setShowConflictModal(false)}>
-                <XCircle className="text-gray-400" />
-              </button>
-            </div>
-            <p className="text-gray-700 text-sm mb-4">
-              คุณมีงานที่ทับซ้อนกับช่วงเวลานี้ หากดำเนินการต่อจะถูก Lock บัญชี 24 ชั่วโมง
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowConflictModal(false)}
-                className="flex-1 py-3 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleAcceptJobForceConflict}
-                disabled={acceptingWithConflict}
-                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center"
-              >
-                {acceptingWithConflict ? <Loader2 className="animate-spin" size={20} /> : "รับงานต่อ (Lock 24 ชม.)"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Intercity charter — counter-offer modal (driver) */}
-      {showCounterOfferModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2">
-                <DollarSign className="text-amber-600" size={22} />
-                เสนอราคาใหม่ (ค่าจ้างก่อนค่าบริการ)
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowCounterOfferModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-                aria-label="Close"
-              >
-                <X size={22} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-600 mb-3">
-              ระบุค่าจ้างที่ต้องการ (บาท) ต้องไม่ต่ำกว่า{" "}
-              <span className="font-mono font-semibold">
-                {intercityBidFloor?.min_job_fee_thb != null
-                  ? `฿${intercityBidFloor.min_job_fee_thb.toLocaleString()}`
-                  : "ราคาพื้น"}
-              </span>{" "}
-              — ยอดที่ผู้จ้างจ่ายจะรวมค่าบริการแพลตฟอร์มตามที่กำหนด
-            </p>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={intercityBidFloor?.min_job_fee_thb ?? 0}
-              step="1"
-              value={counterOfferAmount}
-              onChange={(e) => setCounterOfferAmount(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg font-mono mb-4 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-              placeholder="เช่น 3500"
-            />
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowCounterOfferModal(false)}
-                className="flex-1 py-3 border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubmitCounterOffer()}
-                disabled={submittingBid}
-                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submittingBid ? <Loader2 className="animate-spin" size={20} /> : "ส่งข้อเสนอ"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🛡️ Insurance Claim Modal */}
-      {showClaimModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
-            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Shield size={22} />
-                  <h3 className="text-lg font-bold">ยื่นเคลมประกัน</h3>
-                </div>
-                <button onClick={() => setShowClaimModal(false)} className="text-amber-200 hover:text-white">
-                  <X size={20} />
-                </button>
-              </div>
-              <p className="text-amber-100 text-xs mt-1">การเคลมจะได้รับการพิจารณาภายใน 24–48 ชั่วโมง</p>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Platform Stability Policy Disclaimer (Mandatory) */}
-              <div className="bg-slate-100 border border-slate-300 rounded-xl p-4 text-xs text-slate-700 leading-relaxed">
-                <p className="font-bold text-slate-800 mb-1">📋 นโยบายความมั่นคงของแพลตฟอร์ม</p>
-                <p>
-                  According to the Platform Stability Policy, 60% of the guarantee fund is reserved for network security and liquidity maintenance. Only 40% is eligible for immediate disbursement.
-                </p>
-                <p className="mt-1 text-slate-600">
-                  ตามนโยบายความมั่นคงของแพลตฟอร์ม 60% ของกองทุนการันตีถูกสำรองไว้เพื่อความปลอดภัยของเครือข่ายและการรักษาสภาพคล่อง มีเพียง 40% ที่สามารถเบิกจ่ายได้ทันที
-                </p>
-              </div>
-              {/* 40% Rule Info */}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-2">
-                <p className="font-bold flex items-center gap-1"><Shield size={14} /> วงเงินคุ้มครอง</p>
-                <div className="flex justify-between text-xs">
-                  <span>วงเงินประกัน</span>
-                  <span className="font-semibold">฿{(job ? Math.round(parseFloat(String(job.insurance_amount || job.price)) || 0) : 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span>ค่าจ้างผู้รับงานใหม่ (40%)</span>
-                  <span className="font-bold text-amber-700">
-                    ฿{(job ? Math.round((parseFloat(String(job.insurance_amount || job.price)) || 0) * 0.4) : 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="border-t border-amber-200 pt-2 text-[11px] text-amber-600 leading-relaxed">
-                  ⚠️ การเคลมประกันคุ้มครองสูงสุดไม่เกินวงเงินประกัน และครอบคลุมการจัดหาผู้รับงานใหม่ในวงเงิน 40% ของวงเงินประกัน สิทธิ์เคลมได้เพียง 1 ครั้งต่องาน
-                </div>
-              </div>
-
-              {/* Evidence Text */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  อธิบายเหตุการณ์ที่เกิดขึ้น <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  className="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-                  rows={4}
-                  placeholder="เช่น ผู้รับงานไม่มาทำงาน / งานไม่เสร็จตามที่ตกลง / เกิดเหตุฉุกเฉินระหว่างงาน..."
-                  value={claimEvidenceText}
-                  onChange={(e) => setClaimEvidenceText(e.target.value)}
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowClaimModal(false)}
-                  className="flex-1 py-2.5 border border-slate-300 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors text-sm"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={handleSubmitInsuranceClaim}
-                  disabled={submittingClaim || !claimEvidenceText.trim()}
-                  className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-colors text-sm disabled:opacity-50 flex items-center justify-center gap-1"
-                >
-                  {submittingClaim ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
-                  {submittingClaim ? 'กำลังส่ง...' : 'ยืนยันเคลม'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Review Modal - แบบสมบูรณ์ */}
-      {showReviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 relative">
-            <button
-              type="button"
-              onClick={() => setShowReviewModal(false)}
-              className="absolute right-3 top-3 z-10 rounded-full p-2 text-white/90 hover:bg-white/15"
-              aria-label={t("detail.chat_close")}
-            >
-              <X size={22} />
-            </button>
-            {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-500 to-green-500 p-6 text-center text-white">
-              <div className="mx-auto w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4">
-                <Star
-                  size={32}
-                  className="text-yellow-300"
-                  fill="currentColor"
-                />
-              </div>
-              <h3 className="text-xl font-bold">รีวิวผู้รับงาน</h3>
-              <p className="text-emerald-100 text-sm mt-1">
-                ช่วยให้คะแนนและรีวิว {job?.accepted_by_name || "ผู้รับงาน"}
-              </p>
-            </div>
-
-            {/* Content */}
-            <div className="p-6">
-              {/* Star Rating */}
-              <div className="flex justify-center space-x-1 mb-6">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setReviewRating(star)}
-                    className="transition-transform hover:scale-125 focus:outline-none"
-                  >
-                    <Star
-                      size={40}
-                      fill={star <= reviewRating ? "#FBBF24" : "none"}
-                      className={
-                        star <= reviewRating
-                          ? "text-yellow-400"
-                          : "text-gray-300"
-                      }
-                    />
-                  </button>
-                ))}
-              </div>
-
-              {/* Rating Text */}
-              <div className="text-center mb-6">
-                <p className="text-lg font-bold text-gray-800">
-                  {reviewRating === 5
-                    ? "ยอดเยี่ยมมาก! ⭐⭐⭐⭐⭐"
-                    : reviewRating === 4
-                    ? "ดีมาก! ⭐⭐⭐⭐"
-                    : reviewRating === 3
-                    ? "ดี ⭐⭐⭐"
-                    : reviewRating === 2
-                    ? "พอใช้ ⭐⭐"
-                    : reviewRating === 1
-                    ? "ต้องปรับปรุง ⭐"
-                    : "ให้ดาวเลย!"}
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {reviewRating > 0
-                    ? "ขอบคุณสำหรับการให้คะแนน!"
-                    : "เลือกระดับดาว"}
-                </p>
-              </div>
-
-              {/* Tags */}
-              <div className="mb-6">
-                <p className="text-sm font-bold text-gray-700 mb-3 text-center">
-                  เลือกข้อดีของผู้รับงาน (เลือกได้หลายข้อ)
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {[
-                    {
-                      key: "professional",
-                      label: "🧑‍💼 เป็นมืออาชีพ",
-                      icon: "briefcase",
-                    },
-                    { key: "punctual", label: "⏰ ตรงเวลา", icon: "clock" },
-                    { key: "friendly", label: "😊 นิสัยดี", icon: "smile" },
-                    { key: "quality", label: "✨ งานคุณภาพ", icon: "award" },
-                    {
-                      key: "communicate",
-                      label: "💬 ติดต่อดี",
-                      icon: "message-circle",
-                    },
-                    {
-                      key: "clean",
-                      label: "🧹 สะอาดเรียบร้อย",
-                      icon: "sparkles",
-                    },
-                  ].map((tag) => (
+                {/* Tip Modal — bottom sheet สไตล์ Lineman + ธีมชมพู Meerak */}
+                {showTipModal && (
+                  <div className="fixed inset-0 z-[60] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200">
                     <button
-                      key={tag.key}
+                      type="button"
+                      className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+                      aria-label={t("chat_close")}
                       onClick={() => {
-                        const newTag = tag.label;
-                        if (reviewTags.includes(newTag)) {
-                          setReviewTags((prev) =>
-                            prev.filter((t) => t !== newTag)
-                          );
-                        } else {
-                          setReviewTags((prev) => [...prev, newTag]);
-                        }
+                        setShowTipModal(false);
+                        setTipAmount("");
+                        setTipPresetSelected(null);
                       }}
-                      className={`px-4 py-2 rounded-full text-xs font-medium border transition-all flex items-center ${
-                        reviewTags.includes(tag.label)
-                          ? "bg-emerald-100 text-emerald-700 border-emerald-200 shadow-sm scale-105"
-                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                      }`}
+                    />
+                    <div
+                      className="relative z-10 flex max-h-[min(90vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_-8px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom duration-300 sm:rounded-3xl sm:shadow-2xl"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="tip-sheet-title"
                     >
-                      {reviewTags.includes(tag.label) && (
-                        <CheckCircle
-                          size={12}
-                          className="mr-1 text-emerald-600"
-                        />
-                      )}
-                      {tag.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Comment */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ความคิดเห็นเพิ่มเติม (ถ้ามี)
-                </label>
-                <textarea
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="บอกเล่าประสบการณ์ในการใช้บริการ..."
-                  rows={3}
-                  className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  ความคิดเห็นของคุณจะช่วยให้ผู้รับงานพัฒนาตนเอง
-                </p>
-              </div>
-
-              <p className="text-xs text-slate-500 mb-3 text-center">
-                {t("detail.review_encourage")}
-              </p>
-              <div className="flex">
-                <button
-                  onClick={handleSubmitReview}
-                  disabled={submittingReview || reviewRating === 0}
-                  className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:from-emerald-600 hover:to-green-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {submittingReview ? (
-                    <>
-                      <Loader2 className="animate-spin" size={18} />
-                      กำลังส่งรีวิว...
-                    </>
-                  ) : (
-                    "ส่งรีวิว"
-                  )}
-                </button>
-              </div>
-
-              {/* Tips — แสดงหลังส่งรีวิวสำเร็จ (handleSubmitReview จะเปิด tip modal ให้อัตโนมัติ) */}
-              <p className="mt-4 text-center text-xs text-slate-500">
-                <Heart className="inline mr-1" size={12} />
-                หลังส่งรีวิวแล้ว สามารถส่งทิปให้ผู้รับงานได้
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Job Info — เต็มความกว้าง ไม่แบ่งคอลัมน์กับแชท (แชทเปิดเต็มจอแยก) */}
-      <div className="w-full max-w-4xl mx-auto space-y-6">
-        <div className="job-detail-main-card job-main-card bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-slate-300/40 border border-slate-200/60 overflow-hidden ring-1 ring-slate-200/50">
-          <div
-            className={`job-detail-header p-6 sm:p-8 border-b border-white/20 text-white ${
-              job.status === JobStatus.CANCELLED
-                ? "bg-gray-600/95"
-                : job.status === JobStatus.DISPUTE
-                ? "bg-red-700/95"
-                : "bg-gradient-to-br from-emerald-700 to-emerald-900"
-            }`}
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span
-                    className={`badge-category inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider opacity-95 ${
-                      job.status === JobStatus.CANCELLED
-                        ? "bg-gray-700"
-                        : job.status === JobStatus.DISPUTE
-                        ? "bg-red-900"
-                        : "bg-emerald-900/50"
-                    }`}
-                  >
-                    {t(`cat.${job.category}`) || job.category}
-                  </span>
-                  {transportHubJobKind ? (
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wide border border-white/25 ${
-                        transportHubJobKind === "intercity_charter"
-                          ? "bg-amber-500/95 text-white"
-                          : transportHubJobKind === "relay_leg"
-                          ? "bg-violet-600/95 text-white"
-                          : "bg-white/20 text-white"
-                      }`}
-                    >
-                      {transportHubJobKind === "intercity_charter"
-                        ? t("transport.kind_intercity_charter")
-                        : transportHubJobKind === "relay_leg"
-                        ? t("transport.kind_relay_leg")
-                        : t("transport.kind_local_on_demand")}
-                    </span>
-                  ) : null}
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-sm">{job.title}</h1>
-                {jobReferenceCode ? (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-100/90">
-                        {t("detail.job_reference")}
-                      </span>
-                      <span className="font-mono text-sm sm:text-base font-bold tracking-tight text-white bg-black/20 px-2.5 py-1 rounded-lg border border-white/25">
-                        {jobReferenceCode}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void copyJobReference()}
-                        className="inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white hover:bg-white/30 transition-colors"
-                        aria-label={t("detail.copy_ref")}
-                      >
-                        <Copy size={14} strokeWidth={2.25} />
-                        {t("detail.copy_ref")}
-                      </button>
-                    </div>
-                    {job.created_at && (
-                      <p className="text-sm text-emerald-100/95">
-                        {t("detail.order_placed_at")}{" "}
-                        {new Date(job.created_at).toLocaleString("th-TH", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    )}
-                    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-                      <button
-                        type="button"
-                        onClick={openHelpCenterGateModal}
-                        className="text-sm font-semibold text-emerald-100 hover:text-white underline-offset-2 hover:underline"
-                      >
-                        {t("detail.report_issue")}
-                      </button>
-                      {job.accepted_by &&
-                        (isOwner || isAssignedProvider) && (
-                          <button
-                            type="button"
-                            onClick={() => openChatOverlay()}
-                            className="text-sm text-white/75 hover:text-white underline-offset-2 hover:underline"
-                          >
-                            {t("detail.chat_history_link")}
-                          </button>
-                        )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <div className="text-right">
-                <button
-                  onClick={handleShare}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors mb-2 ml-auto block"
-                >
-                  <Share2 size={20} />
-                </button>
-                <p className="text-3xl font-bold flex items-center justify-end">
-                  {jobFeeRounded}{" "}
-                  <span className="text-sm ml-1 font-normal opacity-80">
-                    {t("detail.thb")}
-                  </span>
-                </p>
-                {job.tips_amount && job.tips_amount > 0 ? (
-                  <p className="text-sm text-emerald-100 flex items-center justify-end mt-1">
-                    <Heart size={12} className="mr-1 fill-current" /> +{" "}
-                    {job.tips_amount} Tips
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-6">
-            {showFlowChrome && job && (
-              <div
-                id="job-detail-flow-stepper"
-                className={flowRing(!!jobFlow && jobFlow.stepKey === "done")}
-              >
-                <JobDetailFlowStepper
-                  role={isOwner ? "employer" : "provider"}
-                  jobStatus={job.status}
-                  hasArrived={
-                    job.status === JobStatus.IN_PROGRESS && !!job.arrived_at
-                  }
-                  hasProof={hasProof}
-                  waitingApproval={
-                    job.status === JobStatus.WAITING_FOR_APPROVAL
-                  }
-                  category={job.category}
-                  appointmentAt={job.datetime}
-                />
-              </div>
-            )}
-            {canShowJobChat && !contactStripInProviderMap && (
-              <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/95 to-white px-4 py-3 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  {(() => {
-                    const avatarUrl = isOwner
-                      ? (job as any).provider_profile?.avatar_url
-                      : (job as any).created_by_avatar;
-                    const name = isOwner
-                      ? job.accepted_by_name || "Provider"
-                      : job.created_by_name || "Owner";
-                    return (
-                      <>
-                        {avatarUrl ? (
-                          <img
-                            src={avatarUrl}
-                            alt=""
-                            className="h-12 w-12 shrink-0 rounded-full object-cover border-2 border-emerald-200 shadow-sm"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 border-2 border-emerald-200">
-                            <User size={24} className="text-emerald-700" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                            {t("detail.chat")}
-                          </p>
-                          <p className="text-sm font-semibold text-slate-900 truncate">
-                            {t("detail.chat_with")} {name}
-                          </p>
-                          {job.status === JobStatus.OPEN && canAcceptJob ? (
-                            <p className="text-xs text-slate-500 mt-1 leading-snug">
-                              {t("detail.chat_pre_accept_hint")}
-                            </p>
-                          ) : null}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-                <button
-                  type="button"
-                  onClick={openChatOverlay}
-                  className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99]"
-                >
-                  <MessageCircle size={18} strokeWidth={2} />
-                  {t("detail.chat_open_fab")}
-                </button>
-              </div>
-            )}
-            {job.status === JobStatus.COMPLETED &&
-              job.accepted_by &&
-              (isOwner || isAssignedProvider) && (
-                <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
-                  {isOwner &&
-                    (employerHasReviewed === false ||
-                      employerHasReviewed === null) && (
-                      <button
-                        type="button"
-                        onClick={() => setShowReviewModal(true)}
-                        className="flex w-full items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-600 to-green-600 px-4 py-3.5 text-left text-white shadow-sm transition hover:from-emerald-700 hover:to-green-700"
-                      >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20">
-                            <Star
-                              size={22}
-                              className="text-amber-200"
-                              fill="currentColor"
+                      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 pb-3 pt-5">
+                        <div className="min-w-0 pr-2">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Heart
+                              className="h-5 w-5 shrink-0 fill-pink-500 text-pink-500"
+                              aria-hidden
                             />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block font-bold leading-tight">
-                              {t("detail.rate_provider")}
-                            </span>
-                            <span className="mt-0.5 block text-xs text-emerald-100">
-                              {job.accepted_by_name
-                                ? `${job.accepted_by_name}`
-                                : t("detail.rate_provider_sub")}
-                            </span>
-                          </span>
-                        </span>
-                        <ChevronRight
-                          className="shrink-0 text-white/90"
-                          size={22}
-                          strokeWidth={2.5}
-                        />
-                      </button>
-                    )}
-                  {isOwner && employerHasReviewed === true && (
-                    <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50/80 px-4 py-3">
-                      <CheckCircle
-                        className="shrink-0 text-emerald-600"
-                        size={22}
-                        strokeWidth={2.5}
-                      />
-                      <p className="text-sm font-semibold text-emerald-900">
-                        {t("detail.rated_provider_done")}
-                      </p>
-                    </div>
-                  )}
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={() => setShowTipModal(true)}
-                      className="flex w-full gap-3 p-4 text-left transition-colors hover:bg-emerald-50/80"
-                    >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                        <Gift size={22} strokeWidth={2} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-900">
-                          {t("detail.tip_banner_title")}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {t("detail.tip_banner_sub")}
-                        </p>
-                      </div>
-                    </button>
-                  )}
-                  {!isOwner &&
-                    (job.tips_amount ?? 0) > 0 && (
-                      <div className="flex gap-3 border-b border-slate-100 p-4">
-                        <Gift
-                          className="shrink-0 text-emerald-600"
-                          size={22}
-                        />
-                        <p className="text-sm text-slate-700">
-                          {t("detail.tip_received_line")}{" "}
-                          <span className="font-bold tabular-nums">
-                            {job.tips_amount} {t("detail.thb")}
-                          </span>
-                        </p>
-                      </div>
-                    )}
-                  <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50/70 p-3">
-                    <button
-                      type="button"
-                      onClick={() => openChatOverlay()}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                    >
-                      <MessageCircle size={18} />
-                      {t("detail.chat_history_link")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openHelpCenterGateModal}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-2.5 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
-                    >
-                      <Flag size={18} />
-                      {t("detail.report_issue")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            {/* 🛡️ Protected by Aqond Insurance Banner */}
-            {job.has_insurance && (
-              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                <Shield size={24} className="text-emerald-600 flex-shrink-0" />
-                <div>
-                  <p className="font-bold text-emerald-800">Protected by Aqond Insurance</p>
-                  {job.policy_number && (
-                    <p className="text-sm text-emerald-700">Policy: {job.policy_number}</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Report Issue / File Claim — visible when coverage is active */}
-            {job.has_insurance &&
-              job.insurance_coverage_status === "active" &&
-              !insuranceClaim &&
-              isOwner && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-sm text-amber-800 mb-3">
-                    งานนี้คุ้มครองโดย Aqond Insurance — หากมีปัญหาระหว่างงาน สามารถยื่นเคลมได้
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowClaimModal(true)}
-                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
-                  >
-                    <Shield size={16} />
-                    Report Issue / File Claim
-                  </button>
-                </div>
-              )}
-
-            {/* Expiration Timer */}
-            {job.status === JobStatus.OPEN && (
-              <div
-                className={`p-3 rounded-lg flex items-center justify-between ${
-                  isExpired
-                    ? "bg-red-50 text-red-800"
-                    : "bg-blue-50 text-blue-800"
-                }`}
-              >
-                <div className="flex items-center">
-                  <Timer size={18} className="mr-2" />
-                  <span className="font-bold text-sm">
-                    {isExpired ? t("detail.expired") : t("detail.expires_in")}
-                  </span>
-                </div>
-                <span className="font-mono font-bold text-lg">
-                  {expirationTime || "--:--:--"}
-                </span>
-              </div>
-            )}
-
-            {showIntercityBidding && isOwner && (
-              <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 space-y-3 shadow-sm">
-                <h4 className="text-sm font-bold text-amber-950 flex items-center gap-2">
-                  <DollarSign size={18} className="text-amber-600" />
-                  ข้อเสนอราคาจากคนขับ (เหมาข้ามจังหวัด)
-                </h4>
-                <p className="text-xs text-amber-900/85 leading-relaxed">
-                  เลือก &quot;ยอมรับราคา&quot; กับคนที่ต้องการ — ระบบจะคำนวณยอดรวมที่ผู้จ้างจ่าย (รวมค่าบริการแพลตฟอร์ม) ให้อัตโนมัติ
-                </p>
-                {bidsLoading && intercityBids.length === 0 ? (
-                  <p className="text-xs text-amber-800 flex items-center gap-2">
-                    <Loader2 className="animate-spin" size={14} /> กำลังโหลดข้อเสนอ...
-                  </p>
-                ) : null}
-                {intercityBids.filter((b) => b.status === "pending").length === 0 && !bidsLoading ? (
-                  <p className="text-xs text-amber-900/75">ยังไม่มีข้อเสนอ — รอคนขับกด &quot;เสนอราคาใหม่&quot; จากบอร์ดงาน</p>
-                ) : null}
-                <ul className="space-y-2">
-                  {intercityBids
-                    .filter((b) => b.status === "pending")
-                    .map((b) => (
-                      <li
-                        key={b.id}
-                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white border border-amber-200/80 p-3 shadow-sm"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 truncate">
-                            {b.provider_name || "คนขับ"}
-                          </p>
-                          <p className="text-xs text-slate-600 mt-0.5">
-                            เสนอค่าจ้าง (ก่อนค่าบริการ){" "}
-                            <span className="font-mono font-semibold">
-                              ฿{Number(b.proposed_job_fee_thb).toLocaleString()}
-                            </span>
-                            {" · "}
-                            รวมที่คุณจ่าย{" "}
-                            <span className="font-mono font-semibold text-emerald-800">
-                              ฿{Number(b.proposed_final_price_thb).toLocaleString()}
-                            </span>
+                            <h3
+                              id="tip-sheet-title"
+                              className="text-lg font-bold leading-tight text-gray-900"
+                            >
+                              {t("detail.tip_modal_title")}
+                            </h3>
+                          </div>
+                          <p className="text-sm leading-snug text-gray-500">
+                            {t("detail.tip_modal_subtitle")}
                           </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => void handleAcceptIntercityBid(String(b.id))}
-                          disabled={!!acceptingBidId}
-                          className="shrink-0 w-full sm:w-auto py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          {acceptingBidId === String(b.id) ? (
-                            <Loader2 className="animate-spin" size={18} />
-                          ) : (
-                            <CheckCircle size={18} />
-                          )}
-                          ยอมรับราคา
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Status Banners */}
-            {job.status === JobStatus.CANCELLED && (
-              <div className="bg-red-50 text-red-800 p-4 rounded-lg border border-red-100 flex items-center justify-center font-bold">
-                <XCircle className="mr-2" /> {t("detail.cancelled")}
-              </div>
-            )}
-
-            {job.status === JobStatus.DISPUTE && (
-              <div className="space-y-3">
-                <div className="bg-red-50 text-red-800 p-4 rounded-lg border border-red-100 flex items-center justify-center font-bold animate-pulse">
-                  <AlertOctagon className="mr-2" /> {t("detail.under_review")}
-                </div>
-
-                {/* 🛡️ Insurance Claim Section (เฉพาะงานที่มีประกัน) */}
-                {job.has_insurance && (
-                  <div className={`rounded-xl border p-4 ${
-                    insuranceClaim?.claim_status === 'approved'
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : insuranceClaim?.claim_status === 'pending'
-                      ? 'bg-amber-50 border-amber-200'
-                      : insuranceClaim?.claim_status === 'rejected'
-                      ? 'bg-red-50 border-red-200'
-                      : 'bg-amber-50 border-amber-300'
-                  }`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Shield size={18} className={
-                        insuranceClaim?.claim_status === 'approved' ? 'text-emerald-600' :
-                        insuranceClaim?.claim_status === 'rejected' ? 'text-red-500' : 'text-amber-600'
-                      } />
-                      <span className="font-bold text-sm">
-                        {insuranceClaim?.claim_status === 'approved'
-                          ? '✅ ประกันได้รับการอนุมัติแล้ว'
-                          : insuranceClaim?.claim_status === 'pending'
-                          ? '⏳ รอการพิจารณาจากทีมงาน'
-                          : insuranceClaim?.claim_status === 'rejected'
-                          ? '❌ คำขอเคลมถูกปฏิเสธ'
-                          : '🛡️ มีประกันคุ้มครอง'}
-                      </span>
-                    </div>
-
-                    {insuranceClaim?.claim_status === 'approved' && (
-                      <div className="text-sm text-emerald-700 space-y-1">
-                        <p>จ่ายให้ผู้รับงานใหม่: <strong>฿{Number(insuranceClaim.replacement_payout).toLocaleString()}</strong> (40% ของวงเงินประกัน)</p>
-                      </div>
-                    )}
-
-                    {!insuranceClaim && isOwner && (
-                      <>
-                        <p className="text-xs text-amber-700 mb-3 leading-relaxed">
-                          การเคลมประกันคุ้มครองสูงสุดไม่เกินวงเงินประกัน และครอบคลุมการจัดหาผู้รับงานใหม่ในวงเงิน 40% ของวงเงินประกัน (60% สำรองเพื่อความมั่นคงของแพลตฟอร์ม)
-                        </p>
-                        <button
-                          onClick={() => setShowClaimModal(true)}
-                          className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
-                        >
-                          <Shield size={16} /> ยื่นเคลมประกัน
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 🚨 Marine SOS — แสดงให้ทั้งผู้จ้างและกัปตันเมื่ออยู่บนเรือ */}
-            {(job.category === "Marine" || (job as any).marine_status) &&
-              (job.status === JobStatus.ACCEPTED || job.status === JobStatus.IN_PROGRESS) &&
-              (isOwner || isAssignedProvider) && (
-              <button
-                onClick={async () => {
-                  try {
-                    const pos = await new Promise<{ lat: number; lng: number }>((res, rej) => {
-                      navigator.geolocation.getCurrentPosition(
-                        (p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
-                        rej,
-                        { enableHighAccuracy: true }
-                      );
-                    });
-                    await sendSOS(job.id, pos.lat, pos.lng, token || undefined);
-                    notify("SOS ส่งแล้ว — หน่วยกู้ภัยจะติดต่อคุณ", "success");
-                  } catch (e: any) {
-                    notify(e?.message || "ส่ง SOS ไม่สำเร็จ", "error");
-                  }
-                }}
-                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 border-2 border-red-700"
-              >
-                <Radio size={20} />
-                🚨 SOS ฉุกเฉินทางทะเล
-              </button>
-            )}
-
-            {isOwner &&
-              (job.status === JobStatus.ACCEPTED ||
-                job.status === JobStatus.IN_PROGRESS) && (
-              <div className="space-y-2">
-                <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-100 flex items-center">
-                  <CheckCircle className="mr-2" /> {t("detail.accepted")}
-                </div>
-                {/* 🛡️ Insurance badge เมื่อมีประกัน */}
-                {job.has_insurance && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-semibold">
-                    <Shield size={14} className="text-amber-500" /> มีประกันคุ้มครอง — คุ้มครองการจัดหาผู้รับงานใหม่สูงสุด 40%
-                  </div>
-                )}
-                {MEET_CODE_REQUIRED && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 text-slate-800 shadow-sm">
-                    <p className="font-semibold text-sm mb-2 flex items-center gap-2">
-                      <Radio size={16} className="text-indigo-600" />
-                      {t("detail.employer_meet_title")}
-                    </p>
-                    <p className="text-xs text-slate-600 mb-3">
-                      {t("detail.employer_meet_desc")}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleCreateEmployerMeetCode}
-                      disabled={creatingMeetCode}
-                      className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
-                    >
-                      {creatingMeetCode ? t("detail.employer_meet_creating") : t("detail.employer_meet_btn")}
-                    </button>
-                    {employerMeet && (
-                      <div className="mt-3 flex flex-col items-center gap-2">
-                        <img
-                          alt="QR meet code"
-                          className="w-40 h-40 border border-slate-200 rounded-lg bg-white p-1"
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(employerMeet.qrPayload)}`}
-                        />
-                        <p className="text-2xl font-mono font-bold tracking-widest text-indigo-900">
-                          {employerMeet.code}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          หมดอายุ: {employerMeet.expiresAt ? new Date(employerMeet.expiresAt).toLocaleString("th-TH") : "—"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {job.status === JobStatus.WAITING_FOR_APPROVAL && (
-              <div className="bg-purple-50 text-purple-800 p-4 rounded-lg border border-purple-100 space-y-2">
-                <div className="flex items-center">
-                  <Hourglass className="mr-2 shrink-0" />
-                  <span className="font-bold">{t("detail.waiting_approval")}</span>
-                </div>
-                <p className="text-sm text-purple-700">{t("detail.waiting_manual_approval_hint")}</p>
-                {disputeWindowRemaining && (
-                  <p className="text-xs text-purple-600">
-                    ช่วงตรวจสอบ (อ้างอิง): {disputeWindowRemaining}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {job.status === JobStatus.WAITING_FOR_APPROVAL &&
-              isAssignedProvider &&
-              job.payment_details?.provider_completion_extras &&
-              typeof job.payment_details.provider_completion_extras === "object" && (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
-                  <p className="font-semibold text-slate-900">{t("detail.provider_extras_submitted_title")}</p>
-                  <p className="text-xs text-slate-600 mt-1">
-                    {t("detail.completion_extras_total")}: ฿
-                    {(
-                      Number(
-                        (job.payment_details.provider_completion_extras as { extras_total_thb?: number })
-                          .extras_total_thb
-                      ) ||
-                      (Number(
-                        (job.payment_details.provider_completion_extras as { meter_thb?: number }).meter_thb
-                      ) || 0) +
-                        (Number(
-                          (job.payment_details.provider_completion_extras as { toll_thb?: number }).toll_thb
-                        ) || 0) +
-                        (Number(
-                          (job.payment_details.provider_completion_extras as { parking_thb?: number })
-                            .parking_thb
-                        ) || 0) +
-                        (Number(
-                          (job.payment_details.provider_completion_extras as { other_thb?: number }).other_thb
-                        ) || 0)
-                    ).toLocaleString()}
-                  </p>
-                </div>
-              )}
-
-            {job.status === JobStatus.WAITING_FOR_PAYMENT && (
-              <div className="bg-amber-50 text-amber-800 p-4 rounded-lg border border-amber-100 flex items-center">
-                <Clock className="mr-2" /> {t("detail.waiting_payment")}
-              </div>
-            )}
-
-            {job.status === JobStatus.COMPLETED && (
-              <div className="bg-green-50 text-green-800 p-4 rounded-lg border border-green-100 flex items-center justify-center font-bold">
-                <CheckCircle className="mr-2" /> {t("detail.completed")}
-              </div>
-            )}
-
-            {/* AQOND Wow 3: Work Insurance Progress */}
-            {(job.status === JobStatus.ACCEPTED ||
-              job.status === JobStatus.IN_PROGRESS ||
-              job.status === JobStatus.WAITING_FOR_APPROVAL ||
-              job.status === JobStatus.COMPLETED) && (
-              <WorkInsuranceProgress
-                phase={
-                  job.status === JobStatus.COMPLETED
-                    ? "released"
-                    : job.status === JobStatus.IN_PROGRESS
-                    ? "in_progress"
-                    : job.status === JobStatus.WAITING_FOR_APPROVAL
-                    ? "in_progress"
-                    : "matched"
-                }
-                className="mt-4"
-                variant={
-                  isAssignedProvider && showFlowChrome ? "compact" : "default"
-                }
-              />
-            )}
-
-            {/* Insurance Price Breakdown — แสดงเมื่อซื้อประกัน (ใต้ Work Insurance status bar) */}
-            {(job.has_insurance === true || (job.insurance_amount != null && Number(job.insurance_amount) > 0)) && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-amber-200 bg-amber-50/80 shadow-sm">
-                <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50">
-                  <div className="flex items-center gap-2">
-                    <Shield size={18} className="text-amber-700" />
-                    <span className="font-bold text-amber-900 text-sm">{t("detail.insurance_title") || "Price Breakdown"}</span>
-                  </div>
-                </div>
-                <div className="px-4 py-4 space-y-2 text-sm">
-                  <div className="flex justify-between items-center gap-4 text-slate-700">
-                    <span>{t("detail.job_fee") || "Job Fee"}</span>
-                    <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">฿ {jobFeeRounded.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
-                    <span>{t("detail.insurance_fee") || "Insurance Premium"}</span>
-                    <span className="font-semibold tabular-nums text-right min-w-[72px]">+฿ {cardInsuranceAmount.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center gap-4 text-slate-700">
-                    <span>{t("detail.service_fee")} ({paymentMarkupPercent}%)</span>
-                    <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">+฿ {round2((jobFeeRounded + cardInsuranceAmount) * markupRate).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center gap-4 border-t border-amber-200 pt-3 mt-2 font-bold text-slate-900">
-                    <span>{t("detail.total_pay") || "Total Paid"}</span>
-                    <span className="tabular-nums text-right min-w-[72px]">฿ {cardTotalPrice.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Employer Final Invoice — แสดงเมื่องานเสร็จ (เจ้าของงานเห็นใบแจ้งหนี้สุดท้าย) */}
-            {job.status === JobStatus.COMPLETED && isOwner && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-100/80">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList size={18} className="text-slate-700" />
-                    <span className="font-bold text-slate-900 text-sm">{t("detail.final_invoice") || "Final Invoice"}</span>
-                  </div>
-                </div>
-                <div className="px-4 py-4 space-y-2 text-sm">
-                  <div className="flex justify-between items-center gap-4 text-slate-700">
-                    <span>{t("detail.job_fee") || "Job Fee"}</span>
-                    <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">฿ {jobFeeRounded.toLocaleString()}</span>
-                  </div>
-                  {(job.has_insurance || cardInsuranceAmount > 0) && (
-                    <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
-                      <span>{t("detail.insurance_fee") || "Insurance Premium"}</span>
-                      <span className="font-semibold tabular-nums text-right min-w-[72px]">+฿ {cardInsuranceAmount.toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center gap-4 text-slate-700">
-                    <span>{t("detail.service_fee")} ({paymentMarkupPercent}%)</span>
-                    <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">+฿ {round2((jobFeeRounded + cardInsuranceAmount) * markupRate).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 mt-2 font-bold text-slate-900">
-                    <span>{t("detail.total_pay") || "Total Paid"}</span>
-                    <span className="tabular-nums text-right min-w-[72px]">฿ {cardTotalPrice.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Provider Earnings Receipt — ใบเสร็จรายได้ (ผู้รับงานเห็นรายละเอียดค่าธรรมเนียมแพลตฟอร์ม + รายรับคงเหลือ) */}
-            {job.status === JobStatus.COMPLETED && isAssignedProvider && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/80 shadow-sm">
-                <div className="px-4 py-3 border-b border-emerald-200 bg-emerald-100/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <DollarSign size={18} className="text-emerald-700" />
-                    <span className="font-bold text-emerald-900 text-sm">รายได้จากงานนี้</span>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!id) return;
-                      try {
-                        const { data } = await api.get<ReceiptData>(`/earnings/receipt/job/${id}`);
-                        setReceiptData(data);
-                      } catch (e) {
-                        notify("โหลดใบเสร็จไม่สำเร็จ", "error");
-                      }
-                    }}
-                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 transition-colors flex items-center gap-2"
-                  >
-                    <Eye size={16} />
-                    ดูใบเสร็จรายได้
-                  </button>
-                </div>
-                <p className="px-4 py-3 text-sm text-emerald-800">
-                  ดูรายละเอียดค่าธรรมเนียมแพลตฟอร์มและรายรับคงเหลือหลังหักค่าใช้จ่าย
-                </p>
-              </div>
-            )}
-
-            {showFlowChrome ? (
-              <details className="group rounded-2xl border border-slate-200/90 bg-slate-50/40 open:bg-white">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-800 [&::-webkit-details-marker]:hidden">
-                  <span>{t("detail.flow_job_details_toggle")}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">{jobDetailsBlock}</div>
-              </details>
-            ) : (
-              jobDetailsBlock
-            )}
-
-            {/* Provider — สรุปรายได้โดยประมาณ + คำถามจากนายจ้าง (ก่อนรับ) */}
-            {canAcceptJob && job.status === JobStatus.OPEN && !isExpired && (
-              <>
-                {paymentBadgeVariant && (
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {t("payment.method")}
-                    </span>
-                    <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold shadow-sm ${
-                        paymentBadgeVariant.variant === "cash"
-                          ? "bg-amber-100 text-amber-900 ring-1 ring-amber-200"
-                          : paymentBadgeVariant.variant === "wallet"
-                          ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200"
-                          : "bg-sky-100 text-sky-900 ring-1 ring-sky-200"
-                      }`}
-                    >
-                      {paymentBadgeVariant.variant === "cash"
-                        ? t("detail.payment_badge_cash")
-                        : paymentBadgeVariant.variant === "wallet"
-                        ? t("detail.payment_badge_wallet")
-                        : t("detail.payment_badge_online")}
-                    </span>
-                  </div>
-                )}
-                <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/95 p-4 shadow-sm ring-1 ring-slate-100/80">
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <DollarSign size={18} className="text-emerald-700 shrink-0" />
-                      <h3 className="text-sm font-bold text-slate-900">
-                        {t("detail.provider_earnings_preview_title")}
-                      </h3>
-                    </div>
-                  </div>
-                  <div className="rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-inner mb-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-100/95">
-                      {t("detail.provider_earnings_net_highlight")}
-                    </p>
-                    <p className="text-2xl font-bold tabular-nums mt-0.5">
-                      ฿{talentPreviewBreakdown.talentNet.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-sm space-y-1.5 text-slate-800">
-                    <div className="flex justify-between gap-4 text-xs">
-                      <span className="text-slate-600">{t("detail.provider_earnings_gross")}</span>
-                      <span className="font-semibold tabular-nums">
-                        ฿{jobFeeRounded.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4 text-xs text-slate-600">
-                      <span>{t("detail.provider_earnings_sourcing")}</span>
-                      <span className="tabular-nums text-red-700">
-                        −฿{talentPreviewBreakdown.sourcingFee.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4 text-xs text-slate-600">
-                      <span>{t("detail.provider_earnings_commission")}</span>
-                      <span className="tabular-nums text-red-700">
-                        −฿{talentPreviewBreakdown.commission.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4 text-xs text-slate-600">
-                      <span>{t("detail.provider_earnings_tax")}</span>
-                      <span className="tabular-nums text-red-700">
-                        −฿{talentPreviewBreakdown.taxService.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4 pt-2 border-t border-slate-200 font-bold text-emerald-900 text-sm">
-                      <span>{t("detail.provider_earnings_net")}</span>
-                      <span className="tabular-nums">
-                        ฿{talentPreviewBreakdown.talentNet.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
-                    {t("detail.provider_earnings_preview_note")}
-                  </p>
-                </div>
-                {employerQuestionsPreview.length > 0 ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
-                    <p className="text-xs font-bold text-amber-900 mb-2">
-                      {t("detail.employer_questions_title")}
-                    </p>
-                    <ul className="list-disc pl-5 space-y-1.5 text-sm text-amber-950">
-                      {employerQuestionsPreview.map((q, i) => (
-                        <li key={i}>{q}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </>
-            )}
-
-            {/* Provider — แผนที่ก่อนรับ (หมุดเดียวหรือสองหมุด Driver) + ETA */}
-            {preAcceptMapModel && (
-              <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-200/90 bg-white shadow-sm ring-1 ring-emerald-100/50">
-                <div className="flex flex-col gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <MapPin size={18} className="shrink-0" />
-                      {preAcceptMapModel.kind === "two"
-                        ? t("detail.provider_pre_map_title_driver")
-                        : t("detail.provider_pre_map_title")}
-                    </h3>
-                    {preAcceptMapModel.kind === "two" ? (
-                      <div className="mt-2 space-y-1 text-xs text-emerald-50/95">
-                        <p className="flex gap-2">
-                          <span className="text-red-200 shrink-0">●</span>
-                          <span>
-                            {t("detail.pin_pickup_label")}:{" "}
-                            {preAcceptMapModel.pickup.label?.trim() ||
-                              t("detail.loc_unknown")}
-                          </span>
-                        </p>
-                        <p className="flex gap-2">
-                          <span className="text-emerald-200 shrink-0">●</span>
-                          <span>
-                            {t("detail.pin_dropoff_label")}:{" "}
-                            {preAcceptMapModel.dropoff.label?.trim() ||
-                              t("detail.loc_unknown")}
-                          </span>
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="mt-1 text-xs text-emerald-50/95 line-clamp-3 break-words">
-                        {formatJobPrimaryAddress(job) || t("detail.loc_unknown")}
-                      </p>
-                    )}
-                    {preAcceptEta.loading ? (
-                      <p className="mt-2 text-[11px] text-emerald-100 flex items-center gap-2">
-                        <Loader2 className="animate-spin" size={12} />
-                        {t("detail.provider_pre_eta_loading")}
-                      </p>
-                    ) : preAcceptEta.denied ? (
-                      <p className="mt-2 text-[11px] text-amber-100/95">
-                        {t("detail.provider_pre_eta_denied")}
-                      </p>
-                    ) : preAcceptEta.minutes != null && preAcceptEta.distanceKm != null ? (
-                      <p className="mt-2 text-[11px] text-emerald-50 leading-relaxed">
-                        {t("detail.provider_pre_eta_prefix")}{" "}
-                        <strong className="text-white">
-                          {Math.round(preAcceptEta.minutes)}
-                        </strong>{" "}
-                        {t("detail.provider_pre_eta_min")} ·{" "}
-                        <strong className="text-white">
-                          {preAcceptEta.distanceKm.toFixed(1)}
-                        </strong>{" "}
-                        km (
-                        {preAcceptEta.source === "osrm"
-                          ? t("detail.provider_pre_eta_source_osrm")
-                          : t("detail.provider_pre_eta_source_straight")}
-                        )
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-col gap-2 shrink-0">
-                    {preAcceptMapModel.kind === "two" ? (
-                      <>
-                        <a
-                          href={`https://www.google.com/maps/dir/${preAcceptMapModel.pickup.lat},${preAcceptMapModel.pickup.lng}/${preAcceptMapModel.dropoff.lat},${preAcceptMapModel.dropoff.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
-                        >
-                          <Navigation size={16} />
-                          {t("detail.provider_pre_map_route_gmaps")}
-                        </a>
-                      </>
-                    ) : (
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${preAcceptMapModel.lat},${preAcceptMapModel.lng}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
-                      >
-                        <Navigation size={16} />
-                        {t("detail.provider_pre_map_open_maps")}
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <div className="h-[240px] w-full sm:h-[280px]">
-                  <MapContainer
-                    center={
-                      preAcceptMapModel.kind === "two"
-                        ? [
-                            (preAcceptMapModel.pickup.lat + preAcceptMapModel.dropoff.lat) / 2,
-                            (preAcceptMapModel.pickup.lng + preAcceptMapModel.dropoff.lng) / 2,
-                          ]
-                        : [preAcceptMapModel.lat, preAcceptMapModel.lng]
-                    }
-                    zoom={preAcceptMapModel.kind === "two" ? 11 : 15}
-                    style={{ height: "100%", width: "100%" }}
-                    scrollWheelZoom
-                  >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    />
-                    {preAcceptRouteCoords && preAcceptRouteCoords.length >= 2 && (
-                      <>
-                        <PreAcceptBoundsFitter positions={preAcceptRouteCoords} />
-                        <Polyline
-                          positions={preAcceptRouteCoords}
-                          pathOptions={{
-                            color: "#059669",
-                            weight: 5,
-                            opacity: 0.92,
-                            lineCap: "round",
-                            lineJoin: "round",
+                          className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100"
+                          onClick={() => {
+                            setShowTipModal(false);
+                            setTipAmount("");
+                            setTipPresetSelected(null);
                           }}
-                        />
-                      </>
-                    )}
-                    {preAcceptUserLatLng && (
-                      <CircleMarker
-                        center={[preAcceptUserLatLng.lat, preAcceptUserLatLng.lng]}
-                        radius={9}
-                        pathOptions={{
-                          color: "#ffffff",
-                          weight: 3,
-                          fillColor: "#2563eb",
-                          fillOpacity: 1,
-                        }}
-                      />
-                    )}
-                    {preAcceptMapModel.kind === "two" ? (
-                      <>
-                        <Marker
-                          position={[preAcceptMapModel.pickup.lat, preAcceptMapModel.pickup.lng]}
-                          icon={L.divIcon({
-                            html: `<div style="background-color:#ef4444;width:30px;height:30px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:bold;">A</div>`,
-                            className: "",
-                            iconSize: [30, 30],
-                            iconAnchor: [15, 15],
-                          })}
-                        />
-                        <Marker
-                          position={[preAcceptMapModel.dropoff.lat, preAcceptMapModel.dropoff.lng]}
-                          icon={L.divIcon({
-                            html: `<div style="background-color:#10b981;width:30px;height:30px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:bold;">B</div>`,
-                            className: "",
-                            iconSize: [30, 30],
-                            iconAnchor: [15, 15],
-                          })}
-                        />
-                      </>
-                    ) : (
-                      <Marker
-                        position={[preAcceptMapModel.lat, preAcceptMapModel.lng]}
-                        icon={L.divIcon({
-                          html: `<div style="background-color:#059669;width:34px;height:34px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;font-size:16px;">📍</div>`,
-                          className: "",
-                          iconSize: [34, 34],
-                          iconAnchor: [17, 17],
-                        })}
-                      />
-                    )}
-                  </MapContainer>
-                </div>
-                <p className="px-4 py-2.5 text-[11px] leading-relaxed text-slate-600 bg-slate-50/90 border-t border-slate-100">
-                  {t("detail.provider_pre_map_hint")}
-                </p>
-              </div>
-            )}
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </div>
 
-            {job.accepted_by &&
-              showJobBaBadge(providerBa) &&
-              String(providerBa?.adviser_status || "").toLowerCase() === "active" && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
-                  <strong className="font-semibold">ค่าธรรมเนียมแพลตฟอร์ม:</strong> ผู้รับงานคนนี้เป็นสมาชิก Brand Adviser ที่ใช้สิทธิ์ได้ — ยอดค่าธรรมเนียมแพลตฟอร์มอาจถูกยกเว้นตามเงื่อนไขโปรแกรม (ยืนยันจากระบบเมื่อปิดงาน)
-                </div>
-              )}
+                      <form
+                        onSubmit={handleSendTip}
+                        className="flex min-h-0 flex-1 flex-col"
+                      >
+                        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-2 pt-4">
+                          <div className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50 to-white px-4 py-3.5">
+                            <div className="text-[11px] font-bold uppercase tracking-wide text-pink-600">
+                              {t("detail.tip_wallet_balance_label")}
+                            </div>
+                            <div className="text-xl font-bold tabular-nums text-pink-900">
+                              {(user?.wallet_balance ?? 0).toLocaleString()} THB
+                            </div>
+                          </div>
 
-            {/* ผู้รับงาน: โทร/แชท/ปฏิทิน รวมที่การ์ดลูกค้าใต้แผนที่แล้ว — ไม่ใช้แถบดำซ้ำ */}
+                          <div className="grid grid-cols-2 gap-3">
+                            {TIP_PRESET_AMOUNTS.map((amt) => {
+                              const selected = tipPresetSelected === amt;
+                              return (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => {
+                                    setTipPresetSelected(amt);
+                                    setTipAmount(String(amt));
+                                  }}
+                                  className={`rounded-2xl py-3.5 text-center text-base font-semibold transition-all ${
+                                    selected
+                                      ? "bg-pink-500 text-white shadow-md shadow-pink-200"
+                                      : "border border-gray-200 bg-gray-50 text-gray-900 hover:border-pink-200 hover:bg-pink-50/60"
+                                  }`}
+                                >
+                                  ฿{amt}
+                                </button>
+                              );
+                            })}
+                          </div>
 
-            {/* Action Box */}
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">
-                {showFlowChrome ? t("detail.flow_actions_title") : t("detail.action_title")}
-              </h3>
-              <div className="space-y-4">
-                {/* 1. ACCEPT JOB: แสดงให้ผู้ที่ไม่ใช่เจ้าของเมื่องาน open — ผู้รับงานกดรับได้ (backend validate provider_status) */}
-                {canAcceptJob &&
-                  job.status === JobStatus.OPEN &&
-                  !isExpired && (
-                    <>
-                      {selfBa?.is_brand_adviser && selfBa?.brand_adviser_program_enabled === false && (
-                        <BrandAdviserProgramOffNotice className="mb-3" />
-                      )}
-                      {(showJobBaBadge(employerBa) || showJobBaBadge(selfBa)) && (
-                        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
-                          <span className="font-semibold text-slate-600">สถานะ BA ในดีลนี้:</span>
-                          {showJobBaBadge(employerBa) && (
-                            <span className="inline-flex items-center gap-1">
-                              ผู้จ้าง
-                              <BrandAdviserBadge
-                                isBrandAdviser
-                                adviserStatus={employerBa?.adviser_status}
-                                tone="light"
+                          <div>
+                            <label
+                              htmlFor="tip-custom-amount"
+                              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500"
+                            >
+                              {t("detail.tip_custom_label")}
+                            </label>
+                            <div className="flex items-center border-b-2 border-pink-200 pb-1.5 transition-colors focus-within:border-pink-500">
+                              <span
+                                className="select-none pr-2 text-xl font-bold text-pink-500"
+                                aria-hidden
+                              >
+                                ฿
+                              </span>
+                              <input
+                                id="tip-custom-amount"
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                placeholder={t("detail.tip_placeholder")}
+                                className="min-w-0 flex-1 border-0 bg-transparent text-lg font-semibold text-gray-900 outline-none placeholder:text-gray-400"
+                                value={tipAmount}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(
+                                    /[^\d]/g,
+                                    "",
+                                  );
+                                  setTipPresetSelected(null);
+                                  setTipAmount(v);
+                                }}
                               />
-                            </span>
-                          )}
-                          {showJobBaBadge(selfBa) && (
-                            <span className="inline-flex items-center gap-1">
-                              คุณ (ผู้รับงาน)
-                              <BrandAdviserBadge
-                                isBrandAdviser
-                                adviserStatus={selfBa?.adviser_status}
-                                tone="light"
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500">
+                              {t("detail.tip_max_hint")}
+                            </p>
+                          </div>
+
+                          <div>
+                            <div className="mb-2 text-sm font-bold text-gray-900">
+                              {t("detail.tip_payment_method")}
+                            </div>
+                            <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3.5">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pink-100">
+                                  <Wallet className="text-pink-600" size={20} />
+                                </div>
+                                <span className="truncate font-medium text-gray-900">
+                                  {t("detail.tip_pay_from_wallet")}
+                                </span>
+                              </div>
+                              <ChevronRight
+                                className="shrink-0 text-gray-300"
+                                size={20}
+                                aria-hidden
                               />
-                            </span>
-                          )}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                      {selfBa?.brand_adviser_suspend_warning && (
-                        <BrandAdviserSuspendBanner
-                          show
-                          tone="light"
-                          daysLeft={selfBa.days_until_suspend_estimate ?? undefined}
-                          inactivityDays={baRules?.inactivity_days}
-                          warnDaysBeforeSuspend={baRules?.warn_days_before_suspend}
-                          className="mb-3"
-                        />
-                      )}
-                      {showJobBaBadge(selfBa) &&
-                        String(selfBa?.adviser_status || "").toLowerCase() === "active" && (
-                          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                            <BrandAdviserBadge
-                              isBrandAdviser
-                              adviserStatus={selfBa?.adviser_status}
-                              tone="light"
+
+                        <div className="shrink-0 border-t border-gray-100 bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+                          {(() => {
+                            const parsed = Number(tipAmount);
+                            const wallet = user?.wallet_balance ?? 0;
+                            const tipOk =
+                              tipAmount !== "" &&
+                              Number.isFinite(parsed) &&
+                              parsed >= 10 &&
+                              parsed <= TIP_MAX_AMOUNT &&
+                              parsed <= wallet;
+                            return (
+                              <button
+                                type="submit"
+                                disabled={sendingTip || !tipOk}
+                                className="flex w-full items-center justify-center rounded-2xl py-3.5 text-base font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-white enabled:bg-pink-500 enabled:shadow-lg enabled:shadow-pink-200 enabled:hover:bg-pink-600"
+                              >
+                                {sendingTip ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                    กำลังโอนเงิน...
+                                  </>
+                                ) : (
+                                  t("detail.tip_confirm")
+                                )}
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* Intercity — แจ้งค่าธรรมเนียมยกเลิกก่อนนับถอยหลัง */}
+                {showIntercityCancelFeeModal && pendingIntercityCancelFee && (
+                  <div className="fixed inset-0 z-[61] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                      <h3 className="text-lg font-bold text-amber-900 mb-2 flex items-center gap-2">
+                        <AlertTriangle className="text-amber-500" size={22} />
+                        ยืนยันยกเลิกงาน
+                      </h3>
+                      <p className="text-sm text-slate-700 leading-relaxed mb-4">
+                        การยกเลิกงานนี้จะมีค่าธรรมเนียม{" "}
+                        <span className="font-mono font-bold text-amber-900">
+                          {Number(
+                            pendingIntercityCancelFee.totalFeeThb || 0,
+                          ).toLocaleString()}
+                        </span>{" "}
+                        บาท เนื่องจากคนขับเตรียมออกเดินทางแล้ว ยืนยันหรือไม่?
+                      </p>
+                      {pendingIntercityCancelFee.reason ? (
+                        <p className="text-xs text-slate-500 mb-4">
+                          ({pendingIntercityCancelFee.reason})
+                        </p>
+                      ) : null}
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowIntercityCancelFeeModal(false);
+                            setPendingIntercityCancelFee(null);
+                          }}
+                          className="flex-1 py-3 border border-slate-300 text-slate-800 font-bold rounded-xl hover:bg-slate-50"
+                        >
+                          ไม่ยกเลิก
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowIntercityCancelFeeModal(false);
+                            setCancelSeconds(10);
+                            setShowCancelModal(true);
+                          }}
+                          className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl"
+                        >
+                          ยืนยัน
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cancellation Countdown Modal */}
+                {showCompletionExtrasModal && isAssignedProvider && job && (
+                  <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
+                    <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 p-5 sm:p-6">
+                      <div className="flex items-start justify-between gap-2 mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">
+                            {t("detail.completion_extras_title")}
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                            {t("detail.completion_extras_sub")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCompletionExtrasModal(false)}
+                          className="p-1 rounded-lg hover:bg-slate-100"
+                          aria-label="Close"
+                        >
+                          <X size={22} className="text-slate-500" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {(
+                          [
+                            {
+                              key: "meter",
+                              label: t("detail.completion_meter"),
+                              val: completionMeter,
+                              set: setCompletionMeter,
+                            },
+                            {
+                              key: "toll",
+                              label: t("detail.completion_toll"),
+                              val: completionToll,
+                              set: setCompletionToll,
+                            },
+                            {
+                              key: "park",
+                              label: t("detail.completion_parking"),
+                              val: completionParking,
+                              set: setCompletionParking,
+                            },
+                            {
+                              key: "other",
+                              label: t("detail.completion_other"),
+                              val: completionOther,
+                              set: setCompletionOther,
+                            },
+                          ] as const
+                        ).map((row) => (
+                          <div key={row.key}>
+                            <label className="block text-xs font-medium text-slate-600 mb-1">
+                              {row.label}
+                            </label>
+                            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <span className="text-slate-500 text-sm">฿</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0"
+                                value={row.val}
+                                onChange={(e) =>
+                                  row.set(
+                                    e.target.value.replace(/[^\d.,]/g, ""),
+                                  )
+                                }
+                                className="flex-1 min-w-0 bg-transparent text-slate-900 font-semibold tabular-nums outline-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            {t("detail.completion_note")}
+                          </label>
+                          <textarea
+                            value={completionExtrasNote}
+                            onChange={(e) =>
+                              setCompletionExtrasNote(
+                                e.target.value.slice(0, 500),
+                              )
+                            }
+                            rows={2}
+                            placeholder={t("detail.completion_note_ph")}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-5 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingCompletionExtras(undefined);
+                            setShowCompletionExtrasModal(false);
+                            setShowCompletionSummaryModal(true);
+                          }}
+                          className="w-full py-3 rounded-xl border-2 border-slate-200 text-slate-800 font-semibold hover:bg-slate-50"
+                        >
+                          {t("detail.completion_skip_extras")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingCompletionExtras(buildExtrasFromInputs());
+                            setShowCompletionExtrasModal(false);
+                            setShowCompletionSummaryModal(true);
+                          }}
+                          className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-md"
+                        >
+                          {t("detail.completion_next_summary")}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showCompletionSummaryModal && isAssignedProvider && job && (
+                  <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
+                    <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 p-5 sm:p-6">
+                      <h3 className="text-lg font-bold text-slate-900 mb-1">
+                        {t("detail.completion_summary_title")}
+                      </h3>
+                      <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                        {t("detail.completion_summary_sub")}
+                      </p>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-2 text-sm mb-4">
+                        <div className="flex justify-between gap-3">
+                          <span className="text-slate-600">
+                            {t("detail.job_fee")}
+                          </span>
+                          <span className="font-semibold tabular-nums">
+                            ฿{jobFeeRounded.toLocaleString()}
+                          </span>
+                        </div>
+                        {pendingCompletionExtras ? (
+                          <>
+                            {(pendingCompletionExtras.meter_thb || 0) > 0 && (
+                              <div className="flex justify-between gap-3 text-xs">
+                                <span className="text-slate-500">
+                                  {t("detail.completion_meter")}
+                                </span>
+                                <span className="tabular-nums">
+                                  +฿
+                                  {(
+                                    pendingCompletionExtras.meter_thb || 0
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            {(pendingCompletionExtras.toll_thb || 0) > 0 && (
+                              <div className="flex justify-between gap-3 text-xs">
+                                <span className="text-slate-500">
+                                  {t("detail.completion_toll")}
+                                </span>
+                                <span className="tabular-nums">
+                                  +฿
+                                  {(
+                                    pendingCompletionExtras.toll_thb || 0
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            {(pendingCompletionExtras.parking_thb || 0) > 0 && (
+                              <div className="flex justify-between gap-3 text-xs">
+                                <span className="text-slate-500">
+                                  {t("detail.completion_parking")}
+                                </span>
+                                <span className="tabular-nums">
+                                  +฿
+                                  {(
+                                    pendingCompletionExtras.parking_thb || 0
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            {(pendingCompletionExtras.other_thb || 0) > 0 && (
+                              <div className="flex justify-between gap-3 text-xs">
+                                <span className="text-slate-500">
+                                  {t("detail.completion_other")}
+                                </span>
+                                <span className="tabular-nums">
+                                  +฿
+                                  {(
+                                    pendingCompletionExtras.other_thb || 0
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            {pendingCompletionExtras.note ? (
+                              <p className="text-xs text-slate-600 pt-1 border-t border-slate-200">
+                                {pendingCompletionExtras.note}
+                              </p>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            {t("detail.completion_no_extras")}
+                          </p>
+                        )}
+                      </div>
+                      <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 mb-4">
+                        <p className="text-[11px] font-semibold text-amber-900 uppercase tracking-wide">
+                          {t("payment.method")}
+                        </p>
+                        <p className="text-sm font-bold text-amber-950 mt-0.5">
+                          {getJobPaymentBadgeVariant(job)?.variant === "cash"
+                            ? t("detail.payment_badge_cash")
+                            : getJobPaymentBadgeVariant(job)?.variant ===
+                                "wallet"
+                              ? t("detail.payment_badge_wallet")
+                              : t("detail.payment_badge_online")}
+                        </p>
+                        <p className="text-xs text-amber-900/90 mt-2 leading-relaxed">
+                          {t("detail.completion_collect_hint")}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCompletionSummaryModal(false);
+                            setShowCompletionExtrasModal(true);
+                          }}
+                          className="flex-1 py-3 rounded-xl border border-slate-200 font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          {t("detail.completion_back")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void runSubmitWorkWithExtras(
+                              pendingCompletionExtras,
+                            )
+                          }
+                          disabled={submittingWork || gpsVerifying}
+                          className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {submittingWork || gpsVerifying ? (
+                            <Loader2
+                              className="inline animate-spin"
+                              size={18}
                             />
-                            <span>
-                              คุณเป็นสมาชิก Brand Adviser — สิทธิ์ยกเว้นค่าธรรมเนียมแพลตฟอร์มตามเงื่อนไขโปรแกรม
+                          ) : (
+                            t("detail.completion_confirm_submit")
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showCancelModal && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 text-center p-8">
+                      <div className="w-20 h-20 rounded-full border-4 border-red-500 flex items-center justify-center mx-auto mb-6">
+                        <span className="text-4xl font-bold text-red-600">
+                          {cancelSeconds}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900 mb-2">
+                        {t("detail.cancelling_title")}
+                      </h3>
+                      <p className="text-gray-500 mb-6">
+                        {t("detail.cancelling_desc")} {cancelSeconds}s
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowCancelModal(false);
+                          setPendingIntercityCancelFee(null);
+                        }}
+                        className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-colors"
+                      >
+                        {t("detail.keep_job")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dispute Modal */}
+                {showDisputeModal && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                          <AlertOctagon className="text-red-500 mr-2" />{" "}
+                          {t("detail.report")}
+                        </h3>
+                        <button onClick={() => setShowDisputeModal(false)}>
+                          <XCircle className="text-gray-400" />
+                        </button>
+                      </div>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {(
+                          [
+                            "detail.report_preset_late",
+                            "detail.report_preset_quality",
+                            "detail.report_preset_payment",
+                            "detail.report_preset_safety",
+                          ] as const
+                        ).map((key) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() =>
+                              setDisputeReason((prev) => {
+                                const line = t(key);
+                                if (!line || line === key) return prev;
+                                return prev?.trim()
+                                  ? `${prev.trim()}\n• ${line}`
+                                  : `• ${line}`;
+                              })
+                            }
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white"
+                          >
+                            {t(key)}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none"
+                        rows={4}
+                        placeholder={t("detail.dispute_placeholder")}
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                      />
+                      {(job?.has_insurance || hasInsurance) && isOwner && (
+                        <>
+                          {useInsuranceClaimInDispute && (
+                            <div className="mb-4 p-3 bg-slate-100 border border-slate-300 rounded-lg text-[11px] text-slate-700">
+                              <p className="font-semibold text-slate-800">
+                                📋 นโยบายความมั่นคงของแพลตฟอร์ม
+                              </p>
+                              <p>
+                                According to the Platform Stability Policy, 60%
+                                of the guarantee fund is reserved for network
+                                security and liquidity maintenance. Only 40% is
+                                eligible for immediate disbursement.
+                              </p>
+                            </div>
+                          )}
+                          <label className="flex items-center gap-4 p-4 mb-4 rounded-xl border-2 border-amber-300/90 bg-gradient-to-br from-amber-50 via-yellow-50/70 to-amber-50 cursor-pointer select-none hover:from-amber-100/90 hover:to-amber-100/70 transition-all duration-200 shadow-lg shadow-amber-300/25 hover:shadow-xl hover:shadow-amber-400/30 ring-1 ring-amber-200/60">
+                            <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/50">
+                              <Shield
+                                size={30}
+                                className="text-yellow-500 drop-shadow-md"
+                                strokeWidth={2.5}
+                                fill="currentColor"
+                              />
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={useInsuranceClaimInDispute}
+                              onChange={(e) =>
+                                setUseInsuranceClaimInDispute(e.target.checked)
+                              }
+                              className="sr-only"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-base font-bold text-amber-900 tracking-tight">
+                                ใช้สิทธิประกันที่ตนได้ซื้อไว้
+                              </p>
+                              <p className="text-xs text-amber-800/80 mt-0.5 font-medium">
+                                Premium Protect — มีใบการันตีรองรับ (40%
+                                เบิกจ่ายได้ทันที)
+                              </p>
+                            </div>
+                            <div
+                              className={`flex-shrink-0 w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all ${useInsuranceClaimInDispute ? "border-amber-600 bg-amber-500 text-white shadow-inner" : "border-amber-400 bg-white"}`}
+                            >
+                              {useInsuranceClaimInDispute && (
+                                <span className="font-bold">✓</span>
+                              )}
+                            </div>
+                          </label>
+                        </>
+                      )}
+                      <button
+                        onClick={handleDisputeModalSubmit}
+                        disabled={submittingDispute || !disputeReason.trim()}
+                        className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center"
+                      >
+                        {submittingDispute ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          t("detail.report")
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Collision Conflict Modal — Power to the User: 24hr ban warning */}
+                {showConflictModal && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-amber-800 flex items-center">
+                          <AlertTriangle className="text-amber-500 mr-2" />{" "}
+                          งานทับซ้อน
+                        </h3>
+                        <button onClick={() => setShowConflictModal(false)}>
+                          <XCircle className="text-gray-400" />
+                        </button>
+                      </div>
+                      <p className="text-gray-700 text-sm mb-4">
+                        คุณมีงานที่ทับซ้อนกับช่วงเวลานี้ หากดำเนินการต่อจะถูก
+                        Lock บัญชี 24 ชั่วโมง
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setShowConflictModal(false)}
+                          className="flex-1 py-3 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          onClick={handleAcceptJobForceConflict}
+                          disabled={acceptingWithConflict}
+                          className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center"
+                        >
+                          {acceptingWithConflict ? (
+                            <Loader2 className="animate-spin" size={20} />
+                          ) : (
+                            "รับงานต่อ (Lock 24 ชม.)"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Intercity charter — counter-offer modal (driver) */}
+                {showCounterOfferModal && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2">
+                          <DollarSign className="text-amber-600" size={22} />
+                          เสนอราคาใหม่ (ค่าจ้างก่อนค่าบริการ)
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setShowCounterOfferModal(false)}
+                          className="text-gray-400 hover:text-gray-600"
+                          aria-label="Close"
+                        >
+                          <X size={22} />
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-600 mb-3">
+                        ระบุค่าจ้างที่ต้องการ (บาท) ต้องไม่ต่ำกว่า{" "}
+                        <span className="font-mono font-semibold">
+                          {intercityBidFloor?.min_job_fee_thb != null
+                            ? `฿${intercityBidFloor.min_job_fee_thb.toLocaleString()}`
+                            : "ราคาพื้น"}
+                        </span>{" "}
+                        — ยอดที่ผู้จ้างจ่ายจะรวมค่าบริการแพลตฟอร์มตามที่กำหนด
+                      </p>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={intercityBidFloor?.min_job_fee_thb ?? 0}
+                        step="1"
+                        value={counterOfferAmount}
+                        onChange={(e) => setCounterOfferAmount(e.target.value)}
+                        className="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg font-mono mb-4 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        placeholder="เช่น 3500"
+                      />
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowCounterOfferModal(false)}
+                          className="flex-1 py-3 border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleSubmitCounterOffer()}
+                          disabled={submittingBid}
+                          className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {submittingBid ? (
+                            <Loader2 className="animate-spin" size={20} />
+                          ) : (
+                            "ส่งข้อเสนอ"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 🛡️ Insurance Claim Modal */}
+                {showClaimModal && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                      <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-5 text-white">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Shield size={22} />
+                            <h3 className="text-lg font-bold">
+                              ยื่นเคลมประกัน
+                            </h3>
+                          </div>
+                          <button
+                            onClick={() => setShowClaimModal(false)}
+                            className="text-amber-200 hover:text-white"
+                          >
+                            <X size={20} />
+                          </button>
+                        </div>
+                        <p className="text-amber-100 text-xs mt-1">
+                          การเคลมจะได้รับการพิจารณาภายใน 24–48 ชั่วโมง
+                        </p>
+                      </div>
+
+                      <div className="p-6 space-y-4">
+                        {/* Platform Stability Policy Disclaimer (Mandatory) */}
+                        <div className="bg-slate-100 border border-slate-300 rounded-xl p-4 text-xs text-slate-700 leading-relaxed">
+                          <p className="font-bold text-slate-800 mb-1">
+                            📋 นโยบายความมั่นคงของแพลตฟอร์ม
+                          </p>
+                          <p>
+                            According to the Platform Stability Policy, 60% of
+                            the guarantee fund is reserved for network security
+                            and liquidity maintenance. Only 40% is eligible for
+                            immediate disbursement.
+                          </p>
+                          <p className="mt-1 text-slate-600">
+                            ตามนโยบายความมั่นคงของแพลตฟอร์ม 60%
+                            ของกองทุนการันตีถูกสำรองไว้เพื่อความปลอดภัยของเครือข่ายและการรักษาสภาพคล่อง
+                            มีเพียง 40% ที่สามารถเบิกจ่ายได้ทันที
+                          </p>
+                        </div>
+                        {/* 40% Rule Info */}
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-2">
+                          <p className="font-bold flex items-center gap-1">
+                            <Shield size={14} /> วงเงินคุ้มครอง
+                          </p>
+                          <div className="flex justify-between text-xs">
+                            <span>วงเงินประกัน</span>
+                            <span className="font-semibold">
+                              ฿
+                              {(job
+                                ? Math.round(
+                                    parseFloat(
+                                      String(job.insurance_amount || job.price),
+                                    ) || 0,
+                                  )
+                                : 0
+                              ).toLocaleString()}
                             </span>
                           </div>
-                        )}
-                      <div className="flex flex-col gap-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="flex justify-between text-xs">
+                            <span>ค่าจ้างผู้รับงานใหม่ (40%)</span>
+                            <span className="font-bold text-amber-700">
+                              ฿
+                              {(job
+                                ? Math.round(
+                                    (parseFloat(
+                                      String(job.insurance_amount || job.price),
+                                    ) || 0) * 0.4,
+                                  )
+                                : 0
+                              ).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="border-t border-amber-200 pt-2 text-[11px] text-amber-600 leading-relaxed">
+                            ⚠️ การเคลมประกันคุ้มครองสูงสุดไม่เกินวงเงินประกัน
+                            และครอบคลุมการจัดหาผู้รับงานใหม่ในวงเงิน 40%
+                            ของวงเงินประกัน สิทธิ์เคลมได้เพียง 1 ครั้งต่องาน
+                          </div>
+                        </div>
+
+                        {/* Evidence Text */}
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                            อธิบายเหตุการณ์ที่เกิดขึ้น{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <textarea
+                            className="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                            rows={4}
+                            placeholder="เช่น ผู้รับงานไม่มาทำงาน / งานไม่เสร็จตามที่ตกลง / เกิดเหตุฉุกเฉินระหว่างงาน..."
+                            value={claimEvidenceText}
+                            onChange={(e) =>
+                              setClaimEvidenceText(e.target.value)
+                            }
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
                           <button
-                            type="button"
-                            onClick={() => navigate(-1)}
-                            className="w-full py-3 border-2 border-slate-200 bg-white text-slate-800 font-bold rounded-lg transition-colors flex items-center justify-center hover:bg-slate-50"
+                            onClick={() => setShowClaimModal(false)}
+                            className="flex-1 py-2.5 border border-slate-300 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors text-sm"
                           >
-                            <XCircle className="mr-2 shrink-0" size={20} />
-                            {t("detail.decline_job")}
+                            ยกเลิก
                           </button>
                           <button
-                            onClick={handleAcceptJob}
-                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200"
+                            onClick={handleSubmitInsuranceClaim}
+                            disabled={
+                              submittingClaim || !claimEvidenceText.trim()
+                            }
+                            className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-colors text-sm disabled:opacity-50 flex items-center justify-center gap-1"
                           >
-                            <CheckCircle className="mr-2" /> {t("detail.accept")}
+                            {submittingClaim ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Shield size={16} />
+                            )}
+                            {submittingClaim ? "กำลังส่ง..." : "ยืนยันเคลม"}
                           </button>
                         </div>
-                        {showIntercityBidding && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const min = intercityBidFloor?.min_job_fee_thb;
-                              setCounterOfferAmount(
-                                min != null ? String(min) : job?.price != null ? String(job.price) : ""
-                              );
-                              setShowCounterOfferModal(true);
-                            }}
-                            className="w-full py-3 border-2 border-amber-500 text-amber-900 bg-amber-50 hover:bg-amber-100 font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
-                          >
-                            <DollarSign size={20} />
-                            เสนอราคาใหม่
-                          </button>
-                        )}
                       </div>
-                    </>
-                  )}
+                    </div>
+                  </div>
+                )}
 
-                {/* 2. SUBMIT WORK & IN_PROGRESS ACTIONS: Visible ONLY to the Assigned Provider */}
-                {isAssignedProvider &&
-                  (job.status === JobStatus.ACCEPTED ||
-                    job.status === JobStatus.IN_PROGRESS) && (
-                    <div className="space-y-3">
-                      {MEET_CODE_REQUIRED && (
-                        <div
-                          id="job-flow-provider-meet-code"
-                          className="rounded-2xl border-2 border-indigo-300 bg-gradient-to-b from-indigo-50 to-white p-4 shadow-md ring-1 ring-indigo-100 sm:p-5 scroll-mt-24"
-                        >
-                          <p className="font-bold text-base text-indigo-950 mb-1 flex items-center gap-2">
-                            <Radio size={20} className="text-indigo-600 shrink-0" />
-                            {t("detail.provider_meet_title")}
-                          </p>
-                          <p className="text-xs text-indigo-900/90 mb-4 leading-relaxed">
-                            {t("detail.provider_meet_desc")}
-                            <span className="mt-2 block font-semibold text-indigo-950">
-                              {language === "en"
-                                ? "Enter the 6-digit code from the employer, then tap the purple confirm button here before handing over work."
-                                : "กรอกรหัส 6 หลักจากผู้จ้าง แล้วกดปุ่มม่วง «ยืนยันรหัสพบกันผู้จ้าง» ในส่วนนี้ให้สำเร็จ ก่อนส่งมอบงาน"}
-                            </span>
-                          </p>
-                          <label className="block text-xs font-semibold text-indigo-950 mb-1">
-                            {t("detail.meet_code_label")}
-                          </label>
-                          <p className="text-[11px] text-indigo-800/90 mb-2">{t("detail.meet_code_hint")}</p>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            placeholder="000000"
-                            value={providerMeetCodeInput}
-                            onChange={(e) => {
-                              const next = e.target.value.replace(/\D/g, "");
-                              setProviderMeetCodeInput(next);
-                              setProviderMeetCodeVerified(false);
-                              setProviderMeetCodeVerifyError(null);
-                            }}
-                            className="w-full px-4 py-3.5 border-2 border-indigo-300 rounded-xl text-center font-mono text-2xl tracking-[0.35em] bg-white text-slate-900 placeholder:text-slate-400 shadow-inner"
+                {/* Review Modal - แบบสมบูรณ์ */}
+                {showReviewModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowReviewModal(false)}
+                        className="absolute right-3 top-3 z-10 rounded-full p-2 text-white/90 hover:bg-white/15"
+                        aria-label={t("detail.chat_close")}
+                      >
+                        <X size={22} />
+                      </button>
+                      {/* Header */}
+                      <div className="bg-gradient-to-r from-emerald-500 to-green-500 p-6 text-center text-white">
+                        <div className="mx-auto w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4">
+                          <Star
+                            size={32}
+                            className="text-yellow-300"
+                            fill="currentColor"
                           />
+                        </div>
+                        <h3 className="text-xl font-bold">รีวิวผู้รับงาน</h3>
+                        <p className="text-emerald-100 text-sm mt-1">
+                          ช่วยให้คะแนนและรีวิว{" "}
+                          {job?.accepted_by_name || "ผู้รับงาน"}
+                        </p>
+                      </div>
+
+                      {/* Content */}
+                      <div className="p-6">
+                        {/* Star Rating */}
+                        <div className="flex justify-center space-x-1 mb-6">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => setReviewRating(star)}
+                              className="transition-transform hover:scale-125 focus:outline-none"
+                            >
+                              <Star
+                                size={40}
+                                fill={star <= reviewRating ? "#FBBF24" : "none"}
+                                className={
+                                  star <= reviewRating
+                                    ? "text-yellow-400"
+                                    : "text-gray-300"
+                                }
+                              />
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Rating Text */}
+                        <div className="text-center mb-6">
+                          <p className="text-lg font-bold text-gray-800">
+                            {reviewRating === 5
+                              ? "ยอดเยี่ยมมาก! ⭐⭐⭐⭐⭐"
+                              : reviewRating === 4
+                                ? "ดีมาก! ⭐⭐⭐⭐"
+                                : reviewRating === 3
+                                  ? "ดี ⭐⭐⭐"
+                                  : reviewRating === 2
+                                    ? "พอใช้ ⭐⭐"
+                                    : reviewRating === 1
+                                      ? "ต้องปรับปรุง ⭐"
+                                      : "ให้ดาวเลย!"}
+                          </p>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {reviewRating > 0
+                              ? "ขอบคุณสำหรับการให้คะแนน!"
+                              : "เลือกระดับดาว"}
+                          </p>
+                        </div>
+
+                        {/* Tags */}
+                        <div className="mb-6">
+                          <p className="text-sm font-bold text-gray-700 mb-3 text-center">
+                            เลือกข้อดีของผู้รับงาน (เลือกได้หลายข้อ)
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {[
+                              {
+                                key: "professional",
+                                label: "🧑‍💼 เป็นมืออาชีพ",
+                                icon: "briefcase",
+                              },
+                              {
+                                key: "punctual",
+                                label: "⏰ ตรงเวลา",
+                                icon: "clock",
+                              },
+                              {
+                                key: "friendly",
+                                label: "😊 นิสัยดี",
+                                icon: "smile",
+                              },
+                              {
+                                key: "quality",
+                                label: "✨ งานคุณภาพ",
+                                icon: "award",
+                              },
+                              {
+                                key: "communicate",
+                                label: "💬 ติดต่อดี",
+                                icon: "message-circle",
+                              },
+                              {
+                                key: "clean",
+                                label: "🧹 สะอาดเรียบร้อย",
+                                icon: "sparkles",
+                              },
+                            ].map((tag) => (
+                              <button
+                                key={tag.key}
+                                onClick={() => {
+                                  const newTag = tag.label;
+                                  if (reviewTags.includes(newTag)) {
+                                    setReviewTags((prev) =>
+                                      prev.filter((t) => t !== newTag),
+                                    );
+                                  } else {
+                                    setReviewTags((prev) => [...prev, newTag]);
+                                  }
+                                }}
+                                className={`px-4 py-2 rounded-full text-xs font-medium border transition-all flex items-center ${
+                                  reviewTags.includes(tag.label)
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200 shadow-sm scale-105"
+                                    : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+                                }`}
+                              >
+                                {reviewTags.includes(tag.label) && (
+                                  <CheckCircle
+                                    size={12}
+                                    className="mr-1 text-emerald-600"
+                                  />
+                                )}
+                                {tag.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Comment */}
+                        <div className="mb-6">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            ความคิดเห็นเพิ่มเติม (ถ้ามี)
+                          </label>
+                          <textarea
+                            value={reviewComment}
+                            onChange={(e) => setReviewComment(e.target.value)}
+                            placeholder="บอกเล่าประสบการณ์ในการใช้บริการ..."
+                            rows={3}
+                            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                          />
+                          <p className="text-xs text-gray-400 mt-1">
+                            ความคิดเห็นของคุณจะช่วยให้ผู้รับงานพัฒนาตนเอง
+                          </p>
+                        </div>
+
+                        <p className="text-xs text-slate-500 mb-3 text-center">
+                          {t("detail.review_encourage")}
+                        </p>
+                        <div className="flex">
                           <button
-                            type="button"
-                            onClick={() => void handleVerifyProviderMeetCode()}
-                            disabled={
-                              providerMeetCodeVerifying ||
-                              providerMeetCodeInput.trim().length !== 6
-                            }
-                            className={`mt-4 w-full rounded-2xl px-4 py-4 text-base font-bold shadow-lg transition flex items-center justify-center gap-2 min-h-[52px] ${
-                              providerMeetCodeVerifying ||
-                              providerMeetCodeInput.trim().length !== 6
-                                ? "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none"
-                                : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.99] shadow-indigo-300/50"
-                            }`}
+                            onClick={handleSubmitReview}
+                            disabled={submittingReview || reviewRating === 0}
+                            className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 hover:from-emerald-600 hover:to-green-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                           >
-                            {providerMeetCodeVerifying ? (
+                            {submittingReview ? (
                               <>
-                                <Loader2 size={22} className="animate-spin shrink-0" />
-                                กำลังเชื่อมกับผู้จ้าง...
+                                <Loader2 className="animate-spin" size={18} />
+                                กำลังส่งรีวิว...
                               </>
                             ) : (
-                              <>
-                                <Radio size={22} className="shrink-0" />
-                                ยืนยันรหัสพบกันผู้จ้าง
-                              </>
+                              "ส่งรีวิว"
                             )}
                           </button>
-                          {providerMeetCodeVerified && (
-                            <p className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-sm font-bold text-emerald-900 ring-2 ring-emerald-200">
-                              <CheckCircle size={18} strokeWidth={2.25} />
-                              เชื่อมกับผู้จ้างแล้ว — พร้อมส่งมอบงานเมื่อถ่ายครบ
+                        </div>
+
+                        {/* Tips — แสดงหลังส่งรีวิวสำเร็จ (handleSubmitReview จะเปิด tip modal ให้อัตโนมัติ) */}
+                        <p className="mt-4 text-center text-xs text-slate-500">
+                          <Heart className="inline mr-1" size={12} />
+                          หลังส่งรีวิวแล้ว สามารถส่งทิปให้ผู้รับงานได้
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Job Info — เต็มความกว้าง ไม่แบ่งคอลัมน์กับแชท (แชทเปิดเต็มจอแยก) */}
+                <div className="w-full max-w-4xl mx-auto space-y-6">
+                  <div className="job-detail-main-card job-main-card bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-slate-300/40 border border-slate-200/60 overflow-hidden ring-1 ring-slate-200/50">
+                    <div
+                      className={`job-detail-header p-6 sm:p-8 border-b border-white/20 text-white ${
+                        job.status === JobStatus.CANCELLED
+                          ? "bg-gray-600/95"
+                          : job.status === JobStatus.DISPUTE
+                            ? "bg-red-700/95"
+                            : "bg-gradient-to-br from-emerald-700 to-emerald-900"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2 mb-3">
+                            <span
+                              className={`badge-category inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider opacity-95 ${
+                                job.status === JobStatus.CANCELLED
+                                  ? "bg-gray-700"
+                                  : job.status === JobStatus.DISPUTE
+                                    ? "bg-red-900"
+                                    : "bg-emerald-900/50"
+                              }`}
+                            >
+                              {t(`cat.${job.category}`) || job.category}
+                            </span>
+                            {transportHubJobKind ? (
+                              <span
+                                className={`inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wide border border-white/25 ${
+                                  transportHubJobKind === "intercity_charter"
+                                    ? "bg-amber-500/95 text-white"
+                                    : transportHubJobKind === "relay_leg"
+                                      ? "bg-violet-600/95 text-white"
+                                      : "bg-white/20 text-white"
+                                }`}
+                              >
+                                {transportHubJobKind === "intercity_charter"
+                                  ? t("transport.kind_intercity_charter")
+                                  : transportHubJobKind === "relay_leg"
+                                    ? t("transport.kind_relay_leg")
+                                    : t("transport.kind_local_on_demand")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-sm">
+                            {job.title}
+                          </h1>
+                          {jobReferenceCode ? (
+                            <div className="mt-4 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-100/90">
+                                  {t("detail.job_reference")}
+                                </span>
+                                <span className="font-mono text-sm sm:text-base font-bold tracking-tight text-white bg-black/20 px-2.5 py-1 rounded-lg border border-white/25">
+                                  {jobReferenceCode}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => void copyJobReference()}
+                                  className="inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white hover:bg-white/30 transition-colors"
+                                  aria-label={t("detail.copy_ref")}
+                                >
+                                  <Copy size={14} strokeWidth={2.25} />
+                                  {t("detail.copy_ref")}
+                                </button>
+                              </div>
+                              {job.created_at && (
+                                <p className="text-sm text-emerald-100/95">
+                                  {t("detail.order_placed_at")}{" "}
+                                  {new Date(job.created_at).toLocaleString(
+                                    "th-TH",
+                                    {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    },
+                                  )}
+                                </p>
+                              )}
+                              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                                <button
+                                  type="button"
+                                  onClick={openHelpCenterGateModal}
+                                  className="text-sm font-semibold text-emerald-100 hover:text-white underline-offset-2 hover:underline"
+                                >
+                                  {t("detail.report_issue")}
+                                </button>
+                                {job.accepted_by &&
+                                  (isOwner || isAssignedProvider) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openChatOverlay()}
+                                      className="text-sm text-white/75 hover:text-white underline-offset-2 hover:underline"
+                                    >
+                                      {t("detail.chat_history_link")}
+                                    </button>
+                                  )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="text-right">
+                          <button
+                            onClick={handleShare}
+                            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors mb-2 ml-auto block"
+                          >
+                            <Share2 size={20} />
+                          </button>
+                          <p className="text-3xl font-bold flex items-center justify-end">
+                            {jobFeeRounded}{" "}
+                            <span className="text-sm ml-1 font-normal opacity-80">
+                              {t("detail.thb")}
+                            </span>
+                          </p>
+                          {job.tips_amount && job.tips_amount > 0 ? (
+                            <p className="text-sm text-emerald-100 flex items-center justify-end mt-1">
+                              <Heart size={12} className="mr-1 fill-current" />{" "}
+                              + {job.tips_amount} Tips
                             </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                      {showFlowChrome && job && (
+                        <div
+                          id="job-detail-flow-stepper"
+                          className={flowRing(
+                            !!jobFlow && jobFlow.stepKey === "done",
                           )}
-                          {providerMeetCodeVerifyError && (
-                            <p className="mt-2 text-center text-sm font-semibold text-red-600">
-                              {providerMeetCodeVerifyError}
+                        >
+                          <JobDetailFlowStepper
+                            role={isOwner ? "employer" : "provider"}
+                            jobStatus={job.status}
+                            hasArrived={
+                              job.status === JobStatus.IN_PROGRESS &&
+                              !!job.arrived_at
+                            }
+                            hasProof={hasProof}
+                            waitingApproval={
+                              job.status === JobStatus.WAITING_FOR_APPROVAL
+                            }
+                            category={job.category}
+                            appointmentAt={job.datetime}
+                          />
+                        </div>
+                      )}
+                      {canShowJobChat && !contactStripInProviderMap && (
+                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/95 to-white px-4 py-3 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {(() => {
+                              const avatarUrl = isOwner
+                                ? (job as any).provider_profile?.avatar_url
+                                : (job as any).created_by_avatar;
+                              const name = isOwner
+                                ? job.accepted_by_name || "Provider"
+                                : job.created_by_name || "Owner";
+                              return (
+                                <>
+                                  {avatarUrl ? (
+                                    <img
+                                      src={avatarUrl}
+                                      alt=""
+                                      className="h-12 w-12 shrink-0 rounded-full object-cover border-2 border-emerald-200 shadow-sm"
+                                    />
+                                  ) : (
+                                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 border-2 border-emerald-200">
+                                      <User
+                                        size={24}
+                                        className="text-emerald-700"
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                                      {t("detail.chat")}
+                                    </p>
+                                    <p className="text-sm font-semibold text-slate-900 truncate">
+                                      {t("detail.chat_with")} {name}
+                                    </p>
+                                    {job.status === JobStatus.OPEN &&
+                                    canAcceptJob ? (
+                                      <p className="text-xs text-slate-500 mt-1 leading-snug">
+                                        {t("detail.chat_pre_accept_hint")}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={openChatOverlay}
+                            className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99]"
+                          >
+                            <MessageCircle size={18} strokeWidth={2} />
+                            {t("detail.chat_open_fab")}
+                          </button>
+                        </div>
+                      )}
+                      {job.status === JobStatus.COMPLETED &&
+                        job.accepted_by &&
+                        (isOwner || isAssignedProvider) && (
+                          <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
+                            {isOwner &&
+                              (employerHasReviewed === false ||
+                                employerHasReviewed === null) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowReviewModal(true)}
+                                  className="flex w-full items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-600 to-green-600 px-4 py-3.5 text-left text-white shadow-sm transition hover:from-emerald-700 hover:to-green-700"
+                                >
+                                  <span className="flex min-w-0 items-center gap-3">
+                                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20">
+                                      <Star
+                                        size={22}
+                                        className="text-amber-200"
+                                        fill="currentColor"
+                                      />
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span className="block font-bold leading-tight">
+                                        {t("detail.rate_provider")}
+                                      </span>
+                                      <span className="mt-0.5 block text-xs text-emerald-100">
+                                        {job.accepted_by_name
+                                          ? `${job.accepted_by_name}`
+                                          : t("detail.rate_provider_sub")}
+                                      </span>
+                                    </span>
+                                  </span>
+                                  <ChevronRight
+                                    className="shrink-0 text-white/90"
+                                    size={22}
+                                    strokeWidth={2.5}
+                                  />
+                                </button>
+                              )}
+                            {isOwner && employerHasReviewed === true && (
+                              <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50/80 px-4 py-3">
+                                <CheckCircle
+                                  className="shrink-0 text-emerald-600"
+                                  size={22}
+                                  strokeWidth={2.5}
+                                />
+                                <p className="text-sm font-semibold text-emerald-900">
+                                  {t("detail.rated_provider_done")}
+                                </p>
+                              </div>
+                            )}
+                            {isOwner && (
+                              <button
+                                type="button"
+                                onClick={() => setShowTipModal(true)}
+                                className="flex w-full gap-3 p-4 text-left transition-colors hover:bg-emerald-50/80"
+                              >
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                                  <Gift size={22} strokeWidth={2} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-bold text-slate-900">
+                                    {t("detail.tip_banner_title")}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-slate-500">
+                                    {t("detail.tip_banner_sub")}
+                                  </p>
+                                </div>
+                              </button>
+                            )}
+                            {!isOwner && (job.tips_amount ?? 0) > 0 && (
+                              <div className="flex gap-3 border-b border-slate-100 p-4">
+                                <Gift
+                                  className="shrink-0 text-emerald-600"
+                                  size={22}
+                                />
+                                <p className="text-sm text-slate-700">
+                                  {t("detail.tip_received_line")}{" "}
+                                  <span className="font-bold tabular-nums">
+                                    {job.tips_amount} {t("detail.thb")}
+                                  </span>
+                                </p>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50/70 p-3">
+                              <button
+                                type="button"
+                                onClick={() => openChatOverlay()}
+                                className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                              >
+                                <MessageCircle size={18} />
+                                {t("detail.chat_history_link")}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={openHelpCenterGateModal}
+                                className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-2.5 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
+                              >
+                                <Flag size={18} />
+                                {t("detail.report_issue")}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {/* 🛡️ Protected by Aqond Insurance Banner */}
+                      {job.has_insurance && (
+                        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                          <Shield
+                            size={24}
+                            className="text-emerald-600 flex-shrink-0"
+                          />
+                          <div>
+                            <p className="font-bold text-emerald-800">
+                              Protected by Aqond Insurance
+                            </p>
+                            {job.policy_number && (
+                              <p className="text-sm text-emerald-700">
+                                Policy: {job.policy_number}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Report Issue / File Claim — visible when coverage is active */}
+                      {job.has_insurance &&
+                        job.insurance_coverage_status === "active" &&
+                        !insuranceClaim &&
+                        isOwner && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="text-sm text-amber-800 mb-3">
+                              งานนี้คุ้มครองโดย Aqond Insurance —
+                              หากมีปัญหาระหว่างงาน สามารถยื่นเคลมได้
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setShowClaimModal(true)}
+                              className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+                            >
+                              <Shield size={16} />
+                              Report Issue / File Claim
+                            </button>
+                          </div>
+                        )}
+
+                      {/* Expiration Timer */}
+                      {job.status === JobStatus.OPEN && (
+                        <div
+                          className={`p-3 rounded-lg flex items-center justify-between ${
+                            isExpired
+                              ? "bg-red-50 text-red-800"
+                              : "bg-blue-50 text-blue-800"
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <Timer size={18} className="mr-2" />
+                            <span className="font-bold text-sm">
+                              {isExpired
+                                ? t("detail.expired")
+                                : t("detail.expires_in")}
+                            </span>
+                          </div>
+                          <span className="font-mono font-bold text-lg">
+                            {expirationTime || "--:--:--"}
+                          </span>
+                        </div>
+                      )}
+
+                      {showIntercityBidding && isOwner && (
+                        <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 space-y-3 shadow-sm">
+                          <h4 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                            <DollarSign size={18} className="text-amber-600" />
+                            ข้อเสนอราคาจากคนขับ (เหมาข้ามจังหวัด)
+                          </h4>
+                          <p className="text-xs text-amber-900/85 leading-relaxed">
+                            เลือก &quot;ยอมรับราคา&quot; กับคนที่ต้องการ —
+                            ระบบจะคำนวณยอดรวมที่ผู้จ้างจ่าย
+                            (รวมค่าบริการแพลตฟอร์ม) ให้อัตโนมัติ
+                          </p>
+                          {bidsLoading && intercityBids.length === 0 ? (
+                            <p className="text-xs text-amber-800 flex items-center gap-2">
+                              <Loader2 className="animate-spin" size={14} />{" "}
+                              กำลังโหลดข้อเสนอ...
+                            </p>
+                          ) : null}
+                          {intercityBids.filter((b) => b.status === "pending")
+                            .length === 0 && !bidsLoading ? (
+                            <p className="text-xs text-amber-900/75">
+                              ยังไม่มีข้อเสนอ — รอคนขับกด
+                              &quot;เสนอราคาใหม่&quot; จากบอร์ดงาน
+                            </p>
+                          ) : null}
+                          <ul className="space-y-2">
+                            {intercityBids
+                              .filter((b) => b.status === "pending")
+                              .map((b) => (
+                                <li
+                                  key={b.id}
+                                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-white border border-amber-200/80 p-3 shadow-sm"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-900 truncate">
+                                      {b.provider_name || "คนขับ"}
+                                    </p>
+                                    <p className="text-xs text-slate-600 mt-0.5">
+                                      เสนอค่าจ้าง (ก่อนค่าบริการ){" "}
+                                      <span className="font-mono font-semibold">
+                                        ฿
+                                        {Number(
+                                          b.proposed_job_fee_thb,
+                                        ).toLocaleString()}
+                                      </span>
+                                      {" · "}
+                                      รวมที่คุณจ่าย{" "}
+                                      <span className="font-mono font-semibold text-emerald-800">
+                                        ฿
+                                        {Number(
+                                          b.proposed_final_price_thb,
+                                        ).toLocaleString()}
+                                      </span>
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleAcceptIntercityBid(
+                                        String(b.id),
+                                      )
+                                    }
+                                    disabled={!!acceptingBidId}
+                                    className="shrink-0 w-full sm:w-auto py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                                  >
+                                    {acceptingBidId === String(b.id) ? (
+                                      <Loader2
+                                        className="animate-spin"
+                                        size={18}
+                                      />
+                                    ) : (
+                                      <CheckCircle size={18} />
+                                    )}
+                                    ยอมรับราคา
+                                  </button>
+                                </li>
+                              ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Status Banners */}
+                      {job.status === JobStatus.CANCELLED && (
+                        <div className="bg-red-50 text-red-800 p-4 rounded-lg border border-red-100 flex items-center justify-center font-bold">
+                          <XCircle className="mr-2" /> {t("detail.cancelled")}
+                        </div>
+                      )}
+
+                      {job.status === JobStatus.DISPUTE && (
+                        <div className="space-y-3">
+                          <div className="bg-red-50 text-red-800 p-4 rounded-lg border border-red-100 flex items-center justify-center font-bold animate-pulse">
+                            <AlertOctagon className="mr-2" />{" "}
+                            {t("detail.under_review")}
+                          </div>
+
+                          {/* 🛡️ Insurance Claim Section (เฉพาะงานที่มีประกัน) */}
+                          {job.has_insurance && (
+                            <div
+                              className={`rounded-xl border p-4 ${
+                                insuranceClaim?.claim_status === "approved"
+                                  ? "bg-emerald-50 border-emerald-200"
+                                  : insuranceClaim?.claim_status === "pending"
+                                    ? "bg-amber-50 border-amber-200"
+                                    : insuranceClaim?.claim_status ===
+                                        "rejected"
+                                      ? "bg-red-50 border-red-200"
+                                      : "bg-amber-50 border-amber-300"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <Shield
+                                  size={18}
+                                  className={
+                                    insuranceClaim?.claim_status === "approved"
+                                      ? "text-emerald-600"
+                                      : insuranceClaim?.claim_status ===
+                                          "rejected"
+                                        ? "text-red-500"
+                                        : "text-amber-600"
+                                  }
+                                />
+                                <span className="font-bold text-sm">
+                                  {insuranceClaim?.claim_status === "approved"
+                                    ? "✅ ประกันได้รับการอนุมัติแล้ว"
+                                    : insuranceClaim?.claim_status === "pending"
+                                      ? "⏳ รอการพิจารณาจากทีมงาน"
+                                      : insuranceClaim?.claim_status ===
+                                          "rejected"
+                                        ? "❌ คำขอเคลมถูกปฏิเสธ"
+                                        : "🛡️ มีประกันคุ้มครอง"}
+                                </span>
+                              </div>
+
+                              {insuranceClaim?.claim_status === "approved" && (
+                                <div className="text-sm text-emerald-700 space-y-1">
+                                  <p>
+                                    จ่ายให้ผู้รับงานใหม่:{" "}
+                                    <strong>
+                                      ฿
+                                      {Number(
+                                        insuranceClaim.replacement_payout,
+                                      ).toLocaleString()}
+                                    </strong>{" "}
+                                    (40% ของวงเงินประกัน)
+                                  </p>
+                                </div>
+                              )}
+
+                              {!insuranceClaim && isOwner && (
+                                <>
+                                  <p className="text-xs text-amber-700 mb-3 leading-relaxed">
+                                    การเคลมประกันคุ้มครองสูงสุดไม่เกินวงเงินประกัน
+                                    และครอบคลุมการจัดหาผู้รับงานใหม่ในวงเงิน 40%
+                                    ของวงเงินประกัน (60%
+                                    สำรองเพื่อความมั่นคงของแพลตฟอร์ม)
+                                  </p>
+                                  <button
+                                    onClick={() => setShowClaimModal(true)}
+                                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+                                  >
+                                    <Shield size={16} /> ยื่นเคลมประกัน
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 🚨 Marine SOS — แสดงให้ทั้งผู้จ้างและกัปตันเมื่ออยู่บนเรือ */}
+                      {(job.category === "Marine" ||
+                        (job as any).marine_status) &&
+                        (job.status === JobStatus.ACCEPTED ||
+                          job.status === JobStatus.IN_PROGRESS) &&
+                        (isOwner || isAssignedProvider) && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const pos = await new Promise<{
+                                  lat: number;
+                                  lng: number;
+                                }>((res, rej) => {
+                                  navigator.geolocation.getCurrentPosition(
+                                    (p) =>
+                                      res({
+                                        lat: p.coords.latitude,
+                                        lng: p.coords.longitude,
+                                      }),
+                                    rej,
+                                    { enableHighAccuracy: true },
+                                  );
+                                });
+                                await sendSOS(
+                                  job.id,
+                                  pos.lat,
+                                  pos.lng,
+                                  token || undefined,
+                                );
+                                notify(
+                                  "SOS ส่งแล้ว — หน่วยกู้ภัยจะติดต่อคุณ",
+                                  "success",
+                                );
+                              } catch (e: any) {
+                                notify(
+                                  e?.message || "ส่ง SOS ไม่สำเร็จ",
+                                  "error",
+                                );
+                              }
+                            }}
+                            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 border-2 border-red-700"
+                          >
+                            <Radio size={20} />
+                            🚨 SOS ฉุกเฉินทางทะเล
+                          </button>
+                        )}
+
+                      {isOwner &&
+                        (job.status === JobStatus.ACCEPTED ||
+                          job.status === JobStatus.IN_PROGRESS) && (
+                          <div className="space-y-2">
+                            <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-100 flex items-center">
+                              <CheckCircle className="mr-2" />{" "}
+                              {t("detail.accepted")}
+                            </div>
+                            {/* 🛡️ Insurance badge เมื่อมีประกัน */}
+                            {job.has_insurance && (
+                              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-semibold">
+                                <Shield size={14} className="text-amber-500" />{" "}
+                                มีประกันคุ้มครอง —
+                                คุ้มครองการจัดหาผู้รับงานใหม่สูงสุด 40%
+                              </div>
+                            )}
+                            {MEET_CODE_REQUIRED && (
+                              <div className="rounded-xl border border-slate-200 bg-white p-4 text-slate-800 shadow-sm">
+                                <p className="font-semibold text-sm mb-2 flex items-center gap-2">
+                                  <Radio
+                                    size={16}
+                                    className="text-indigo-600"
+                                  />
+                                  {t("detail.employer_meet_title")}
+                                </p>
+                                <p className="text-xs text-slate-600 mb-3">
+                                  {t("detail.employer_meet_desc")}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={handleCreateEmployerMeetCode}
+                                  disabled={creatingMeetCode}
+                                  className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+                                >
+                                  {creatingMeetCode
+                                    ? t("detail.employer_meet_creating")
+                                    : t("detail.employer_meet_btn")}
+                                </button>
+                                {employerMeet && (
+                                  <div className="mt-3 flex flex-col items-center gap-2">
+                                    <img
+                                      alt="QR meet code"
+                                      className="w-40 h-40 border border-slate-200 rounded-lg bg-white p-1"
+                                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(employerMeet.qrPayload)}`}
+                                    />
+                                    <p className="text-2xl font-mono font-bold tracking-widest text-indigo-900">
+                                      {employerMeet.code}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      หมดอายุ:{" "}
+                                      {employerMeet.expiresAt
+                                        ? new Date(
+                                            employerMeet.expiresAt,
+                                          ).toLocaleString("th-TH")
+                                        : "—"}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                      {job.status === JobStatus.WAITING_FOR_APPROVAL && (
+                        <div className="bg-purple-50 text-purple-800 p-4 rounded-lg border border-purple-100 space-y-2">
+                          <div className="flex items-center">
+                            <Hourglass className="mr-2 shrink-0" />
+                            <span className="font-bold">
+                              {t("detail.waiting_approval")}
+                            </span>
+                          </div>
+                          <p className="text-sm text-purple-700">
+                            {t("detail.waiting_manual_approval_hint")}
+                          </p>
+                          {disputeWindowRemaining && (
+                            <p className="text-xs text-purple-600">
+                              ช่วงตรวจสอบ (อ้างอิง): {disputeWindowRemaining}
                             </p>
                           )}
                         </div>
                       )}
 
-                      {proofPhotosRequired ? (
-                      <>
-                      {/* 📸 หลักฐานแบบ book: ขั้น 1 ถ่ายก่อน → ถัดไป → ขั้น 2 ถ่ายหลัง (กล้องเท่านั้น) */}
-                      <div
-                        id="job-flow-provider-proof"
-                        className={`rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-sm ring-1 ring-slate-100/80 sm:p-5 ${flowRing(
-                          !!jobFlow &&
-                            jobFlow.role === "provider" &&
-                            jobFlow.stepKey === "photo"
-                        )}`}
-                      >
-                        <div className="mb-3 flex items-start gap-3 border-b border-slate-100 pb-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                            <Camera size={20} strokeWidth={2.25} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                              ถ่ายหลักฐาน
+                      {job.status === JobStatus.WAITING_FOR_APPROVAL &&
+                        isAssignedProvider &&
+                        job.payment_details?.provider_completion_extras &&
+                        typeof job.payment_details
+                          .provider_completion_extras === "object" && (
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                            <p className="font-semibold text-slate-900">
+                              {t("detail.provider_extras_submitted_title")}
                             </p>
-                            <h4 className="text-base font-bold text-slate-900">
-                              {t("detail.proof_section_title")}
-                            </h4>
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                              {t("detail.proof_vision_hint")}
+                            <p className="text-xs text-slate-600 mt-1">
+                              {t("detail.completion_extras_total")}: ฿
+                              {(
+                                Number(
+                                  (
+                                    job.payment_details
+                                      .provider_completion_extras as {
+                                      extras_total_thb?: number;
+                                    }
+                                  ).extras_total_thb,
+                                ) ||
+                                (Number(
+                                  (
+                                    job.payment_details
+                                      .provider_completion_extras as {
+                                      meter_thb?: number;
+                                    }
+                                  ).meter_thb,
+                                ) || 0) +
+                                  (Number(
+                                    (
+                                      job.payment_details
+                                        .provider_completion_extras as {
+                                        toll_thb?: number;
+                                      }
+                                    ).toll_thb,
+                                  ) || 0) +
+                                  (Number(
+                                    (
+                                      job.payment_details
+                                        .provider_completion_extras as {
+                                        parking_thb?: number;
+                                      }
+                                    ).parking_thb,
+                                  ) || 0) +
+                                  (Number(
+                                    (
+                                      job.payment_details
+                                        .provider_completion_extras as {
+                                        other_thb?: number;
+                                      }
+                                    ).other_thb,
+                                  ) || 0)
+                              ).toLocaleString()}
                             </p>
-                            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-medium leading-snug text-amber-900 ring-1 ring-amber-100">
-                              บังคับถ่ายจากกล้องเท่านั้น — ไม่รองรับการอัปโหลดจากแกลเลอรี
-                            </p>
+                          </div>
+                        )}
+
+                      {job.status === JobStatus.WAITING_FOR_PAYMENT && (
+                        <div className="bg-amber-50 text-amber-800 p-4 rounded-lg border border-amber-100 flex items-center">
+                          <Clock className="mr-2" />{" "}
+                          {t("detail.waiting_payment")}
+                        </div>
+                      )}
+
+                      {job.status === JobStatus.COMPLETED && (
+                        <div className="bg-green-50 text-green-800 p-4 rounded-lg border border-green-100 flex items-center justify-center font-bold">
+                          <CheckCircle className="mr-2" />{" "}
+                          {t("detail.completed")}
+                        </div>
+                      )}
+
+                      {/* AQOND Wow 3: Work Insurance Progress */}
+                      {(job.status === JobStatus.ACCEPTED ||
+                        job.status === JobStatus.IN_PROGRESS ||
+                        job.status === JobStatus.WAITING_FOR_APPROVAL ||
+                        job.status === JobStatus.COMPLETED) && (
+                        <WorkInsuranceProgress
+                          phase={
+                            job.status === JobStatus.COMPLETED
+                              ? "released"
+                              : job.status === JobStatus.IN_PROGRESS
+                                ? "in_progress"
+                                : job.status === JobStatus.WAITING_FOR_APPROVAL
+                                  ? "in_progress"
+                                  : "matched"
+                          }
+                          className="mt-4"
+                          variant={
+                            isAssignedProvider && showFlowChrome
+                              ? "compact"
+                              : "default"
+                          }
+                        />
+                      )}
+
+                      {/* Insurance Price Breakdown — แสดงเมื่อซื้อประกัน (ใต้ Work Insurance status bar) */}
+                      {(job.has_insurance === true ||
+                        (job.insurance_amount != null &&
+                          Number(job.insurance_amount) > 0)) && (
+                        <div className="mt-4 overflow-hidden rounded-xl border border-amber-200 bg-amber-50/80 shadow-sm">
+                          <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50">
+                            <div className="flex items-center gap-2">
+                              <Shield size={18} className="text-amber-700" />
+                              <span className="font-bold text-amber-900 text-sm">
+                                {t("detail.insurance_title") ||
+                                  "Price Breakdown"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="px-4 py-4 space-y-2 text-sm">
+                            <div className="flex justify-between items-center gap-4 text-slate-700">
+                              <span>{t("detail.job_fee") || "Job Fee"}</span>
+                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                ฿ {jobFeeRounded.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
+                              <span>
+                                {t("detail.insurance_fee") ||
+                                  "Insurance Premium"}
+                              </span>
+                              <span className="font-semibold tabular-nums text-right min-w-[72px]">
+                                +฿ {cardInsuranceAmount.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center gap-4 text-slate-700">
+                              <span>
+                                {t("detail.service_fee")} (
+                                {paymentMarkupPercent}%)
+                              </span>
+                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                +฿{" "}
+                                {round2(
+                                  (jobFeeRounded + cardInsuranceAmount) *
+                                    markupRate,
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center gap-4 border-t border-amber-200 pt-3 mt-2 font-bold text-slate-900">
+                              <span>
+                                {t("detail.total_pay") || "Total Paid"}
+                              </span>
+                              <span className="tabular-nums text-right min-w-[72px]">
+                                ฿ {cardTotalPrice.toLocaleString()}
+                              </span>
+                            </div>
                           </div>
                         </div>
+                      )}
 
-                        {job.before_photo_url && job.after_photo_url ? (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="overflow-hidden rounded-xl border border-orange-200 bg-white p-2 shadow-sm">
-                                <p className="mb-1 text-center text-[10px] font-bold text-orange-800">ก่อนเริ่มงาน</p>
-                                <img
-                                  src={job.before_photo_url}
-                                  alt=""
-                                  className="aspect-[4/3] w-full rounded-lg object-cover"
-                                />
-                              </div>
-                              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white p-2 shadow-sm">
-                                <p className="mb-1 text-center text-[10px] font-bold text-emerald-900">หลังเสร็จงาน</p>
-                                <img
-                                  src={job.after_photo_url}
-                                  alt=""
-                                  className="aspect-[4/3] w-full rounded-lg object-cover"
-                                />
-                              </div>
+                      {/* Employer Final Invoice — แสดงเมื่องานเสร็จ (เจ้าของงานเห็นใบแจ้งหนี้สุดท้าย) */}
+                      {job.status === JobStatus.COMPLETED && isOwner && (
+                        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
+                          <div className="px-4 py-3 border-b border-slate-200 bg-slate-100/80">
+                            <div className="flex items-center gap-2">
+                              <ClipboardList
+                                size={18}
+                                className="text-slate-700"
+                              />
+                              <span className="font-bold text-slate-900 text-sm">
+                                {t("detail.final_invoice") || "Final Invoice"}
+                              </span>
                             </div>
-                            <p className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-100">
-                              <CheckCircle size={15} strokeWidth={2.25} />
-                              ครบทั้ง 2 ขั้นตอน — พร้อมส่งมอบงาน
+                          </div>
+                          <div className="px-4 py-4 space-y-2 text-sm">
+                            <div className="flex justify-between items-center gap-4 text-slate-700">
+                              <span>{t("detail.job_fee") || "Job Fee"}</span>
+                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                ฿ {jobFeeRounded.toLocaleString()}
+                              </span>
+                            </div>
+                            {(job.has_insurance || cardInsuranceAmount > 0) && (
+                              <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
+                                <span>
+                                  {t("detail.insurance_fee") ||
+                                    "Insurance Premium"}
+                                </span>
+                                <span className="font-semibold tabular-nums text-right min-w-[72px]">
+                                  +฿ {cardInsuranceAmount.toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center gap-4 text-slate-700">
+                              <span>
+                                {t("detail.service_fee")} (
+                                {paymentMarkupPercent}%)
+                              </span>
+                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                +฿{" "}
+                                {round2(
+                                  (jobFeeRounded + cardInsuranceAmount) *
+                                    markupRate,
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 mt-2 font-bold text-slate-900">
+                              <span>
+                                {t("detail.total_pay") || "Total Paid"}
+                              </span>
+                              <span className="tabular-nums text-right min-w-[72px]">
+                                ฿ {cardTotalPrice.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Provider Earnings Receipt — ใบเสร็จรายได้ (ผู้รับงานเห็นรายละเอียดค่าธรรมเนียมแพลตฟอร์ม + รายรับคงเหลือ) */}
+                      {job.status === JobStatus.COMPLETED &&
+                        isAssignedProvider && (
+                          <div className="mt-4 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/80 shadow-sm">
+                            <div className="px-4 py-3 border-b border-emerald-200 bg-emerald-100/50 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <DollarSign
+                                  size={18}
+                                  className="text-emerald-700"
+                                />
+                                <span className="font-bold text-emerald-900 text-sm">
+                                  รายได้จากงานนี้
+                                </span>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (!id) return;
+                                  try {
+                                    const { data } = await api.get<ReceiptData>(
+                                      `/earnings/receipt/job/${id}`,
+                                    );
+                                    setReceiptData(data);
+                                  } catch (e) {
+                                    notify("โหลดใบเสร็จไม่สำเร็จ", "error");
+                                  }
+                                }}
+                                className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 transition-colors flex items-center gap-2"
+                              >
+                                <Eye size={16} />
+                                ดูใบเสร็จรายได้
+                              </button>
+                            </div>
+                            <p className="px-4 py-3 text-sm text-emerald-800">
+                              ดูรายละเอียดค่าธรรมเนียมแพลตฟอร์มและรายรับคงเหลือหลังหักค่าใช้จ่าย
                             </p>
                           </div>
-                        ) : !job.before_photo_url ? (
-                          <div className="rounded-2xl border-2 border-orange-200/90 bg-white p-4 shadow-inner">
-                            <div className="mb-3 flex items-center gap-3">
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500 text-base font-bold text-white shadow-md ring-2 ring-orange-200">
-                                1
-                              </span>
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">ก่อนเริ่มงาน</p>
-                                <p className="text-[11px] text-slate-500">ถ่ายจากกล้อง แล้วกด «ถัดไป» เพื่อไปขั้นถัดไป</p>
+                        )}
+
+                      {showFlowChrome ? (
+                        <details className="group rounded-2xl border border-slate-200/90 bg-slate-50/40 open:bg-white">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-800 [&::-webkit-details-marker]:hidden">
+                            <span>{t("detail.flow_job_details_toggle")}</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">
+                            {jobDetailsBlock}
+                          </div>
+                        </details>
+                      ) : (
+                        jobDetailsBlock
+                      )}
+
+                      {/* Provider — สรุปรายได้โดยประมาณ + คำถามจากนายจ้าง (ก่อนรับ) */}
+                      {canAcceptJob &&
+                        job.status === JobStatus.OPEN &&
+                        !isExpired && (
+                          <>
+                            {paymentBadgeVariant && (
+                              <div className="mt-4 flex flex-wrap items-center gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  {t("payment.method")}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold shadow-sm ${
+                                    paymentBadgeVariant.variant === "cash"
+                                      ? "bg-amber-100 text-amber-900 ring-1 ring-amber-200"
+                                      : paymentBadgeVariant.variant === "wallet"
+                                        ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200"
+                                        : "bg-sky-100 text-sky-900 ring-1 ring-sky-200"
+                                  }`}
+                                >
+                                  {paymentBadgeVariant.variant === "cash"
+                                    ? t("detail.payment_badge_cash")
+                                    : paymentBadgeVariant.variant === "wallet"
+                                      ? t("detail.payment_badge_wallet")
+                                      : t("detail.payment_badge_online")}
+                                </span>
                               </div>
+                            )}
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/95 p-4 shadow-sm ring-1 ring-slate-100/80">
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <DollarSign
+                                    size={18}
+                                    className="text-emerald-700 shrink-0"
+                                  />
+                                  <h3 className="text-sm font-bold text-slate-900">
+                                    {t(
+                                      "detail.provider_earnings_preview_title",
+                                    )}
+                                  </h3>
+                                </div>
+                              </div>
+                              <div className="rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-inner mb-3">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-100/95">
+                                  {t("detail.provider_earnings_net_highlight")}
+                                </p>
+                                <p className="text-2xl font-bold tabular-nums mt-0.5">
+                                  ฿
+                                  {talentPreviewBreakdown.talentNet.toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="text-sm space-y-1.5 text-slate-800">
+                                <div className="flex justify-between gap-4 text-xs">
+                                  <span className="text-slate-600">
+                                    {t("detail.provider_earnings_gross")}
+                                  </span>
+                                  <span className="font-semibold tabular-nums">
+                                    ฿{jobFeeRounded.toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4 text-xs text-slate-600">
+                                  <span>
+                                    {t("detail.provider_earnings_sourcing")}
+                                  </span>
+                                  <span className="tabular-nums text-red-700">
+                                    −฿
+                                    {talentPreviewBreakdown.sourcingFee.toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4 text-xs text-slate-600">
+                                  <span>
+                                    {t("detail.provider_earnings_commission")}
+                                  </span>
+                                  <span className="tabular-nums text-red-700">
+                                    −฿
+                                    {talentPreviewBreakdown.commission.toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4 text-xs text-slate-600">
+                                  <span>
+                                    {t("detail.provider_earnings_tax")}
+                                  </span>
+                                  <span className="tabular-nums text-red-700">
+                                    −฿
+                                    {talentPreviewBreakdown.taxService.toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4 pt-2 border-t border-slate-200 font-bold text-emerald-900 text-sm">
+                                  <span>
+                                    {t("detail.provider_earnings_net")}
+                                  </span>
+                                  <span className="tabular-nums">
+                                    ฿
+                                    {talentPreviewBreakdown.talentNet.toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+                                {t("detail.provider_earnings_preview_note")}
+                              </p>
                             </div>
-                            {beforePhotoPreview ? (
-                              <div className="space-y-3">
-                                <img
-                                  src={beforePhotoPreview}
-                                  alt=""
-                                  className="max-h-56 w-full rounded-xl border border-orange-100 object-contain sm:max-h-64"
+                            {employerQuestionsPreview.length > 0 ? (
+                              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
+                                <p className="text-xs font-bold text-amber-900 mb-2">
+                                  {t("detail.employer_questions_title")}
+                                </p>
+                                <ul className="list-disc pl-5 space-y-1.5 text-sm text-amber-950">
+                                  {employerQuestionsPreview.map((q, i) => (
+                                    <li key={i}>{q}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+
+                      {/* Provider — แผนที่ก่อนรับ (หมุดเดียวหรือสองหมุด Driver) + ETA */}
+                      {preAcceptMapModel && (
+                        <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-200/90 bg-white shadow-sm ring-1 ring-emerald-100/50">
+                          <div className="flex flex-col gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <MapPin size={18} className="shrink-0" />
+                                {preAcceptMapModel.kind === "two"
+                                  ? t("detail.provider_pre_map_title_driver")
+                                  : t("detail.provider_pre_map_title")}
+                              </h3>
+                              {preAcceptMapModel.kind === "two" ? (
+                                <div className="mt-2 space-y-1 text-xs text-emerald-50/95">
+                                  <p className="flex gap-2">
+                                    <span className="text-red-200 shrink-0">
+                                      ●
+                                    </span>
+                                    <span>
+                                      {t("detail.pin_pickup_label")}:{" "}
+                                      {preAcceptMapModel.pickup.label?.trim() ||
+                                        t("detail.loc_unknown")}
+                                    </span>
+                                  </p>
+                                  <p className="flex gap-2">
+                                    <span className="text-emerald-200 shrink-0">
+                                      ●
+                                    </span>
+                                    <span>
+                                      {t("detail.pin_dropoff_label")}:{" "}
+                                      {preAcceptMapModel.dropoff.label?.trim() ||
+                                        t("detail.loc_unknown")}
+                                    </span>
+                                  </p>
+                                </div>
+                              ) : (
+                                <p className="mt-1 text-xs text-emerald-50/95 line-clamp-3 break-words">
+                                  {formatJobPrimaryAddress(job) ||
+                                    t("detail.loc_unknown")}
+                                </p>
+                              )}
+                              {preAcceptEta.loading ? (
+                                <p className="mt-2 text-[11px] text-emerald-100 flex items-center gap-2">
+                                  <Loader2 className="animate-spin" size={12} />
+                                  {t("detail.provider_pre_eta_loading")}
+                                </p>
+                              ) : preAcceptEta.denied ? (
+                                <p className="mt-2 text-[11px] text-amber-100/95">
+                                  {t("detail.provider_pre_eta_denied")}
+                                </p>
+                              ) : preAcceptEta.minutes != null &&
+                                preAcceptEta.distanceKm != null ? (
+                                <p className="mt-2 text-[11px] text-emerald-50 leading-relaxed">
+                                  {t("detail.provider_pre_eta_prefix")}{" "}
+                                  <strong className="text-white">
+                                    {Math.round(preAcceptEta.minutes)}
+                                  </strong>{" "}
+                                  {t("detail.provider_pre_eta_min")} ·{" "}
+                                  <strong className="text-white">
+                                    {preAcceptEta.distanceKm.toFixed(1)}
+                                  </strong>{" "}
+                                  km (
+                                  {preAcceptEta.source === "osrm"
+                                    ? t("detail.provider_pre_eta_source_osrm")
+                                    : t(
+                                        "detail.provider_pre_eta_source_straight",
+                                      )}
+                                  )
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-col gap-2 shrink-0">
+                              {preAcceptMapModel.kind === "two" ? (
+                                <>
+                                  <a
+                                    href={`https://www.google.com/maps/dir/${preAcceptMapModel.pickup.lat},${preAcceptMapModel.pickup.lng}/${preAcceptMapModel.dropoff.lat},${preAcceptMapModel.dropoff.lng}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
+                                  >
+                                    <Navigation size={16} />
+                                    {t("detail.provider_pre_map_route_gmaps")}
+                                  </a>
+                                </>
+                              ) : (
+                                <a
+                                  href={`https://www.google.com/maps/dir/?api=1&destination=${preAcceptMapModel.lat},${preAcceptMapModel.lng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25"
+                                >
+                                  <Navigation size={16} />
+                                  {t("detail.provider_pre_map_open_maps")}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <div className="h-[240px] w-full sm:h-[280px]">
+                            <MapContainer
+                              center={
+                                preAcceptMapModel.kind === "two"
+                                  ? [
+                                      (preAcceptMapModel.pickup.lat +
+                                        preAcceptMapModel.dropoff.lat) /
+                                        2,
+                                      (preAcceptMapModel.pickup.lng +
+                                        preAcceptMapModel.dropoff.lng) /
+                                        2,
+                                    ]
+                                  : [
+                                      preAcceptMapModel.lat,
+                                      preAcceptMapModel.lng,
+                                    ]
+                              }
+                              zoom={preAcceptMapModel.kind === "two" ? 11 : 15}
+                              style={{ height: "100%", width: "100%" }}
+                              scrollWheelZoom
+                            >
+                              <TileLayer
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                              />
+                              {preAcceptRouteCoords &&
+                                preAcceptRouteCoords.length >= 2 && (
+                                  <>
+                                    <PreAcceptBoundsFitter
+                                      positions={preAcceptRouteCoords}
+                                    />
+                                    <Polyline
+                                      positions={preAcceptRouteCoords}
+                                      pathOptions={{
+                                        color: "#059669",
+                                        weight: 5,
+                                        opacity: 0.92,
+                                        lineCap: "round",
+                                        lineJoin: "round",
+                                      }}
+                                    />
+                                  </>
+                                )}
+                              {preAcceptUserLatLng && (
+                                <CircleMarker
+                                  center={[
+                                    preAcceptUserLatLng.lat,
+                                    preAcceptUserLatLng.lng,
+                                  ]}
+                                  radius={9}
+                                  pathOptions={{
+                                    color: "#ffffff",
+                                    weight: 3,
+                                    fillColor: "#2563eb",
+                                    fillOpacity: 1,
+                                  }}
                                 />
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setBeforePhoto(null);
-                                      setBeforePhotoPreview(null);
-                                    }}
-                                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                              )}
+                              {preAcceptMapModel.kind === "two" ? (
+                                <>
+                                  <Marker
+                                    position={[
+                                      preAcceptMapModel.pickup.lat,
+                                      preAcceptMapModel.pickup.lng,
+                                    ]}
+                                    icon={L.divIcon({
+                                      html: `<div style="background-color:#ef4444;width:30px;height:30px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:bold;">A</div>`,
+                                      className: "",
+                                      iconSize: [30, 30],
+                                      iconAnchor: [15, 15],
+                                    })}
+                                  />
+                                  <Marker
+                                    position={[
+                                      preAcceptMapModel.dropoff.lat,
+                                      preAcceptMapModel.dropoff.lng,
+                                    ]}
+                                    icon={L.divIcon({
+                                      html: `<div style="background-color:#10b981;width:30px;height:30px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:bold;">B</div>`,
+                                      className: "",
+                                      iconSize: [30, 30],
+                                      iconAnchor: [15, 15],
+                                    })}
+                                  />
+                                </>
+                              ) : (
+                                <Marker
+                                  position={[
+                                    preAcceptMapModel.lat,
+                                    preAcceptMapModel.lng,
+                                  ]}
+                                  icon={L.divIcon({
+                                    html: `<div style="background-color:#059669;width:34px;height:34px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;font-size:16px;">📍</div>`,
+                                    className: "",
+                                    iconSize: [34, 34],
+                                    iconAnchor: [17, 17],
+                                  })}
+                                />
+                              )}
+                            </MapContainer>
+                          </div>
+                          <p className="px-4 py-2.5 text-[11px] leading-relaxed text-slate-600 bg-slate-50/90 border-t border-slate-100">
+                            {t("detail.provider_pre_map_hint")}
+                          </p>
+                        </div>
+                      )}
+
+                      {job.accepted_by &&
+                        showJobBaBadge(providerBa) &&
+                        String(
+                          providerBa?.adviser_status || "",
+                        ).toLowerCase() === "active" && (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+                            <strong className="font-semibold">
+                              ค่าธรรมเนียมแพลตฟอร์ม:
+                            </strong>{" "}
+                            ผู้รับงานคนนี้เป็นสมาชิก Brand Adviser
+                            ที่ใช้สิทธิ์ได้ —
+                            ยอดค่าธรรมเนียมแพลตฟอร์มอาจถูกยกเว้นตามเงื่อนไขโปรแกรม
+                            (ยืนยันจากระบบเมื่อปิดงาน)
+                          </div>
+                        )}
+
+                      {/* ผู้รับงาน: โทร/แชท/ปฏิทิน รวมที่การ์ดลูกค้าใต้แผนที่แล้ว — ไม่ใช้แถบดำซ้ำ */}
+
+                      {/* Action Box */}
+                      <div className="border-t border-gray-100 pt-6">
+                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">
+                          {showFlowChrome
+                            ? t("detail.flow_actions_title")
+                            : t("detail.action_title")}
+                        </h3>
+                        <div className="space-y-4">
+                          {/* 1. ACCEPT JOB: แสดงให้ผู้ที่ไม่ใช่เจ้าของเมื่องาน open — ผู้รับงานกดรับได้ (backend validate provider_status) */}
+                          {canAcceptJob &&
+                            job.status === JobStatus.OPEN &&
+                            !isExpired && (
+                              <>
+                                {selfBa?.is_brand_adviser &&
+                                  selfBa?.brand_adviser_program_enabled ===
+                                    false && (
+                                    <BrandAdviserProgramOffNotice className="mb-3" />
+                                  )}
+                                {(showJobBaBadge(employerBa) ||
+                                  showJobBaBadge(selfBa)) && (
+                                  <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                                    <span className="font-semibold text-slate-600">
+                                      สถานะ BA ในดีลนี้:
+                                    </span>
+                                    {showJobBaBadge(employerBa) && (
+                                      <span className="inline-flex items-center gap-1">
+                                        ผู้จ้าง
+                                        <BrandAdviserBadge
+                                          isBrandAdviser
+                                          adviserStatus={
+                                            employerBa?.adviser_status
+                                          }
+                                          tone="light"
+                                        />
+                                      </span>
+                                    )}
+                                    {showJobBaBadge(selfBa) && (
+                                      <span className="inline-flex items-center gap-1">
+                                        คุณ (ผู้รับงาน)
+                                        <BrandAdviserBadge
+                                          isBrandAdviser
+                                          adviserStatus={selfBa?.adviser_status}
+                                          tone="light"
+                                        />
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {selfBa?.brand_adviser_suspend_warning && (
+                                  <BrandAdviserSuspendBanner
+                                    show
+                                    tone="light"
+                                    daysLeft={
+                                      selfBa.days_until_suspend_estimate ??
+                                      undefined
+                                    }
+                                    inactivityDays={baRules?.inactivity_days}
+                                    warnDaysBeforeSuspend={
+                                      baRules?.warn_days_before_suspend
+                                    }
+                                    className="mb-3"
+                                  />
+                                )}
+                                {showJobBaBadge(selfBa) &&
+                                  String(
+                                    selfBa?.adviser_status || "",
+                                  ).toLowerCase() === "active" && (
+                                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                                      <BrandAdviserBadge
+                                        isBrandAdviser
+                                        adviserStatus={selfBa?.adviser_status}
+                                        tone="light"
+                                      />
+                                      <span>
+                                        คุณเป็นสมาชิก Brand Adviser —
+                                        สิทธิ์ยกเว้นค่าธรรมเนียมแพลตฟอร์มตามเงื่อนไขโปรแกรม
+                                      </span>
+                                    </div>
+                                  )}
+                                <div className="flex flex-col gap-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(-1)}
+                                      className="w-full py-3 border-2 border-slate-200 bg-white text-slate-800 font-bold rounded-lg transition-colors flex items-center justify-center hover:bg-slate-50"
+                                    >
+                                      <XCircle
+                                        className="mr-2 shrink-0"
+                                        size={20}
+                                      />
+                                      {t("detail.decline_job")}
+                                    </button>
+                                    <button
+                                      onClick={handleAcceptJob}
+                                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200"
+                                    >
+                                      <CheckCircle className="mr-2" />{" "}
+                                      {t("detail.accept")}
+                                    </button>
+                                  </div>
+                                  {showIntercityBidding && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const min =
+                                          intercityBidFloor?.min_job_fee_thb;
+                                        setCounterOfferAmount(
+                                          min != null
+                                            ? String(min)
+                                            : job?.price != null
+                                              ? String(job.price)
+                                              : "",
+                                        );
+                                        setShowCounterOfferModal(true);
+                                      }}
+                                      className="w-full py-3 border-2 border-amber-500 text-amber-900 bg-amber-50 hover:bg-amber-100 font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                                    >
+                                      <DollarSign size={20} />
+                                      เสนอราคาใหม่
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+
+                          {/* 2. SUBMIT WORK & IN_PROGRESS ACTIONS: Visible ONLY to the Assigned Provider */}
+                          {isAssignedProvider &&
+                            (job.status === JobStatus.ACCEPTED ||
+                              job.status === JobStatus.IN_PROGRESS) && (
+                              <div className="space-y-3">
+                                {MEET_CODE_REQUIRED && (
+                                  <div
+                                    id="job-flow-provider-meet-code"
+                                    className="rounded-2xl border-2 border-indigo-300 bg-gradient-to-b from-indigo-50 to-white p-4 shadow-md ring-1 ring-indigo-100 sm:p-5 scroll-mt-24"
                                   >
-                                    ถ่ายใหม่
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleProofBookNextAfterBefore()}
-                                    disabled={uploadingPhotos}
-                                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:from-orange-600 hover:to-amber-600 disabled:opacity-50"
+                                    <p className="font-bold text-base text-indigo-950 mb-1 flex items-center gap-2">
+                                      <Radio
+                                        size={20}
+                                        className="text-indigo-600 shrink-0"
+                                      />
+                                      {t("detail.provider_meet_title")}
+                                    </p>
+                                    <p className="text-xs text-indigo-900/90 mb-4 leading-relaxed">
+                                      {t("detail.provider_meet_desc")}
+                                      <span className="mt-2 block font-semibold text-indigo-950">
+                                        {language === "en"
+                                          ? "Enter the 6-digit code from the employer, then tap the purple confirm button here before handing over work."
+                                          : "กรอกรหัส 6 หลักจากผู้จ้าง แล้วกดปุ่มม่วง «ยืนยันรหัสพบกันผู้จ้าง» ในส่วนนี้ให้สำเร็จ ก่อนส่งมอบงาน"}
+                                      </span>
+                                    </p>
+                                    <label className="block text-xs font-semibold text-indigo-950 mb-1">
+                                      {t("detail.meet_code_label")}
+                                    </label>
+                                    <p className="text-[11px] text-indigo-800/90 mb-2">
+                                      {t("detail.meet_code_hint")}
+                                    </p>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      maxLength={6}
+                                      placeholder="000000"
+                                      value={providerMeetCodeInput}
+                                      onChange={(e) => {
+                                        const next = e.target.value.replace(
+                                          /\D/g,
+                                          "",
+                                        );
+                                        setProviderMeetCodeInput(next);
+                                        setProviderMeetCodeVerified(false);
+                                        setProviderMeetCodeVerifyError(null);
+                                      }}
+                                      className="w-full px-4 py-3.5 border-2 border-indigo-300 rounded-xl text-center font-mono text-2xl tracking-[0.35em] bg-white text-slate-900 placeholder:text-slate-400 shadow-inner"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handleVerifyProviderMeetCode()
+                                      }
+                                      disabled={
+                                        providerMeetCodeVerifying ||
+                                        providerMeetCodeInput.trim().length !==
+                                          6
+                                      }
+                                      className={`mt-4 w-full rounded-2xl px-4 py-4 text-base font-bold shadow-lg transition flex items-center justify-center gap-2 min-h-[52px] ${
+                                        providerMeetCodeVerifying ||
+                                        providerMeetCodeInput.trim().length !==
+                                          6
+                                          ? "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none"
+                                          : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.99] shadow-indigo-300/50"
+                                      }`}
+                                    >
+                                      {providerMeetCodeVerifying ? (
+                                        <>
+                                          <Loader2
+                                            size={22}
+                                            className="animate-spin shrink-0"
+                                          />
+                                          กำลังเชื่อมกับผู้จ้าง...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Radio
+                                            size={22}
+                                            className="shrink-0"
+                                          />
+                                          ยืนยันรหัสพบกันผู้จ้าง
+                                        </>
+                                      )}
+                                    </button>
+                                    {providerMeetCodeVerified && (
+                                      <p className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-sm font-bold text-emerald-900 ring-2 ring-emerald-200">
+                                        <CheckCircle
+                                          size={18}
+                                          strokeWidth={2.25}
+                                        />
+                                        เชื่อมกับผู้จ้างแล้ว —
+                                        พร้อมส่งมอบงานเมื่อถ่ายครบ
+                                      </p>
+                                    )}
+                                    {providerMeetCodeVerifyError && (
+                                      <p className="mt-2 text-center text-sm font-semibold text-red-600">
+                                        {providerMeetCodeVerifyError}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {proofPhotosRequired ? (
+                                  <>
+                                    {/* 📸 หลักฐานแบบ book: ขั้น 1 ถ่ายก่อน → ถัดไป → ขั้น 2 ถ่ายหลัง (กล้องเท่านั้น) */}
+                                    <div
+                                      id="job-flow-provider-proof"
+                                      className={`rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-sm ring-1 ring-slate-100/80 sm:p-5 ${flowRing(
+                                        !!jobFlow &&
+                                          jobFlow.role === "provider" &&
+                                          jobFlow.stepKey === "photo",
+                                      )}`}
+                                    >
+                                      <div className="mb-3 flex items-start gap-3 border-b border-slate-100 pb-3">
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                                          <Camera
+                                            size={20}
+                                            strokeWidth={2.25}
+                                          />
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                            ถ่ายหลักฐาน
+                                          </p>
+                                          <h4 className="text-base font-bold text-slate-900">
+                                            {t("detail.proof_section_title")}
+                                          </h4>
+                                          <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                                            {t("detail.proof_vision_hint")}
+                                          </p>
+                                          <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-medium leading-snug text-amber-900 ring-1 ring-amber-100">
+                                            บังคับถ่ายจากกล้องเท่านั้น —
+                                            ไม่รองรับการอัปโหลดจากแกลเลอรี
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {job.before_photo_url &&
+                                      job.after_photo_url ? (
+                                        <div className="space-y-3">
+                                          <div className="grid grid-cols-2 gap-3">
+                                            <div className="overflow-hidden rounded-xl border border-orange-200 bg-white p-2 shadow-sm">
+                                              <p className="mb-1 text-center text-[10px] font-bold text-orange-800">
+                                                ก่อนเริ่มงาน
+                                              </p>
+                                              <img
+                                                src={job.before_photo_url}
+                                                alt=""
+                                                className="aspect-[4/3] w-full rounded-lg object-cover"
+                                              />
+                                            </div>
+                                            <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white p-2 shadow-sm">
+                                              <p className="mb-1 text-center text-[10px] font-bold text-emerald-900">
+                                                หลังเสร็จงาน
+                                              </p>
+                                              <img
+                                                src={job.after_photo_url}
+                                                alt=""
+                                                className="aspect-[4/3] w-full rounded-lg object-cover"
+                                              />
+                                            </div>
+                                          </div>
+                                          <p className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-100">
+                                            <CheckCircle
+                                              size={15}
+                                              strokeWidth={2.25}
+                                            />
+                                            ครบทั้ง 2 ขั้นตอน — พร้อมส่งมอบงาน
+                                          </p>
+                                        </div>
+                                      ) : !job.before_photo_url ? (
+                                        <div className="rounded-2xl border-2 border-orange-200/90 bg-white p-4 shadow-inner">
+                                          <div className="mb-3 flex items-center gap-3">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500 text-base font-bold text-white shadow-md ring-2 ring-orange-200">
+                                              1
+                                            </span>
+                                            <div>
+                                              <p className="text-sm font-bold text-slate-900">
+                                                ก่อนเริ่มงาน
+                                              </p>
+                                              <p className="text-[11px] text-slate-500">
+                                                ถ่ายจากกล้อง แล้วกด «ถัดไป»
+                                                เพื่อไปขั้นถัดไป
+                                              </p>
+                                            </div>
+                                          </div>
+                                          {beforePhotoPreview ? (
+                                            <div className="space-y-3">
+                                              <img
+                                                src={beforePhotoPreview}
+                                                alt=""
+                                                className="max-h-56 w-full rounded-xl border border-orange-100 object-contain sm:max-h-64"
+                                              />
+                                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setBeforePhoto(null);
+                                                    setBeforePhotoPreview(null);
+                                                  }}
+                                                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                                                >
+                                                  ถ่ายใหม่
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    void handleProofBookNextAfterBefore()
+                                                  }
+                                                  disabled={uploadingPhotos}
+                                                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:from-orange-600 hover:to-amber-600 disabled:opacity-50"
+                                                >
+                                                  {uploadingPhotos ? (
+                                                    <Loader2
+                                                      size={18}
+                                                      className="animate-spin"
+                                                    />
+                                                  ) : (
+                                                    <>
+                                                      ถัดไป — หลังเสร็จงาน
+                                                      <ChevronRight
+                                                        size={18}
+                                                        strokeWidth={2.5}
+                                                      />
+                                                    </>
+                                                  )}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void captureProofBeforeDraft()
+                                              }
+                                              disabled={
+                                                uploadingPhotos ||
+                                                capturingProof === "before"
+                                              }
+                                              className="flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/50 py-14 transition hover:border-orange-400 hover:bg-orange-50 disabled:opacity-50"
+                                            >
+                                              {capturingProof === "before" ? (
+                                                <Loader2
+                                                  size={36}
+                                                  className="animate-spin text-orange-500"
+                                                />
+                                              ) : (
+                                                <Camera
+                                                  size={36}
+                                                  className="mb-2 text-orange-500"
+                                                  strokeWidth={1.75}
+                                                />
+                                              )}
+                                              <span className="text-base font-bold text-orange-900">
+                                                ถ่ายจากกล้อง
+                                              </span>
+                                              <span className="mt-1 text-center text-[11px] text-orange-700/90">
+                                                หน้าจอนี้เป็นขั้นตอนที่ 1
+                                                เท่านั้น
+                                              </span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="rounded-2xl border-2 border-emerald-200/90 bg-white p-4 shadow-inner">
+                                          <div className="mb-3 flex items-center gap-3">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-base font-bold text-white shadow-md ring-2 ring-emerald-200">
+                                              2
+                                            </span>
+                                            <div>
+                                              <p className="text-sm font-bold text-slate-900">
+                                                หลังเสร็จงาน
+                                              </p>
+                                              <p className="text-[11px] text-slate-500">
+                                                ถ่ายจากกล้องเมื่องานเสร็จ —
+                                                ระบบจะบันทึกทันที
+                                              </p>
+                                            </div>
+                                          </div>
+                                          {job.before_photo_url ? (
+                                            <div className="mb-4 flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/90 p-2">
+                                              <img
+                                                src={job.before_photo_url}
+                                                alt=""
+                                                className="h-14 w-14 shrink-0 rounded-lg border border-white object-cover shadow-sm"
+                                              />
+                                              <div className="min-w-0 text-[11px] text-slate-600">
+                                                <span className="font-semibold text-slate-800">
+                                                  รูปก่อนเริ่มงาน
+                                                </span>
+                                                <span className="ml-1.5 inline-flex items-center gap-0.5 text-emerald-700">
+                                                  <CheckCircle size={12} />{" "}
+                                                  บันทึกแล้ว
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ) : null}
+                                          {!job.after_photo_url ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleCaptureProofAfter()
+                                              }
+                                              disabled={
+                                                uploadingPhotos ||
+                                                capturingProof === "after"
+                                              }
+                                              className="flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-14 transition hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                                            >
+                                              {capturingProof === "after" ? (
+                                                <Loader2
+                                                  size={36}
+                                                  className="animate-spin text-emerald-600"
+                                                />
+                                              ) : (
+                                                <Camera
+                                                  size={36}
+                                                  className="mb-2 text-emerald-600"
+                                                  strokeWidth={1.75}
+                                                />
+                                              )}
+                                              <span className="text-base font-bold text-emerald-950">
+                                                ถ่ายจากกล้อง
+                                              </span>
+                                              <span className="mt-1 text-center text-[11px] text-emerald-800/90">
+                                                หลังทำงานครบแล้วค่อยถ่าย
+                                              </span>
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div
+                                    id="job-flow-provider-proof"
+                                    className={`rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 shadow-sm ring-1 ring-slate-100/80 sm:p-5 ${flowRing(
+                                      !!jobFlow &&
+                                        jobFlow.role === "provider" &&
+                                        jobFlow.stepKey === "photo",
+                                    )}`}
                                   >
-                                    {uploadingPhotos ? (
-                                      <Loader2 size={18} className="animate-spin" />
+                                    <p className="text-sm font-bold text-slate-900">
+                                      งานขนส่งคนขับ
+                                    </p>
+                                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                                      ประเภทงานนี้ไม่บังคับถ่ายรูปก่อน–หลัง —
+                                      ส่งมอบงานได้เมื่อเสร็จตามที่ตกลง
+                                      (ไม่ต้องอัปโหลดหลักฐานภาพ)
+                                    </p>
+                                  </div>
+                                )}
+
+                                {proofPhotosRequired && !hasProof && (
+                                  <div className="mb-2 text-xs text-red-500 flex items-center justify-center">
+                                    <AlertTriangle size={12} className="mr-1" />
+                                    {t("detail.req_proof")}
+                                  </div>
+                                )}
+
+                                {/* Safety: OTP ส่งมอบ (เฉพาะเมื่อไม่ใช้รหัสพบกัน — ถ้ามีโฟลว์ม่วงแล้ว ไม่แสดงช่องนี้เพื่อไม่ให้เหมือนสองชุดกรอกรหัส) */}
+                                {showDeliveryHandoffOtpUi && (
+                                  <div className="mb-3">
+                                    <label className="block text-xs text-gray-600 mb-1">
+                                      รหัส OTP จากผู้จ้าง (ถ้าผู้จ้างส่งให้)
+                                      <span className="ml-1 inline-flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (!id || otpRequesting) return;
+                                            setOtpRequesting(true);
+                                            try {
+                                              const res =
+                                                await MockApi.requestJobCompletionOtp(
+                                                  id,
+                                                );
+                                              if (res.success) {
+                                                setOtpRequestedAt(Date.now());
+                                                notify(
+                                                  "✅ ขอรหัส OTP แล้ว — ผู้จ้างจะได้รับแจ้งเตือนและรหัส กรุณารอให้ผู้จ้างส่งรหัสให้",
+                                                  "success",
+                                                );
+                                              } else {
+                                                notify(
+                                                  res.message ||
+                                                    "ขอรหัส OTP ไม่สำเร็จ",
+                                                  "error",
+                                                );
+                                              }
+                                            } catch (e: any) {
+                                              const msg =
+                                                e?.response?.data?.message ||
+                                                e?.message ||
+                                                "ขอรหัส OTP ไม่สำเร็จ";
+                                              notify(msg, "error");
+                                            } finally {
+                                              setOtpRequesting(false);
+                                            }
+                                          }}
+                                          disabled={otpRequesting}
+                                          className="text-amber-600 hover:text-amber-700 text-xs font-medium underline disabled:opacity-50"
+                                        >
+                                          {otpRequesting
+                                            ? "กำลังส่ง..."
+                                            : otpRequestedAt
+                                              ? "ส่งซ้ำ"
+                                              : "ขอรหัส OTP"}
+                                        </button>
+                                      </span>
+                                    </label>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      maxLength={6}
+                                      placeholder="000000"
+                                      value={completionOtp}
+                                      onChange={(e) =>
+                                        setCompletionOtp(
+                                          e.target.value.replace(/\D/g, ""),
+                                        )
+                                      }
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-center font-mono text-lg"
+                                    />
+                                  </div>
+                                )}
+
+                                <div
+                                  id="job-flow-provider-submit"
+                                  className={flowRing(
+                                    !!jobFlow &&
+                                      jobFlow.role === "provider" &&
+                                      jobFlow.stepKey === "submit",
+                                  )}
+                                >
+                                  {MEET_CODE_REQUIRED &&
+                                    hasProof &&
+                                    (!providerMeetCodeVerified ||
+                                      providerMeetCodeInput.trim().length !==
+                                        6) && (
+                                      <p className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
+                                        ยังส่งมอบไม่ได้: กรอกรหัส 6
+                                        หลักจากผู้จ้าง แล้วกดปุ่มใหญ่ม่วง
+                                        «ยืนยันรหัสพบกันผู้จ้าง»
+                                        ด้านบนให้สำเร็จก่อน
+                                      </p>
+                                    )}
+                                  <button
+                                    onClick={openCompletionFlow}
+                                    disabled={
+                                      submittingWork ||
+                                      !hasProof ||
+                                      gpsVerifying ||
+                                      (MEET_CODE_REQUIRED &&
+                                        (!providerMeetCodeVerified ||
+                                          providerMeetCodeInput.trim()
+                                            .length !== 6))
+                                    }
+                                    className={`w-full py-4 text-base font-bold rounded-2xl transition-colors flex items-center justify-center shadow-lg min-h-[52px] ${
+                                      !hasProof
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                                        : MEET_CODE_REQUIRED &&
+                                            (!providerMeetCodeVerified ||
+                                              providerMeetCodeInput.trim()
+                                                .length !== 6)
+                                          ? "bg-amber-100 text-amber-900 border-2 border-amber-300 cursor-not-allowed shadow-none"
+                                          : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200"
+                                    }`}
+                                  >
+                                    {submittingWork || gpsVerifying ? (
+                                      <>
+                                        <Loader2 className="mr-2 animate-spin" />{" "}
+                                        {gpsVerifying
+                                          ? "Verifying GPS..."
+                                          : "Processing..."}
+                                      </>
                                     ) : (
                                       <>
-                                        ถัดไป — หลังเสร็จงาน
-                                        <ChevronRight size={18} strokeWidth={2.5} />
+                                        <Flag className="mr-2" />{" "}
+                                        {t("detail.mark_done")}
                                       </>
                                     )}
                                   </button>
                                 </div>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void captureProofBeforeDraft()}
-                                disabled={uploadingPhotos || capturingProof === "before"}
-                                className="flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/50 py-14 transition hover:border-orange-400 hover:bg-orange-50 disabled:opacity-50"
-                              >
-                                {capturingProof === "before" ? (
-                                  <Loader2 size={36} className="animate-spin text-orange-500" />
-                                ) : (
-                                  <Camera size={36} className="mb-2 text-orange-500" strokeWidth={1.75} />
+
+                                {/* Additional In-Progress Tools */}
+                                {job.status === JobStatus.IN_PROGRESS && (
+                                  <div className="space-y-3 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                                    <p className="text-sm font-bold text-yellow-800 flex items-center">
+                                      <Tool size={16} className="mr-2" />
+                                      {t("detail.in_progress_actions") ||
+                                        "Provider Actions"}
+                                    </p>
+
+                                    <button
+                                      onClick={handleUpdateProgress}
+                                      className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <Activity size={18} className="mr-2" />{" "}
+                                      {t("action.update_progress") ||
+                                        "Update Progress"}
+                                    </button>
+
+                                    <button
+                                      onClick={handleUploadProof}
+                                      className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <Camera size={18} className="mr-2" />{" "}
+                                      {t("action.upload_proof") ||
+                                        "Upload Proof"}
+                                    </button>
+
+                                    <button
+                                      onClick={() =>
+                                        openEmployerChatFromTools()
+                                      }
+                                      className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <User size={18} className="mr-2" />{" "}
+                                      {t("action.contact_owner_chat") ||
+                                        "Contact Owner"}
+                                    </button>
+
+                                    <button
+                                      onClick={handleViewDetails}
+                                      className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <ClipboardList
+                                        size={18}
+                                        className="mr-2"
+                                      />{" "}
+                                      {t("action.view_instructions") ||
+                                        "View Details"}
+                                    </button>
+
+                                    <button
+                                      onClick={() =>
+                                        window.open(
+                                          `https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`,
+                                          "_blank",
+                                        )
+                                      }
+                                      className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <MapPin size={18} className="mr-2" />{" "}
+                                      {t("action.check_location") ||
+                                        "Check Location"}
+                                    </button>
+
+                                    <button
+                                      onClick={handleReportIssue}
+                                      className="w-full py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-medium rounded-lg transition-colors flex items-center justify-center"
+                                    >
+                                      <AlertTriangle
+                                        size={18}
+                                        className="mr-2"
+                                      />{" "}
+                                      {t("action.report_issue") ||
+                                        "Report Issue"}
+                                    </button>
+                                  </div>
                                 )}
-                                <span className="text-base font-bold text-orange-900">ถ่ายจากกล้อง</span>
-                                <span className="mt-1 text-center text-[11px] text-orange-700/90">หน้าจอนี้เป็นขั้นตอนที่ 1 เท่านั้น</span>
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="rounded-2xl border-2 border-emerald-200/90 bg-white p-4 shadow-inner">
-                            <div className="mb-3 flex items-center gap-3">
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-base font-bold text-white shadow-md ring-2 ring-emerald-200">
-                                2
-                              </span>
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">หลังเสร็จงาน</p>
-                                <p className="text-[11px] text-slate-500">ถ่ายจากกล้องเมื่องานเสร็จ — ระบบจะบันทึกทันที</p>
-                              </div>
-                            </div>
-                            {job.before_photo_url ? (
-                              <div className="mb-4 flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/90 p-2">
-                                <img
-                                  src={job.before_photo_url}
-                                  alt=""
-                                  className="h-14 w-14 shrink-0 rounded-lg border border-white object-cover shadow-sm"
-                                />
-                                <div className="min-w-0 text-[11px] text-slate-600">
-                                  <span className="font-semibold text-slate-800">รูปก่อนเริ่มงาน</span>
-                                  <span className="ml-1.5 inline-flex items-center gap-0.5 text-emerald-700">
-                                    <CheckCircle size={12} /> บันทึกแล้ว
-                                  </span>
-                                </div>
-                              </div>
-                            ) : null}
-                            {!job.after_photo_url ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleCaptureProofAfter()}
-                                disabled={uploadingPhotos || capturingProof === "after"}
-                                className="flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-14 transition hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                              >
-                                {capturingProof === "after" ? (
-                                  <Loader2 size={36} className="animate-spin text-emerald-600" />
-                                ) : (
-                                  <Camera size={36} className="mb-2 text-emerald-600" strokeWidth={1.75} />
-                                )}
-                                <span className="text-base font-bold text-emerald-950">ถ่ายจากกล้อง</span>
-                                <span className="mt-1 text-center text-[11px] text-emerald-800/90">หลังทำงานครบแล้วค่อยถ่าย</span>
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
-                      </div>
-                      </>
-                      ) : (
-                      <div
-                        id="job-flow-provider-proof"
-                        className={`rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 shadow-sm ring-1 ring-slate-100/80 sm:p-5 ${flowRing(
-                          !!jobFlow &&
-                            jobFlow.role === "provider" &&
-                            jobFlow.stepKey === "photo"
-                        )}`}
-                      >
-                        <p className="text-sm font-bold text-slate-900">งานขนส่งคนขับ</p>
-                        <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                          ประเภทงานนี้ไม่บังคับถ่ายรูปก่อน–หลัง — ส่งมอบงานได้เมื่อเสร็จตามที่ตกลง (ไม่ต้องอัปโหลดหลักฐานภาพ)
-                        </p>
-                      </div>
-                      )}
-
-                      {proofPhotosRequired && !hasProof && (
-                        <div className="mb-2 text-xs text-red-500 flex items-center justify-center">
-                          <AlertTriangle size={12} className="mr-1" />
-                          {t("detail.req_proof")}
-                        </div>
-                      )}
-
-                      {/* Safety: OTP ส่งมอบ (เฉพาะเมื่อไม่ใช้รหัสพบกัน — ถ้ามีโฟลว์ม่วงแล้ว ไม่แสดงช่องนี้เพื่อไม่ให้เหมือนสองชุดกรอกรหัส) */}
-                      {showDeliveryHandoffOtpUi && (
-                        <div className="mb-3">
-                          <label className="block text-xs text-gray-600 mb-1">
-                            รหัส OTP จากผู้จ้าง (ถ้าผู้จ้างส่งให้)
-                            <span className="ml-1 inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (!id || otpRequesting) return;
-                                  setOtpRequesting(true);
-                                  try {
-                                    const res = await MockApi.requestJobCompletionOtp(id);
-                                    if (res.success) {
-                                      setOtpRequestedAt(Date.now());
-                                      notify("✅ ขอรหัส OTP แล้ว — ผู้จ้างจะได้รับแจ้งเตือนและรหัส กรุณารอให้ผู้จ้างส่งรหัสให้", "success");
-                                    } else {
-                                      notify(res.message || "ขอรหัส OTP ไม่สำเร็จ", "error");
-                                    }
-                                  } catch (e: any) {
-                                    const msg = e?.response?.data?.message || e?.message || "ขอรหัส OTP ไม่สำเร็จ";
-                                    notify(msg, "error");
-                                  } finally {
-                                    setOtpRequesting(false);
-                                  }
-                                }}
-                                disabled={otpRequesting}
-                                className="text-amber-600 hover:text-amber-700 text-xs font-medium underline disabled:opacity-50"
-                              >
-                                {otpRequesting ? "กำลังส่ง..." : otpRequestedAt ? "ส่งซ้ำ" : "ขอรหัส OTP"}
-                              </button>
-                            </span>
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            placeholder="000000"
-                            value={completionOtp}
-                            onChange={(e) => setCompletionOtp(e.target.value.replace(/\D/g, ""))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-center font-mono text-lg"
-                          />
-                        </div>
-                      )}
-
-                      <div
-                        id="job-flow-provider-submit"
-                        className={flowRing(
-                          !!jobFlow &&
-                            jobFlow.role === "provider" &&
-                            jobFlow.stepKey === "submit"
-                        )}
-                      >
-                      {MEET_CODE_REQUIRED &&
-                        hasProof &&
-                        (!providerMeetCodeVerified ||
-                          providerMeetCodeInput.trim().length !== 6) && (
-                        <p className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
-                          ยังส่งมอบไม่ได้: กรอกรหัส 6 หลักจากผู้จ้าง แล้วกดปุ่มใหญ่ม่วง «ยืนยันรหัสพบกันผู้จ้าง» ด้านบนให้สำเร็จก่อน
-                        </p>
-                      )}
-                      <button
-                        onClick={openCompletionFlow}
-                        disabled={
-                          submittingWork ||
-                          !hasProof ||
-                          gpsVerifying ||
-                          (MEET_CODE_REQUIRED &&
-                            (!providerMeetCodeVerified ||
-                              providerMeetCodeInput.trim().length !== 6))
-                        }
-                        className={`w-full py-4 text-base font-bold rounded-2xl transition-colors flex items-center justify-center shadow-lg min-h-[52px] ${
-                          !hasProof
-                            ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
-                            : MEET_CODE_REQUIRED &&
-                                (!providerMeetCodeVerified ||
-                                  providerMeetCodeInput.trim().length !== 6)
-                              ? "bg-amber-100 text-amber-900 border-2 border-amber-300 cursor-not-allowed shadow-none"
-                              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200"
-                        }`}
-                      >
-                        {submittingWork || gpsVerifying ? (
-                          <>
-                            <Loader2 className="mr-2 animate-spin" />{" "}
-                            {gpsVerifying
-                              ? "Verifying GPS..."
-                              : "Processing..."}
-                          </>
-                        ) : (
-                          <>
-                            <Flag className="mr-2" /> {t("detail.mark_done")}
-                          </>
-                        )}
-                      </button>
-                      </div>
-
-                      {/* Additional In-Progress Tools */}
-                      {job.status === JobStatus.IN_PROGRESS && (
-                        <div className="space-y-3 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                          <p className="text-sm font-bold text-yellow-800 flex items-center">
-                            <Tool size={16} className="mr-2" />
-                            {t("detail.in_progress_actions") ||
-                              "Provider Actions"}
-                          </p>
-
-                          <button
-                            onClick={handleUpdateProgress}
-                            className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <Activity size={18} className="mr-2" />{" "}
-                            {t("action.update_progress") || "Update Progress"}
-                          </button>
-
-                          <button
-                            onClick={handleUploadProof}
-                            className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <Camera size={18} className="mr-2" />{" "}
-                            {t("action.upload_proof") || "Upload Proof"}
-                          </button>
-
-                          <button
-                            onClick={() =>
-                      openEmployerChatFromTools()
-                            }
-                            className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <User size={18} className="mr-2" />{" "}
-                            {t("action.contact_owner_chat") || "Contact Owner"}
-                          </button>
-
-                          <button
-                            onClick={handleViewDetails}
-                            className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <ClipboardList size={18} className="mr-2" />{" "}
-                            {t("action.view_instructions") || "View Details"}
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              window.open(
-                                `https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`,
-                                "_blank"
-                              )
-                            }
-                            className="w-full py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <MapPin size={18} className="mr-2" />{" "}
-                            {t("action.check_location") || "Check Location"}
-                          </button>
-
-                          <button
-                            onClick={handleReportIssue}
-                            className="w-full py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-medium rounded-lg transition-colors flex items-center justify-center"
-                          >
-                            <AlertTriangle size={18} className="mr-2" />{" "}
-                            {t("action.report_issue") || "Report Issue"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-      {progressUpdateOpen && isAssignedProvider && job && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-[2px] p-4 animate-in fade-in">
-          <button
-            type="button"
-            className="absolute inset-0"
-            aria-label="Close"
-            onClick={() => setProgressUpdateOpen(false)}
-          />
-          <div
-            className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-slate-900">อัปเดทความคืบหน้า</div>
-                <div className="text-xs text-slate-500">ระบบจะส่งข้อความนี้ไปในแชทให้ผู้จ้างเห็น</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setProgressUpdateOpen(false)}
-                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { k: "on_the_way", label: "กำลังเดินทาง" },
-                  { k: "arrived", label: "ถึงหน้างานแล้ว" },
-                  { k: "working", label: "กำลังทำงาน" },
-                  { k: "done_soon", label: "ใกล้เสร็จ" },
-                  { k: "delayed", label: "ล่าช้า" },
-                  { k: "need_more_info", label: "ขอข้อมูลเพิ่ม" },
-                ].map((it) => {
-                  const active = progressUpdatePreset === (it.k as any);
-                  return (
-                    <button
-                      key={it.k}
-                      type="button"
-                      onClick={() => setProgressUpdatePreset(it.k as any)}
-                      className={`rounded-2xl px-3 py-2.5 text-xs font-semibold border transition ${
-                        active
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200/70"
-                          : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      {it.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  รายละเอียดเพิ่มเติม (ไม่บังคับ)
-                </label>
-                <textarea
-                  rows={3}
-                  value={progressUpdateNote}
-                  onChange={(e) => setProgressUpdateNote(e.target.value.slice(0, 280))}
-                  placeholder="เช่น ถึงหน้างานแล้ว รอเข้าบ้าน / เริ่มทำความสะอาดโซนห้องครัว..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-emerald-400"
-                />
-                <div className="mt-1 text-[11px] text-slate-500 text-right">
-                  {progressUpdateNote.length}/280
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-100 px-5 py-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setProgressUpdateOpen(false)}
-                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={() => void submitProgressUpdate()}
-                className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700"
-              >
-                ส่งให้ผู้จ้าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-                {/* 3. ACTIONS FOR OWNER: Visible ONLY to Job Owner */}
-                {isOwner && (
-                  <>
-                    {/* WAITING_FOR_APPROVAL: Approve & Pay / Report (รวมข้อความคำแนะนำและการเตือน) */}
-                    {job.status === JobStatus.WAITING_FOR_APPROVAL && (
-                      <div
-                        id="job-flow-employer-review"
-                        className={`space-y-4 scroll-mt-24 ${flowRing(
-                          !!jobFlow &&
-                            jobFlow.role === "employer" &&
-                            jobFlow.stepKey === "review" &&
-                            job.status === JobStatus.WAITING_FOR_APPROVAL
-                        )}`}
-                      >
-                        {/* 💰 Phase 5: Dispute Window Countdown */}
-                        {disputeWindowRemaining && (
-                          <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl">
-                            <div className="flex items-center justify-between mb-4">
-                              <div>
-                                <h4 className="font-bold text-lg text-blue-900 flex items-center">
-                                  <Clock size={24} className="mr-2" />
-                                  ⏱️ ระยะเวลาตรวจสอบงาน
-                                </h4>
-                                <p className="text-blue-700 text-sm mt-1">
-                                  คุณมีเวลา 5 นาทีในการตรวจสอบและยื่น Dispute (ถ้าจำเป็น)
-                                </p>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-4xl font-bold text-blue-600">
-                                  {disputeWindowRemaining}
-                                </div>
-                                <p className="text-blue-500 text-sm">เหลือเวลา</p>
-                              </div>
-                            </div>
-                            <div className="bg-white p-4 rounded-lg border border-blue-200">
-                              <p className="text-blue-900 font-bold mb-2">ℹ️ ข้อมูลสำคัญ:</p>
-                              <ul className="text-blue-700 text-sm space-y-1">
-                                <li>✅ หากคุณพอใจกับผลงาน สามารถอนุมัติได้ทันที</li>
-                                <li>⚠️ หากมีปัญหา กด "ยื่น Dispute" ภายใน 5 นาที</li>
-                                <li>⏰ หมดเวลาช่วงนี้ไม่ได้หมายความว่าระบบจะอนุมัติให้อัตโนมัติ — ต้องกดอนุมัติด้วยตนเอง</li>
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        {(() => {
-                          const ex = job.payment_details?.provider_completion_extras;
-                          if (!ex || typeof ex !== "object") return null;
-                          const total =
-                            Number((ex as { extras_total_thb?: number }).extras_total_thb) ||
-                            (Number((ex as { meter_thb?: number }).meter_thb) || 0) +
-                              (Number((ex as { toll_thb?: number }).toll_thb) || 0) +
-                              (Number((ex as { parking_thb?: number }).parking_thb) || 0) +
-                              (Number((ex as { other_thb?: number }).other_thb) || 0);
-                          const hasLine =
-                            total > 0 ||
-                            !!(ex as { note?: string }).note ||
-                            (Number((ex as { meter_thb?: number }).meter_thb) || 0) > 0 ||
-                            (Number((ex as { toll_thb?: number }).toll_thb) || 0) > 0 ||
-                            (Number((ex as { parking_thb?: number }).parking_thb) || 0) > 0 ||
-                            (Number((ex as { other_thb?: number }).other_thb) || 0) > 0;
-                          if (!hasLine) return null;
-                          return (
-                            <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950">
-                              <h4 className="font-bold text-emerald-900 mb-2 flex items-center gap-2">
-                                <ClipboardList size={18} />
-                                {t("detail.employer_extras_reported_title")}
-                              </h4>
-                              <p className="text-xs text-emerald-800/90 mb-3">{t("detail.employer_extras_reported_sub")}</p>
-                              <ul className="space-y-1 text-xs tabular-nums">
-                                {(Number((ex as { meter_thb?: number }).meter_thb) || 0) > 0 && (
-                                  <li className="flex justify-between gap-2">
-                                    <span>{t("detail.completion_meter")}</span>
-                                    <span>฿{(Number((ex as { meter_thb?: number }).meter_thb) || 0).toLocaleString()}</span>
-                                  </li>
-                                )}
-                                {(Number((ex as { toll_thb?: number }).toll_thb) || 0) > 0 && (
-                                  <li className="flex justify-between gap-2">
-                                    <span>{t("detail.completion_toll")}</span>
-                                    <span>฿{(Number((ex as { toll_thb?: number }).toll_thb) || 0).toLocaleString()}</span>
-                                  </li>
-                                )}
-                                {(Number((ex as { parking_thb?: number }).parking_thb) || 0) > 0 && (
-                                  <li className="flex justify-between gap-2">
-                                    <span>{t("detail.completion_parking")}</span>
-                                    <span>฿{(Number((ex as { parking_thb?: number }).parking_thb) || 0).toLocaleString()}</span>
-                                  </li>
-                                )}
-                                {(Number((ex as { other_thb?: number }).other_thb) || 0) > 0 && (
-                                  <li className="flex justify-between gap-2">
-                                    <span>{t("detail.completion_other")}</span>
-                                    <span>฿{(Number((ex as { other_thb?: number }).other_thb) || 0).toLocaleString()}</span>
-                                  </li>
-                                )}
-                                {total > 0 && (
-                                  <li className="flex justify-between gap-2 pt-2 border-t border-emerald-200 font-semibold">
-                                    <span>{t("detail.completion_extras_total")}</span>
-                                    <span>฿{total.toLocaleString()}</span>
-                                  </li>
-                                )}
-                              </ul>
-                              {(ex as { note?: string }).note ? (
-                                <p className="mt-2 text-xs text-emerald-900/95 whitespace-pre-wrap border-t border-emerald-200 pt-2">
-                                  {(ex as { note?: string }).note}
-                                </p>
-                              ) : null}
-                            </div>
-                          );
-                        })()}
-
-                        <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 text-sm text-purple-800">
-                          <strong>{t("detail.owner_action_req")}</strong>
-                          <strong>กรุณาตรวจสอบผลงานก่อนอนุมัติ</strong>
-                          <p className="mt-1">1. {t("detail.verify_work")}</p>
-                          <p className="mt-1">1. ตรวจสอบรูปผลงานในแชท</p>
-                          <p>2. {t("detail.click_approve")}</p>
-                          <p>2. คลิกปุ่มอนุมัติเมื่องานถูกต้องตามที่ตกลง</p>
-                          <p>3. หลังอนุมัติ ระบบกันเงินไว้ตามกลาง 5 นาที แล้วจึงปล่อยให้ผู้รับงาน</p>
-                        </div>
-                        {proofPhotosRequired && !hasReviewedProof && (
-                          <div className="text-center py-2">
-                            <p className="text-xs text-red-500 font-bold animate-pulse">
-                              {t("detail.must_view_proof")}
-                            </p>
-                          </div>
-                        )}
-                        {/* Premium Protect — งานส่งแล้ว: ซื้อไม่ได้อีก; ถ้าซื้อแล้ว แสดงใบการันตี ไม่มี checkbox */}
-                        {(job.status === JobStatus.WAITING_FOR_APPROVAL || job.status === JobStatus.WAITING_FOR_PAYMENT) && job.has_insurance && (
-                          <div className="mb-4 overflow-hidden rounded-2xl border border-amber-400/80 bg-white/95 backdrop-blur-xl shadow-xl shadow-amber-300/25 ring-2 ring-amber-400/30">
-                            <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
-                              <div className="flex items-center gap-2.5">
-                                <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">Premium Protect</span>
-                                <Shield size={20} className="text-amber-700" strokeWidth={2} />
-                              </div>
-                              <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">{t("detail.insurance_title")}</h4>
-                              <p className="text-sm text-emerald-700 font-medium mt-1">✓ มีใบการันตีประกันงานไว้แล้ว</p>
-                            </div>
-                            <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.job_fee")}</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">{jobFeeRounded.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
-                              <span>{t("detail.insurance_fee")} ({insuranceRatePercent}%)</span>
-                              <span className="font-semibold tabular-nums text-right min-w-[72px]">+{insuranceAmount.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.service_fee")} ({paymentMarkupPercent}%)</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">+{round2((jobFeeRounded + insuranceAmount) * markupRate).toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
-                              <span>{t("detail.total_pay")}</span>
-                              <span className="tabular-nums text-right min-w-[72px]">{totalPrice.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                              <VipDiscountDisplay vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} commissionAmount={jobFeeRounded} className="mt-3" />
-                              <VipQuotaInfo vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} className="mt-1" />
-                            </div>
-                          </div>
-                        )}
-                        {canAutoPay ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-lg text-emerald-800 text-sm">
-                              <span className="flex items-center">
-                                <Wallet size={16} className="mr-2" />{" "}
-                                {t("detail.wallet_balance_label")}:
-                              </span>
-                              <span className="font-bold">
-                                {user?.wallet_balance} THB
-                              </span>
-                            </div>
-                            <button
-                              onClick={handleApproveWork}
-                              disabled={processingPay || (proofPhotosRequired && !hasReviewedProof)}
-                              className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200 ${
-                                proofPhotosRequired && !hasReviewedProof
-                                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                                  : "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
-                              }`}
-                            >
-                              {processingPay ? (
-                                t("detail.approving")
-                              ) : (
-                                <>
-                                  <CheckCircle className="mr-2" />{" "}
-                                  {t("detail.approve_and_release")}
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowDisputeModal(true)}
-                            disabled={proofPhotosRequired && !hasReviewedProof}
-                            className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200 ${
-                              proofPhotosRequired && !hasReviewedProof
-                                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                                : "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
-                            }`}
-                          >
-                            <CreditCard className="mr-2" />{" "}
-                            {t("detail.pay_btn")}
-                          </button>
-                        )}
-                        {/* 💰 Phase 5: Dispute Button (เปิดใช้งานเฉพาะภายใน dispute window) */}
-                        <button
-                          onClick={() => setShowDisputeModal(true)}
-                          disabled={!disputeWindowRemaining || ((job.dispute_status || 'none') !== 'none')}
-                          className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center ${
-                            !disputeWindowRemaining || ((job.dispute_status || 'none') !== 'none')
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-white border-2 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400'
-                          }`}
-                        >
-                          <AlertTriangle size={18} className="mr-2" />{" "}
-                          {t("รายงานปัญหา")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleContactSupportFromDispute}
-                          className="w-full py-2.5 font-semibold rounded-lg transition-colors flex items-center justify-center bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                        >
-                          {t("ติดต่อฝ่ายสนับสนุน")}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* OPEN / ACCEPTED / IN_PROGRESS: Premium Protect — แสดงช่องติ๊กเมื่อ OPEN (ก่อน provider รับ) เพื่อให้ hold หักค่าประกัน; ถ้าซื้อแล้ว แสดงใบการันตี */}
-                    {isOwner &&
-                      (job.status === JobStatus.OPEN || job.status === JobStatus.ACCEPTED || job.status === JobStatus.IN_PROGRESS) && (
-                      job.has_insurance ? (
-                        <div className="mb-4 overflow-hidden rounded-2xl border border-amber-400/80 bg-white/90 backdrop-blur-sm shadow-xl shadow-amber-200/30 ring-2 ring-amber-400/30">
-                          <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
-                            <div className="flex items-center gap-2.5">
-                              <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">Premium Protect</span>
-                              <Shield size={20} className="text-amber-700" strokeWidth={2} />
-                            </div>
-                            <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">{t("detail.insurance_title")}</h4>
-                            <p className="text-sm text-emerald-700 font-medium mt-1">✓ มีใบการันตีประกันงานไว้แล้ว</p>
-                          </div>
-                          <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.job_fee")}</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">{jobFeeRounded.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
-                              <span>{t("detail.insurance_fee")} ({insuranceRatePercent}%)</span>
-                              <span className="font-semibold tabular-nums text-right min-w-[72px]">+{insuranceAmount.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.service_fee")} ({paymentMarkupPercent}%)</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">+{round2((jobFeeRounded + insuranceAmount) * markupRate).toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
-                              <span>{t("detail.total_on_approve")}</span>
-                              <span className="tabular-nums text-right min-w-[72px]">{totalPrice.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <VipDiscountDisplay vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} commissionAmount={jobFeeRounded} className="mt-3" />
-                            <VipQuotaInfo vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} className="mt-1" />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mb-4 overflow-hidden rounded-2xl border border-amber-300/70 bg-white/90 backdrop-blur-sm shadow-xl shadow-amber-200/30 ring-1 ring-amber-200/50">
-                          <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2.5">
-                                <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">Premium Protect</span>
-                                <Shield size={20} className="text-amber-700" strokeWidth={2} />
-                              </div>
-                              <button type="button" onClick={() => fetchInsuranceRate()} className="p-2 rounded-xl hover:bg-amber-200/50 text-amber-700 transition-colors" title={t("detail.insurance_rate")}>
-                                <RefreshCw size={16} />
-                              </button>
-                            </div>
-                            <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">{t("detail.insurance_title")}</h4>
-                            <p className="text-sm text-slate-600 mt-1 leading-relaxed">{t("detail.insurance_subtitle")}</p>
-                          </div>
-                          <label className="flex cursor-pointer select-none items-start gap-4 p-5 hover:bg-amber-50/30 transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={hasInsurance}
-                              onChange={(e) => setHasInsurance(e.target.checked)}
-                              className="mt-0.5 h-5 w-5 rounded-md border-2 border-amber-400 text-amber-600 focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
-                            />
-                            <span className="text-sm font-semibold text-slate-800">{t("detail.insurance_add")}</span>
-                          </label>
-                          <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.job_fee")}</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">{jobFeeRounded.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            {hasInsurance && (
-                              <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
-                                <span>{t("detail.insurance_fee")} ({insuranceRatePercent}%)</span>
-                                <span className="font-semibold tabular-nums text-right min-w-[72px]">+{insuranceAmount.toLocaleString()} {t("detail.thb")}</span>
                               </div>
                             )}
-                            <div className="flex justify-between items-center gap-4 text-slate-600">
-                              <span>{t("detail.service_fee")} ({paymentMarkupPercent}%)</span>
-                              <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">+{round2((jobFeeRounded + insuranceAmount) * markupRate).toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
-                              <span>{t("detail.total_on_approve")}</span>
-                              <span className="tabular-nums text-right min-w-[72px]">{totalPrice.toLocaleString()} {t("detail.thb")}</span>
-                            </div>
-                            <VipDiscountDisplay vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} commissionAmount={jobFeeRounded} className="mt-3" />
-                            <VipQuotaInfo vip_tier={user?.vip_tier} vip_quota_balance={user?.vip_quota_balance} vip_expiry={user?.vip_expiry} className="mt-1" />
-                          </div>
-                        </div>
-                      )
-                    )}
 
-                    {/* ALL OTHER STATUS: Cancel Button */}
-                    {![
-                      JobStatus.COMPLETED,
-                      JobStatus.CANCELLED,
-                      JobStatus.DISPUTE,
-                    ].includes(job.status) &&
-                      isOwner && (
-                        <button
-                          onClick={handleCancelClick}
-                          className="w-full py-3 bg-white border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 font-medium rounded-lg transition-colors flex items-center justify-center mt-2"
-                        >
-                          <XCircle className="mr-2" size={18} />{" "}
-                          {t("detail.cancel")}
-                        </button>
-                      )}
-                    {/* ==================== 🗺️ REAL-TIME DRIVER TRACKING (สำหรับเจ้าของงานเท่านั้น) ==================== */}
-                    {isOwner &&
-                      job.accepted_by &&
-                      (job.status === "in_progress" ||
-                        job.status === "accepted") && (
-                        <div
-                          id="job-flow-employer-live"
-                          className={`lg:col-span-3 mt-8 ${flowRing(
-                            !!jobFlow &&
-                              jobFlow.role === "employer" &&
-                              (jobFlow.stepKey === "track" ||
-                                jobFlow.stepKey === "work" ||
-                                (jobFlow.stepKey === "review" &&
-                                  job.status !== JobStatus.WAITING_FOR_APPROVAL))
-                          )}`}
-                        >
-                          <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/40">
-                            <div className="border-b border-slate-100 bg-slate-50/90 p-6">
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div>
-                                  <h3 className="flex items-center text-xl font-bold text-slate-900">
-                                    <Navigation
-                                      className="mr-3 text-emerald-600"
-                                      size={24}
+                          {progressUpdateOpen && isAssignedProvider && job && (
+                            <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-[2px] p-4 animate-in fade-in">
+                              <button
+                                type="button"
+                                className="absolute inset-0"
+                                aria-label="Close"
+                                onClick={() => setProgressUpdateOpen(false)}
+                              />
+                              <div
+                                className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95"
+                                role="dialog"
+                                aria-modal="true"
+                              >
+                                <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-bold text-slate-900">
+                                      อัปเดทความคืบหน้า
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      ระบบจะส่งข้อความนี้ไปในแชทให้ผู้จ้างเห็น
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setProgressUpdateOpen(false)}
+                                    className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+                                    aria-label="Close"
+                                  >
+                                    <X size={20} />
+                                  </button>
+                                </div>
+
+                                <div className="px-5 py-4 space-y-4">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                      {
+                                        k: "on_the_way",
+                                        label: "กำลังเดินทาง",
+                                      },
+                                      { k: "arrived", label: "ถึงหน้างานแล้ว" },
+                                      { k: "working", label: "กำลังทำงาน" },
+                                      { k: "done_soon", label: "ใกล้เสร็จ" },
+                                      { k: "delayed", label: "ล่าช้า" },
+                                      {
+                                        k: "need_more_info",
+                                        label: "ขอข้อมูลเพิ่ม",
+                                      },
+                                    ].map((it) => {
+                                      const active =
+                                        progressUpdatePreset === (it.k as any);
+                                      return (
+                                        <button
+                                          key={it.k}
+                                          type="button"
+                                          onClick={() =>
+                                            setProgressUpdatePreset(it.k as any)
+                                          }
+                                          className={`rounded-2xl px-3 py-2.5 text-xs font-semibold border transition ${
+                                            active
+                                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200/70"
+                                              : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
+                                          }`}
+                                        >
+                                          {it.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                      รายละเอียดเพิ่มเติม (ไม่บังคับ)
+                                    </label>
+                                    <textarea
+                                      rows={3}
+                                      value={progressUpdateNote}
+                                      onChange={(e) =>
+                                        setProgressUpdateNote(
+                                          e.target.value.slice(0, 280),
+                                        )
+                                      }
+                                      placeholder="เช่น ถึงหน้างานแล้ว รอเข้าบ้าน / เริ่มทำความสะอาดโซนห้องครัว..."
+                                      className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-emerald-400"
                                     />
-                                    ติดตามผู้รับงานแบบเรียลไทม์
-                                  </h3>
-                                  <p className="mt-1 flex flex-wrap items-center gap-2 text-slate-600">
-                                    <span>
-                                      ตำแหน่งปัจจุบันของ{" "}
-                                      {job.accepted_by_name || "ผู้รับงาน"}{" "}
-                                      ที่กำลังมาทำงานให้คุณ
-                                    </span>
-                                    {showJobBaBadge(providerBa) && (
-                                      <BrandAdviserBadge
-                                        isBrandAdviser
-                                        adviserStatus={providerBa?.adviser_status}
-                                        tone="light"
-                                      />
-                                    )}
-                                  </p>
-                                  {/* ข้อมูลผู้รับงานจาก Thai ID + รูปโปรไฟล์ */}
-                                  {(job as any).provider_profile && ((job as any).provider_profile.avatar_url || (job as any).provider_profile.kyc_full_name || (job as any).provider_profile.vehicle_type || (job as any).provider_profile.vehicle_reg) && (
-                                    <div className="mt-3 rounded-lg border border-slate-200 bg-white/90 p-3 text-sm">
-                                      <div className="flex items-start gap-3">
-                                        {(job as any).provider_profile.avatar_url ? (
-                                          <img
-                                            src={(job as any).provider_profile.avatar_url}
-                                            alt="ผู้รับงาน"
-                                            className="w-14 h-14 rounded-full object-cover border-2 border-blue-200 shrink-0"
+                                    <div className="mt-1 text-[11px] text-slate-500 text-right">
+                                      {progressUpdateNote.length}/280
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-slate-100 px-5 py-4 flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setProgressUpdateOpen(false)}
+                                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void submitProgressUpdate()}
+                                    className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700"
+                                  >
+                                    ส่งให้ผู้จ้าง
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 3. ACTIONS FOR OWNER: Visible ONLY to Job Owner */}
+                          {isOwner && (
+                            <>
+                              {/* WAITING_FOR_APPROVAL: Approve & Pay / Report (รวมข้อความคำแนะนำและการเตือน) */}
+                              {job.status ===
+                                JobStatus.WAITING_FOR_APPROVAL && (
+                                <div
+                                  id="job-flow-employer-review"
+                                  className={`space-y-4 scroll-mt-24 ${flowRing(
+                                    !!jobFlow &&
+                                      jobFlow.role === "employer" &&
+                                      jobFlow.stepKey === "review" &&
+                                      job.status ===
+                                        JobStatus.WAITING_FOR_APPROVAL,
+                                  )}`}
+                                >
+                                  {/* 💰 Phase 5: Dispute Window Countdown */}
+                                  {disputeWindowRemaining && (
+                                    <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl">
+                                      <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                          <h4 className="font-bold text-lg text-blue-900 flex items-center">
+                                            <Clock size={24} className="mr-2" />
+                                            ⏱️ ระยะเวลาตรวจสอบงาน
+                                          </h4>
+                                          <p className="text-blue-700 text-sm mt-1">
+                                            คุณมีเวลา 5 นาทีในการตรวจสอบและยื่น
+                                            Dispute (ถ้าจำเป็น)
+                                          </p>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="text-4xl font-bold text-blue-600">
+                                            {disputeWindowRemaining}
+                                          </div>
+                                          <p className="text-blue-500 text-sm">
+                                            เหลือเวลา
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="bg-white p-4 rounded-lg border border-blue-200">
+                                        <p className="text-blue-900 font-bold mb-2">
+                                          ℹ️ ข้อมูลสำคัญ:
+                                        </p>
+                                        <ul className="text-blue-700 text-sm space-y-1">
+                                          <li>
+                                            ✅ หากคุณพอใจกับผลงาน
+                                            สามารถอนุมัติได้ทันที
+                                          </li>
+                                          <li>
+                                            ⚠️ หากมีปัญหา กด "ยื่น Dispute"
+                                            ภายใน 5 นาที
+                                          </li>
+                                          <li>
+                                            ⏰
+                                            หมดเวลาช่วงนี้ไม่ได้หมายความว่าระบบจะอนุมัติให้อัตโนมัติ
+                                            — ต้องกดอนุมัติด้วยตนเอง
+                                          </li>
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {(() => {
+                                    const ex =
+                                      job.payment_details
+                                        ?.provider_completion_extras;
+                                    if (!ex || typeof ex !== "object")
+                                      return null;
+                                    const total =
+                                      Number(
+                                        (ex as { extras_total_thb?: number })
+                                          .extras_total_thb,
+                                      ) ||
+                                      (Number(
+                                        (ex as { meter_thb?: number })
+                                          .meter_thb,
+                                      ) || 0) +
+                                        (Number(
+                                          (ex as { toll_thb?: number })
+                                            .toll_thb,
+                                        ) || 0) +
+                                        (Number(
+                                          (ex as { parking_thb?: number })
+                                            .parking_thb,
+                                        ) || 0) +
+                                        (Number(
+                                          (ex as { other_thb?: number })
+                                            .other_thb,
+                                        ) || 0);
+                                    const hasLine =
+                                      total > 0 ||
+                                      !!(ex as { note?: string }).note ||
+                                      (Number(
+                                        (ex as { meter_thb?: number })
+                                          .meter_thb,
+                                      ) || 0) > 0 ||
+                                      (Number(
+                                        (ex as { toll_thb?: number }).toll_thb,
+                                      ) || 0) > 0 ||
+                                      (Number(
+                                        (ex as { parking_thb?: number })
+                                          .parking_thb,
+                                      ) || 0) > 0 ||
+                                      (Number(
+                                        (ex as { other_thb?: number })
+                                          .other_thb,
+                                      ) || 0) > 0;
+                                    if (!hasLine) return null;
+                                    return (
+                                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950">
+                                        <h4 className="font-bold text-emerald-900 mb-2 flex items-center gap-2">
+                                          <ClipboardList size={18} />
+                                          {t(
+                                            "detail.employer_extras_reported_title",
+                                          )}
+                                        </h4>
+                                        <p className="text-xs text-emerald-800/90 mb-3">
+                                          {t(
+                                            "detail.employer_extras_reported_sub",
+                                          )}
+                                        </p>
+                                        <ul className="space-y-1 text-xs tabular-nums">
+                                          {(Number(
+                                            (ex as { meter_thb?: number })
+                                              .meter_thb,
+                                          ) || 0) > 0 && (
+                                            <li className="flex justify-between gap-2">
+                                              <span>
+                                                {t("detail.completion_meter")}
+                                              </span>
+                                              <span>
+                                                ฿
+                                                {(
+                                                  Number(
+                                                    (
+                                                      ex as {
+                                                        meter_thb?: number;
+                                                      }
+                                                    ).meter_thb,
+                                                  ) || 0
+                                                ).toLocaleString()}
+                                              </span>
+                                            </li>
+                                          )}
+                                          {(Number(
+                                            (ex as { toll_thb?: number })
+                                              .toll_thb,
+                                          ) || 0) > 0 && (
+                                            <li className="flex justify-between gap-2">
+                                              <span>
+                                                {t("detail.completion_toll")}
+                                              </span>
+                                              <span>
+                                                ฿
+                                                {(
+                                                  Number(
+                                                    (
+                                                      ex as {
+                                                        toll_thb?: number;
+                                                      }
+                                                    ).toll_thb,
+                                                  ) || 0
+                                                ).toLocaleString()}
+                                              </span>
+                                            </li>
+                                          )}
+                                          {(Number(
+                                            (ex as { parking_thb?: number })
+                                              .parking_thb,
+                                          ) || 0) > 0 && (
+                                            <li className="flex justify-between gap-2">
+                                              <span>
+                                                {t("detail.completion_parking")}
+                                              </span>
+                                              <span>
+                                                ฿
+                                                {(
+                                                  Number(
+                                                    (
+                                                      ex as {
+                                                        parking_thb?: number;
+                                                      }
+                                                    ).parking_thb,
+                                                  ) || 0
+                                                ).toLocaleString()}
+                                              </span>
+                                            </li>
+                                          )}
+                                          {(Number(
+                                            (ex as { other_thb?: number })
+                                              .other_thb,
+                                          ) || 0) > 0 && (
+                                            <li className="flex justify-between gap-2">
+                                              <span>
+                                                {t("detail.completion_other")}
+                                              </span>
+                                              <span>
+                                                ฿
+                                                {(
+                                                  Number(
+                                                    (
+                                                      ex as {
+                                                        other_thb?: number;
+                                                      }
+                                                    ).other_thb,
+                                                  ) || 0
+                                                ).toLocaleString()}
+                                              </span>
+                                            </li>
+                                          )}
+                                          {total > 0 && (
+                                            <li className="flex justify-between gap-2 pt-2 border-t border-emerald-200 font-semibold">
+                                              <span>
+                                                {t(
+                                                  "detail.completion_extras_total",
+                                                )}
+                                              </span>
+                                              <span>
+                                                ฿{total.toLocaleString()}
+                                              </span>
+                                            </li>
+                                          )}
+                                        </ul>
+                                        {(ex as { note?: string }).note ? (
+                                          <p className="mt-2 text-xs text-emerald-900/95 whitespace-pre-wrap border-t border-emerald-200 pt-2">
+                                            {(ex as { note?: string }).note}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
+
+                                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 text-sm text-purple-800">
+                                    <strong>
+                                      {t("detail.owner_action_req")}
+                                    </strong>
+                                    <strong>
+                                      กรุณาตรวจสอบผลงานก่อนอนุมัติ
+                                    </strong>
+                                    <p className="mt-1">
+                                      1. {t("detail.verify_work")}
+                                    </p>
+                                    <p className="mt-1">
+                                      1. ตรวจสอบรูปผลงานในแชท
+                                    </p>
+                                    <p>2. {t("detail.click_approve")}</p>
+                                    <p>
+                                      2.
+                                      คลิกปุ่มอนุมัติเมื่องานถูกต้องตามที่ตกลง
+                                    </p>
+                                    <p>
+                                      3. หลังอนุมัติ ระบบกันเงินไว้ตามกลาง 5
+                                      นาที แล้วจึงปล่อยให้ผู้รับงาน
+                                    </p>
+                                  </div>
+                                  {proofPhotosRequired && !hasReviewedProof && (
+                                    <div className="text-center py-2">
+                                      <p className="text-xs text-red-500 font-bold animate-pulse">
+                                        {t("detail.must_view_proof")}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {/* Premium Protect — งานส่งแล้ว: ซื้อไม่ได้อีก; ถ้าซื้อแล้ว แสดงใบการันตี ไม่มี checkbox */}
+                                  {(job.status ===
+                                    JobStatus.WAITING_FOR_APPROVAL ||
+                                    job.status ===
+                                      JobStatus.WAITING_FOR_PAYMENT) &&
+                                    job.has_insurance && (
+                                      <div className="mb-4 overflow-hidden rounded-2xl border border-amber-400/80 bg-white/95 backdrop-blur-xl shadow-xl shadow-amber-300/25 ring-2 ring-amber-400/30">
+                                        <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
+                                          <div className="flex items-center gap-2.5">
+                                            <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">
+                                              Premium Protect
+                                            </span>
+                                            <Shield
+                                              size={20}
+                                              className="text-amber-700"
+                                              strokeWidth={2}
+                                            />
+                                          </div>
+                                          <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">
+                                            {t("detail.insurance_title")}
+                                          </h4>
+                                          <p className="text-sm text-emerald-700 font-medium mt-1">
+                                            ✓ มีใบการันตีประกันงานไว้แล้ว
+                                          </p>
+                                        </div>
+                                        <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
+                                          <div className="flex justify-between items-center gap-4 text-slate-600">
+                                            <span>{t("detail.job_fee")}</span>
+                                            <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                              {jobFeeRounded.toLocaleString()}{" "}
+                                              {t("detail.thb")}
+                                            </span>
+                                          </div>
+                                          <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
+                                            <span>
+                                              {t("detail.insurance_fee")} (
+                                              {insuranceRatePercent}%)
+                                            </span>
+                                            <span className="font-semibold tabular-nums text-right min-w-[72px]">
+                                              +
+                                              {insuranceAmount.toLocaleString()}{" "}
+                                              {t("detail.thb")}
+                                            </span>
+                                          </div>
+                                          <div className="flex justify-between items-center gap-4 text-slate-600">
+                                            <span>
+                                              {t("detail.service_fee")} (
+                                              {paymentMarkupPercent}%)
+                                            </span>
+                                            <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                              +
+                                              {round2(
+                                                (jobFeeRounded +
+                                                  insuranceAmount) *
+                                                  markupRate,
+                                              ).toLocaleString()}{" "}
+                                              {t("detail.thb")}
+                                            </span>
+                                          </div>
+                                          <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
+                                            <span>{t("detail.total_pay")}</span>
+                                            <span className="tabular-nums text-right min-w-[72px]">
+                                              {totalPrice.toLocaleString()}{" "}
+                                              {t("detail.thb")}
+                                            </span>
+                                          </div>
+                                          <VipDiscountDisplay
+                                            vip_tier={user?.vip_tier}
+                                            vip_quota_balance={
+                                              user?.vip_quota_balance
+                                            }
+                                            vip_expiry={user?.vip_expiry}
+                                            commissionAmount={jobFeeRounded}
+                                            className="mt-3"
                                           />
+                                          <VipQuotaInfo
+                                            vip_tier={user?.vip_tier}
+                                            vip_quota_balance={
+                                              user?.vip_quota_balance
+                                            }
+                                            vip_expiry={user?.vip_expiry}
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  {canAutoPay ? (
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-lg text-emerald-800 text-sm">
+                                        <span className="flex items-center">
+                                          <Wallet size={16} className="mr-2" />{" "}
+                                          {t("detail.wallet_balance_label")}:
+                                        </span>
+                                        <span className="font-bold">
+                                          {user?.wallet_balance} THB
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={handleApproveWork}
+                                        disabled={
+                                          processingPay ||
+                                          (proofPhotosRequired &&
+                                            !hasReviewedProof)
+                                        }
+                                        className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200 ${
+                                          proofPhotosRequired &&
+                                          !hasReviewedProof
+                                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                            : "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
+                                        }`}
+                                      >
+                                        {processingPay ? (
+                                          t("detail.approving")
                                         ) : (
-                                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100">
-                                            <User size={28} className="text-slate-600" />
+                                          <>
+                                            <CheckCircle className="mr-2" />{" "}
+                                            {t("detail.approve_and_release")}
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => setShowDisputeModal(true)}
+                                      disabled={
+                                        proofPhotosRequired && !hasReviewedProof
+                                      }
+                                      className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-emerald-200 ${
+                                        proofPhotosRequired && !hasReviewedProof
+                                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                          : "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
+                                      }`}
+                                    >
+                                      <CreditCard className="mr-2" />{" "}
+                                      {t("detail.pay_btn")}
+                                    </button>
+                                  )}
+                                  {/* 💰 Phase 5: Dispute Button (เปิดใช้งานเฉพาะภายใน dispute window) */}
+                                  <button
+                                    onClick={() => setShowDisputeModal(true)}
+                                    disabled={
+                                      !disputeWindowRemaining ||
+                                      (job.dispute_status || "none") !== "none"
+                                    }
+                                    className={`w-full py-3 font-bold rounded-lg transition-colors flex items-center justify-center ${
+                                      !disputeWindowRemaining ||
+                                      (job.dispute_status || "none") !== "none"
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-white border-2 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                                    }`}
+                                  >
+                                    <AlertTriangle size={18} className="mr-2" />{" "}
+                                    {t("รายงานปัญหา")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleContactSupportFromDispute}
+                                    className="w-full py-2.5 font-semibold rounded-lg transition-colors flex items-center justify-center bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                                  >
+                                    {t("ติดต่อฝ่ายสนับสนุน")}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* OPEN / ACCEPTED / IN_PROGRESS: Premium Protect — แสดงช่องติ๊กเมื่อ OPEN (ก่อน provider รับ) เพื่อให้ hold หักค่าประกัน; ถ้าซื้อแล้ว แสดงใบการันตี */}
+                              {isOwner &&
+                                (job.status === JobStatus.OPEN ||
+                                  job.status === JobStatus.ACCEPTED ||
+                                  job.status === JobStatus.IN_PROGRESS) &&
+                                (job.has_insurance ? (
+                                  <div className="mb-4 overflow-hidden rounded-2xl border border-amber-400/80 bg-white/90 backdrop-blur-sm shadow-xl shadow-amber-200/30 ring-2 ring-amber-400/30">
+                                    <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">
+                                          Premium Protect
+                                        </span>
+                                        <Shield
+                                          size={20}
+                                          className="text-amber-700"
+                                          strokeWidth={2}
+                                        />
+                                      </div>
+                                      <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">
+                                        {t("detail.insurance_title")}
+                                      </h4>
+                                      <p className="text-sm text-emerald-700 font-medium mt-1">
+                                        ✓ มีใบการันตีประกันงานไว้แล้ว
+                                      </p>
+                                    </div>
+                                    <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
+                                      <div className="flex justify-between items-center gap-4 text-slate-600">
+                                        <span>{t("detail.job_fee")}</span>
+                                        <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                          {jobFeeRounded.toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
+                                        <span>
+                                          {t("detail.insurance_fee")} (
+                                          {insuranceRatePercent}%)
+                                        </span>
+                                        <span className="font-semibold tabular-nums text-right min-w-[72px]">
+                                          +{insuranceAmount.toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center gap-4 text-slate-600">
+                                        <span>
+                                          {t("detail.service_fee")} (
+                                          {paymentMarkupPercent}%)
+                                        </span>
+                                        <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                          +
+                                          {round2(
+                                            (jobFeeRounded + insuranceAmount) *
+                                              markupRate,
+                                          ).toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
+                                        <span>
+                                          {t("detail.total_on_approve")}
+                                        </span>
+                                        <span className="tabular-nums text-right min-w-[72px]">
+                                          {totalPrice.toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <VipDiscountDisplay
+                                        vip_tier={user?.vip_tier}
+                                        vip_quota_balance={
+                                          user?.vip_quota_balance
+                                        }
+                                        vip_expiry={user?.vip_expiry}
+                                        commissionAmount={jobFeeRounded}
+                                        className="mt-3"
+                                      />
+                                      <VipQuotaInfo
+                                        vip_tier={user?.vip_tier}
+                                        vip_quota_balance={
+                                          user?.vip_quota_balance
+                                        }
+                                        vip_expiry={user?.vip_expiry}
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mb-4 overflow-hidden rounded-2xl border border-amber-300/70 bg-white/90 backdrop-blur-sm shadow-xl shadow-amber-200/30 ring-1 ring-amber-200/50">
+                                    <div className="border-b border-amber-200/60 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/60 px-5 py-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                          <span className="rounded-full bg-amber-500/25 px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-amber-800">
+                                            Premium Protect
+                                          </span>
+                                          <Shield
+                                            size={20}
+                                            className="text-amber-700"
+                                            strokeWidth={2}
+                                          />
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => fetchInsuranceRate()}
+                                          className="p-2 rounded-xl hover:bg-amber-200/50 text-amber-700 transition-colors"
+                                          title={t("detail.insurance_rate")}
+                                        >
+                                          <RefreshCw size={16} />
+                                        </button>
+                                      </div>
+                                      <h4 className="mt-2 text-base font-bold text-slate-900 tracking-tight">
+                                        {t("detail.insurance_title")}
+                                      </h4>
+                                      <p className="text-sm text-slate-600 mt-1 leading-relaxed">
+                                        {t("detail.insurance_subtitle")}
+                                      </p>
+                                    </div>
+                                    <label className="flex cursor-pointer select-none items-start gap-4 p-5 hover:bg-amber-50/30 transition-colors">
+                                      <input
+                                        type="checkbox"
+                                        checked={hasInsurance}
+                                        onChange={(e) =>
+                                          setHasInsurance(e.target.checked)
+                                        }
+                                        className="mt-0.5 h-5 w-5 rounded-md border-2 border-amber-400 text-amber-600 focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                                      />
+                                      <span className="text-sm font-semibold text-slate-800">
+                                        {t("detail.insurance_add")}
+                                      </span>
+                                    </label>
+                                    <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 space-y-2.5 text-sm bg-slate-50/50">
+                                      <div className="flex justify-between items-center gap-4 text-slate-600">
+                                        <span>{t("detail.job_fee")}</span>
+                                        <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                          {jobFeeRounded.toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      {hasInsurance && (
+                                        <div className="flex justify-between items-center gap-4 text-amber-800 font-medium">
+                                          <span>
+                                            {t("detail.insurance_fee")} (
+                                            {insuranceRatePercent}%)
+                                          </span>
+                                          <span className="font-semibold tabular-nums text-right min-w-[72px]">
+                                            +{insuranceAmount.toLocaleString()}{" "}
+                                            {t("detail.thb")}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between items-center gap-4 text-slate-600">
+                                        <span>
+                                          {t("detail.service_fee")} (
+                                          {paymentMarkupPercent}%)
+                                        </span>
+                                        <span className="font-semibold text-slate-800 tabular-nums text-right min-w-[72px]">
+                                          +
+                                          {round2(
+                                            (jobFeeRounded + insuranceAmount) *
+                                              markupRate,
+                                          ).toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 text-base">
+                                        <span>
+                                          {t("detail.total_on_approve")}
+                                        </span>
+                                        <span className="tabular-nums text-right min-w-[72px]">
+                                          {totalPrice.toLocaleString()}{" "}
+                                          {t("detail.thb")}
+                                        </span>
+                                      </div>
+                                      <VipDiscountDisplay
+                                        vip_tier={user?.vip_tier}
+                                        vip_quota_balance={
+                                          user?.vip_quota_balance
+                                        }
+                                        vip_expiry={user?.vip_expiry}
+                                        commissionAmount={jobFeeRounded}
+                                        className="mt-3"
+                                      />
+                                      <VipQuotaInfo
+                                        vip_tier={user?.vip_tier}
+                                        vip_quota_balance={
+                                          user?.vip_quota_balance
+                                        }
+                                        vip_expiry={user?.vip_expiry}
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+
+                              {/* ALL OTHER STATUS: Cancel Button */}
+                              {![
+                                JobStatus.COMPLETED,
+                                JobStatus.CANCELLED,
+                                JobStatus.DISPUTE,
+                              ].includes(job.status) &&
+                                isOwner && (
+                                  <button
+                                    onClick={handleCancelClick}
+                                    className="w-full py-3 bg-white border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 font-medium rounded-lg transition-colors flex items-center justify-center mt-2"
+                                  >
+                                    <XCircle className="mr-2" size={18} />{" "}
+                                    {t("detail.cancel")}
+                                  </button>
+                                )}
+                              {/* ==================== 🗺️ REAL-TIME DRIVER TRACKING (สำหรับเจ้าของงานเท่านั้น) ==================== */}
+                              {isOwner &&
+                                job.accepted_by &&
+                                (job.status === "in_progress" ||
+                                  job.status === "accepted") && (
+                                  <div
+                                    id="job-flow-employer-live"
+                                    className={`lg:col-span-3 mt-8 ${flowRing(
+                                      !!jobFlow &&
+                                        jobFlow.role === "employer" &&
+                                        (jobFlow.stepKey === "track" ||
+                                          jobFlow.stepKey === "work" ||
+                                          (jobFlow.stepKey === "review" &&
+                                            job.status !==
+                                              JobStatus.WAITING_FOR_APPROVAL)),
+                                    )}`}
+                                  >
+                                    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/40">
+                                      <div className="border-b border-slate-100 bg-slate-50/90 p-6">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                          <div>
+                                            <h3 className="flex items-center text-xl font-bold text-slate-900">
+                                              <Navigation
+                                                className="mr-3 text-emerald-600"
+                                                size={24}
+                                              />
+                                              ติดตามผู้รับงานแบบเรียลไทม์
+                                            </h3>
+                                            <p className="mt-1 flex flex-wrap items-center gap-2 text-slate-600">
+                                              <span>
+                                                ตำแหน่งปัจจุบันของ{" "}
+                                                {job.accepted_by_name ||
+                                                  "ผู้รับงาน"}{" "}
+                                                ที่กำลังมาทำงานให้คุณ
+                                              </span>
+                                              {showJobBaBadge(providerBa) && (
+                                                <BrandAdviserBadge
+                                                  isBrandAdviser
+                                                  adviserStatus={
+                                                    providerBa?.adviser_status
+                                                  }
+                                                  tone="light"
+                                                />
+                                              )}
+                                            </p>
+                                            {/* ข้อมูลผู้รับงานจาก Thai ID + รูปโปรไฟล์ */}
+                                            {(job as any).provider_profile &&
+                                              ((job as any).provider_profile
+                                                .avatar_url ||
+                                                (job as any).provider_profile
+                                                  .kyc_full_name ||
+                                                (job as any).provider_profile
+                                                  .vehicle_type ||
+                                                (job as any).provider_profile
+                                                  .vehicle_reg) && (
+                                                <div className="mt-3 rounded-lg border border-slate-200 bg-white/90 p-3 text-sm">
+                                                  <div className="flex items-start gap-3">
+                                                    {(job as any)
+                                                      .provider_profile
+                                                      .avatar_url ? (
+                                                      <img
+                                                        src={
+                                                          (job as any)
+                                                            .provider_profile
+                                                            .avatar_url
+                                                        }
+                                                        alt="ผู้รับงาน"
+                                                        className="w-14 h-14 rounded-full object-cover border-2 border-blue-200 shrink-0"
+                                                      />
+                                                    ) : (
+                                                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100">
+                                                        <User
+                                                          size={28}
+                                                          className="text-slate-600"
+                                                        />
+                                                      </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                      <div className="mb-1 font-medium text-slate-800">
+                                                        ข้อมูลผู้รับงาน (จาก
+                                                        Thai ID)
+                                                      </div>
+                                                      <div className="flex flex-wrap gap-x-4 gap-y-0 text-slate-700">
+                                                        {(job as any)
+                                                          .provider_profile
+                                                          .kyc_full_name && (
+                                                          <span>
+                                                            ชื่อ-นามสกุลจริง:{" "}
+                                                            <strong>
+                                                              {
+                                                                (job as any)
+                                                                  .provider_profile
+                                                                  .kyc_full_name
+                                                              }
+                                                            </strong>
+                                                          </span>
+                                                        )}
+                                                        {(job as any)
+                                                          .provider_profile
+                                                          .vehicle_type && (
+                                                          <span>
+                                                            ประเภทรถ:{" "}
+                                                            {getVehicleTypeLabel(
+                                                              (job as any)
+                                                                .provider_profile
+                                                                .vehicle_type,
+                                                            )}
+                                                          </span>
+                                                        )}
+                                                        {(job as any)
+                                                          .provider_profile
+                                                          .vehicle_reg && (
+                                                          <span>
+                                                            ทะเบียนรถ:{" "}
+                                                            <strong>
+                                                              {
+                                                                (job as any)
+                                                                  .provider_profile
+                                                                  .vehicle_reg
+                                                              }
+                                                            </strong>
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+                                          </div>
+                                          <div className="flex items-center space-x-2">
+                                            {/* ✅ Arrival Status Badge */}
+                                            {job.status === "in_progress" &&
+                                            job.arrived_at ? (
+                                              <div className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg">
+                                                <CheckCircle
+                                                  size={16}
+                                                  className="mr-2"
+                                                />
+                                                <span className="font-bold">
+                                                  ✅ มาถึงแล้ว!
+                                                </span>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                                                <span className="text-sm font-medium text-blue-700">
+                                                  🚗 กำลังเดินทาง...
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 📍 Arrival Notification for Employer */}
+                                      {job.status === "in_progress" &&
+                                        job.arrived_at && (
+                                          <div className="p-4 bg-gradient-to-r from-green-100 to-emerald-100 border-b border-green-200">
+                                            <div className="flex items-center justify-center">
+                                              <CheckCircle
+                                                className="text-green-600 mr-2"
+                                                size={24}
+                                              />
+                                              <div>
+                                                <p className="font-bold text-green-900">
+                                                  ผู้รับงานมาถึงแล้ว!
+                                                </p>
+                                                <p className="text-sm text-green-700">
+                                                  เวลา:{" "}
+                                                  {new Date(
+                                                    job.arrived_at,
+                                                  ).toLocaleString("th-TH", {
+                                                    hour: "2-digit",
+                                                    minute: "2-digit",
+                                                  })}{" "}
+                                                  น.
+                                                </p>
+                                              </div>
+                                            </div>
                                           </div>
                                         )}
-                                        <div className="flex-1 min-w-0">
-                                          <div className="mb-1 font-medium text-slate-800">ข้อมูลผู้รับงาน (จาก Thai ID)</div>
-                                          <div className="flex flex-wrap gap-x-4 gap-y-0 text-slate-700">
-                                        {(job as any).provider_profile.kyc_full_name && (
-                                          <span>ชื่อ-นามสกุลจริง: <strong>{(job as any).provider_profile.kyc_full_name}</strong></span>
+                                      <div className="p-6">
+                                        {/* 🚗 Real-time Driver Tracking Component */}
+                                        <DriverTracking
+                                          driverId={job.accepted_by}
+                                          jobId={job.id}
+                                          height="500px"
+                                          showControls={true}
+                                        />
+
+                                        {/* 📸 Phase 4: Before/After Photos Display for Employer */}
+                                        {(job.before_photo_url ||
+                                          job.after_photo_url) && (
+                                          <div className="mt-6 p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200">
+                                            <h4 className="font-bold text-lg text-purple-900 mb-4 flex items-center">
+                                              <Camera
+                                                size={24}
+                                                className="mr-2"
+                                              />
+                                              📸 รูปถ่ายก่อน/หลังทำงาน
+                                            </h4>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                              {/* Before Photo */}
+                                              {job.before_photo_url && (
+                                                <div className="bg-white p-4 rounded-xl shadow-md">
+                                                  <h5 className="font-bold text-orange-700 mb-3 flex items-center">
+                                                    <Camera
+                                                      size={18}
+                                                      className="mr-2"
+                                                    />
+                                                    📷 ก่อนทำงาน (Before)
+                                                  </h5>
+                                                  <img
+                                                    src={job.before_photo_url}
+                                                    alt="Before"
+                                                    className="w-full h-64 object-cover rounded-lg border-2 border-orange-300 cursor-pointer hover:scale-105 transition-transform"
+                                                    onClick={() =>
+                                                      window.open(
+                                                        job.before_photo_url,
+                                                        "_blank",
+                                                      )
+                                                    }
+                                                  />
+                                                </div>
+                                              )}
+
+                                              {/* After Photo */}
+                                              {job.after_photo_url && (
+                                                <div className="bg-white p-4 rounded-xl shadow-md">
+                                                  <h5 className="font-bold text-green-700 mb-3 flex items-center">
+                                                    <Camera
+                                                      size={18}
+                                                      className="mr-2"
+                                                    />
+                                                    📷 หลังทำงาน (After)
+                                                  </h5>
+                                                  <img
+                                                    src={job.after_photo_url}
+                                                    alt="After"
+                                                    className="w-full h-64 object-cover rounded-lg border-2 border-green-300 cursor-pointer hover:scale-105 transition-transform"
+                                                    onClick={() =>
+                                                      window.open(
+                                                        job.after_photo_url,
+                                                        "_blank",
+                                                      )
+                                                    }
+                                                  />
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            {job.photos_uploaded_at && (
+                                              <p className="text-center text-purple-600 text-sm mt-4">
+                                                อัปโหลดเมื่อ:{" "}
+                                                {new Date(
+                                                  job.photos_uploaded_at,
+                                                ).toLocaleString("th-TH", {
+                                                  year: "numeric",
+                                                  month: "long",
+                                                  day: "numeric",
+                                                  hour: "2-digit",
+                                                  minute: "2-digit",
+                                                })}
+                                              </p>
+                                            )}
+                                          </div>
                                         )}
-                                        {(job as any).provider_profile.vehicle_type && (
-                                          <span>ประเภทรถ: {getVehicleTypeLabel((job as any).provider_profile.vehicle_type)}</span>
-                                        )}
-                                        {(job as any).provider_profile.vehicle_reg && (
-                                          <span>ทะเบียนรถ: <strong>{(job as any).provider_profile.vehicle_reg}</strong></span>
-                                        )}
+
+                                        {/* ข้อมูลเพิ่มเติมสำหรับเจ้าของงาน */}
+                                        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div className="bg-blue-50 p-4 rounded-lg">
+                                            <div className="text-sm text-blue-500 font-medium">
+                                              สถานะผู้รับงาน
+                                            </div>
+                                            <div className="text-lg font-bold text-blue-700">
+                                              {job.status === "in_progress"
+                                                ? "กำลังดำเนินงาน"
+                                                : "รับงานแล้ว"}
+                                            </div>
+                                          </div>
+                                          <div className="bg-emerald-50 p-4 rounded-lg">
+                                            <div className="text-sm text-emerald-500 font-medium">
+                                              เวลาเริ่มงาน
+                                            </div>
+                                            <div className="text-lg font-bold text-emerald-700">
+                                              {job.started_at
+                                                ? new Date(
+                                                    job.started_at,
+                                                  ).toLocaleTimeString(
+                                                    "th-TH",
+                                                    {
+                                                      hour: "2-digit",
+                                                      minute: "2-digit",
+                                                    },
+                                                  )
+                                                : "รอเริ่มงาน"}
+                                            </div>
+                                          </div>
+                                          <div className="bg-purple-50 p-4 rounded-lg">
+                                            <div className="text-sm text-purple-500 font-medium">
+                                              สามารถติดต่อได้ที่
+                                            </div>
+                                            <div className="text-lg font-bold text-purple-700">
+                                              <a
+                                                href={`tel:${
+                                                  job.accepted_by_phone ||
+                                                  (job as any)?.provider_profile
+                                                    ?.phone ||
+                                                  (job as any)?.provider_profile
+                                                    ?.phone_number ||
+                                                  "#"
+                                                }`}
+                                                className="hover:text-purple-800"
+                                              >
+                                                {job.accepted_by_phone ||
+                                                  (job as any)?.provider_profile
+                                                    ?.phone ||
+                                                  (job as any)?.provider_profile
+                                                    ?.phone_number ||
+                                                  "ไม่ระบุ"}
+                                              </a>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
                                     </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  {/* ✅ Arrival Status Badge */}
-                                  {job.status === 'in_progress' && job.arrived_at ? (
-                                    <div className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg">
-                                      <CheckCircle size={16} className="mr-2" />
-                                      <span className="font-bold">✅ มาถึงแล้ว!</span>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
-                                      <span className="text-sm font-medium text-blue-700">
-                                        🚗 กำลังเดินทาง...
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* 📍 Arrival Notification for Employer */}
-                            {job.status === 'in_progress' && job.arrived_at && (
-                              <div className="p-4 bg-gradient-to-r from-green-100 to-emerald-100 border-b border-green-200">
-                                <div className="flex items-center justify-center">
-                                  <CheckCircle className="text-green-600 mr-2" size={24} />
-                                  <div>
-                                    <p className="font-bold text-green-900">
-                                      ผู้รับงานมาถึงแล้ว!
-                                    </p>
-                                    <p className="text-sm text-green-700">
-                                      เวลา: {new Date(job.arrived_at).toLocaleString('th-TH', {
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      })} น.
-                                    </p>
                                   </div>
-                                </div>
+                                )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* ==================== 🗺️ PROVIDER WORK MAP (สำหรับผู้รับงานเท่านั้น) ==================== */}
+              {isAssignedProvider &&
+                job?.location &&
+                (job.status === "accepted" || job.status === "in_progress") && (
+                  <div
+                    id="job-flow-provider-map"
+                    className={`job-detail-provider-panel job-detail-provider-card lg:col-span-3 mt-6 sm:mt-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/40 scroll-mt-24 ${flowRing(
+                      !!jobFlow &&
+                        jobFlow.role === "provider" &&
+                        jobFlow.stepKey === "go",
+                    )}`}
+                  >
+                    {/* Header — แนว Lineman: กระชับ ไม่ใช่แถบเขียวเต็มความสูง */}
+                    <div className="border-b border-slate-100 bg-white px-4 py-3 sm:px-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                              <MapPin size={16} strokeWidth={2.25} />
+                            </span>
+                            <span className="leading-tight">
+                              แผนที่ · นำทางไปจุดงาน
+                            </span>
+                          </h3>
+                          <p className="mt-1 line-clamp-2 pl-10 text-xs text-slate-500">
+                            {job.title}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pl-10 sm:pl-0 sm:justify-end">
+                          {isLocationTracking && (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                              ส่งตำแหน่งอยู่
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setShowMap(!showMap)}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                          >
+                            {showMap ? "ซ่อนแผนที่" : "แสดงแผนที่"}
+                          </button>
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                          >
+                            <Navigation size={14} />
+                            Google Maps
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 📍 Phase 3: Arrival Confirmation Button */}
+                    {job.status === "accepted" && isAssignedProvider && (
+                      <div
+                        id="job-flow-provider-arrival"
+                        className={`border-b border-slate-100 bg-slate-50/90 p-6 ${flowRing(
+                          !!jobFlow &&
+                            jobFlow.role === "provider" &&
+                            jobFlow.stepKey === "arrive",
+                        )}`}
+                      >
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <h4 className="mb-2 text-lg font-semibold text-slate-900">
+                              ยืนยันการมาถึง
+                            </h4>
+                            {distanceToDestination !== null ? (
+                              <div className="space-y-1">
+                                <p className="text-slate-700">
+                                  ระยะห่างจากจุดหมาย:{" "}
+                                  <span className="font-bold">
+                                    {distanceToDestination.toFixed(2)} km
+                                  </span>
+                                </p>
+                                {distanceToDestination <= 0.5 ? (
+                                  <p className="text-green-600 font-medium flex items-center">
+                                    <CheckCircle size={16} className="mr-1" />✅
+                                    คุณอยู่ใกล้พอที่จะยืนยันการมาถึงแล้ว!
+                                  </p>
+                                ) : (
+                                  <p className="text-orange-600 font-medium flex items-center">
+                                    <AlertTriangle size={16} className="mr-1" />
+                                    ⚠️ กรุณาเดินทางให้ใกล้กว่า 500
+                                    เมตรก่อนยืนยัน
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-gray-600">
+                                กำลังตรวจสอบตำแหน่งของคุณ...
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={handleConfirmArrival}
+                            disabled={
+                              confirmingArrival ||
+                              distanceToDestination === null ||
+                              distanceToDestination > 0.5 ||
+                              !!job.arrived_at ||
+                              job.status !== JobStatus.ACCEPTED
+                            }
+                            className={`px-8 py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
+                              confirmingArrival ||
+                              distanceToDestination === null ||
+                              (distanceToDestination != null &&
+                                distanceToDestination > 0.5) ||
+                              !!job.arrived_at ||
+                              job.status !== JobStatus.ACCEPTED
+                                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                : "bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 hover:shadow-xl"
+                            }`}
+                          >
+                            {confirmingArrival ? (
+                              <div className="flex items-center">
+                                <Loader2
+                                  className="animate-spin mr-2"
+                                  size={20}
+                                />
+                                กำลังยืนยัน...
+                              </div>
+                            ) : (
+                              <div className="flex items-center">
+                                <MapPin className="mr-2" size={20} />
+                                ยืนยันการมาถึง
                               </div>
                             )}
-                            <div className="p-6">
-                              {/* 🚗 Real-time Driver Tracking Component */}
-                              <DriverTracking
-                                driverId={job.accepted_by}
-                                jobId={job.id}
-                                height="500px"
-                                showControls={true}
-                              />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                              {/* 📸 Phase 4: Before/After Photos Display for Employer */}
-                              {(job.before_photo_url || job.after_photo_url) && (
-                                <div className="mt-6 p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200">
-                                  <h4 className="font-bold text-lg text-purple-900 mb-4 flex items-center">
-                                    <Camera size={24} className="mr-2" />
-                                    📸 รูปถ่ายก่อน/หลังทำงาน
-                                  </h4>
-                                  
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Before Photo */}
-                                    {job.before_photo_url && (
-                                      <div className="bg-white p-4 rounded-xl shadow-md">
-                                        <h5 className="font-bold text-orange-700 mb-3 flex items-center">
-                                          <Camera size={18} className="mr-2" />
-                                          📷 ก่อนทำงาน (Before)
-                                        </h5>
-                                        <img
-                                          src={job.before_photo_url}
-                                          alt="Before"
-                                          className="w-full h-64 object-cover rounded-lg border-2 border-orange-300 cursor-pointer hover:scale-105 transition-transform"
-                                          onClick={() => window.open(job.before_photo_url, '_blank')}
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* After Photo */}
-                                    {job.after_photo_url && (
-                                      <div className="bg-white p-4 rounded-xl shadow-md">
-                                        <h5 className="font-bold text-green-700 mb-3 flex items-center">
-                                          <Camera size={18} className="mr-2" />
-                                          📷 หลังทำงาน (After)
-                                        </h5>
-                                        <img
-                                          src={job.after_photo_url}
-                                          alt="After"
-                                          className="w-full h-64 object-cover rounded-lg border-2 border-green-300 cursor-pointer hover:scale-105 transition-transform"
-                                          onClick={() => window.open(job.after_photo_url, '_blank')}
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {job.photos_uploaded_at && (
-                                    <p className="text-center text-purple-600 text-sm mt-4">
-                                      อัปโหลดเมื่อ: {new Date(job.photos_uploaded_at).toLocaleString('th-TH', {
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      })}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* ข้อมูลเพิ่มเติมสำหรับเจ้าของงาน */}
-                              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-blue-50 p-4 rounded-lg">
-                                  <div className="text-sm text-blue-500 font-medium">
-                                    สถานะผู้รับงาน
-                                  </div>
-                                  <div className="text-lg font-bold text-blue-700">
-                                    {job.status === "in_progress"
-                                      ? "กำลังดำเนินงาน"
-                                      : "รับงานแล้ว"}
-                                  </div>
-                                </div>
-                                <div className="bg-emerald-50 p-4 rounded-lg">
-                                  <div className="text-sm text-emerald-500 font-medium">
-                                    เวลาเริ่มงาน
-                                  </div>
-                                  <div className="text-lg font-bold text-emerald-700">
-                                    {job.started_at
-                                      ? new Date(
-                                          job.started_at
-                                        ).toLocaleTimeString("th-TH", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })
-                                      : "รอเริ่มงาน"}
-                                  </div>
-                                </div>
-                                <div className="bg-purple-50 p-4 rounded-lg">
-                                  <div className="text-sm text-purple-500 font-medium">
-                                    สามารถติดต่อได้ที่
-                                  </div>
-                                  <div className="text-lg font-bold text-purple-700">
-                                    <a
-                                      href={`tel:${
-                                        (job.accepted_by_phone ||
-                                          (job as any)?.provider_profile?.phone ||
-                                          (job as any)?.provider_profile?.phone_number ||
-                                          "#")
-                                      }`}
-                                      className="hover:text-purple-800"
-                                    >
-                                      {job.accepted_by_phone ||
-                                        (job as any)?.provider_profile?.phone ||
-                                        (job as any)?.provider_profile?.phone_number ||
-                                        "ไม่ระบุ"}
-                                    </a>
-                                  </div>
-                                </div>
-                              </div>
+                    {/* ✅ Arrival Confirmed Status */}
+                    {job.status === "in_progress" &&
+                      isAssignedProvider &&
+                      job.arrived_at && (
+                        <div className="p-6 border-b border-emerald-100 bg-gradient-to-r from-green-50 to-emerald-50">
+                          <div className="flex items-center justify-center">
+                            <CheckCircle
+                              className="text-green-600 mr-3"
+                              size={32}
+                            />
+                            <div>
+                              <h4 className="font-bold text-lg text-green-900">
+                                ✅ ยืนยันการมาถึงแล้ว!
+                              </h4>
+                              <p className="text-green-700">
+                                เวลามาถึง:{" "}
+                                {new Date(job.arrived_at).toLocaleString(
+                                  "th-TH",
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                  },
+                                )}
+                              </p>
                             </div>
                           </div>
                         </div>
                       )}
-                  </>
-                )}
-              </div>
-            </div>
-            </div>
-            </div>
-          </div>
-      </div>
-      {/* ==================== 🗺️ PROVIDER WORK MAP (สำหรับผู้รับงานเท่านั้น) ==================== */}
-      {isAssignedProvider &&
-        job?.location &&
-        (job.status === "accepted" || job.status === "in_progress") && (
-          <div
-            id="job-flow-provider-map"
-            className={`job-detail-provider-panel job-detail-provider-card lg:col-span-3 mt-6 sm:mt-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/40 scroll-mt-24 ${flowRing(
-              !!jobFlow &&
-                jobFlow.role === "provider" &&
-                jobFlow.stepKey === "go"
-            )}`}
-          >
-              {/* Header — แนว Lineman: กระชับ ไม่ใช่แถบเขียวเต็มความสูง */}
-              <div className="border-b border-slate-100 bg-white px-4 py-3 sm:px-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                        <MapPin size={16} strokeWidth={2.25} />
-                      </span>
-                      <span className="leading-tight">แผนที่ · นำทางไปจุดงาน</span>
-                    </h3>
-                    <p className="mt-1 line-clamp-2 pl-10 text-xs text-slate-500">{job.title}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 pl-10 sm:pl-0 sm:justify-end">
-                    {isLocationTracking && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                        ส่งตำแหน่งอยู่
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowMap(!showMap)}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-                    >
-                      {showMap ? "ซ่อนแผนที่" : "แสดงแผนที่"}
-                    </button>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
-                    >
-                      <Navigation size={14} />
-                      Google Maps
-                    </a>
-                  </div>
-                </div>
-              </div>
 
-              {/* 📍 Phase 3: Arrival Confirmation Button */}
-              {job.status === 'accepted' && isAssignedProvider && (
-                <div
-                  id="job-flow-provider-arrival"
-                  className={`border-b border-slate-100 bg-slate-50/90 p-6 ${flowRing(
-                    !!jobFlow &&
-                      jobFlow.role === "provider" &&
-                      jobFlow.stepKey === "arrive"
-                  )}`}
-                >
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <h4 className="mb-2 text-lg font-semibold text-slate-900">
-                        ยืนยันการมาถึง
-                      </h4>
-                      {distanceToDestination !== null ? (
-                        <div className="space-y-1">
-                          <p className="text-slate-700">
-                            ระยะห่างจากจุดหมาย: <span className="font-bold">{distanceToDestination.toFixed(2)} km</span>
+                    {/* 💰 Phase 5: Payment Hold Status (Provider) */}
+                    {isAssignedProvider && job.escrow_status === "held" && (
+                      <div className="p-6 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-yellow-50">
+                        <div className="flex items-center mb-3">
+                          <DollarSign
+                            className="text-amber-600 mr-2"
+                            size={24}
+                          />
+                          <h4 className="font-bold text-lg text-amber-900">
+                            💰 เงินถูกกันไว้แล้ว
+                          </h4>
+                        </div>
+                        <p className="text-amber-700 mb-2">
+                          จำนวน:{" "}
+                          <span className="font-bold text-xl">
+                            {job.escrow_amount?.toLocaleString()} บาท
+                          </span>
+                        </p>
+                        <p className="text-amber-600 text-sm">
+                          ✅ เงินจะถูกปล่อยให้คุณหลังจากผู้จ้างอนุมัติงาน
+                          หรืออัตโนมัติภายใน 5 นาทีหลังส่งงาน
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 💰 Phase 5: Provider Withdrawal UI */}
+                    {isAssignedProvider &&
+                      job.payment_released &&
+                      !job.withdrawal_completed && (
+                        <div className="p-6 border-b border-green-100 bg-gradient-to-r from-green-50 to-emerald-50">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h4 className="font-bold text-lg text-green-900 flex items-center">
+                                <DollarSign size={24} className="mr-2" />
+                                💵 เงินพร้อมถอนแล้ว
+                              </h4>
+                              <p className="text-green-700 mt-1">
+                                จำนวน:{" "}
+                                <span className="font-bold text-2xl">
+                                  {jobFeeRounded.toLocaleString()} บาท
+                                </span>
+                              </p>
+                            </div>
+                            {!job.withdrawal_requested && (
+                              <button
+                                onClick={handleRequestWithdrawal}
+                                className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl shadow-lg hover:from-green-700 hover:to-emerald-700 transition-all flex items-center"
+                              >
+                                <DollarSign size={20} className="mr-2" />
+                                ขอถอนเงิน
+                              </button>
+                            )}
+                          </div>
+                          {job.withdrawal_requested && (
+                            <div className="mt-4 p-4 bg-blue-100 border-2 border-blue-300 rounded-lg">
+                              <p className="text-blue-900 font-bold">
+                                ⏳ รอการโอนเงิน
+                              </p>
+                              <p className="text-blue-700 text-sm mt-1">
+                                ระบบจะโอนเงินเข้าบัญชีของคุณภายใน 24 ชั่วโมง
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    {/* ลูกค้า + รายละเอียดค่าจ้างครบ (เดียวกับรายได้โดยประมาณ) + ทางลัด */}
+                    <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-4 sm:px-6">
+                      <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-100/80">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            ลูกค้า
                           </p>
-                          {distanceToDestination <= 0.5 ? (
-                            <p className="text-green-600 font-medium flex items-center">
-                              <CheckCircle size={16} className="mr-1" />
-                              ✅ คุณอยู่ใกล้พอที่จะยืนยันการมาถึงแล้ว!
-                            </p>
+                          <p className="mt-1 text-lg font-bold leading-tight text-slate-900">
+                            {job.created_by_name || "ไม่ระบุชื่อ"}
+                          </p>
+                          {job.created_by_phone ? (
+                            <a
+                              href={`tel:${job.created_by_phone}`}
+                              className="mt-1 inline-block text-sm font-medium text-emerald-700 hover:underline"
+                            >
+                              {job.created_by_phone}
+                            </a>
                           ) : (
-                            <p className="text-orange-600 font-medium flex items-center">
-                              <AlertTriangle size={16} className="mr-1" />
-                              ⚠️ กรุณาเดินทางให้ใกล้กว่า 500 เมตรก่อนยืนยัน
+                            <p className="mt-1 text-xs text-slate-400">
+                              ไม่มีเบอร์ในระบบ
                             </p>
                           )}
                         </div>
-                      ) : (
-                        <p className="text-gray-600">กำลังตรวจสอบตำแหน่งของคุณ...</p>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={handleConfirmArrival}
-                      disabled={
-                        confirmingArrival ||
-                        distanceToDestination === null ||
-                        distanceToDestination > 0.5 ||
-                        !!job.arrived_at ||
-                        job.status !== JobStatus.ACCEPTED
-                      }
-                      className={`px-8 py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${
-                        confirmingArrival ||
-                        distanceToDestination === null ||
-                        (distanceToDestination != null && distanceToDestination > 0.5) ||
-                        !!job.arrived_at ||
-                        job.status !== JobStatus.ACCEPTED
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 hover:shadow-xl'
-                      }`}
-                    >
-                      {confirmingArrival ? (
-                        <div className="flex items-center">
-                          <Loader2 className="animate-spin mr-2" size={20} />
-                          กำลังยืนยัน...
+
+                        <div className="mt-4 overflow-hidden rounded-xl border border-emerald-100 bg-gradient-to-b from-emerald-50/90 to-white p-3 ring-1 ring-emerald-100/60">
+                          <div className="mb-2 flex items-center gap-2">
+                            <DollarSign
+                              size={16}
+                              className="shrink-0 text-emerald-700"
+                            />
+                            <span className="text-xs font-bold text-slate-900">
+                              {t("detail.provider_earnings_preview_title")}
+                            </span>
+                          </div>
+                          <div className="rounded-lg bg-emerald-600 px-3 py-2.5 text-white shadow-inner">
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-100/95">
+                              {t("detail.provider_earnings_net_highlight")}
+                            </p>
+                            <p className="text-xl font-bold tabular-nums">
+                              ฿
+                              {talentPreviewBreakdown.talentNet.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="mt-3 space-y-1.5 text-xs text-slate-800">
+                            <div className="flex justify-between gap-3">
+                              <span className="text-slate-600">
+                                {t("detail.provider_earnings_gross")}
+                              </span>
+                              <span className="font-semibold tabular-nums">
+                                ฿{jobFeeRounded.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3 text-slate-600">
+                              <span>
+                                {t("detail.provider_earnings_sourcing")}
+                              </span>
+                              <span className="tabular-nums text-red-700">
+                                −฿
+                                {talentPreviewBreakdown.sourcingFee.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3 text-slate-600">
+                              <span>
+                                {t("detail.provider_earnings_commission")}
+                              </span>
+                              <span className="tabular-nums text-red-700">
+                                −฿
+                                {talentPreviewBreakdown.commission.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3 text-slate-600">
+                              <span>{t("detail.provider_earnings_tax")}</span>
+                              <span className="tabular-nums text-red-700">
+                                −฿
+                                {talentPreviewBreakdown.taxService.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3 border-t border-emerald-100 pt-2 font-bold text-emerald-900">
+                              <span>{t("detail.provider_earnings_net")}</span>
+                              <span className="tabular-nums">
+                                ฿
+                                {talentPreviewBreakdown.talentNet.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          {job.has_insurance && insuranceAmount > 0 ? (
+                            <p className="mt-2 rounded-lg bg-amber-50/90 px-2 py-1.5 text-[10px] leading-snug text-amber-950 ring-1 ring-amber-100">
+                              {t("detail.insurance_title")}: +
+                              {insuranceAmount.toLocaleString()}{" "}
+                              {t("detail.thb")}{" "}
+                              <span className="text-amber-800/90">
+                                ({t("detail.insurance_fee")} — ชำระโดยผู้จ้าง)
+                              </span>
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                            {t("detail.provider_earnings_preview_note")}
+                          </p>
                         </div>
-                      ) : (
-                        <div className="flex items-center">
-                          <MapPin className="mr-2" size={20} />
-                          ยืนยันการมาถึง
+
+                        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                          <button
+                            type="button"
+                            disabled={!job.created_by_phone}
+                            onClick={() =>
+                              job.created_by_phone &&
+                              window.open(`tel:${job.created_by_phone}`)
+                            }
+                            className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-initial"
+                          >
+                            <Phone size={15} />
+                            โทร
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setChatOverlayOpen(true)}
+                            className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
+                          >
+                            <MessageCircle size={15} />
+                            แชท
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+                                job.title,
+                              )}&dates=${new Date(job.datetime)
+                                .toISOString()
+                                .replace(/-|:|\.\d+/g, "")}/${new Date(
+                                new Date(job.datetime).getTime() +
+                                  (job.duration_hours || 2) * 60 * 60 * 1000,
+                              )
+                                .toISOString()
+                                .replace(
+                                  /-|:|\.\d+/g,
+                                  "",
+                                )}&details=${encodeURIComponent(
+                                `งาน: ${job.title}\nที่อยู่: ${
+                                  job.location.fullAddress || "ไม่ระบุ"
+                                }\nราคา: ${jobFeeRounded} บาท`,
+                              )}`;
+                              window.open(calendarUrl, "_blank");
+                            }}
+                            className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
+                          >
+                            <Calendar size={15} />
+                            ปฏิทิน
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const addr = job.location?.fullAddress || "";
+                              if (!addr) return;
+                              void navigator.clipboard
+                                .writeText(addr)
+                                .then(() =>
+                                  notify("คัดลอกที่อยู่แล้ว", "success"),
+                                );
+                            }}
+                            className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
+                          >
+                            <Copy size={15} />
+                            ที่อยู่
+                          </button>
                         </div>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ✅ Arrival Confirmed Status */}
-              {job.status === 'in_progress' && isAssignedProvider && job.arrived_at && (
-                <div className="p-6 border-b border-emerald-100 bg-gradient-to-r from-green-50 to-emerald-50">
-                  <div className="flex items-center justify-center">
-                    <CheckCircle className="text-green-600 mr-3" size={32} />
-                    <div>
-                      <h4 className="font-bold text-lg text-green-900">
-                        ✅ ยืนยันการมาถึงแล้ว!
-                      </h4>
-                      <p className="text-green-700">
-                        เวลามาถึง: {new Date(job.arrived_at).toLocaleString('th-TH', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 💰 Phase 5: Payment Hold Status (Provider) */}
-              {isAssignedProvider && job.escrow_status === 'held' && (
-                <div className="p-6 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-yellow-50">
-                  <div className="flex items-center mb-3">
-                    <DollarSign className="text-amber-600 mr-2" size={24} />
-                    <h4 className="font-bold text-lg text-amber-900">
-                      💰 เงินถูกกันไว้แล้ว
-                    </h4>
-                  </div>
-                  <p className="text-amber-700 mb-2">
-                    จำนวน: <span className="font-bold text-xl">{job.escrow_amount?.toLocaleString()} บาท</span>
-                  </p>
-                  <p className="text-amber-600 text-sm">
-                    ✅ เงินจะถูกปล่อยให้คุณหลังจากผู้จ้างอนุมัติงาน หรืออัตโนมัติภายใน 5 นาทีหลังส่งงาน
-                  </p>
-                </div>
-              )}
-
-              {/* 💰 Phase 5: Provider Withdrawal UI */}
-              {isAssignedProvider && job.payment_released && !job.withdrawal_completed && (
-                <div className="p-6 border-b border-green-100 bg-gradient-to-r from-green-50 to-emerald-50">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h4 className="font-bold text-lg text-green-900 flex items-center">
-                        <DollarSign size={24} className="mr-2" />
-                        💵 เงินพร้อมถอนแล้ว
-                      </h4>
-                      <p className="text-green-700 mt-1">
-                        จำนวน: <span className="font-bold text-2xl">{jobFeeRounded.toLocaleString()} บาท</span>
-                      </p>
-                    </div>
-                    {!job.withdrawal_requested && (
-                      <button
-                        onClick={handleRequestWithdrawal}
-                        className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl shadow-lg hover:from-green-700 hover:to-emerald-700 transition-all flex items-center"
-                      >
-                        <DollarSign size={20} className="mr-2" />
-                        ขอถอนเงิน
-                      </button>
-                    )}
-                  </div>
-                  {job.withdrawal_requested && (
-                    <div className="mt-4 p-4 bg-blue-100 border-2 border-blue-300 rounded-lg">
-                      <p className="text-blue-900 font-bold">⏳ รอการโอนเงิน</p>
-                      <p className="text-blue-700 text-sm mt-1">
-                        ระบบจะโอนเงินเข้าบัญชีของคุณภายใน 24 ชั่วโมง
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ลูกค้า + รายละเอียดค่าจ้างครบ (เดียวกับรายได้โดยประมาณ) + ทางลัด */}
-              <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-4 sm:px-6">
-                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-100/80">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      ลูกค้า
-                    </p>
-                    <p className="mt-1 text-lg font-bold leading-tight text-slate-900">
-                      {job.created_by_name || "ไม่ระบุชื่อ"}
-                    </p>
-                    {job.created_by_phone ? (
-                      <a
-                        href={`tel:${job.created_by_phone}`}
-                        className="mt-1 inline-block text-sm font-medium text-emerald-700 hover:underline"
-                      >
-                        {job.created_by_phone}
-                      </a>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-400">ไม่มีเบอร์ในระบบ</p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 overflow-hidden rounded-xl border border-emerald-100 bg-gradient-to-b from-emerald-50/90 to-white p-3 ring-1 ring-emerald-100/60">
-                    <div className="mb-2 flex items-center gap-2">
-                      <DollarSign size={16} className="shrink-0 text-emerald-700" />
-                      <span className="text-xs font-bold text-slate-900">
-                        {t("detail.provider_earnings_preview_title")}
-                      </span>
-                    </div>
-                    <div className="rounded-lg bg-emerald-600 px-3 py-2.5 text-white shadow-inner">
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-100/95">
-                        {t("detail.provider_earnings_net_highlight")}
-                      </p>
-                      <p className="text-xl font-bold tabular-nums">
-                        ฿{talentPreviewBreakdown.talentNet.toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="mt-3 space-y-1.5 text-xs text-slate-800">
-                      <div className="flex justify-between gap-3">
-                        <span className="text-slate-600">{t("detail.provider_earnings_gross")}</span>
-                        <span className="font-semibold tabular-nums">฿{jobFeeRounded.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between gap-3 text-slate-600">
-                        <span>{t("detail.provider_earnings_sourcing")}</span>
-                        <span className="tabular-nums text-red-700">
-                          −฿{talentPreviewBreakdown.sourcingFee.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3 text-slate-600">
-                        <span>{t("detail.provider_earnings_commission")}</span>
-                        <span className="tabular-nums text-red-700">
-                          −฿{talentPreviewBreakdown.commission.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3 text-slate-600">
-                        <span>{t("detail.provider_earnings_tax")}</span>
-                        <span className="tabular-nums text-red-700">
-                          −฿{talentPreviewBreakdown.taxService.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3 border-t border-emerald-100 pt-2 font-bold text-emerald-900">
-                        <span>{t("detail.provider_earnings_net")}</span>
-                        <span className="tabular-nums">฿{talentPreviewBreakdown.talentNet.toLocaleString()}</span>
+                        <div className="mt-4 space-y-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                          <div className="flex gap-2">
+                            <Clock
+                              size={16}
+                              className="mt-0.5 shrink-0 text-slate-400"
+                            />
+                            <div>
+                              <span className="text-xs text-slate-500">
+                                เวลานัด
+                              </span>
+                              <p className="font-medium text-slate-900">
+                                {new Date(job.datetime).toLocaleString(
+                                  "th-TH",
+                                  {
+                                    weekday: "short",
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 border-t border-slate-200/80 pt-2">
+                            <MapPin
+                              size={16}
+                              className="mt-0.5 shrink-0 text-slate-400"
+                            />
+                            <p className="min-w-0 flex-1 text-sm leading-snug text-slate-800">
+                              {job.location.fullAddress || "ไม่ได้ระบุที่อยู่"}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    {job.has_insurance && insuranceAmount > 0 ? (
-                      <p className="mt-2 rounded-lg bg-amber-50/90 px-2 py-1.5 text-[10px] leading-snug text-amber-950 ring-1 ring-amber-100">
-                        {t("detail.insurance_title")}: +{insuranceAmount.toLocaleString()} {t("detail.thb")}{" "}
-                        <span className="text-amber-800/90">({t("detail.insurance_fee")} — ชำระโดยผู้จ้าง)</span>
-                      </p>
-                    ) : null}
-                    <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-                      {t("detail.provider_earnings_preview_note")}
-                    </p>
-                  </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                    <button
-                      type="button"
-                      disabled={!job.created_by_phone}
-                      onClick={() =>
-                        job.created_by_phone && window.open(`tel:${job.created_by_phone}`)
-                      }
-                      className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-initial"
-                    >
-                      <Phone size={15} />
-                      โทร
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChatOverlayOpen(true)}
-                      className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
-                    >
-                      <MessageCircle size={15} />
-                      แชท
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
-                          job.title
-                        )}&dates=${new Date(job.datetime)
-                          .toISOString()
-                          .replace(/-|:|\.\d+/g, "")}/${new Date(
-                          new Date(job.datetime).getTime() +
-                            (job.duration_hours || 2) * 60 * 60 * 1000
-                        )
-                          .toISOString()
-                          .replace(/-|:|\.\d+/g, "")}&details=${encodeURIComponent(
-                          `งาน: ${job.title}\nที่อยู่: ${
-                            job.location.fullAddress || "ไม่ระบุ"
-                          }\nราคา: ${jobFeeRounded} บาท`
-                        )}`;
-                        window.open(calendarUrl, "_blank");
-                      }}
-                      className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
-                    >
-                      <Calendar size={15} />
-                      ปฏิทิน
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const addr = job.location?.fullAddress || "";
-                        if (!addr) return;
-                        void navigator.clipboard.writeText(addr).then(() =>
-                          notify("คัดลอกที่อยู่แล้ว", "success")
-                        );
-                      }}
-                      className="inline-flex flex-1 min-w-[4.5rem] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:flex-initial"
-                    >
-                      <Copy size={15} />
-                      ที่อยู่
-                    </button>
-                  </div>
-                  <div className="mt-4 space-y-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-                    <div className="flex gap-2">
-                      <Clock size={16} className="mt-0.5 shrink-0 text-slate-400" />
-                      <div>
-                        <span className="text-xs text-slate-500">เวลานัด</span>
-                        <p className="font-medium text-slate-900">
-                          {new Date(job.datetime).toLocaleString("th-TH", {
-                            weekday: "short",
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 border-t border-slate-200/80 pt-2">
-                      <MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" />
-                      <p className="min-w-0 flex-1 text-sm leading-snug text-slate-800">
-                        {job.location.fullAddress || "ไม่ได้ระบุที่อยู่"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    {/* Map Section */}
+                    {showMap && (
+                      <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
+                        <div
+                          className="overflow-hidden rounded-2xl border border-slate-200/90 shadow-sm"
+                          style={{ height: "min(42vh, 260px)" }}
+                        >
+                          <MapContainer
+                            center={[job.location.lat, job.location.lng]}
+                            zoom={14}
+                            style={{ height: "100%", width: "100%" }}
+                            scrollWheelZoom={true}
+                          >
+                            <TileLayer
+                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            />
 
-              {/* Map Section */}
-              {showMap && (
-                <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
-                  <div
-                    className="overflow-hidden rounded-2xl border border-slate-200/90 shadow-sm"
-                    style={{ height: "min(42vh, 260px)" }}
-                  >
-                      <MapContainer
-                        center={[job.location.lat, job.location.lng]}
-                        zoom={14}
-                        style={{ height: "100%", width: "100%" }}
-                        scrollWheelZoom={true}
-                      >
-                        <TileLayer
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        />
-
-                        {/* 📍 Marker ตำแหน่งงาน */}
-                        <Marker
-                          position={[job.location.lat, job.location.lng]}
-                          icon={L.divIcon({
-                            html: `<div style="
+                            {/* 📍 Marker ตำแหน่งงาน */}
+                            <Marker
+                              position={[job.location.lat, job.location.lng]}
+                              icon={L.divIcon({
+                                html: `<div style="
                       background-color: #10B981;
                       width: 35px;
                       height: 35px;
@@ -7020,38 +8810,38 @@ export const JobDetails: React.FC = () => {
                       font-size: 20px;
                       font-weight: bold;
                     ">📍</div>`,
-                            className: "custom-marker",
-                            iconSize: [35, 35],
-                            iconAnchor: [17, 17],
-                          })}
-                        >
-                          <Popup className="custom-popup">
-                            <div className="font-bold text-emerald-700 text-lg">
-                              📍 ตำแหน่งงาน
-                            </div>
-                            <div className="text-sm mt-1 font-medium">
-                              {job.title}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-2">
-                              {job.location.fullAddress}
-                            </div>
-                            <div className="mt-2 text-sm">
-                              <span className="font-bold text-emerald-600">
-                                💰 {jobFeeRounded} บาท
-                              </span>
-                            </div>
-                          </Popup>
-                        </Marker>
+                                className: "custom-marker",
+                                iconSize: [35, 35],
+                                iconAnchor: [17, 17],
+                              })}
+                            >
+                              <Popup className="custom-popup">
+                                <div className="font-bold text-emerald-700 text-lg">
+                                  📍 ตำแหน่งงาน
+                                </div>
+                                <div className="text-sm mt-1 font-medium">
+                                  {job.title}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-2">
+                                  {job.location.fullAddress}
+                                </div>
+                                <div className="mt-2 text-sm">
+                                  <span className="font-bold text-emerald-600">
+                                    💰 {jobFeeRounded} บาท
+                                  </span>
+                                </div>
+                              </Popup>
+                            </Marker>
 
-                        {/* 👤 Marker ตำแหน่งปัจจุบันของผู้รับงาน (ถ้ามี) */}
-                        {currentLocation && (
-                          <Marker
-                            position={[
-                              currentLocation.lat,
-                              currentLocation.lng,
-                            ]}
-                            icon={L.divIcon({
-                              html: `<div style="
+                            {/* 👤 Marker ตำแหน่งปัจจุบันของผู้รับงาน (ถ้ามี) */}
+                            {currentLocation && (
+                              <Marker
+                                position={[
+                                  currentLocation.lat,
+                                  currentLocation.lng,
+                                ]}
+                                icon={L.divIcon({
+                                  html: `<div style="
                         background-color: #3B82F6;
                         width: 30px;
                         height: 30px;
@@ -7065,801 +8855,859 @@ export const JobDetails: React.FC = () => {
                         font-weight: bold;
                         font-size: 16px;
                       ">👤</div>`,
-                              className: "custom-marker",
-                              iconSize: [30, 30],
-                              iconAnchor: [15, 15],
-                            })}
-                          >
-                            <Popup>
-                              <div className="font-bold text-blue-700">
-                                📍 ตำแหน่งปัจจุบันของคุณ
-                              </div>
-                              <div className="text-sm mt-1">
-                                ระยะทางถึงงาน:{" "}
+                                  className: "custom-marker",
+                                  iconSize: [30, 30],
+                                  iconAnchor: [15, 15],
+                                })}
+                              >
+                                <Popup>
+                                  <div className="font-bold text-blue-700">
+                                    📍 ตำแหน่งปัจจุบันของคุณ
+                                  </div>
+                                  <div className="text-sm mt-1">
+                                    ระยะทางถึงงาน:{" "}
+                                    {calculateDistance(
+                                      {
+                                        lat: currentLocation.lat,
+                                        lng: currentLocation.lng,
+                                      },
+                                      job.location,
+                                    ).toFixed(1)}{" "}
+                                    กม.
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            )}
+                          </MapContainer>
+                        </div>
+                        {currentLocation && (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700 sm:text-sm">
+                            <span>
+                              ระยะทาง ~{" "}
+                              <strong className="tabular-nums text-slate-900">
                                 {calculateDistance(
                                   {
                                     lat: currentLocation.lat,
                                     lng: currentLocation.lng,
                                   },
-                                  job.location
+                                  job.location,
                                 ).toFixed(1)}{" "}
                                 กม.
-                              </div>
-                            </Popup>
-                          </Marker>
+                              </strong>
+                            </span>
+                            <span className="text-slate-500">
+                              ประมาณ{" "}
+                              <strong className="tabular-nums text-slate-800">
+                                {Math.round(
+                                  calculateDistance(
+                                    {
+                                      lat: currentLocation.lat,
+                                      lng: currentLocation.lng,
+                                    },
+                                    job.location,
+                                  ) * 10,
+                                )}{" "}
+                                นาที
+                              </strong>
+                            </span>
+                          </div>
                         )}
-                      </MapContainer>
+                      </div>
+                    )}
                   </div>
-                  {currentLocation && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700 sm:text-sm">
-                      <span>
-                        ระยะทาง ~{" "}
-                        <strong className="tabular-nums text-slate-900">
-                          {calculateDistance(
-                            { lat: currentLocation.lat, lng: currentLocation.lng },
-                            job.location
-                          ).toFixed(1)}{" "}
-                          กม.
-                        </strong>
-                      </span>
-                      <span className="text-slate-500">
-                        ประมาณ{" "}
-                        <strong className="tabular-nums text-slate-800">
-                          {Math.round(
-                            calculateDistance(
-                              { lat: currentLocation.lat, lng: currentLocation.lng },
-                              job.location
-                            ) * 10
-                          )}{" "}
-                          นาที
-                        </strong>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-          </div>
-        )}
-        </div>
-      </div>
-    </div>
-    </VipThemeWrapper>
-    {job &&
-      chatOverlayOpen &&
-      createPortal(
-        <>
-        <div
-          className="job-detail-chat fixed inset-0 z-[10050] flex min-h-0 flex-col bg-white"
-          style={{ minHeight: "100dvh" }}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("detail.chat_fullscreen_title")}
-        >
-          <header className="shrink-0 border-b border-slate-200 bg-white pt-[max(0.5rem,env(safe-area-inset-top))]">
-            <div className="flex items-center justify-between px-2 sm:px-3">
-              <button
-                type="button"
-                onClick={
-                  staffSupportPhase
-                    ? handleStaffSupportHeaderLeft
-                    : chatOverlayTab === "help" && helpSelectedTopicKey
-                      ? handleHelpTopicBack
-                      : closeChatOverlay
-                }
-                className="shrink-0 rounded-full p-2 text-slate-700 hover:bg-slate-100 active:scale-95"
-                aria-label={
-                  staffSupportPhase
-                    ? staffSupportPhase === "csat_staff" ||
-                      staffSupportPhase === "csat_app"
-                      ? t("detail.chat_back")
-                      : t("detail.chat_close")
-                    : chatOverlayTab === "help" && helpSelectedTopicKey
-                      ? t("detail.chat_back")
-                      : t("detail.chat_close")
-                }
-              >
-                {staffSupportPhase === "csat_staff" ||
-                staffSupportPhase === "csat_app" ? (
-                  <ChevronLeft size={22} strokeWidth={2.25} />
-                ) : staffSupportPhase ? (
-                  <X size={22} strokeWidth={2.25} />
-                ) : chatOverlayTab === "help" && helpSelectedTopicKey ? (
-                  <ChevronLeft size={22} strokeWidth={2.25} />
-                ) : (
-                  <X size={22} strokeWidth={2.25} />
                 )}
-              </button>
-              <p className="min-w-0 flex-1 text-center text-sm font-semibold text-slate-900">
-                {staffSupportPhase === "connecting"
-                  ? t("detail.help_staff_connecting_title")
-                  : staffSupportPhase === "queueing"
-                    ? t("detail.help_staff_queue_header")
-                    : staffSupportPhase === "chat"
-                      ? t("detail.help_staff_chat_title")
-                      : staffSupportPhase === "csat_staff" ||
-                          staffSupportPhase === "csat_app"
-                        ? t("detail.help_staff_csat_center")
-                        : chatOverlayTab === "help" && helpSelectedTopicKey
-                          ? t("detail.help_livechat_title")
-                          : chatOverlayTab === "help"
-                            ? t("detail.help_screen_title")
-                            : isOwner
-                              ? t("detail.chat_screen_title_employer")
-                              : t("detail.chat_screen_title_provider")}
-              </p>
-              {staffSupportPhase === "queueing" || staffSupportPhase === "chat" ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    notify(
-                      language === "th"
-                        ? "ย่อหน้าต่าง — ฟีเจอร์นี้จะมาในเวอร์ชันถัดไป"
-                        : "Minimize — coming in a future update",
-                      "info"
-                    )
-                  }
-                  className="shrink-0 rounded-full p-2 text-sky-600 hover:bg-sky-50 active:scale-95"
-                  aria-label="Minimize"
-                >
-                  <Minimize2 size={22} strokeWidth={2.25} />
-                </button>
-              ) : staffSupportPhase === "csat_staff" ||
-                staffSupportPhase === "csat_app" ? (
-                <button
-                  type="button"
-                  onClick={handleStaffSupportDismiss}
-                  className="shrink-0 rounded-full p-2 text-sky-600 hover:bg-sky-50 active:scale-95"
-                  aria-label={t("detail.chat_close")}
-                >
-                  <X size={22} strokeWidth={2.25} />
-                </button>
-              ) : (
-                <div className="w-10 shrink-0" aria-hidden />
-              )}
             </div>
-            {!(chatOverlayTab === "help" && helpSelectedTopicKey) &&
-              !staffSupportPhase && (
-              <div className="flex gap-2 px-3 pb-2 pt-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (staffSupportPhase) resetStaffSupportFlow();
-                    setChatOverlayTab("chat");
-                    setHelpSelectedTopicKey(null);
-                    setHelpSelectedSubKey(null);
-                  }}
-                  className={`min-h-[40px] flex-1 rounded-full py-2 text-center text-sm font-semibold transition-colors ${
-                    chatOverlayTab === "chat"
-                      ? "bg-pink-500 text-white shadow-md shadow-pink-200"
-                      : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-pink-200 hover:bg-pink-50/50"
-                  }`}
-                >
-                  {t("detail.help_tab_chat")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (staffSupportPhase) resetStaffSupportFlow();
-                    setChatOverlayTab("help");
-                    setHelpSelectedTopicKey(null);
-                    setHelpSelectedSubKey(null);
-                  }}
-                  className={`min-h-[40px] flex-1 rounded-full py-2 text-center text-sm font-semibold transition-colors ${
-                    chatOverlayTab === "help"
-                      ? "bg-pink-500 text-white shadow-md shadow-pink-200"
-                      : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-pink-200 hover:bg-pink-50/50"
-                  }`}
-                >
-                  {t("detail.help_tab_help")}
-                </button>
-              </div>
-            )}
-            {chatOverlayTab === "help" &&
-              !helpSelectedTopicKey &&
-              !staffSupportPhase && (
-              <p className="border-b border-slate-100 bg-slate-50/90 px-3 py-1.5 text-center text-[11px] font-medium text-slate-500">
-                {t("detail.help_context_subtitle")}
-              </p>
-            )}
-            {chatOverlayTab === "chat" && (
-            <div className="flex items-start gap-3 px-3 pb-3 pt-2">
-              {(() => {
-                const headerAvatarUrl = isOwner
-                  ? (job as any).provider_profile?.avatar_url
-                  : (job as any).created_by_avatar;
-                return headerAvatarUrl ? (
-                  <img
-                    src={headerAvatarUrl}
-                    alt=""
-                    className="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover shadow-sm"
-                  />
-                ) : (
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100">
-                    <User size={22} className="text-slate-500" />
-                  </div>
-                );
-              })()}
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-slate-500">
-                  <span>{t("detail.order_ref_label")}</span>{" "}
-                  <span className="font-mono font-medium text-slate-700">
-                    {jobReferenceCode || "—"}
-                  </span>
-                </p>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="min-w-0 truncate text-base font-semibold text-slate-900">
-                    {isOwner
-                      ? job.accepted_by_name || "Provider"
-                      : job.created_by_name || "Owner"}
-                  </span>
-                  <VIPBadge
-                    tier={
-                      isOwner
-                        ? (job as any).accepted_by_vip_tier
-                        : (job as any).created_by_vip_tier
-                    }
-                    size="sm"
-                    showLabel
-                  />
-                  {showJobBaBadge(isOwner ? providerBa : employerBa) && (
-                    <BrandAdviserBadge
-                      isBrandAdviser
-                      adviserStatus={
-                        (isOwner ? providerBa : employerBa)?.adviser_status
-                      }
-                      tone="light"
-                    />
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={callChatCounterpart}
-                disabled={!chatCounterpartPhone || chatCallWindowClosed}
-                className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label={t("detail.chat_call")}
-                title={
-                  chatCallWindowClosed
-                    ? t("detail.chat_call_expired")
-                    : chatCounterpartPhone
-                      ? chatCounterpartPhone
-                      : t("detail.chat_call_no_phone")
-                }
-              >
-                <Phone size={22} strokeWidth={2} />
-              </button>
-            </div>
-            )}
-          </header>
-
-          {(job.status === JobStatus.COMPLETED ||
-            job.status === JobStatus.CANCELLED) && (
-            <div className="shrink-0 border-b border-slate-100 bg-slate-50 px-3 py-2.5 text-center text-xs leading-relaxed text-slate-600">
-              {job.status === JobStatus.COMPLETED && chatCallUntilTime ? (
-                chatCallWindowClosed ? (
-                  <p>{t("detail.chat_call_expired")}</p>
-                ) : (
-                  <p>
-                    {t("detail.chat_job_ended_until").replace(
-                      "{time}",
-                      chatCallUntilTime.toLocaleString(
-                        language === "th" ? "th-TH" : "en-US",
-                        {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        }
-                      )
-                    )}
-                  </p>
-                )
-              ) : (
-                <p>{t("detail.chat_job_ended_note")}</p>
-              )}
-            </div>
-          )}
-
-          {chatOverlayTab === "chat" &&
-            isOwner &&
-            job.accepted_by &&
-            (job as any).provider_profile && (
-              <div className="shrink-0 border-b border-slate-100 bg-slate-50/95 px-3 py-2.5">
-                <div className="flex items-start gap-3">
-                  {(job as any).provider_profile.avatar_url ? (
-                    <img
-                      src={(job as any).provider_profile.avatar_url}
-                      alt="ผู้รับงาน"
-                      className="h-11 w-11 shrink-0 rounded-full border-2 border-slate-200 object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-300">
-                      <User size={22} className="text-slate-500" />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1 text-sm">
-                    <div className="mb-1 font-medium text-slate-700">
-                      ข้อมูลผู้รับงาน (จาก Thai ID)
-                    </div>
-                    <div className="space-y-1 text-slate-600">
-                      {(job as any).provider_profile.kyc_full_name && (
-                        <div>
-                          <span className="text-slate-500">ชื่อ-นามสกุลจริง:</span>{" "}
-                          {(job as any).provider_profile.kyc_full_name}
-                        </div>
-                      )}
-                      {((job as any).provider_profile.vehicle_type ||
-                        (job as any).provider_profile.vehicle_reg) && (
-                        <div className="flex flex-wrap gap-x-4 gap-y-0">
-                          {(job as any).provider_profile.vehicle_type && (
-                            <span>
-                              <span className="text-slate-500">ประเภทรถ:</span>{" "}
-                              {getVehicleTypeLabel(
-                                (job as any).provider_profile.vehicle_type
-                              )}
-                            </span>
-                          )}
-                          {(job as any).provider_profile.vehicle_reg && (
-                            <span>
-                              <span className="text-slate-500">ทะเบียนรถ:</span>{" "}
-                              {(job as any).provider_profile.vehicle_reg}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {!(job as any).provider_profile.kyc_full_name &&
-                        !(job as any).provider_profile.vehicle_type &&
-                        !(job as any).provider_profile.vehicle_reg && (
-                          <div className="text-slate-500">
-                            ผู้รับงานยังไม่ได้ลงทะเบียน Thai ID
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-          {chatOverlayTab === "chat" ? (
-          <>
-          <div
-            ref={chatContainerRef}
-            className="min-h-0 flex-1 overflow-y-auto bg-gray-50/50 p-4 space-y-4"
-          >
-            {messages.length === 0 ? (
-              <p className="mt-10 text-center text-sm text-gray-400">
-                {t("detail.no_msg")}
-              </p>
-            ) : (
-              messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex items-end gap-2 ${
-                    msg.is_me ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {!msg.is_me && (
-                    <img
-                      src={otherAvatar}
-                      alt="Avatar"
-                      className="mb-1 h-8 w-8 rounded-full border border-blue-200 object-cover shadow-sm"
-                    />
-                  )}
-                  <div
-                    className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
-                      msg.is_me
-                        ? "chat-bubble-me rounded-br-none border border-emerald-100 bg-emerald-50 text-gray-800"
-                        : "chat-bubble-other rounded-bl-none border border-blue-200 bg-blue-50 text-gray-800"
-                    }`}
-                  >
-                    {msg.type === MessageType.IMAGE ? (
-                      <div className="space-y-2">
-                        <div
-                          className="group relative cursor-pointer"
-                          onClick={() =>
-                            msg.media_url && handleViewProof(msg.media_url)
-                          }
-                        >
-                          <img
-                            src={msg.media_url}
-                            alt="Attachment"
-                            className="max-h-64 w-full rounded-lg border border-white/20 object-cover"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
-                            <Eye className="text-white" size={24} />
-                          </div>
-                        </div>
-                        <span className="flex items-center text-[10px] opacity-70">
-                          <ImageIcon size={10} className="mr-1" /> Image
-                          attached
-                        </span>
-                        {isOwner &&
-                          job.status === JobStatus.WAITING_FOR_APPROVAL && (
-                            <div className="rounded bg-white/20 p-1 text-center text-[10px] font-bold">
-                              Click to verify for approval
-                            </div>
-                          )}
-                      </div>
-                    ) : (
-                      msg.text
-                    )}
-                    <span
-                      className={`mt-1 block text-right text-[10px] ${
-                        msg.is_me ? "text-emerald-600" : "text-blue-600"
-                      }`}
-                    >
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
           </div>
-
-          <form
-            onSubmit={handleSendMessage}
-            className="shrink-0 border-t border-gray-100 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-          >
-            <p className="mb-2 px-1 text-xs text-gray-500">
-              💬 แนะนำการสื่อสารให้มีมารยาทต่อกัน และใช้คำสุภาพต่อกัน
-            </p>
-            <div className="flex items-center space-x-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/*"
-                onChange={handleFileUpload}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                title={t("detail.attach")}
-              >
-                <Paperclip size={18} />
-              </button>
-              <input
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={t("detail.type")}
-                className="flex-1 rounded-full border border-transparent bg-gray-100 py-2 px-4 text-sm text-gray-800 placeholder:text-gray-500 transition-colors focus:border-emerald-500 focus:bg-white focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="rounded-full bg-emerald-600 p-2 text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                disabled={!newMessage.trim()}
-              >
-                <Send size={18} />
-              </button>
-            </div>
-          </form>
-          </>
-          ) : (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100">
-            {staffSupportPhase === "connecting" ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6">
-                <MessagesSquare
-                  className="text-emerald-600"
-                  size={56}
-                  strokeWidth={1.35}
-                  aria-hidden
-                />
-                <p className="mt-6 text-center text-base font-semibold text-slate-800">
-                  {t("detail.help_staff_connecting_title")}
-                </p>
-                <p className="mt-1 text-center text-sm text-slate-500">
-                  {t("detail.help_staff_connecting_sub")}
-                </p>
-                <Loader2
-                  className="mt-8 animate-spin text-emerald-500"
-                  size={28}
-                  aria-hidden
-                />
-              </div>
-            ) : staffSupportPhase === "queueing" ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6">
-                <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200 animate-pulse" />
-                <p className="mt-6 text-sm font-medium text-slate-600">
-                  {t("detail.help_staff_queue_ahead")}
-                </p>
-                <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">
-                  {queueAheadDisplay}
-                </p>
-                <p className="mt-5 max-w-sm text-center text-sm leading-relaxed text-slate-500">
-                  {t("detail.help_staff_queue_wait")}
-                </p>
-              </div>
-            ) : staffSupportPhase === "chat" ? (
-              <>
-                <div
-                  ref={staffChatScrollRef}
-                  className="min-h-0 flex-1 overflow-y-auto bg-slate-50/90 px-3 py-4"
-                >
-                  {staffSupportMessages.map((msg) =>
-                    msg.variant === "system" ? (
-                      <p
-                        key={msg.id}
-                        className="mb-3 text-center text-xs text-slate-500"
-                      >
-                        {msg.text}
-                      </p>
+        </div>
+      </VipThemeWrapper>
+      {job &&
+        chatOverlayOpen &&
+        createPortal(
+          <>
+            <div
+              className="job-detail-chat fixed inset-0 z-[10050] flex min-h-0 flex-col bg-white"
+              style={{ minHeight: "100dvh" }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("detail.chat_fullscreen_title")}
+            >
+              <header className="shrink-0 border-b border-slate-200 bg-white pt-[max(0.5rem,env(safe-area-inset-top))]">
+                <div className="flex items-center justify-between px-2 sm:px-3">
+                  <button
+                    type="button"
+                    onClick={
+                      staffSupportPhase
+                        ? handleStaffSupportHeaderLeft
+                        : chatOverlayTab === "help" && helpSelectedTopicKey
+                          ? handleHelpTopicBack
+                          : closeChatOverlay
+                    }
+                    className="shrink-0 rounded-full p-2 text-slate-700 hover:bg-slate-100 active:scale-95"
+                    aria-label={
+                      staffSupportPhase
+                        ? staffSupportPhase === "csat_staff" ||
+                          staffSupportPhase === "csat_app"
+                          ? t("detail.chat_back")
+                          : t("detail.chat_close")
+                        : chatOverlayTab === "help" && helpSelectedTopicKey
+                          ? t("detail.chat_back")
+                          : t("detail.chat_close")
+                    }
+                  >
+                    {staffSupportPhase === "csat_staff" ||
+                    staffSupportPhase === "csat_app" ? (
+                      <ChevronLeft size={22} strokeWidth={2.25} />
+                    ) : staffSupportPhase ? (
+                      <X size={22} strokeWidth={2.25} />
+                    ) : chatOverlayTab === "help" && helpSelectedTopicKey ? (
+                      <ChevronLeft size={22} strokeWidth={2.25} />
                     ) : (
-                      <div
-                        key={msg.id}
-                        className={`mb-3 flex items-end gap-2 ${
-                          msg.isMe ? "justify-end" : "justify-start"
-                        }`}
-                      >
-                        {!msg.isMe && (
-                          <div className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">
-                            MK
-                          </div>
-                        )}
-                        <div
-                          className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
-                            msg.isMe
-                              ? "rounded-br-md bg-emerald-500 text-white"
-                              : "rounded-bl-md border border-slate-100 bg-white text-slate-800"
-                          }`}
-                        >
-                          <span className="whitespace-pre-wrap">{msg.text}</span>
-                          <span
-                            className={`mt-1 block text-right text-[10px] ${
-                              msg.isMe ? "text-emerald-100" : "text-slate-400"
-                            }`}
-                          >
-                            {new Date(msg.timestamp).toLocaleString(
-                              language === "th" ? "th-TH" : "en-US",
-                              {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                second: "2-digit",
-                              }
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-                <form
-                  onSubmit={handleStaffSendMessage}
-                  className="shrink-0 border-t border-slate-200 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-                >
-                  <div className="flex items-center gap-2">
+                      <X size={22} strokeWidth={2.25} />
+                    )}
+                  </button>
+                  <p className="min-w-0 flex-1 text-center text-sm font-semibold text-slate-900">
+                    {staffSupportPhase === "connecting"
+                      ? t("detail.help_staff_connecting_title")
+                      : staffSupportPhase === "queueing"
+                        ? t("detail.help_staff_queue_header")
+                        : staffSupportPhase === "chat"
+                          ? t("detail.help_staff_chat_title")
+                          : staffSupportPhase === "csat_staff" ||
+                              staffSupportPhase === "csat_app"
+                            ? t("detail.help_staff_csat_center")
+                            : chatOverlayTab === "help" && helpSelectedTopicKey
+                              ? t("detail.help_livechat_title")
+                              : chatOverlayTab === "help"
+                                ? t("detail.help_screen_title")
+                                : isOwner
+                                  ? t("detail.chat_screen_title_employer")
+                                  : t("detail.chat_screen_title_provider")}
+                  </p>
+                  {staffSupportPhase === "queueing" ||
+                  staffSupportPhase === "chat" ? (
                     <button
                       type="button"
                       onClick={() =>
                         notify(
                           language === "th"
-                            ? "แนบไฟล์ — ฟีเจอร์นี้จะมาในเวอร์ชันถัดไป"
-                            : "Attachments — coming in a future update",
-                          "info"
+                            ? "ย่อหน้าต่าง — ฟีเจอร์นี้จะมาในเวอร์ชันถัดไป"
+                            : "Minimize — coming in a future update",
+                          "info",
                         )
                       }
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
-                      aria-label={t("detail.attach")}
+                      className="shrink-0 rounded-full p-2 text-sky-600 hover:bg-sky-50 active:scale-95"
+                      aria-label="Minimize"
                     >
-                      <Paperclip size={20} />
+                      <Minimize2 size={22} strokeWidth={2.25} />
                     </button>
-                    <input
-                      type="text"
-                      value={staffChatInput}
-                      onChange={(e) => setStaffChatInput(e.target.value)}
-                      placeholder={t("detail.help_staff_input_placeholder")}
-                      className="min-h-[44px] flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    />
+                  ) : staffSupportPhase === "csat_staff" ||
+                    staffSupportPhase === "csat_app" ? (
                     <button
-                      type="submit"
-                      disabled={!staffChatInput.trim()}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={
-                        language === "th" ? "ส่งข้อความ" : "Send message"
+                      type="button"
+                      onClick={handleStaffSupportDismiss}
+                      className="shrink-0 rounded-full p-2 text-sky-600 hover:bg-sky-50 active:scale-95"
+                      aria-label={t("detail.chat_close")}
+                    >
+                      <X size={22} strokeWidth={2.25} />
+                    </button>
+                  ) : (
+                    <div className="w-10 shrink-0" aria-hidden />
+                  )}
+                </div>
+                {!(chatOverlayTab === "help" && helpSelectedTopicKey) &&
+                  !staffSupportPhase && (
+                    <div className="flex gap-2 px-3 pb-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (staffSupportPhase) resetStaffSupportFlow();
+                          setChatOverlayTab("chat");
+                          setHelpSelectedTopicKey(null);
+                          setHelpSelectedSubKey(null);
+                        }}
+                        className={`min-h-[40px] flex-1 rounded-full py-2 text-center text-sm font-semibold transition-colors ${
+                          chatOverlayTab === "chat"
+                            ? "bg-pink-500 text-white shadow-md shadow-pink-200"
+                            : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-pink-200 hover:bg-pink-50/50"
+                        }`}
+                      >
+                        {t("detail.help_tab_chat")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (staffSupportPhase) resetStaffSupportFlow();
+                          setChatOverlayTab("help");
+                          setHelpSelectedTopicKey(null);
+                          setHelpSelectedSubKey(null);
+                        }}
+                        className={`min-h-[40px] flex-1 rounded-full py-2 text-center text-sm font-semibold transition-colors ${
+                          chatOverlayTab === "help"
+                            ? "bg-pink-500 text-white shadow-md shadow-pink-200"
+                            : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-pink-200 hover:bg-pink-50/50"
+                        }`}
+                      >
+                        {t("detail.help_tab_help")}
+                      </button>
+                    </div>
+                  )}
+                {chatOverlayTab === "help" &&
+                  !helpSelectedTopicKey &&
+                  !staffSupportPhase && (
+                    <p className="border-b border-slate-100 bg-slate-50/90 px-3 py-1.5 text-center text-[11px] font-medium text-slate-500">
+                      {t("detail.help_context_subtitle")}
+                    </p>
+                  )}
+                {chatOverlayTab === "chat" && (
+                  <div className="flex items-start gap-3 px-3 pb-3 pt-2">
+                    {(() => {
+                      const headerAvatarUrl = isOwner
+                        ? (job as any).provider_profile?.avatar_url
+                        : (job as any).created_by_avatar;
+                      return headerAvatarUrl ? (
+                        <img
+                          src={headerAvatarUrl}
+                          alt=""
+                          className="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover shadow-sm"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100">
+                          <User size={22} className="text-slate-500" />
+                        </div>
+                      );
+                    })()}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-slate-500">
+                        <span>{t("detail.order_ref_label")}</span>{" "}
+                        <span className="font-mono font-medium text-slate-700">
+                          {jobReferenceCode || "—"}
+                        </span>
+                      </p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="min-w-0 truncate text-base font-semibold text-slate-900">
+                          {isOwner
+                            ? job.accepted_by_name || "Provider"
+                            : job.created_by_name || "Owner"}
+                        </span>
+                        <VIPBadge
+                          tier={
+                            isOwner
+                              ? (job as any).accepted_by_vip_tier
+                              : (job as any).created_by_vip_tier
+                          }
+                          size="sm"
+                          showLabel
+                        />
+                        {showJobBaBadge(isOwner ? providerBa : employerBa) && (
+                          <BrandAdviserBadge
+                            isBrandAdviser
+                            adviserStatus={
+                              (isOwner ? providerBa : employerBa)
+                                ?.adviser_status
+                            }
+                            tone="light"
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={callChatCounterpart}
+                      disabled={!chatCounterpartPhone || chatCallWindowClosed}
+                      className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={t("detail.chat_call")}
+                      title={
+                        chatCallWindowClosed
+                          ? t("detail.chat_call_expired")
+                          : chatCounterpartPhone
+                            ? chatCounterpartPhone
+                            : t("detail.chat_call_no_phone")
                       }
                     >
-                      <Send size={20} />
+                      <Phone size={22} strokeWidth={2} />
                     </button>
                   </div>
-                </form>
-              </>
-            ) : staffSupportPhase === "csat_staff" ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                <p className="pt-2 text-center text-xs font-medium text-slate-500">
-                  {t("detail.help_staff_csat_back")}
-                </p>
-                <div className="flex justify-center py-8">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-50 text-4xl ring-2 ring-emerald-100">
-                    🎧
-                  </div>
+                )}
+              </header>
+
+              {(job.status === JobStatus.COMPLETED ||
+                job.status === JobStatus.CANCELLED) && (
+                <div className="shrink-0 border-b border-slate-100 bg-slate-50 px-3 py-2.5 text-center text-xs leading-relaxed text-slate-600">
+                  {job.status === JobStatus.COMPLETED && chatCallUntilTime ? (
+                    chatCallWindowClosed ? (
+                      <p>{t("detail.chat_call_expired")}</p>
+                    ) : (
+                      <p>
+                        {t("detail.chat_job_ended_until").replace(
+                          "{time}",
+                          chatCallUntilTime.toLocaleString(
+                            language === "th" ? "th-TH" : "en-US",
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            },
+                          ),
+                        )}
+                      </p>
+                    )
+                  ) : (
+                    <p>{t("detail.chat_job_ended_note")}</p>
+                  )}
                 </div>
-                <p className="text-center text-sm font-medium leading-snug text-slate-800">
-                  {t("detail.help_staff_csat_rate_staff")}
-                </p>
-                <div className="mt-5 flex justify-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setStaffCsatStars(n)}
-                      className="rounded-lg p-1 transition hover:bg-amber-50"
-                      aria-label={`${n}`}
-                    >
-                      <Star
-                        size={36}
-                        strokeWidth={1.25}
-                        className={
-                          n <= staffCsatStars
-                            ? "fill-amber-400 text-amber-400"
-                            : "text-slate-200"
-                        }
-                      />
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-10 border-t border-slate-100 pt-6">
-                  <button
-                    type="button"
-                    disabled={staffCsatStars < 1}
-                    onClick={() => setStaffSupportPhase("csat_app")}
-                    className="w-full rounded-full bg-emerald-600 py-3.5 text-center text-base font-bold text-white shadow-md shadow-emerald-200 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-white/90 disabled:shadow-none"
-                  >
-                    {t("detail.help_staff_csat_continue")}
-                  </button>
-                </div>
-              </div>
-            ) : staffSupportPhase === "csat_app" ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                <div className="flex justify-center py-10">
-                  <div className="flex h-28 w-28 items-center justify-center rounded-3xl bg-emerald-50 text-5xl ring-2 ring-emerald-100">
-                    📱
-                  </div>
-                </div>
-                <p className="text-center text-lg font-semibold text-slate-900">
-                  {t("detail.help_staff_csat_app_q")}
-                </p>
-                <p className="mt-2 text-center text-sm text-slate-500">
-                  {t("detail.help_staff_csat_app_sub")}
-                </p>
-                <div className="mt-10 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={finishStaffSupportAfterCsat}
-                    className="min-h-[48px] flex-1 rounded-xl border border-slate-200 bg-white py-3 text-center text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                  >
-                    {t("detail.help_staff_csat_good")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={finishStaffSupportAfterCsat}
-                    className="min-h-[48px] flex-1 rounded-xl border border-slate-200 bg-white py-3 text-center text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                  >
-                    {t("detail.help_staff_csat_bad")}
-                  </button>
-                </div>
-              </div>
-            ) : !helpSelectedTopicKey ? (
-              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                <div className="mb-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-pink-100">
-                    <HelpCircle className="text-pink-600" size={26} />
-                  </div>
-                  <p className="text-sm leading-relaxed text-slate-700">
-                    {t("detail.help_welcome")}
-                  </p>
-                </div>
-                <p className="mb-2 px-0.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-                  {t("detail.help_order_section")}
-                </p>
-                <div className="mb-4">
-                  <HelpOrderSummaryCard
-                    job={job}
-                    jobReferenceCode={jobReferenceCode || String(job.id)}
-                    language={language}
-                    t={t}
-                  />
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  {HELP_TOPIC_TKEYS.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        setHelpSelectedTopicKey(key);
-                        setHelpSelectedSubKey(null);
-                      }}
-                      className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 text-left text-sm font-medium text-slate-800 transition hover:bg-pink-50/60 last:border-b-0"
-                    >
-                      <span className="min-w-0">{t(key)}</span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
-                  <p className="text-sm font-semibold text-slate-800">
-                    {t(helpSelectedTopicKey)}
-                  </p>
-                  <HelpOrderSummaryCard
-                    job={job}
-                    jobReferenceCode={jobReferenceCode || String(job.id)}
-                    language={language}
-                    t={t}
-                  />
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                      <span className="text-sm font-semibold text-slate-900">
-                        {t(helpSelectedTopicKey)}
-                      </span>
-                      <ChevronUp className="shrink-0 text-slate-400" size={18} aria-hidden />
-                    </div>
-                    {(
-                      HELP_SUB_BY_TOPIC[
-                        helpSelectedTopicKey as (typeof HELP_TOPIC_TKEYS)[number]
-                      ] || []
-                    ).map((subKey) => (
-                      <label
-                        key={subKey}
-                        className="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3.5 last:border-b-0"
-                      >
-                        <input
-                          type="radio"
-                          name="help-subtopic"
-                          className="mt-1.5 h-4 w-4 shrink-0 border-slate-300 text-pink-500 focus:ring-pink-500"
-                          checked={helpSelectedSubKey === subKey}
-                          onChange={() => setHelpSelectedSubKey(subKey)}
+              )}
+
+              {chatOverlayTab === "chat" &&
+                isOwner &&
+                job.accepted_by &&
+                (job as any).provider_profile && (
+                  <div className="shrink-0 border-b border-slate-100 bg-slate-50/95 px-3 py-2.5">
+                    <div className="flex items-start gap-3">
+                      {(job as any).provider_profile.avatar_url ? (
+                        <img
+                          src={(job as any).provider_profile.avatar_url}
+                          alt="ผู้รับงาน"
+                          className="h-11 w-11 shrink-0 rounded-full border-2 border-slate-200 object-cover"
                         />
-                        <span className="text-sm leading-snug text-slate-800">
-                          {t(subKey)}
-                        </span>
-                      </label>
-                    ))}
+                      ) : (
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-300">
+                          <User size={22} className="text-slate-500" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1 text-sm">
+                        <div className="mb-1 font-medium text-slate-700">
+                          ข้อมูลผู้รับงาน (จาก Thai ID)
+                        </div>
+                        <div className="space-y-1 text-slate-600">
+                          {(job as any).provider_profile.kyc_full_name && (
+                            <div>
+                              <span className="text-slate-500">
+                                ชื่อ-นามสกุลจริง:
+                              </span>{" "}
+                              {(job as any).provider_profile.kyc_full_name}
+                            </div>
+                          )}
+                          {((job as any).provider_profile.vehicle_type ||
+                            (job as any).provider_profile.vehicle_reg) && (
+                            <div className="flex flex-wrap gap-x-4 gap-y-0">
+                              {(job as any).provider_profile.vehicle_type && (
+                                <span>
+                                  <span className="text-slate-500">
+                                    ประเภทรถ:
+                                  </span>{" "}
+                                  {getVehicleTypeLabel(
+                                    (job as any).provider_profile.vehicle_type,
+                                  )}
+                                </span>
+                              )}
+                              {(job as any).provider_profile.vehicle_reg && (
+                                <span>
+                                  <span className="text-slate-500">
+                                    ทะเบียนรถ:
+                                  </span>{" "}
+                                  {(job as any).provider_profile.vehicle_reg}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {!(job as any).provider_profile.kyc_full_name &&
+                            !(job as any).provider_profile.vehicle_type &&
+                            !(job as any).provider_profile.vehicle_reg && (
+                              <div className="text-slate-500">
+                                ผู้รับงานยังไม่ได้ลงทะเบียน Thai ID
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                  <button
-                    type="button"
-                    disabled={!helpSelectedSubKey}
-                    onClick={() => {
-                      if (!helpSelectedTopicKey || !helpSelectedSubKey) return;
-                      const prefill = `[${jobReferenceCode || id}] ${t(helpSelectedTopicKey)} — ${t(helpSelectedSubKey)}`;
-                      startStaffSupportFlow(prefill);
-                    }}
-                    className="w-full rounded-full py-3.5 text-center text-base font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-white/90 enabled:bg-pink-500 enabled:shadow-lg enabled:shadow-pink-200 enabled:hover:bg-pink-600"
+                )}
+
+              {chatOverlayTab === "chat" ? (
+                <>
+                  <div
+                    ref={chatContainerRef}
+                    className="min-h-0 flex-1 overflow-y-auto bg-gray-50/50 p-4 space-y-4"
                   >
-                    {t("detail.help_chat_staff_btn")}
-                  </button>
-                  <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
-                    {t("detail.help_contact_footer")}
-                  </p>
+                    {messages.length === 0 ? (
+                      <p className="mt-10 text-center text-sm text-gray-400">
+                        {t("detail.no_msg")}
+                      </p>
+                    ) : (
+                      messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex items-end gap-2 ${
+                            msg.is_me ? "justify-end" : "justify-start"
+                          }`}
+                        >
+                          {!msg.is_me && (
+                            <img
+                              src={otherAvatar}
+                              alt="Avatar"
+                              className="mb-1 h-8 w-8 rounded-full border border-blue-200 object-cover shadow-sm"
+                            />
+                          )}
+                          <div
+                            className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
+                              msg.is_me
+                                ? "chat-bubble-me rounded-br-none border border-emerald-100 bg-emerald-50 text-gray-800"
+                                : "chat-bubble-other rounded-bl-none border border-blue-200 bg-blue-50 text-gray-800"
+                            }`}
+                          >
+                            {msg.type === MessageType.IMAGE ? (
+                              <div className="space-y-2">
+                                <div
+                                  className="group relative cursor-pointer"
+                                  onClick={() =>
+                                    msg.media_url &&
+                                    handleViewProof(msg.media_url)
+                                  }
+                                >
+                                  <img
+                                    src={msg.media_url}
+                                    alt="Attachment"
+                                    className="max-h-64 w-full rounded-lg border border-white/20 object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                                    <Eye className="text-white" size={24} />
+                                  </div>
+                                </div>
+                                <span className="flex items-center text-[10px] opacity-70">
+                                  <ImageIcon size={10} className="mr-1" /> Image
+                                  attached
+                                </span>
+                                {isOwner &&
+                                  job.status ===
+                                    JobStatus.WAITING_FOR_APPROVAL && (
+                                    <div className="rounded bg-white/20 p-1 text-center text-[10px] font-bold">
+                                      Click to verify for approval
+                                    </div>
+                                  )}
+                              </div>
+                            ) : (
+                              msg.text
+                            )}
+                            <span
+                              className={`mt-1 block text-right text-[10px] ${
+                                msg.is_me ? "text-emerald-600" : "text-blue-600"
+                              }`}
+                            >
+                              {new Date(msg.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form
+                    onSubmit={handleSendMessage}
+                    className="shrink-0 border-t border-gray-100 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                  >
+                    <p className="mb-2 px-1 text-xs text-gray-500">
+                      💬 แนะนำการสื่อสารให้มีมารยาทต่อกัน และใช้คำสุภาพต่อกัน
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                        title={t("detail.attach")}
+                      >
+                        <Paperclip size={18} />
+                      </button>
+                      <input
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder={t("detail.type")}
+                        className="flex-1 rounded-full border border-transparent bg-gray-100 py-2 px-4 text-sm text-gray-800 placeholder:text-gray-500 transition-colors focus:border-emerald-500 focus:bg-white focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-full bg-emerald-600 p-2 text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                        disabled={!newMessage.trim()}
+                      >
+                        <Send size={18} />
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100">
+                  {staffSupportPhase === "connecting" ? (
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6">
+                      <MessagesSquare
+                        className="text-emerald-600"
+                        size={56}
+                        strokeWidth={1.35}
+                        aria-hidden
+                      />
+                      <p className="mt-6 text-center text-base font-semibold text-slate-800">
+                        {t("detail.help_staff_connecting_title")}
+                      </p>
+                      <p className="mt-1 text-center text-sm text-slate-500">
+                        {t("detail.help_staff_connecting_sub")}
+                      </p>
+                      <Loader2
+                        className="mt-8 animate-spin text-emerald-500"
+                        size={28}
+                        aria-hidden
+                      />
+                    </div>
+                  ) : staffSupportPhase === "queueing" ? (
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white px-6">
+                      <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200 animate-pulse" />
+                      <p className="mt-6 text-sm font-medium text-slate-600">
+                        {t("detail.help_staff_queue_ahead")}
+                      </p>
+                      <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">
+                        {queueAheadDisplay}
+                      </p>
+                      <p className="mt-5 max-w-sm text-center text-sm leading-relaxed text-slate-500">
+                        {t("detail.help_staff_queue_wait")}
+                      </p>
+                    </div>
+                  ) : staffSupportPhase === "chat" ? (
+                    <>
+                      <div
+                        ref={staffChatScrollRef}
+                        className="min-h-0 flex-1 overflow-y-auto bg-slate-50/90 px-3 py-4"
+                      >
+                        {staffSupportMessages.map((msg) =>
+                          msg.variant === "system" ? (
+                            <p
+                              key={msg.id}
+                              className="mb-3 text-center text-xs text-slate-500"
+                            >
+                              {msg.text}
+                            </p>
+                          ) : (
+                            <div
+                              key={msg.id}
+                              className={`mb-3 flex items-end gap-2 ${
+                                msg.isMe ? "justify-end" : "justify-start"
+                              }`}
+                            >
+                              {!msg.isMe && (
+                                <div className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">
+                                  MK
+                                </div>
+                              )}
+                              <div
+                                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
+                                  msg.isMe
+                                    ? "rounded-br-md bg-emerald-500 text-white"
+                                    : "rounded-bl-md border border-slate-100 bg-white text-slate-800"
+                                }`}
+                              >
+                                <span className="whitespace-pre-wrap">
+                                  {renderSupportMessageText(msg.text)}
+                                </span>
+                                {msg.diagnosticSummary && (
+                                  <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1 text-[11px] text-blue-800">
+                                    ตรวจแล้ว: {msg.diagnosticSummary}
+                                  </div>
+                                )}
+                                {!msg.isMe && renderStaffCareTimeline(msg)}
+                                {!msg.isMe &&
+                                  (msg.quickActions || []).length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {(msg.quickActions || []).map(
+                                        (action) => (
+                                          <button
+                                            key={action.id}
+                                            type="button"
+                                            onClick={() =>
+                                              void handleStaffQuickAction(
+                                                action,
+                                                msg,
+                                              )
+                                            }
+                                            className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50"
+                                          >
+                                            {action.label}
+                                          </button>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                <span
+                                  className={`mt-1 block text-right text-[10px] ${
+                                    msg.isMe
+                                      ? "text-emerald-100"
+                                      : "text-slate-400"
+                                  }`}
+                                >
+                                  {new Date(msg.timestamp).toLocaleString(
+                                    language === "th" ? "th-TH" : "en-US",
+                                    {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      second: "2-digit",
+                                    },
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                      <form
+                        onSubmit={handleStaffSendMessage}
+                        className="shrink-0 border-t border-slate-200 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              notify(
+                                language === "th"
+                                  ? "แนบไฟล์ — ฟีเจอร์นี้จะมาในเวอร์ชันถัดไป"
+                                  : "Attachments — coming in a future update",
+                                "info",
+                              )
+                            }
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
+                            aria-label={t("detail.attach")}
+                          >
+                            <Paperclip size={20} />
+                          </button>
+                          <input
+                            type="text"
+                            value={staffChatInput}
+                            onChange={(e) => setStaffChatInput(e.target.value)}
+                            placeholder={t(
+                              "detail.help_staff_input_placeholder",
+                            )}
+                            className="min-h-[44px] flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!staffChatInput.trim()}
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={
+                              language === "th" ? "ส่งข้อความ" : "Send message"
+                            }
+                          >
+                            <Send size={20} />
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  ) : staffSupportPhase === "csat_staff" ? (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                      <p className="pt-2 text-center text-xs font-medium text-slate-500">
+                        {t("detail.help_staff_csat_back")}
+                      </p>
+                      <div className="flex justify-center py-8">
+                        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-50 text-4xl ring-2 ring-emerald-100">
+                          🎧
+                        </div>
+                      </div>
+                      <p className="text-center text-sm font-medium leading-snug text-slate-800">
+                        {t("detail.help_staff_csat_rate_staff")}
+                      </p>
+                      <div className="mt-5 flex justify-center gap-1.5">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setStaffCsatStars(n)}
+                            className="rounded-lg p-1 transition hover:bg-amber-50"
+                            aria-label={`${n}`}
+                          >
+                            <Star
+                              size={36}
+                              strokeWidth={1.25}
+                              className={
+                                n <= staffCsatStars
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-slate-200"
+                              }
+                            />
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-10 border-t border-slate-100 pt-6">
+                        <button
+                          type="button"
+                          disabled={staffCsatStars < 1}
+                          onClick={() => setStaffSupportPhase("csat_app")}
+                          className="w-full rounded-full bg-emerald-600 py-3.5 text-center text-base font-bold text-white shadow-md shadow-emerald-200 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-white/90 disabled:shadow-none"
+                        >
+                          {t("detail.help_staff_csat_continue")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : staffSupportPhase === "csat_app" ? (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                      <div className="flex justify-center py-10">
+                        <div className="flex h-28 w-28 items-center justify-center rounded-3xl bg-emerald-50 text-5xl ring-2 ring-emerald-100">
+                          📱
+                        </div>
+                      </div>
+                      <p className="text-center text-lg font-semibold text-slate-900">
+                        {t("detail.help_staff_csat_app_q")}
+                      </p>
+                      <p className="mt-2 text-center text-sm text-slate-500">
+                        {t("detail.help_staff_csat_app_sub")}
+                      </p>
+                      <div className="mt-10 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={finishStaffSupportAfterCsat}
+                          className="min-h-[48px] flex-1 rounded-xl border border-slate-200 bg-white py-3 text-center text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                        >
+                          {t("detail.help_staff_csat_good")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={finishStaffSupportAfterCsat}
+                          className="min-h-[48px] flex-1 rounded-xl border border-slate-200 bg-white py-3 text-center text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                        >
+                          {t("detail.help_staff_csat_bad")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : !helpSelectedTopicKey ? (
+                    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                      <div className="mb-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-pink-100">
+                          <HelpCircle className="text-pink-600" size={26} />
+                        </div>
+                        <p className="text-sm leading-relaxed text-slate-700">
+                          {t("detail.help_welcome")}
+                        </p>
+                      </div>
+                      <p className="mb-2 px-0.5 text-xs font-bold uppercase tracking-wide text-slate-500">
+                        {t("detail.help_order_section")}
+                      </p>
+                      <div className="mb-4">
+                        <HelpOrderSummaryCard
+                          job={job}
+                          jobReferenceCode={jobReferenceCode || String(job.id)}
+                          language={language}
+                          t={t}
+                        />
+                      </div>
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        {HELP_TOPIC_TKEYS.map((key) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              setHelpSelectedTopicKey(key);
+                              setHelpSelectedSubKey(null);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 text-left text-sm font-medium text-slate-800 transition hover:bg-pink-50/60 last:border-b-0"
+                          >
+                            <span className="min-w-0">{t(key)}</span>
+                            <ChevronRight
+                              className="h-4 w-4 shrink-0 text-slate-300"
+                              aria-hidden
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                        <p className="text-sm font-semibold text-slate-800">
+                          {t(helpSelectedTopicKey)}
+                        </p>
+                        <HelpOrderSummaryCard
+                          job={job}
+                          jobReferenceCode={jobReferenceCode || String(job.id)}
+                          language={language}
+                          t={t}
+                        />
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                            <span className="text-sm font-semibold text-slate-900">
+                              {t(helpSelectedTopicKey)}
+                            </span>
+                            <ChevronUp
+                              className="shrink-0 text-slate-400"
+                              size={18}
+                              aria-hidden
+                            />
+                          </div>
+                          {(
+                            HELP_SUB_BY_TOPIC[
+                              helpSelectedTopicKey as (typeof HELP_TOPIC_TKEYS)[number]
+                            ] || []
+                          ).map((subKey) => (
+                            <label
+                              key={subKey}
+                              className="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3.5 last:border-b-0"
+                            >
+                              <input
+                                type="radio"
+                                name="help-subtopic"
+                                className="mt-1.5 h-4 w-4 shrink-0 border-slate-300 text-pink-500 focus:ring-pink-500"
+                                checked={helpSelectedSubKey === subKey}
+                                onChange={() => setHelpSelectedSubKey(subKey)}
+                              />
+                              <span className="text-sm leading-snug text-slate-800">
+                                {t(subKey)}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                        <button
+                          type="button"
+                          disabled={!helpSelectedSubKey}
+                          onClick={() => {
+                            if (!helpSelectedTopicKey || !helpSelectedSubKey)
+                              return;
+                            const prefill = `[${jobReferenceCode || id}] ${t(helpSelectedTopicKey)} — ${t(helpSelectedSubKey)}`;
+                            startStaffSupportFlow(prefill);
+                          }}
+                          className="w-full rounded-full py-3.5 text-center text-base font-bold text-white transition-colors disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-white/90 enabled:bg-pink-500 enabled:shadow-lg enabled:shadow-pink-200 enabled:hover:bg-pink-600"
+                        >
+                          {t("detail.help_chat_staff_btn")}
+                        </button>
+                        <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
+                          {t("detail.help_contact_footer")}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
-          )}
-        </div>
-        </>,
-        document.body
-      )}
-    {receiptData && createPortal(
-      <EarningsReceipt
-        data={receiptData}
-        onClose={() => setReceiptData(null)}
-      />,
-      document.body
-    )}
-  </>
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
+      {receiptData &&
+        createPortal(
+          <EarningsReceipt
+            data={receiptData}
+            onClose={() => setReceiptData(null)}
+          />,
+          document.body,
+        )}
+    </>
   );
 };
 

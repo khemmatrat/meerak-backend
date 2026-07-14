@@ -22,6 +22,7 @@ import { PAYMENT_METHODS, paymentMethodLabel, type PaymentMethodId } from '@/lib
 import type { PromoResult } from '@/lib/promo';
 import { fetchPromoHints } from '@/lib/promo';
 import { CHECKOUT_PAYMENT_KEY } from '@/lib/paymentQr';
+import { IconLuxPin } from '@/components/mobile/TtLuxuryIcons';
 
 const ADDR_KEY = 'aqond-m-checkout-addr';
 const CREATOR_KEY = 'aqond_last_creator';
@@ -525,7 +526,9 @@ export function MobileCheckoutShopee() {
               data-testid="checkout-address-card"
               onClick={() => setAddrOpen((v) => !v)}
             >
-              <span className="tt-co-pro-addr-pin">📍</span>
+              <span className="tt-co-pro-addr-pin" aria-hidden>
+                <IconLuxPin size={22} />
+              </span>
               <div className="tt-co-pro-addr-body">
                 {addressReady ? (
                   <>

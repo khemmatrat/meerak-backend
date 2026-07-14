@@ -1,0 +1,60 @@
+* { box-sizing: border-box; }
+:root {
+  --aq-color-bg: #0b0e11;
+  --aq-color-surface: #1e2329;
+  --aq-color-surface-2: #181a20;
+  --aq-color-text: #eaecef;
+  --aq-color-muted: #848e9c;
+  --aq-color-accent: #fcd535;
+  --aq-color-accent-hover: #f8d12f;
+  --aq-color-success: #0ecb81;
+  --aq-color-border: #2b3139;
+  --aq-radius-sm: 8px;
+  --aq-radius-md: 12px;
+  --aq-radius-lg: 16px;
+  --aq-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --aq-space-1: 4px;
+  --aq-space-2: 8px;
+  --aq-space-3: 12px;
+  --aq-space-4: 16px;
+  --aq-space-6: 24px;
+  --aq-space-8: 32px;
+}
+body {
+  margin: 0;
+  font-family: var(--aq-font);
+  background: var(--aq-color-bg);
+  color: var(--aq-color-text);
+}
+.main { max-width: 1200px; margin: 0 auto; padding: var(--aq-space-4); min-height: 80vh; }
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--aq-space-3) var(--aq-space-4);
+  border-bottom: 1px solid var(--aq-color-border);
+  background: var(--aq-color-surface);
+  position: sticky; top: 0; z-index: 10;
+}
+.nav-brand { font-weight: 800; color: var(--aq-color-accent); text-decoration: none; font-size: 1.25rem; }
+.nav-links { display: flex; gap: var(--aq-space-3); flex-wrap: wrap; align-items: center; }
+.nav-links a, .nav-link-btn {
+  color: var(--aq-color-text); text-decoration: none; font-size: 0.9rem;
+  background: none; border: none; cursor: pointer; font-family: inherit;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--aq-space-4); }
+.product-link { text-decoration: none; color: inherit; }
+.product-card h3 { margin: var(--aq-space-2) 0; font-size: 0.95rem; }
+.product-img {
+  height: 140px; background: var(--aq-color-surface-2); border-radius: var(--aq-radius-sm);
+  display: flex; align-items: center; justify-content: center; background-size: cover; background-position: center;
+}
+.price { color: var(--aq-color-accent); font-weight: 700; margin: 0; }
+.page-title { margin-top: 0; }
+.m-shell { padding-bottom: 64px; }
+.m-tabs {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; background: var(--aq-color-surface); border-top: 1px solid var(--aq-color-border);
+}
+.m-tabs a { flex: 1; text-align: center; padding: var(--aq-space-3); text-decoration: none; color: var(--aq-color-muted); font-size: 0.75rem; }
+.m-tabs a.active { color: var(--aq-color-accent); }
+.form { display: flex; flex-direction: column; gap: var(--aq-space-3); max-width: 400px; }
+.empty { color: var(--aq-color-muted); padding: var(--aq-space-8); text-align: center; }

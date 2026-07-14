@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { E2E_PRODUCT_ID } from './fixtures';
+import { simulatePaysoCapture } from './helpers/paymentCapture';
 
 const CHECKOUT = '/m/checkout';
 const RESULT = '/m/checkout/payment/result';
@@ -51,10 +52,19 @@ async function fillAddress(page: import('@playwright/test').Page) {
   await page.locator('[placeholder="รหัสไปรษณีย์ 5 หลัก"]').fill('10110');
 }
 
-async function completeSuccessPayment(page: import('@playwright/test').Page) {
+async function completeSuccessPayment(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
   await fillAddress(page);
   await page.locator('[data-testid="checkout-place-cta"]').click();
   await expect(page).toHaveURL(/\/m\/checkout\/payment/, { timeout: 35000 });
+  const session = await page.evaluate(() => {
+    const raw = sessionStorage.getItem('aqond-m-checkout-payment');
+    return raw ? JSON.parse(raw) : null;
+  });
+  await simulatePaysoCapture(request, {
+    ref: session?.action?.payso_reference_id || session?.action?.ref,
+    orderIds: session?.orderIds,
+    buyerId: E2E_OWNER,
+  });
   await page.locator('[data-testid="checkout-payment-confirm"]').click();
   await expect(page).toHaveURL(/\/m\/checkout\/payment\/result\?status=success/, { timeout: 35000 });
   await expect(page.locator('[data-testid="checkout-payment-result-page"]')).toBeVisible({ timeout: 15000 });
@@ -77,24 +87,24 @@ test.describe('S010 — Payment result', () => {
     await seedCart(request);
   });
 
-  test('step 1: success result shows amount ref and title', async ({ page }) => {
-    await completeSuccessPayment(page);
+  test('step 1: success result shows amount ref and title', async ({ page, request }) => {
+    await completeSuccessPayment(page, request);
     await expect(page.locator('[data-testid="checkout-payment-result-success"]')).toBeVisible();
     await expect(page.locator('[data-testid="checkout-payment-result-title"]')).toContainText('ชำระเงินสำเร็จ');
     await expect(page.locator('[data-testid="checkout-payment-result-amount"]')).toContainText('฿');
     await expect(page.locator('[data-testid="checkout-payment-result-ref"]')).toContainText(/Ref\. PP-/);
   });
 
-  test('step 2: success orders CTA links to toship tab', async ({ page }) => {
-    await completeSuccessPayment(page);
+  test('step 2: success orders CTA links to toship tab', async ({ page, request }) => {
+    await completeSuccessPayment(page, request);
     await expect(page.locator('[data-testid="checkout-payment-result-orders-cta"]')).toHaveAttribute(
       'href',
       '/m/orders?tab=toship',
     );
   });
 
-  test('step 3: success home CTA links to home', async ({ page }) => {
-    await completeSuccessPayment(page);
+  test('step 3: success home CTA links to home', async ({ page, request }) => {
+    await completeSuccessPayment(page, request);
     await expect(page.locator('[data-testid="checkout-payment-result-home-cta"]')).toHaveAttribute('href', '/m/home');
   });
 
@@ -126,8 +136,8 @@ test.describe('S010 — Payment result', () => {
     await expect(page.locator('[data-testid="checkout-payment-result-title"]')).toContainText('ไม่สำเร็จ');
   });
 
-  test('step 6: refresh preserves success result session', async ({ page }) => {
-    await completeSuccessPayment(page);
+  test('step 6: refresh preserves success result session', async ({ page, request }) => {
+    await completeSuccessPayment(page, request);
     const refBefore = await page.locator('[data-testid="checkout-payment-result-ref"]').innerText();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-testid="checkout-payment-result-success"]')).toBeVisible({ timeout: 15000 });
@@ -139,7 +149,7 @@ test.describe('S010 — Payment result', () => {
     await expect(page).toHaveURL(/\/m\/checkout/, { timeout: 15000 });
   });
 
-  test('step 8: telemetry posted for payment result', async ({ page }) => {
+  test('step 8: telemetry posted for payment result', async ({ page, request }) => {
     const telemetryHit = page.waitForRequest(
       (req) => {
         if (!req.url().includes('/api/experience/telemetry') || req.method() !== 'POST') return false;
@@ -152,7 +162,7 @@ test.describe('S010 — Payment result', () => {
       },
       { timeout: 35000 },
     );
-    await completeSuccessPayment(page);
+    await completeSuccessPayment(page, request);
     const req = await telemetryHit;
     const body = req.postDataJSON() as { events?: Array<{ scenario_id?: string; surface?: string }> };
     const ev = body.events?.find((e) => e.scenario_id === 'S010' && e.surface === 'payment_result');

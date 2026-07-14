@@ -3,6 +3,9 @@
  */
 import { calcDepositFeeBreakdown } from './aqondPayFees.js';
 import { nextThursdayAfterTodayBangkokYmd } from './thailandDates.js';
+import { tryGenerateWalletFiscalDocumentDraft } from './taxDocumentService.js';
+import { grantPromoOnTopup } from './prbService.js';
+import { scheduleCommerceEmitFromLedger } from './userCommerceEvents.js';
 
 const GROSS_AMOUNT_EPSILON = 0.02;
 
@@ -188,11 +191,11 @@ export async function creditWalletDepositPaysoTx(client, {
       await client.query('RELEASE SAVEPOINT sp_platform_revenue_optional');
     } catch (e) {
       // If optional table/constraint fails, keep main credit transaction healthy.
-      await client.query('ROLLBACK TO SAVEPOINT sp_platform_revenue_optional').catch(() => {});
-      await client.query('RELEASE SAVEPOINT sp_platform_revenue_optional').catch(() => {});
+      await client.query('ROLLBACK TO SAVEPOINT sp_platform_revenue_optional').catch(() => { });
+      await client.query('RELEASE SAVEPOINT sp_platform_revenue_optional').catch(() => { });
       try {
         console.warn('[walletDepositHybrid] optional platform_revenues insert skipped:', e?.message || e);
-      } catch {}
+      } catch { }
     }
   }
 
@@ -236,12 +239,30 @@ export async function creditWalletDepositFromPayso(pool, {
     });
     await client.query('COMMIT');
     if (r.alreadyCredited) {
+      if (r.ledgerId) {
+        await tryGenerateWalletFiscalDocumentDraft(pool, {
+          ledgerId: r.ledgerId,
+          actorType: 'system',
+          actorId: 'wallet_deposit_duplicate_reconcile',
+          reason: 'wallet_deposit_tax_draft_backfill_after_duplicate',
+        });
+      }
       return {
         duplicate: true,
         ledgerId: r.ledgerId,
         available_on: r.available_on,
       };
     }
+    await tryGenerateWalletFiscalDocumentDraft(pool, {
+      ledgerId: r.ledgerId,
+      actorType: 'system',
+      actorId: 'wallet_deposit_payso',
+      reason: 'wallet_deposit_success_tax_draft',
+    });
+    grantPromoOnTopup(pool, userId, grossAmount).catch((e) => {
+      console.warn('[prb] grantPromoOnTopup payso:', e?.message || e);
+    });
+    scheduleCommerceEmitFromLedger(pool, r.ledgerId);
     return {
       ledgerId: r.ledgerId,
       creditAmount: r.creditAmount,
@@ -250,7 +271,7 @@ export async function creditWalletDepositFromPayso(pool, {
       available_on: r.available_on,
     };
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     throw e;
   } finally {
     client.release();
@@ -340,8 +361,12 @@ export async function creditWalletDepositFromManualApproval(pool, {
       [manualDepositId, ledgerId, reviewedBy || 'admin', bankRefId || null]
     );
     await client.query('COMMIT');
+    grantPromoOnTopup(pool, userId, grossAmount).catch((e) => {
+      console.warn('[prb] grantPromoOnTopup manual:', e?.message || e);
+    });
+    scheduleCommerceEmitFromLedger(pool, ledgerId);
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     throw e;
   } finally {
     client.release();

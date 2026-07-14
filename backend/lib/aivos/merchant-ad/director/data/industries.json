@@ -1,0 +1,70 @@
+{
+  "version": "1.0.0",
+  "dimension": "industry",
+  "entries": {
+    "food": {
+      "label_th": "อาหาร",
+      "label_en": "Restaurant / Food",
+      "scene": "Warm Thai restaurant or kitchen, appetizing food visible, casual authentic atmosphere."
+    },
+    "restaurant": {
+      "label_th": "ร้านอาหาร",
+      "label_en": "Restaurant",
+      "scene": "Warm Thai restaurant or kitchen, appetizing food visible, casual authentic atmosphere."
+    },
+    "beauty": {
+      "label_th": "ความงาม",
+      "scene": "Bright beauty studio, soft ring light, clean vanity, skincare or makeup product visible."
+    },
+    "skincare": {
+      "label_th": "สกินแคร์",
+      "scene": "Minimal skincare counter, soft natural light, premium clean aesthetic."
+    },
+    "fashion": {
+      "label_th": "แฟชั่น",
+      "scene": "Stylish boutique or studio, outfit on display, trendy mobile-first framing."
+    },
+    "services": {
+      "label_th": "บริการ",
+      "scene": "Professional service environment, trustworthy clean workspace."
+    },
+    "home_services": {
+      "label_th": "ช่างซ่อม",
+      "scene": "On-site home service context, technician with tools, reliable professional look."
+    },
+    "technician": {
+      "label_th": "ช่าง",
+      "scene": "Worksite or workshop, skilled tradesperson, practical trustworthy tone."
+    },
+    "real_estate": {
+      "label_th": "อสังหา",
+      "scene": "Property exterior or bright interior, natural daylight, inviting space."
+    },
+    "automotive": {
+      "label_th": "รถยนต์",
+      "scene": "Showroom or outdoor lot, vehicle prominently featured, clear daylight."
+    },
+    "healthcare": {
+      "label_th": "สุขภาพ",
+      "scene": "Clean clinic or wellness counter, calm trustworthy medical-adjacent setting."
+    },
+    "marketplace": {
+      "label_th": "ร้านค้าออนไลน์",
+      "scene": "Product-focused mobile shop setup, clear packaging, approachable seller."
+    },
+    "general": {
+      "label_th": "ทั่วไป",
+      "label_en": "General",
+      "scene": "Neutral product showcase, clean background, mobile commerce friendly."
+    },
+    "recruitment": {
+      "label_th": "จ้างงาน",
+      "label_en": "Recruitment",
+      "scene": "Professional office or workplace, welcoming team environment."
+    },
+    "_default": {
+      "label_th": "ทั่วไป",
+      "scene": "Clean product-focused scene suitable for mobile social advertising."
+    }
+  }
+}

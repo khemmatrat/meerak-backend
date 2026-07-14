@@ -1,0 +1,86 @@
+export const BUILTIN_APPLICATIONS = Object.freeze([
+  {
+    id: 'app-resume-ai', name: 'Resume AI', version: '1.0.0', category: 'resume',
+    description: 'AI resume business application',
+    tenantScoped: true, skillBundle: ['ai-resume'], workflowBundle: ['wf-resume'],
+    knowledgeBundle: ['resume'], marketplacePackages: ['resume-ai'],
+    primaryWorkflow: 'wf-resume', requiredCapabilities: ['resume_generation', 'text_generation'],
+    settingsTemplate: { role: { type: 'string' }, goals: { type: 'string' } },
+  },
+  {
+    id: 'app-marketplace-ai', name: 'Marketplace AI', version: '1.0.0', category: 'marketplace',
+    description: 'AI marketplace business application',
+    tenantScoped: true, skillBundle: ['ai-marketplace'], workflowBundle: ['wf-marketplace'],
+    knowledgeBundle: ['catalog'], marketplacePackages: ['resume-ai'],
+    primaryWorkflow: 'wf-marketplace', requiredCapabilities: ['marketplace_generation'],
+    settingsTemplate: { listingTitle: { type: 'string' } },
+  },
+  {
+    id: 'app-restaurant-ai', name: 'Restaurant AI', version: '1.0.0', category: 'restaurant',
+    description: 'Restaurant business application',
+    tenantScoped: true, skillBundle: ['ai-restaurant'], workflowBundle: ['wf-restaurant'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-restaurant', requiredCapabilities: ['food_generation'],
+    settingsTemplate: { cuisine: { type: 'string' } },
+  },
+  {
+    id: 'app-food-ai', name: 'Food AI', version: '1.0.0', category: 'food',
+    description: 'Food delivery business application',
+    tenantScoped: true, skillBundle: ['ai-food'], workflowBundle: ['wf-food-delivery'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-food-delivery', requiredCapabilities: ['food_generation'],
+    settingsTemplate: { deliveryZone: { type: 'string' } },
+  },
+  {
+    id: 'app-hotel-ai', name: 'Hotel AI', version: '1.0.0', category: 'hotel',
+    description: 'Hotel booking business application',
+    tenantScoped: true, skillBundle: ['ai-hotel'], workflowBundle: ['wf-hotel-booking'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-hotel-booking', requiredCapabilities: ['hotel_generation'],
+    settingsTemplate: { city: { type: 'string' } },
+  },
+  {
+    id: 'app-trip-ai', name: 'Trip AI', version: '1.0.0', category: 'trip',
+    description: 'Trip planner business application',
+    tenantScoped: true, skillBundle: ['ai-trip'], workflowBundle: ['wf-trip-planner'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-trip-planner', requiredCapabilities: ['travel_generation'],
+    settingsTemplate: { destination: { type: 'string' } },
+  },
+  {
+    id: 'app-insurance-ai', name: 'Insurance AI', version: '1.0.0', category: 'insurance',
+    description: 'Insurance business application',
+    tenantScoped: true, skillBundle: ['ai-insurance'], workflowBundle: ['wf-insurance'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-insurance', requiredCapabilities: ['insurance_generation'],
+    settingsTemplate: { coverageType: { type: 'string' } },
+  },
+  {
+    id: 'app-commerce-ai', name: 'Commerce AI', version: '1.0.0', category: 'commerce',
+    description: 'Commerce business application',
+    tenantScoped: true, skillBundle: ['ai-marketplace'], workflowBundle: ['wf-commerce'],
+    knowledgeBundle: ['catalog'], marketplacePackages: [],
+    primaryWorkflow: 'wf-commerce', requiredCapabilities: ['marketplace_generation'],
+    settingsTemplate: { productName: { type: 'string' } },
+  },
+  {
+    id: 'app-lead-gen-ai', name: 'Lead Generation AI', version: '1.0.0', category: 'lead_generation',
+    description: 'Lead generation business application',
+    tenantScoped: true, skillBundle: ['ai-marketplace'], workflowBundle: ['wf-lead-generation'],
+    knowledgeBundle: [], marketplacePackages: [],
+    primaryWorkflow: 'wf-lead-generation', requiredCapabilities: ['text_generation', 'marketplace_generation'],
+    settingsTemplate: { leadSource: { type: 'string' } },
+  },
+  {
+    id: 'app-video-marketing-ai', name: 'Video Marketing AI', version: '1.0.0', category: 'video_marketing',
+    description: 'Video marketing business application',
+    tenantScoped: true, skillBundle: ['ai-resume'], workflowBundle: ['wf-video-marketing'],
+    knowledgeBundle: [], marketplacePackages: ['resume-ai'],
+    primaryWorkflow: 'wf-video-marketing', requiredCapabilities: ['video_generation', 'text_generation'],
+    settingsTemplate: { campaignName: { type: 'string' } },
+  },
+]);
+
+export function getApplicationTemplate(id) {
+  return BUILTIN_APPLICATIONS.find((a) => a.id === id) || null;
+}

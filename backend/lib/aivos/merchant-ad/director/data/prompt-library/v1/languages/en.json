@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "en",
+  "spoken_instruction": "Speak in English",
+  "placeholder_spoken": "Introducing {product}. {cta}",
+  "motion_hint": "Handheld selfie",
+  "tone_hint": "Friendly"
+}

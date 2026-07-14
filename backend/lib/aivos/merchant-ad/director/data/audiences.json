@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "dimension": "target_audience",
+  "entries": {
+    "all": {
+      "tone_hint": "Broad appeal, friendly and inclusive."
+    },
+    "women": {
+      "tone_hint": "Speak to women shoppers, relatable daily-life benefits."
+    },
+    "men": {
+      "tone_hint": "Speak to men shoppers, practical direct benefits."
+    },
+    "office": {
+      "tone_hint": "Busy office workers, convenience and time-saving."
+    },
+    "family": {
+      "tone_hint": "Families, value, safety, and sharing moments."
+    },
+    "students": {
+      "tone_hint": "Students, budget-friendly and trendy."
+    },
+    "_default": {
+      "tone_hint": "Friendly broad audience on mobile."
+    }
+  }
+}

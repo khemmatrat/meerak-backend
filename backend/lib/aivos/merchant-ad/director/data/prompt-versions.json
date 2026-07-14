@@ -1,0 +1,21 @@
+{
+  "active": "v3",
+  "default": "v3",
+  "versions": {
+    "v1": {
+      "label": "Initial composition",
+      "catalog": "prompt-catalog.v1.json",
+      "library_root": "prompt-library/v1"
+    },
+    "v2": {
+      "label": "Multi-language expansion",
+      "catalog": "prompt-catalog.v2.json",
+      "library_root": "prompt-library/v2"
+    },
+    "v3": {
+      "label": "Full dimension composition + provider wrappers",
+      "catalog": "prompt-catalog.json",
+      "library_root": "prompt-library/v3"
+    }
+  }
+}

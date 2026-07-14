@@ -1,0 +1,22 @@
+[Unit]
+Description=Aqond Discord Commander — รับคำสั่งใน #commander 24/7
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=15
+WorkingDirectory=/opt/aqond-brain
+
+# เริ่ม orchestrator + pinky-watch พร้อมกันเมื่อเจ้านายพิมพ์ !all start (ต้องมี unit เหล่านี้)
+Environment=AQOND_SYSTEMD_UNITS=aqond-orchestrator.service pinky-watch.service
+
+ExecStart=/usr/bin/python3 /opt/aqond-brain/scripts/discord_commander.py
+
+User=www-data
+Group=www-data
+UMask=002
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,205 @@
+# =============================================================================
+# AQOND Go Live v1.2 — ใช้ admin-1.3, landing-1.2, mobile-1.2, backend-1.2/, ads-admin-core/
+# Postgres + Redis ใช้ของ Docker บน server นี้
+# บนเซิร์ฟเวอร์โฟลเดอร์ backend-1.2 = ซอร์สหลักสำหรับ build ภาพ backend (โฟลเดอร์ backend/ บนเซิร์ฟเวอร์ถ้ามีอยู่อาจเป็นเวอร์ชันเก่า — อย่านำไปเป็น build context)
+# เวลาปล่อยงานจากเครื่องซอร์ส: ให้ backend-1.2 เป็น mirror เต็มของโฟลเดอร์ meerak/backend/ (WinSCP ลากจาก g:\...\meerak\backend)
+# =============================================================================
+# รัน: cd ~/apps && docker compose -f docker-compose.golive.v12.yml up -d
+# Ports: Mobile 3000 | Backend 3001 | Admin 8080 | Ads Admin 8082 | Landing 3009
+#
+# PaySo / วอลเล็ต QR: ต้องอยู่ใน **ไฟล์ .env ที่โฟลเดอร์เดียวกับ compose นี้** (เช่น ~/apps/.env)
+# ที่ backend service ใช้ env_file — ถ้าใส่แค่ใน backend-1.2/.env บนซอร์สโฟลเดอร์แต่ไม่ได้ใส่ใน ~/apps/.env
+# คอนเทนเนอร์จะไม่ได้ PAYSO_* → แอดมินจะเห็นสวิตซ์ QR ปิด / effectiveOff
+# หลังแก้ .env: docker compose -f docker-compose.golive.v12.yml up -d --force-recreate backend
+# =============================================================================
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: aqond-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meera
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-meera123}
+      POSTGRES_DB: meera_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meera -d meera_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: aqond-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      # build context = โฟลเดอร์ backend-1.2 ใน ~/apps (ลากซิงค์จาก repo backend/)
+      # Dockerfile ต้องจาก repo เช่นเดียวกัน (node:20-alpine, WORKDIR /app/backend, COPY . .) — ห้ามเทมเพลต node:18-slim + WORKDIR /app
+      context: ./backend-1.2
+      dockerfile: Dockerfile
+    image: aqond-backend:latest
+    container_name: aqond-backend
+    restart: unless-stopped
+    working_dir: /app/backend
+    # ไม่ mount volume — ใช้ image ที่ build แล้ว (หลีกเลี่ยง permission + Node version)
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: meera_db
+      DB_USER: meera
+      DB_PASSWORD: ${DB_PASSWORD:-meera123}
+      # ถ้าใช้ Neon — ในไฟล์ .env ใส่ USE_DATABASE_URL=1 และ DATABASE_URL=.../meera_db (ไม่ต้องแก้บรรทัดด้านบนถ้าใช้ URL)
+      USE_DATABASE_URL: ${USE_DATABASE_URL:-0}
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+      NODE_ENV: production
+      # PaySo_* อย่าใส่เป็นบรรทัดว่างใน environment — จะไปทับค่าจาก env_file ด้านบนให้ว่างเปล่า
+      # ให้ประกาศ PAYSO_ENABLED=1 และ PAYSO_* ทั้งชุดในไฟล์ ~/apps/.env เท่านั้น (env_file เดียวกับบรรทัด env_file: .env)
+    ports:
+      - "3001:3001"
+    command: node server.js
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Admin: อย่ารัน npm build ทุกครั้งที่สตาร์ท — กิน CPU 100% บน VPS เล็ก
+  # ถ้ามี admin-1.3/dist แล้ว → serve อย่างเดียว | ถ้าไม่มี → build ครั้งแรกหรือหลัง deploy โค้ดใหม่
+  admin:
+    image: node:20-alpine
+    container_name: aqond-admin
+    restart: unless-stopped
+    working_dir: /app/admin-1.3
+    volumes:
+      - .:/app
+    environment:
+      VITE_ADMIN_API_URL: ${VITE_ADMIN_API_URL:-https://api.aqond.com}
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-https://api.aqond.com}
+    ports:
+      - "8080:8080"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        export VITE_ADMIN_API_URL="$${VITE_ADMIN_API_URL:-https://api.aqond.com}"
+        export VITE_BACKEND_URL="$${VITE_BACKEND_URL:-https://api.aqond.com}"
+        if [ -f dist/index.html ]; then
+          echo "aqond-admin: serve dist เดิม (ไม่ build — ประหยัด CPU)"
+          exec npx serve -s dist -l 8080 --listen tcp://0.0.0.0:8080
+        fi
+        echo "aqond-admin: ไม่มี dist — กำลัง npm install + build (ครั้งนี้ใช้ CPU สูงเป็นปกติ)"
+        # lockfile เก่า (npm 7/8) มีแพ็กเกจ alias ที่ npm 10+ หาไม่เจอ (ETARGET string-width-cjs / strip-ansi-cjs / wrap-ansi-cjs)
+        rm -rf node_modules
+        rm -f package-lock.json
+        npm install --legacy-peer-deps
+        npm run build
+        exec npx serve -s dist -l 8080 --listen tcp://0.0.0.0:8080
+    depends_on:
+      - backend
+
+  # Ads Admin (ads-admin-core) — static Vite build, API ผ่าน https://api.aqond.com/api/ads-admin/*
+  ads-admin:
+    image: node:20-alpine
+    container_name: aqond-ads-admin
+    restart: unless-stopped
+    working_dir: /app/ads-admin-core
+    volumes:
+      - .:/app
+    environment:
+      VITE_ADS_ADMIN_API_URL: ${VITE_ADS_ADMIN_API_URL:-https://api.aqond.com}
+      VITE_ADMIN_API_URL: ${VITE_ADMIN_API_URL:-https://api.aqond.com}
+    ports:
+      - "8082:8082"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        export VITE_ADS_ADMIN_API_URL="$${VITE_ADS_ADMIN_API_URL:-https://api.aqond.com}"
+        export VITE_ADMIN_API_URL="$${VITE_ADMIN_API_URL:-https://api.aqond.com}"
+        echo "aqond-ads-admin: npm install + build (ลบ dist เก่าก่อนเสมอ)"
+        rm -rf dist node_modules
+        rm -f package-lock.json
+        npm install --legacy-peer-deps
+        npm run build
+        if ! grep -q 'api.aqond.com' dist/assets/index-*.js 2>/dev/null; then
+          echo "ERROR: build ไม่มี api.aqond.com ใน bundle — หยุด"
+          exit 1
+        fi
+        exec npx --yes serve -s dist -l tcp://0.0.0.0:8082
+    depends_on:
+      - backend
+
+  landing:
+    image: node:20-alpine
+    container_name: aqond-landing
+    restart: unless-stopped
+    working_dir: /app/landing-1.2
+    volumes:
+      - .:/app
+    ports:
+      - "3009:3009"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f dist/index.html ]; then
+          echo "aqond-landing: serve dist เดิม (ไม่ build)"
+          exec npx serve -s dist -l 3009 --listen tcp://0.0.0.0:3009
+        fi
+        echo "aqond-landing: ไม่มี dist — กำลัง build"
+        npm install
+        npm run build
+        exec npx serve -s dist -l 3009 --listen tcp://0.0.0.0:3009
+    depends_on:
+      - backend
+
+  mobile:
+    image: node:20-alpine
+    container_name: aqond-mobile
+    restart: unless-stopped
+    working_dir: /app/mobile-1.2
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      VITE_BACKEND_URL: "${VITE_BACKEND_URL:-https://api.aqond.com}"
+      VITE_BACKEND_URL_HTTPS: "${VITE_BACKEND_URL_HTTPS:-https://api.aqond.com}"
+      VITE_FIREBASE_API_KEY: "${VITE_FIREBASE_API_KEY:-}"
+      VITE_FIREBASE_AUTH_DOMAIN: "${VITE_FIREBASE_AUTH_DOMAIN:-aqond-production.firebaseapp.com}"
+      VITE_FIREBASE_PROJECT_ID: "${VITE_FIREBASE_PROJECT_ID:-aqond-production}"
+      VITE_FIREBASE_STORAGE_BUCKET: "${VITE_FIREBASE_STORAGE_BUCKET:-aqond-production.firebasestorage.app}"
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "${VITE_FIREBASE_MESSAGING_SENDER_ID:-187301416431}"
+      VITE_FIREBASE_APP_ID: "${VITE_FIREBASE_APP_ID:-1:187301416431:web:774a67a1d8554faccbfa1a}"
+    ports:
+      - "3000:3000"
+    command: sh -c "npx serve -s dist -l 3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

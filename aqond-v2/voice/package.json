@@ -1,0 +1,14 @@
+{
+  "name": "@aqond/voice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./locales": "./lib/locales.js",
+    "./ttsPersona": "./lib/ttsPersona.js",
+    "./latency": "./lib/latency.js",
+    "./riderConvergence": "./lib/riderConvergence.js"
+  }
+}

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Live</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.0/dist/livekit-client.umd.min.js"></script>
+  <style>
+    :root { --bg: #0b1020; --text: #e8edf5; --muted: #8fa3bf; --ok: #16a34a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #243049; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 1rem; position: relative; }
+    video { width: 100%; background: #000; border-radius: 12px; aspect-ratio: 16/9; }
+    .fcode {
+      position: absolute; left: 1.5rem; bottom: 1.5rem; max-width: 280px;
+      background: rgba(15, 23, 42, 0.92); border: 1px solid #334155; border-radius: 12px;
+      padding: 0.75rem; display: none; backdrop-filter: blur(6px);
+    }
+    .fcode.show { display: flex; gap: 0.65rem; align-items: center; }
+    .fcode img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
+    .fcode .code { font-size: 0.7rem; color: #fbbf24; font-weight: 700; }
+    .fcode .title { font-size: 0.85rem; font-weight: 600; }
+    .fcode .price { color: #4ade80; font-weight: 700; }
+    .buy { margin-top: 0.35rem; width: 100%; padding: 0.4rem; border: none; border-radius: 6px; background: var(--ok); color: #fff; font-weight: 600; cursor: pointer; font-size: 0.8rem; }
+    #status { color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem; }
+    .join { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    input { flex: 1; min-width: 180px; padding: 0.55rem; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: var(--text); }
+    button { padding: 0.55rem 1rem; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header><strong>AQOND Live</strong> <span style="color:#64748b;font-size:0.85rem">P4 viewer + F-Code</span></header>
+  <div class="wrap">
+    <div style="position:relative">
+      <video id="remote" autoplay playsinline></video>
+      <div id="fcode" class="fcode">
+        <img id="fcImg" alt="" />
+        <div>
+          <div class="code" id="fcCode">F-CODE</div>
+          <div class="title" id="fcTitle">—</div>
+          <div class="price" id="fcPrice">—</div>
+          <button class="buy" id="fcBuy">ซื้อเลย (Escrow HOLD)</button>
+          <a id="fcCloser" href="/api/v1/voice/closer" style="display:block;margin-top:0.35rem;font-size:0.75rem;color:#c4b5fd;text-align:center">🎙 คุยกับ Live Closer</a>
+        </div>
+      </div>
+    </div>
+    <div id="status">กรอก Room ID หรือเปิดลิงก์จาก Studio</div>
+    <div class="join" id="joinBar" style="display:none">
+      <input id="roomInput" placeholder="live-merchant-..." />
+      <button id="btnJoin">เข้าชม</button>
+    </div>
+  </div>
+  <script>
+    const LK = window.LivekitClient || window.LiveKit;
+    const { Room, RoomEvent } = LK;
+    let room = null;
+    let roomName = null;
+    let currentExt = null;
+
+    function setStatus(msg) { document.getElementById("status").textContent = msg; }
+
+    function track(ev) {
+      fetch("/api/v1/analytics/events/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ev),
+      }).catch(() => {});
+    }
+
+    function showOverlay(o) {
+      if (!o) return;
+      currentExt = o.external_id || o.product_id;
+      document.getElementById("fcode").classList.add("show");
+      document.getElementById("fcCode").textContent = o.f_code || ("F-" + String(currentExt).slice(-8).toUpperCase());
+      document.getElementById("fcTitle").textContent = o.title || "สินค้า";
+      document.getElementById("fcPrice").textContent = (o.price_thb || 0) + " THB";
+      const img = o.image_url || "";
+      document.getElementById("fcImg").src = img;
+      document.getElementById("fcImg").style.display = img ? "block" : "none";
+      document.getElementById("fcCloser").href =
+        "/api/v1/voice/closer?product=" + encodeURIComponent(currentExt) + "&room=" + encodeURIComponent(roomName || "");
+      if (roomName && currentExt) {
+        track({
+          stream_id: roomName,
+          product_id: currentExt,
+          event_type: "f_code_view",
+          session_id: sessionStorage.getItem("aqond_watch") || roomName,
+        });
+      }
+    }
+
+    async function pollOverlay() {
+      if (!roomName) return;
+      try {
+        const res = await fetch("/api/v1/live/overlay/" + encodeURIComponent(roomName));
+        const data = await res.json();
+        if (data.overlay) showOverlay(data.overlay);
+      } catch (_) {}
+    }
+
+    async function joinRoom(name) {
+      roomName = name;
+      setStatus("กำลังเชื่อมต่อ " + name + "…");
+      const identity = "viewer-" + crypto.randomUUID().slice(0, 8);
+      const tr = await fetch("/api/v1/live/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_name: roomName, identity, can_publish: false }),
+      });
+      const tok = await tr.json();
+      if (!tr.ok) throw new Error(tok.error || tr.status);
+
+      room = new Room();
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === "video") {
+          track.attach(document.getElementById("remote"));
+        }
+      });
+      room.on(RoomEvent.DataReceived, (payload) => {
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload));
+          if (msg.type === "f-code" && msg.overlay) showOverlay(msg.overlay);
+        } catch (_) {}
+      });
+      await room.connect(tok.url, tok.token);
+      if (!sessionStorage.getItem("aqond_watch")) sessionStorage.setItem("aqond_watch", crypto.randomUUID().slice(0, 8));
+      track({ stream_id: roomName, event_type: "live_join", session_id: sessionStorage.getItem("aqond_watch") });
+      setStatus("กำลังดูไลฟ์ · " + roomName);
+      await pollOverlay();
+      setInterval(pollOverlay, 3000);
+    }
+
+    document.getElementById("fcBuy").addEventListener("click", async () => {
+      if (!currentExt) return;
+      const btn = document.getElementById("fcBuy");
+      btn.disabled = true;
+      btn.textContent = "กำลัง HOLD…";
+      try {
+        const res = await fetch("/api/v1/marketplace/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ external_id: currentExt, buyer_id: "live-" + crypto.randomUUID().slice(0, 8), qty: 1 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.status);
+        btn.textContent = "สั่งซื้อแล้ว ✓";
+        setStatus("Order " + data.order.order_id + " · Escrow HOLD " + data.amount_thb + " THB");
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "ซื้อเลย (Escrow HOLD)";
+        alert(e.message);
+      }
+    });
+
+    document.getElementById("btnJoin").addEventListener("click", () => {
+      const v = document.getElementById("roomInput").value.trim();
+      if (v) joinRoom(v).catch((e) => alert(e.message));
+    });
+
+    const params = new URLSearchParams(location.search);
+    const qRoom = params.get("room");
+    if (qRoom) {
+      joinRoom(qRoom).catch((e) => {
+        setStatus("เชื่อมต่อไม่ได้: " + e.message);
+        document.getElementById("joinBar").style.display = "flex";
+        document.getElementById("roomInput").value = qRoom;
+      });
+    } else {
+      document.getElementById("joinBar").style.display = "flex";
+    }
+  </script>
+</body>
+</html>

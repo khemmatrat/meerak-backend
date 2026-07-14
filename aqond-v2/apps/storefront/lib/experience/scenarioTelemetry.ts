@@ -364,6 +364,37 @@ function recordCartTelemetry(
   });
 }
 
+export function recordDeliveryProvinceConfigTelemetry(input: {
+  source?: string;
+  enabled_count?: number;
+  max_pickup_radius_km?: number;
+  loadMs?: number;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('B2.5-S002', 'delivery_province_config', {
+    loadMs: input.loadMs,
+    source: input.source,
+    productCount: input.enabled_count,
+    traceId: input.traceId,
+  });
+}
+
+export function recordDeliveryConfigTelemetry(input: {
+  source?: string;
+  province_count?: number;
+  express_province_count?: number;
+  max_pickup_radius_km?: number;
+  loadMs?: number;
+  traceId?: string;
+}) {
+  recordScenarioTelemetry('B2.5-S001', 'delivery_core_config', {
+    loadMs: input.loadMs,
+    source: input.source,
+    productCount: input.province_count,
+    traceId: input.traceId,
+  });
+}
+
 export function recordScenarioTelemetry(
   scenarioId: string,
   surface: string,

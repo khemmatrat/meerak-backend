@@ -13,10 +13,11 @@ function tokenize(text) {
  * Smart Match: คำนวณคะแนนความคล้ายคลึงจาก Keyword Match
  * @returns { { question, best_answer, category, score } | null } score 0-1
  */
-async function searchFaq(pool, userQuery) {
+async function searchFaq(pool, userQuery, options = {}) {
   if (!pool || !userQuery || typeof userQuery !== 'string') return null;
   const query = userQuery.trim();
   if (!query) return null;
+  const minScore = Number.isFinite(Number(options.minScore)) ? Number(options.minScore) : 0.4;
 
   try {
     const rows = await pool.query(
@@ -34,8 +35,9 @@ async function searchFaq(pool, userQuery) {
       if (score > best.score) best = { score, row };
     }
 
-    if (best.row && best.score >= 0.4) {
+    if (best.row && best.score >= minScore) {
       return {
+        id: best.row.id,
         question: best.row.question,
         best_answer: best.row.best_answer,
         category: best.row.category || 'general',

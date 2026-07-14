@@ -1,0 +1,219 @@
+/**
+ * AQOND Rider OS — AXS token bridge (Sprint 24)
+ * Scoped to .axs-rider — does not affect food / marketplace
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-rider {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  min-height: 100vh;
+  font-family: var(--axs-font-sans);
+}
+
+/* —— Shell —— */
+.axs-rider .tt-rider-premium {
+  background: var(--axs-bg);
+  color: var(--axs-text);
+}
+
+.axs-rider .tt-rider-premium-header {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-rider .tt-rider-premium-back,
+.axs-rider .tt-rider-premium-gear {
+  background: var(--axs-surface-2);
+  color: var(--axs-text-secondary);
+}
+
+.axs-rider .tt-rider-premium-icon {
+  color: var(--axs-primary);
+}
+
+.axs-rider .tt-rider-premium-title h1 {
+  color: var(--axs-text);
+}
+
+.axs-rider .tt-rider-os-nav {
+  background: var(--axs-surface);
+  border-top-color: var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.06);
+}
+
+.axs-rider .tt-rider-os-nav a.active {
+  color: var(--axs-primary);
+}
+
+.axs-rider .tt-rider-fcm-banner {
+  background: rgba(184, 134, 11, 0.08);
+  border-color: rgba(184, 134, 11, 0.25);
+}
+
+.axs-rider .tt-rider-fcm-banner strong {
+  color: var(--axs-primary-hover);
+}
+
+.axs-rider .tt-rider-fcm-ok-chip {
+  margin: 0 0 10px;
+  display: inline-flex;
+}
+
+/* —— CTAs —— */
+.axs-rider .tt-rider-accept-btn,
+.axs-rider .tt-rider-kyc-btn,
+.axs-rider .tt-rider-push-btn {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+  transition: filter var(--axs-duration) var(--axs-ease-out);
+}
+
+.axs-rider .tt-rider-accept-btn:hover:not(:disabled),
+.axs-rider .tt-rider-kyc-btn:hover,
+.axs-rider .tt-rider-push-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.axs-rider .tt-rider-kyc-btn {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  padding: 12px 16px;
+}
+
+/* —— Home —— */
+.axs-rider .tt-rider-home-hero {
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-rider .tt-rider-online-toggle.on {
+  background: rgba(184, 134, 11, 0.12);
+  border-color: var(--axs-primary);
+  color: var(--axs-primary-hover);
+}
+
+.axs-rider .tt-rider-online-toggle.on .tt-rider-online-dot {
+  background: var(--axs-primary);
+  box-shadow: 0 0 0 4px rgba(184, 134, 11, 0.2);
+}
+
+.axs-rider .tt-rider-gps-badge.ok {
+  background: rgba(21, 128, 61, 0.1);
+  color: var(--axs-success);
+}
+
+.axs-rider .tt-rider-stat-card,
+.axs-rider .tt-rider-quick-card,
+.axs-rider .tt-rider-job-card,
+.axs-rider .tt-rider-empty-card,
+.axs-rider .tt-rider-loading-card,
+.axs-rider .tt-rider-earnings-card,
+.axs-rider .tt-rider-profile-card {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-rider .tt-rider-job-card.selected {
+  border-color: var(--axs-primary);
+  box-shadow: 0 0 0 2px rgba(184, 134, 11, 0.2);
+}
+
+.axs-rider .tt-rider-active-banner {
+  background: linear-gradient(135deg, #1c1917 0%, #44403c 100%);
+  border-radius: var(--axs-radius-card);
+  color: #fafaf9;
+}
+
+.axs-rider .tt-rider-link {
+  color: var(--axs-primary);
+}
+
+.axs-rider .tt-rider-pulse {
+  background: var(--axs-primary);
+}
+
+.axs-rider .tt-rider-spinner {
+  border-top-color: var(--axs-primary);
+}
+
+/* —— Profile —— */
+.axs-rider .tt-rider-profile-avatar {
+  background: rgba(184, 134, 11, 0.15);
+  color: var(--axs-primary-hover);
+}
+
+.axs-rider .tt-rider-profile-kyc {
+  color: var(--axs-primary);
+}
+
+.axs-rider .tt-rider-menu-list {
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  border-radius: var(--axs-radius-card);
+}
+
+.axs-rider .tt-rider-menu-link {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+}
+
+/* —— Map / Active —— */
+.axs-rider .tt-rider-map-sheet {
+  background: var(--axs-surface);
+  border-top-color: var(--axs-border);
+  box-shadow: var(--axs-shadow-lg);
+}
+
+.axs-rider .tt-rider-active-page .tt-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+}
+
+.axs-rider .tt-rider-voice-mic.on {
+  background: var(--axs-gradient-gold);
+}
+
+/* —— AXS rider blocks —— */
+.axs-rider-loading {
+  padding: var(--axs-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-rider-loading-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--axs-space-2);
+}
+
+.axs-rider-loading-stat {
+  height: 72px;
+  border-radius: var(--axs-radius-card);
+}
+
+.axs-rider-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--axs-space-2);
+  align-items: center;
+}

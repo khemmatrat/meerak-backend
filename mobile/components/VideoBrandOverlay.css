@@ -1,0 +1,5 @@
+/* บังคับสีขาว — override theme ที่ใช้ !important */
+.video-brand-overlay-watermark .video-brand-overlay-text,
+.video-brand-overlay-endcard .video-brand-overlay-text {
+  color: #ffffff !important;
+}

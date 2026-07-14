@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Shop</title>
+  <style>
+    :root { --bg: #0b1020; --card: #151d30; --text: #e8edf5; --muted: #8fa3bf; --accent: #2563eb; --ok: #16a34a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #243049; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    header a { color: var(--accent); text-decoration: none; }
+    main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+    .card { background: var(--card); border-radius: 14px; overflow: hidden; border: 1px solid #243049; display: flex; flex-direction: column; }
+    .card img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #0f172a; display: block; }
+    .card .body { padding: 0.85rem; flex: 1; }
+    .price { color: #4ade80; font-weight: 700; font-size: 1.1rem; }
+    .cat { color: var(--muted); font-size: 0.8rem; margin-top: 0.25rem; }
+    .buy { margin-top: 0.75rem; width: 100%; padding: 0.55rem; border: none; border-radius: 8px; background: var(--ok); color: #fff; font-weight: 600; cursor: pointer; }
+    .buy:disabled { opacity: 0.5; cursor: wait; }
+    .empty { color: var(--muted); padding: 2rem; text-align: center; }
+    .badge { font-size: 0.75rem; background: #1e3a5f; color: #93c5fd; padding: 0.2rem 0.5rem; border-radius: 999px; }
+    #toast { position: fixed; bottom: 1rem; right: 1rem; background: #14532d; color: #fff; padding: 0.75rem 1rem; border-radius: 10px; display: none; max-width: 320px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>AQOND Marketplace</strong> <span class="badge">P2b checkout</span></div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <a href="/api/v1/live/studio" style="color:#93c5fd">🔴 ไลฟ์ขาย</a>
+      <a href="/api/v1/voice/closer" style="color:#c4b5fd">🎙 Live Closer</a>
+      <a href="/api/v1/analytics/dashboard">📊 Analytics</a>
+      <a href="/api/v1/cms/onboard">+ ลงสินค้าด้วย AI</a>
+    </div>
+  </header>
+  <main>
+    <div id="grid" class="grid"></div>
+    <p id="empty" class="empty" style="display:none">ยังไม่มีสินค้าเผยแพร่ — <a href="/api/v1/cms/onboard">อัปโหลดแล้วกด Publish</a></p>
+  </main>
+  <div id="toast"></div>
+  <script>
+    function track(ev) {
+      fetch("/api/v1/analytics/events/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ev),
+      }).catch(() => {});
+    }
+
+    function toast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      setTimeout(() => { t.style.display = "none"; }, 5000);
+    }
+
+    async function checkout(externalId, btn) {
+      btn.disabled = true;
+      btn.textContent = "กำลัง HOLD escrow…";
+      try {
+        const res = await fetch("/api/v1/marketplace/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ external_id: externalId, buyer_id: "guest-" + crypto.randomUUID().slice(0, 8), qty: 1 }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.status);
+        toast(`สั่งซื้อสำเร็จ · Order ${data.order.order_id} · Escrow HOLD ${data.amount_thb} THB`);
+        btn.textContent = "สั่งซื้อแล้ว";
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "ซื้อเลย";
+        alert("Checkout: " + e.message);
+      }
+    }
+
+    async function load() {
+      const grid = document.getElementById("grid");
+      const empty = document.getElementById("empty");
+      try {
+        const res = await fetch("/api/v1/marketplace/products?limit=48");
+        const data = await res.json();
+        const products = data.products || [];
+        if (!products.length) {
+          empty.style.display = "block";
+          return;
+        }
+        grid.innerHTML = products.map((p) => {
+          const img = p.image_uris?.[0] || "";
+          const ext = p.external_id;
+          return `<article class="card">
+            ${img ? `<img src="${img}" alt="${p.title}" loading="lazy" />` : `<div style="aspect-ratio:1;background:#0f172a;display:grid;place-items:center;color:#64748b">ไม่มีรูป</div>`}
+            <div class="body">
+              <div>${p.title}</div>
+              <div class="price">${Number(p.price).toLocaleString()} THB</div>
+              <div class="cat">${p.category} · สต็อก ${p.inventory}</div>
+              <button class="buy" data-ext="${ext}">ซื้อเลย (Escrow HOLD)</button>
+            </div>
+          </article>`;
+        }).join("");
+        grid.querySelectorAll(".buy").forEach((btn) => {
+          btn.addEventListener("click", () => checkout(btn.dataset.ext, btn));
+        });
+        products.forEach((p) => {
+          if (!sessionStorage.getItem("aqond_sid")) sessionStorage.setItem("aqond_sid", crypto.randomUUID());
+          track({
+            stream_id: "shop",
+            product_id: p.external_id,
+            merchant_id: p.merchant_hint || "shop",
+            event_type: "impression",
+            session_id: sessionStorage.getItem("aqond_sid"),
+          });
+        });
+      } catch (e) {
+        empty.textContent = "โหลดไม่สำเร็จ: " + e.message;
+        empty.style.display = "block";
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[Unit]
+Description=Aqond Pinky Watch — รัน Pinky ทันทีเมื่อ pipeline มีการอัปเดต
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+WorkingDirectory=/opt/aqond-brain
+EnvironmentFile=-/etc/default/aqond-pinky
+# เช็กทุก 120 วินาที (ปรับใน /etc/default/aqond-pinky ได้)
+Environment=PINKY_WATCH_INTERVAL=120
+ExecStart=/usr/bin/python3 /opt/aqond-brain/scripts/pinky_watch.py
+
+User=www-data
+Group=www-data
+UMask=002
+
+[Install]
+WantedBy=multi-user.target

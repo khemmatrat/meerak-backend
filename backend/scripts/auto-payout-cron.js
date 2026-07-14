@@ -26,6 +26,8 @@ import {
   isAutoPayoutGatewayTransferEnabled,
   getPaymentGatewaySecretKey,
 } from '../lib/paymentManager.js';
+import { releaseEligibleCoursePayouts } from '../lib/coursePayoutService.js';
+import { runCoursePayoutReleaseSideEffects } from '../lib/coursePayoutSideEffects.js';
 import {
   getSoleCompanyDisbursementInfo,
   isPayoutDestinationCompanySoleDisbursementSync,
@@ -48,6 +50,8 @@ const RELEASE_ENABLED = process.env.AUTO_PAYOUT_RELEASE_ENABLED !== '0';
 const RELEASE_HOURS = parseInt(process.env.AUTO_PAYOUT_RELEASE_HOURS || '24', 10);
 const JOB_LIMIT = parseInt(process.env.AUTO_PAYOUT_JOB_LIMIT || '100', 10);
 const REQUEST_LIMIT = parseInt(process.env.AUTO_PAYOUT_REQUEST_LIMIT || '50', 10);
+const COURSE_RELEASE_ENABLED = process.env.AUTO_COURSE_PAYOUT_RELEASE_ENABLED !== '0';
+const COURSE_RELEASE_LIMIT = parseInt(process.env.AUTO_COURSE_PAYOUT_RELEASE_LIMIT || '100', 10);
 
 async function isWalletFrozen(userId) {
   if (!userId) return false;
@@ -314,10 +318,42 @@ async function runAutoPayoutGatewayTransfer() {
 
 export { runAutoPayoutGatewayTransfer };
 
+/** Course marketplace: release held instructor_net → withdrawable after hold window */
+async function runCoursePayoutRelease() {
+  if (!COURSE_RELEASE_ENABLED) {
+    console.log('[auto-payout] Course payout release disabled (AUTO_COURSE_PAYOUT_RELEASE_ENABLED=0)');
+    return { released: 0, orders: [], errors: [] };
+  }
+  const errors = [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await releaseEligibleCoursePayouts(client, {
+      limit: COURSE_RELEASE_LIMIT,
+      actorId: 'auto-payout-cron',
+    });
+    await client.query('COMMIT');
+    await runCoursePayoutReleaseSideEffects(pool, null, result);
+    console.log(`[auto-payout] Course payout release: ${result.count} orders, blocked ${(result.blocked || []).length}`);
+    return { released: result.count, orders: result.released || [], blocked: result.blocked || [], errors };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    errors.push({ error: err.message });
+    console.error('[auto-payout] Course payout release error:', err.message);
+    return { released: 0, orders: [], errors };
+  } finally {
+    client.release();
+  }
+}
+
+export { runCoursePayoutRelease };
+
 async function main() {
   console.log('[auto-payout] Starting cron run...');
   const releaseResult = await runAutoRelease();
   console.log(`[auto-payout] Auto-release: ${releaseResult.released} jobs released`);
+  const courseReleaseResult = await runCoursePayoutRelease();
+  console.log(`[auto-payout] Course payout release: ${courseReleaseResult.released} orders`);
   const payoutResult = await runAutoPayoutGatewayTransfer();
   console.log(`[auto-payout] Auto-payout gateway: ${payoutResult.processed} processed`);
   if (releaseResult.errors.length || payoutResult.errors.length) {

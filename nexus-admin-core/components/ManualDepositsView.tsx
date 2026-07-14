@@ -1,5 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Banknote, CheckCircle, ExternalLink, RefreshCw, XCircle } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Banknote,
+  CheckCircle,
+  ExternalLink,
+  RefreshCw,
+  XCircle,
+} from "lucide-react";
 import {
   downloadManualDepositsCsv,
   downloadWalletDepositChargesCsv,
@@ -17,7 +23,12 @@ import {
 
 function fmtThb(v: unknown): string {
   const n = Number(v);
-  return Number.isFinite(n) ? n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
+  return Number.isFinite(n)
+    ? n.toLocaleString("th-TH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : "-";
 }
 
 /** จาก backend rejection_reason JSON */
@@ -30,11 +41,17 @@ function parseRejection(rr: string | null | undefined): {
   const t = rr.trim();
   if (!t.startsWith("{")) return { message: t };
   try {
-    const o = JSON.parse(t) as { message?: string; internal_note?: string; code?: string };
+    const o = JSON.parse(t) as {
+      message?: string;
+      internal_note?: string;
+      code?: string;
+    };
     const message = typeof o.message === "string" ? o.message : t;
     return {
       message,
-      ...(typeof o.internal_note === "string" ? { internal_note: o.internal_note } : {}),
+      ...(typeof o.internal_note === "string"
+        ? { internal_note: o.internal_note }
+        : {}),
       ...(typeof o.code === "string" ? { code: o.code } : {}),
     };
   } catch {
@@ -75,9 +92,22 @@ const REJECT_REASON_OPTIONS: { code: string; label: string; hint: string }[] = [
   },
 ];
 
-export const ManualDepositsView: React.FC = () => {
+export interface ManualDepositsViewProps {
+  /** โฟกัสจาก User Management — รายการเติมเงิน gateway ค้างของ user นี้ */
+  initialUserId?: string | null;
+  initialGatewayStatus?: "all" | "pending" | "success" | "failed";
+  onInitialFocusConsumed?: () => void;
+}
+
+export const ManualDepositsView: React.FC<ManualDepositsViewProps> = ({
+  initialUserId,
+  initialGatewayStatus,
+  onInitialFocusConsumed,
+}) => {
   const [rows, setRows] = useState<AdminManualDepositRow[]>([]);
-  const [gatewayRows, setGatewayRows] = useState<AdminWalletDepositChargeRow[]>([]);
+  const [gatewayRows, setGatewayRows] = useState<AdminWalletDepositChargeRow[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -87,16 +117,28 @@ export const ManualDepositsView: React.FC = () => {
   const [gatewaySourceFilter, setGatewaySourceFilter] = useState<
     "all" | "payso" | "ksher" | "card" | "truemoney" | "mobile_banking"
   >("all");
+  const [gatewayStatusFilter, setGatewayStatusFilter] = useState<
+    "all" | "pending" | "success" | "failed"
+  >("all");
+  const [gatewayUserIdFilter, setGatewayUserIdFilter] = useState("");
+  const gatewaySectionRef = useRef<HTMLDivElement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rejectFor, setRejectFor] = useState<AdminManualDepositRow | null>(null);
-  const [rejectReason, setRejectReason] = useState(REJECT_REASON_OPTIONS[0]?.code ?? "NO_INBOUND_MATCH");
+  const [rejectFor, setRejectFor] = useState<AdminManualDepositRow | null>(
+    null,
+  );
+  const [rejectReason, setRejectReason] = useState(
+    REJECT_REASON_OPTIONS[0]?.code ?? "NO_INBOUND_MATCH",
+  );
   const [rejectNote, setRejectNote] = useState("");
-  const [reconcilingChargeId, setReconcilingChargeId] = useState<string | null>(null);
+  const [reconcilingChargeId, setReconcilingChargeId] = useState<string | null>(
+    null,
+  );
   const [reconcilingBatch, setReconcilingBatch] = useState(false);
   const [rowFeedback, setRowFeedback] = useState<Record<string, string>>({});
   const [detailChargeId, setDetailChargeId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailData, setDetailData] = useState<AdminWalletDepositChargeDetail | null>(null);
+  const [detailData, setDetailData] =
+    useState<AdminWalletDepositChargeDetail | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,7 +147,12 @@ export const ManualDepositsView: React.FC = () => {
     try {
       const [manual, gateway] = await Promise.all([
         getAdminManualDeposits(filter === "all" ? undefined : filter),
-        getAdminWalletDepositCharges({ source_type: gatewaySourceFilter, limit: 300 }),
+        getAdminWalletDepositCharges({
+          source_type: gatewaySourceFilter,
+          status: gatewayStatusFilter,
+          user_id: gatewayUserIdFilter.trim() || undefined,
+          limit: 300,
+        }),
       ]);
       setRows(manual.rows || []);
       setGatewayRows(gateway.rows || []);
@@ -116,7 +163,20 @@ export const ManualDepositsView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, gatewaySourceFilter]);
+  }, [filter, gatewaySourceFilter, gatewayStatusFilter, gatewayUserIdFilter]);
+
+  useEffect(() => {
+    if (!initialUserId) return;
+    setGatewayUserIdFilter(initialUserId);
+    if (initialGatewayStatus) setGatewayStatusFilter(initialGatewayStatus);
+    window.setTimeout(() => {
+      gatewaySectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      onInitialFocusConsumed?.();
+    }, 300);
+  }, [initialUserId, initialGatewayStatus, onInitialFocusConsumed]);
 
   useEffect(() => {
     void load();
@@ -149,7 +209,8 @@ export const ManualDepositsView: React.FC = () => {
   };
 
   const onApprove = async (id: string) => {
-    if (!confirm("อนุมัติรายการนี้และเครดิตเข้าวอลเล็ตผู้ใช้ตามยอดสลิป?")) return;
+    if (!confirm("อนุมัติรายการนี้และเครดิตเข้าวอลเล็ตผู้ใช้ตามยอดสลิป?"))
+      return;
     const bankRefRaw = window.prompt(
       "กรอกเลขอ้างอิงธนาคาร/สลิป (bank_ref_id) — บังคับเพื่อกันซ้ำกับรายการที่อนุมัติแล้ว:",
     );
@@ -176,11 +237,27 @@ export const ManualDepositsView: React.FC = () => {
     setReconcilingChargeId(chargeId);
     setError(null);
     setNotice(null);
-    setRowFeedback((prev) => ({ ...prev, [chargeId]: "กำลังเช็กสถานะกับ PaySo..." }));
+    setRowFeedback((prev) => ({
+      ...prev,
+      [chargeId]: "กำลังเช็กสถานะกับ PaySo...",
+    }));
     try {
       const out = await postAdminReconcilePaysoCharge(chargeId);
       const st = String(out?.status || "").toLowerCase();
-      const rec = (out as { reconcile?: { query?: { error?: string | null; statusCode?: number; method?: string | null; path?: string | null; config_warning?: string | null }; paid?: boolean } }).reconcile;
+      const rec = (
+        out as {
+          reconcile?: {
+            query?: {
+              error?: string | null;
+              statusCode?: number;
+              method?: string | null;
+              path?: string | null;
+              config_warning?: string | null;
+            };
+            paid?: boolean;
+          };
+        }
+      ).reconcile;
       if (st !== "success") {
         const rawErr = rec?.query?.error || null;
         const cfgWarn = rec?.query?.config_warning || null;
@@ -188,9 +265,9 @@ export const ManualDepositsView: React.FC = () => {
           const msg = `ตั้งค่าไม่ตรง endpoint ตรวจสถานะจริง: ${cfgWarn}`;
           setError(msg);
           setRowFeedback((prev) => ({ ...prev, [chargeId]: msg }));
-        } else
-        if (rawErr === "PAYSO_DEPOSIT_STATUS_PATH not configured") {
-          const msg = "ยังตรวจสอบไม่ได้: ตั้งค่า PAYSO_DEPOSIT_STATUS_PATH/PAYSO_DEPOSIT_STATUS_METHOD ใน backend .env แล้ว restart";
+        } else if (rawErr === "PAYSO_DEPOSIT_STATUS_PATH not configured") {
+          const msg =
+            "ยังตรวจสอบไม่ได้: ตั้งค่า PAYSO_DEPOSIT_STATUS_PATH/PAYSO_DEPOSIT_STATUS_METHOD ใน backend .env แล้ว restart";
           setError(msg);
           setRowFeedback((prev) => ({ ...prev, [chargeId]: msg }));
         } else if ((rec?.query?.statusCode || 0) === 405) {
@@ -206,7 +283,10 @@ export const ManualDepositsView: React.FC = () => {
           setRowFeedback((prev) => ({ ...prev, [chargeId]: msg }));
         }
       } else {
-        setRowFeedback((prev) => ({ ...prev, [chargeId]: "สำเร็จ: อัปเดตสถานะและเครดิตเรียบร้อย" }));
+        setRowFeedback((prev) => ({
+          ...prev,
+          [chargeId]: "สำเร็จ: อัปเดตสถานะและเครดิตเรียบร้อย",
+        }));
       }
       await load();
     } catch (e: unknown) {
@@ -221,7 +301,9 @@ export const ManualDepositsView: React.FC = () => {
     setError(null);
     try {
       const out = await postAdminReconcilePaysoBatch(200);
-      setNotice(`Batch ตรวจสอบแล้ว ${out.total} รายการ: สำเร็จ ${out.success_count}, ค้าง ${out.still_pending_count}, error ${out.error_count}`);
+      setNotice(
+        `Batch ตรวจสอบแล้ว ${out.total} รายการ: สำเร็จ ${out.success_count}, ค้าง ${out.still_pending_count}, error ${out.error_count}`,
+      );
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
@@ -250,17 +332,29 @@ export const ManualDepositsView: React.FC = () => {
         <div className="flex items-center gap-2">
           <Banknote className="text-indigo-600" size={28} />
           <div>
-            <h1 className="text-xl font-bold text-slate-900">เติมเงินสลิป (Manual)</h1>
+            <h1 className="text-xl font-bold text-slate-900">
+              เติมเงินสลิป (Manual)
+            </h1>
             <p className="text-sm text-slate-500">
-              รายการจากแอป — <code className="text-xs bg-slate-100 px-1 rounded">POST /api/wallet/deposit/manual</code> รอตรวจแล้วเครดิต
+              รายการจากแอป —{" "}
+              <code className="text-xs bg-slate-100 px-1 rounded">
+                POST /api/wallet/deposit/manual
+              </code>{" "}
+              รอตรวจแล้วเครดิต
             </p>
             <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 mt-2 max-w-2xl">
-              PaySo QR ไม่เข้าคิวตรวจสลิป — ดูสถานะได้ในตาราง <strong>PaySo QR (Gateway)</strong> ด้านล่าง
+              PaySo QR ไม่เข้าคิวตรวจสลิป — ดูสถานะได้ในตาราง{" "}
+              <strong>PaySo QR (Gateway)</strong> ด้านล่าง
             </p>
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mt-2 max-w-2xl">
-              ระบบกันส่ง<strong>ไฟล์สลิปเดิมซ้ำ</strong> (hash) และ<strong>ไม่ให้มีคำขอรอตรวจซ้ำสำหรับยอดเดียวกัน</strong> (กันสลิปคนละไฟล์แต่ยอดเดียวกัน)
-              — <strong>มาตรฐานนิ่งสุดอยู่ที่รายการเงินเข้าบัญชีเราและการคู่กับสเตทเมนต์ธนาคาร</strong>{" "}
-              ส่วนปุ่มปฏิเสธใช้เทมเพลตข้อความสุภาพตามเหตุผลที่เลือก (แอดมินเป็นเจ้าของเหตุผล เหมือน workflow ธนาคาร)
+              ระบบกันส่ง<strong>ไฟล์สลิปเดิมซ้ำ</strong> (hash) และ
+              <strong>ไม่ให้มีคำขอรอตรวจซ้ำสำหรับยอดเดียวกัน</strong>{" "}
+              (กันสลิปคนละไฟล์แต่ยอดเดียวกัน) —{" "}
+              <strong>
+                มาตรฐานนิ่งสุดอยู่ที่รายการเงินเข้าบัญชีเราและการคู่กับสเตทเมนต์ธนาคาร
+              </strong>{" "}
+              ส่วนปุ่มปฏิเสธใช้เทมเพลตข้อความสุภาพตามเหตุผลที่เลือก
+              (แอดมินเป็นเจ้าของเหตุผล เหมือน workflow ธนาคาร)
             </p>
           </div>
         </div>
@@ -283,7 +377,11 @@ export const ManualDepositsView: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => void downloadWalletDepositChargesCsv({ source_type: gatewaySourceFilter })}
+            onClick={() =>
+              void downloadWalletDepositChargesCsv({
+                source_type: gatewaySourceFilter,
+              })
+            }
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-50"
           >
             Export Gateway CSV
@@ -316,10 +414,14 @@ export const ManualDepositsView: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">{error}</div>
+        <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">
+          {error}
+        </div>
       )}
       {notice && (
-        <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">{notice}</div>
+        <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+          {notice}
+        </div>
       )}
 
       {loading ? (
@@ -335,7 +437,9 @@ export const ManualDepositsView: React.FC = () => {
                 <th className="px-3 py-2 font-semibold">อีเมล</th>
                 <th className="px-3 py-2 font-semibold">ยอด (บาท)</th>
                 <th className="px-3 py-2 font-semibold">สถานะ</th>
-                <th className="px-3 py-2 font-semibold min-w-[200px]">ผลการตรวจ / เหตุผลปฏิเสธ</th>
+                <th className="px-3 py-2 font-semibold min-w-[200px]">
+                  ผลการตรวจ / เหตุผลปฏิเสธ
+                </th>
                 <th className="px-3 py-2 font-semibold">สลิป</th>
                 <th className="px-3 py-2 font-semibold">การทำงาน</th>
               </tr>
@@ -344,16 +448,28 @@ export const ManualDepositsView: React.FC = () => {
               {rows.map((r) => {
                 const pending = r.status === "manual_pending_verification";
                 const rejected = r.status === "rejected";
-                const rej = rejected ? parseRejection(r.rejection_reason) : null;
+                const rej = rejected
+                  ? parseRejection(r.rejection_reason)
+                  : null;
                 return (
-                  <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+                  <tr
+                    key={r.id}
+                    className="border-t border-slate-100 hover:bg-slate-50/80"
+                  >
                     <td className="px-3 py-2 whitespace-nowrap text-slate-700">
-                      {r.created_at ? new Date(r.created_at).toLocaleString("th-TH") : "-"}
+                      {r.created_at
+                        ? new Date(r.created_at).toLocaleString("th-TH")
+                        : "-"}
                     </td>
-                    <td className="px-3 py-2 max-w-[200px] truncate" title={r.user_email || ""}>
+                    <td
+                      className="px-3 py-2 max-w-[200px] truncate"
+                      title={r.user_email || ""}
+                    >
                       {r.user_email || r.user_id?.slice(0, 8) || "-"}
                     </td>
-                    <td className="px-3 py-2 font-mono font-semibold">฿{fmtThb(r.amount)}</td>
+                    <td className="px-3 py-2 font-mono font-semibold">
+                      ฿{fmtThb(r.amount)}
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -368,19 +484,26 @@ export const ManualDepositsView: React.FC = () => {
                       </span>
                       {rejected && r.reviewed_at && (
                         <div className="text-[11px] text-slate-500 mt-1">
-                          ตรวจเมื่อ {new Date(r.reviewed_at).toLocaleString("th-TH")}
+                          ตรวจเมื่อ{" "}
+                          {new Date(r.reviewed_at).toLocaleString("th-TH")}
                           {r.reviewed_by ? ` · ${r.reviewed_by}` : ""}
                         </div>
                       )}
                       {r.bank_ref_id && !rejected ? (
-                        <div className="text-[11px] text-emerald-800 mt-0.5 font-mono">ref {r.bank_ref_id}</div>
+                        <div className="text-[11px] text-emerald-800 mt-0.5 font-mono">
+                          ref {r.bank_ref_id}
+                        </div>
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-700 max-w-xs">
                       {rejected && rej?.message ? (
-                        <span className="block leading-snug whitespace-pre-wrap">{rej.message}</span>
+                        <span className="block leading-snug whitespace-pre-wrap">
+                          {rej.message}
+                        </span>
                       ) : !pending && !rejected && r.bank_ref_id ? (
-                        <span className="text-emerald-800">บันทึกอนุมัติแล้ว</span>
+                        <span className="text-emerald-800">
+                          บันทึกอนุมัติแล้ว
+                        </span>
                       ) : pending ? (
                         <span className="text-slate-400">—</span>
                       ) : (
@@ -388,8 +511,12 @@ export const ManualDepositsView: React.FC = () => {
                       )}
                       {rejected && rej?.internal_note && (
                         <details className="mt-1 text-[11px] text-slate-500">
-                          <summary className="cursor-pointer hover:text-slate-700">หมายเหตุภายใน</summary>
-                          <span className="block mt-0.5">{rej.internal_note}</span>
+                          <summary className="cursor-pointer hover:text-slate-700">
+                            หมายเหตุภายใน
+                          </summary>
+                          <span className="block mt-0.5">
+                            {rej.internal_note}
+                          </span>
                         </details>
                       )}
                     </td>
@@ -417,7 +544,9 @@ export const ManualDepositsView: React.FC = () => {
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
                           >
                             <CheckCircle size={14} />
-                            {busyId === r.id ? "กำลังดำเนินการ..." : "อนุมัติ + เครดิต"}
+                            {busyId === r.id
+                              ? "กำลังดำเนินการ..."
+                              : "อนุมัติ + เครดิต"}
                           </button>
                           <button
                             type="button"
@@ -441,13 +570,45 @@ export const ManualDepositsView: React.FC = () => {
         </div>
       )}
 
-      <div className="mt-8">
+      <div className="mt-8" ref={gatewaySectionRef}>
         <div className="flex items-center justify-between gap-3 mb-2">
-          <h2 className="text-lg font-bold text-slate-900">Gateway Deposits (PaySo/Card/TrueMoney/Mobile Banking)</h2>
-          <div className="flex items-center gap-2">
+          <h2 className="text-lg font-bold text-slate-900">
+            Gateway Deposits (PaySo/Card/TrueMoney/Mobile Banking)
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {gatewayUserIdFilter ? (
+              <span className="text-xs bg-amber-100 text-amber-900 px-2 py-1 rounded-lg">
+                user: {gatewayUserIdFilter.slice(0, 8)}…
+                <button
+                  type="button"
+                  className="ml-2 underline"
+                  onClick={() => setGatewayUserIdFilter("")}
+                >
+                  ล้าง
+                </button>
+              </span>
+            ) : null}
+            <select
+              value={gatewayStatusFilter}
+              onChange={(e) =>
+                setGatewayStatusFilter(
+                  e.target.value as typeof gatewayStatusFilter,
+                )
+              }
+              className="text-xs border border-slate-300 rounded-lg px-2 py-1.5"
+            >
+              <option value="all">ทุกสถานะ</option>
+              <option value="pending">Pending</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </select>
             <select
               value={gatewaySourceFilter}
-              onChange={(e) => setGatewaySourceFilter(e.target.value as typeof gatewaySourceFilter)}
+              onChange={(e) =>
+                setGatewaySourceFilter(
+                  e.target.value as typeof gatewaySourceFilter,
+                )
+              }
               className="text-xs border border-slate-300 rounded-lg px-2 py-1.5"
             >
               <option value="all">ทุกช่องทาง</option>
@@ -463,13 +624,22 @@ export const ManualDepositsView: React.FC = () => {
               onClick={() => void onReconcilePaysoBatch()}
               disabled={reconcilingBatch}
             >
-              {reconcilingBatch ? "กำลังเช็กทั้งหมด..." : "เช็ก PaySo ทั้งหมด (Pending)"}
+              {reconcilingBatch
+                ? "กำลังเช็กทั้งหมด..."
+                : "เช็ก PaySo ทั้งหมด (Pending)"}
             </button>
           </div>
         </div>
         <p className="text-xs text-slate-500 mb-3">
-          แหล่งข้อมูลจาก <code className="text-[11px] bg-slate-100 px-1 rounded">wallet_deposit_charges</code>{" "}
-          ผ่าน <code className="text-[11px] bg-slate-100 px-1 rounded">GET /api/admin/wallet-deposit-charges</code> + webhook logs/timeline
+          แหล่งข้อมูลจาก{" "}
+          <code className="text-[11px] bg-slate-100 px-1 rounded">
+            wallet_deposit_charges
+          </code>{" "}
+          ผ่าน{" "}
+          <code className="text-[11px] bg-slate-100 px-1 rounded">
+            GET /api/admin/wallet-deposit-charges
+          </code>{" "}
+          + webhook logs/timeline
         </p>
         {gatewayRows.length === 0 ? (
           <p className="text-slate-500 text-sm">ยังไม่มีรายการ PaySo</p>
@@ -492,38 +662,55 @@ export const ManualDepositsView: React.FC = () => {
                 {gatewayRows.map((r) => (
                   <tr key={r.charge_id} className="border-t border-emerald-100">
                     <td className="px-3 py-2 whitespace-nowrap text-slate-700">
-                      {r.created_at ? new Date(r.created_at).toLocaleString("th-TH") : "-"}
+                      {r.created_at
+                        ? new Date(r.created_at).toLocaleString("th-TH")
+                        : "-"}
                     </td>
-                    <td className="px-3 py-2 max-w-[220px] truncate" title={r.user_email || ""}>
+                    <td
+                      className="px-3 py-2 max-w-[220px] truncate"
+                      title={r.user_email || ""}
+                    >
                       {r.user_email || r.user_id?.slice(0, 8) || "-"}
                     </td>
-                    <td className="px-3 py-2 text-xs font-semibold uppercase">{r.source_type || "-"}</td>
+                    <td className="px-3 py-2 text-xs font-semibold uppercase">
+                      {r.source_type || "-"}
+                    </td>
                     <td className="px-3 py-2 font-mono font-semibold">
                       ฿{fmtThb(r.amount)} {r.currency || "THB"}
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
-                        r.status === "success"
-                          ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                          : r.status === "failed" || r.status === "expired"
-                            ? "bg-rose-100 text-rose-900 border border-rose-300"
-                            : "bg-amber-100 text-amber-900 border border-amber-300"
-                      }`}>
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
+                          r.status === "success"
+                            ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                            : r.status === "failed" || r.status === "expired"
+                              ? "bg-rose-100 text-rose-900 border border-rose-300"
+                              : "bg-amber-100 text-amber-900 border border-amber-300"
+                        }`}
+                      >
                         {r.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.charge_id}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.ledger_id || "-"}</td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {r.charge_id}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {r.ledger_id || "-"}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {r.status === "pending" && (r.source_type === "payso" || r.source_type === "ksher") ? (
+                        {r.status === "pending" &&
+                        (r.source_type === "payso" ||
+                          r.source_type === "ksher") ? (
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-50 disabled:opacity-50"
                             onClick={() => void onReconcilePayso(r.charge_id)}
                             disabled={reconcilingChargeId === r.charge_id}
                           >
-                            {reconcilingChargeId === r.charge_id ? "กำลังตรวจ..." : "เช็ก PaySo"}
+                            {reconcilingChargeId === r.charge_id
+                              ? "กำลังตรวจ..."
+                              : "เช็ก PaySo"}
                           </button>
                         ) : (
                           <span className="text-xs text-slate-400">-</span>
@@ -537,7 +724,9 @@ export const ManualDepositsView: React.FC = () => {
                         </button>
                       </div>
                       {rowFeedback[r.charge_id] && (
-                        <div className="mt-1 text-[11px] text-slate-600 max-w-[260px] leading-snug">{rowFeedback[r.charge_id]}</div>
+                        <div className="mt-1 text-[11px] text-slate-600 max-w-[260px] leading-snug">
+                          {rowFeedback[r.charge_id]}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -554,7 +743,9 @@ export const ManualDepositsView: React.FC = () => {
             <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-bold text-slate-900">Charge Timeline</h2>
-                <p className="text-xs text-slate-600 mt-1 font-mono">{detailChargeId}</p>
+                <p className="text-xs text-slate-600 mt-1 font-mono">
+                  {detailChargeId}
+                </p>
               </div>
               <button
                 type="button"
@@ -577,15 +768,22 @@ export const ManualDepositsView: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                     <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                       <p className="text-xs text-slate-500">User</p>
-                      <p className="font-medium">{detailData.charge.user_email || detailData.charge.user_id}</p>
+                      <p className="font-medium">
+                        {detailData.charge.user_email ||
+                          detailData.charge.user_id}
+                      </p>
                     </div>
                     <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                       <p className="text-xs text-slate-500">Amount</p>
-                      <p className="font-medium">฿{fmtThb(detailData.charge.amount)}</p>
+                      <p className="font-medium">
+                        ฿{fmtThb(detailData.charge.amount)}
+                      </p>
                     </div>
                     <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                       <p className="text-xs text-slate-500">Source</p>
-                      <p className="font-medium uppercase">{detailData.charge.source_type}</p>
+                      <p className="font-medium uppercase">
+                        {detailData.charge.source_type}
+                      </p>
                     </div>
                     <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                       <p className="text-xs text-slate-500">Status</p>
@@ -593,15 +791,28 @@ export const ManualDepositsView: React.FC = () => {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <h3 className="text-sm font-bold text-slate-800">Timeline</h3>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Timeline
+                    </h3>
                     {detailData.timeline?.length ? (
                       detailData.timeline.map((t, idx) => (
-                        <div key={`${t.at || "na"}-${idx}`} className="p-3 rounded-lg border border-slate-200 bg-white">
+                        <div
+                          key={`${t.at || "na"}-${idx}`}
+                          className="p-3 rounded-lg border border-slate-200 bg-white"
+                        >
                           <div className="flex items-center justify-between gap-3">
-                            <p className="font-semibold text-sm text-slate-800">{t.title}</p>
-                            <p className="text-[11px] text-slate-500">{t.at ? new Date(t.at).toLocaleString("th-TH") : "-"}</p>
+                            <p className="font-semibold text-sm text-slate-800">
+                              {t.title}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {t.at
+                                ? new Date(t.at).toLocaleString("th-TH")
+                                : "-"}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-slate-500 uppercase mt-1">{t.source}</p>
+                          <p className="text-[11px] text-slate-500 uppercase mt-1">
+                            {t.source}
+                          </p>
                         </div>
                       ))
                     ) : (
@@ -628,9 +839,10 @@ export const ManualDepositsView: React.FC = () => {
                   ปฏิเสธรายการเติมเงิน (สลิป)
                 </h2>
                 <p className="text-xs text-slate-600 mt-1">
-                  ข้อความที่ผู้ใช้จะได้รับจากรูปแบบมาตรฐานด้านล่าง — เลือกเหตุผลอย่างรอบคอบ และใช้หมายเหตุภายในสำหรับธนาคาร
-                  ref / settlement เท่านั้น (ไม่ฝังข้อความคุยส่วนตัวใน message ผู้ใช้ยกเว้นเหตุผล{' '}
-                  <strong>อื่น ๆ</strong>)
+                  ข้อความที่ผู้ใช้จะได้รับจากรูปแบบมาตรฐานด้านล่าง —
+                  เลือกเหตุผลอย่างรอบคอบ และใช้หมายเหตุภายในสำหรับธนาคาร ref /
+                  settlement เท่านั้น (ไม่ฝังข้อความคุยส่วนตัวใน message
+                  ผู้ใช้ยกเว้นเหตุผล <strong>อื่น ๆ</strong>)
                 </p>
               </div>
               <button
@@ -646,14 +858,19 @@ export const ManualDepositsView: React.FC = () => {
             <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
               <div className="text-sm text-slate-700 space-y-0.5">
                 <div>
-                  <span className="text-slate-500">ผู้ขอ:</span> {rejectFor.user_email || rejectFor.user_id?.slice(0, 8)}
+                  <span className="text-slate-500">ผู้ขอ:</span>{" "}
+                  {rejectFor.user_email || rejectFor.user_id?.slice(0, 8)}
                 </div>
                 <div>
                   <span className="text-slate-500">ยอด:</span>{" "}
-                  <span className="font-mono font-semibold">฿{fmtThb(rejectFor.amount)}</span>
+                  <span className="font-mono font-semibold">
+                    ฿{fmtThb(rejectFor.amount)}
+                  </span>
                 </div>
               </div>
-              <label className="block text-xs font-semibold text-slate-700">เหตุผลที่ปฏิเสธ</label>
+              <label className="block text-xs font-semibold text-slate-700">
+                เหตุผลที่ปฏิเสธ
+              </label>
               <select
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                 value={rejectReason}
@@ -667,10 +884,14 @@ export const ManualDepositsView: React.FC = () => {
                 ))}
               </select>
               <p className="text-[11px] text-slate-500 -mt-2">
-                {REJECT_REASON_OPTIONS.find((o) => o.code === rejectReason)?.hint ?? ""}
+                {REJECT_REASON_OPTIONS.find((o) => o.code === rejectReason)
+                  ?.hint ?? ""}
               </p>
               <label className="block text-xs font-semibold text-slate-700">
-                หมายเหตุภายใน (ถ้ามี){rejectReason !== "OTHER" ? " · ถ้ากรอก จะบันทึกแยกจากข้อความหลัก" : " · เหตุผลอื่น ๆ ต้องกรอก"}
+                หมายเหตุภายใน (ถ้ามี)
+                {rejectReason !== "OTHER"
+                  ? " · ถ้ากรอก จะบันทึกแยกจากข้อความหลัก"
+                  : " · เหตุผลอื่น ๆ ต้องกรอก"}
               </label>
               <textarea
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[88px]"

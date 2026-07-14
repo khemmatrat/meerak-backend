@@ -15,6 +15,9 @@ export type StoredOrder = {
   promo_code?: string;
   method: string;
   payment_status?: 'paid' | 'pending' | 'cod';
+  payso_reference_id?: string;
+  payment_intent_id?: string;
+  payment_source?: 'payso' | 'stub';
   items: { product_id: string; title?: string; qty: number; unit_price_micro: number }[];
   recipient?: string;
   shipping_address?: string;
@@ -26,6 +29,8 @@ export type StoredOrder = {
   merchant_name?: string;
   delivery_eta_label?: string;
   fulfillment_status?: string;
+  delivered_at?: string;
+  buyer_confirmed_at?: string;
   created_at: string;
   idempotency_key?: string;
 };
@@ -85,6 +90,9 @@ export async function saveLocalOrder(
     promo_code: input.promo_code,
     method: input.method,
     payment_status: input.payment_status || (input.method === 'cod' ? 'cod' : 'pending'),
+    payso_reference_id: input.payso_reference_id,
+    payment_intent_id: input.payment_intent_id,
+    payment_source: input.payment_source,
     items: input.items,
     recipient: input.recipient,
     shipping_address: input.shipping_address,
@@ -121,6 +129,19 @@ export async function saveLocalOrder(
   return order;
 }
 
+export async function listAllLocalOrders(): Promise<StoredOrder[]> {
+  return readOrders();
+}
+
+export async function setBuyerConfirmedAt(orderId: string, confirmedAt: string) {
+  const orders = await readOrders();
+  const hit = orders.find((o) => o.order_id === orderId);
+  if (!hit) return null;
+  hit.buyer_confirmed_at = confirmedAt;
+  await writeOrders(orders);
+  return hit;
+}
+
 export async function listOrdersForBuyer(buyerId: string): Promise<StoredOrder[]> {
   const orders = await readOrders();
   return orders.filter((o) => o.buyer_id === buyerId);
@@ -145,7 +166,10 @@ export async function updateLocalOrderFulfillment(
     hit.carrier_id = hit.carrier_id || 'flash-th';
   }
   if (fulfillmentStatus === 'shipped') hit.status = 'shipped';
-  if (fulfillmentStatus === 'delivered') hit.status = 'completed';
+  if (fulfillmentStatus === 'delivered') {
+    hit.status = 'completed';
+    hit.delivered_at = hit.delivered_at || new Date().toISOString();
+  }
   if (fulfillmentStatus === 'rejected') hit.status = 'cancelled';
   await writeOrders(orders);
   return hit;
@@ -194,4 +218,22 @@ export async function markOrdersPaymentStatus(
   }
   if (updated > 0) await writeOrders(orders);
   return updated;
+}
+
+export async function updateOrderPaymentRefs(
+  orderId: string,
+  refs: {
+    payso_reference_id?: string;
+    payment_intent_id?: string;
+    payment_source?: 'payso' | 'stub';
+  },
+) {
+  const orders = await readOrders();
+  const hit = orders.find((o) => o.order_id === orderId);
+  if (!hit) return null;
+  if (refs.payso_reference_id) hit.payso_reference_id = refs.payso_reference_id;
+  if (refs.payment_intent_id) hit.payment_intent_id = refs.payment_intent_id;
+  if (refs.payment_source) hit.payment_source = refs.payment_source;
+  await writeOrders(orders);
+  return hit;
 }

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { E2E_PRODUCT_ID } from './fixtures';
+import { simulateCaptureForPlacedOrder, simulatePaysoCapture } from './helpers/paymentCapture';
 
 const CHECKOUT = '/m/checkout';
 const E2E_OWNER = 'e2e-s009-verify';
@@ -110,7 +111,10 @@ test.describe('S009 — Payment verify', () => {
       return raw ? JSON.parse(raw) : null;
     });
     const orderId = session?.orderIds?.[0];
+    const ref = session?.action?.payso_reference_id || session?.action?.ref;
     expect(orderId).toMatch(/^ord-/);
+    expect(ref).toMatch(/^PP-/);
+    await simulatePaysoCapture(request, { ref, orderIds: [orderId], buyerId: E2E_OWNER });
 
     await page.locator('[data-testid="checkout-payment-confirm"]').click();
     await expect(page).toHaveURL(/\/m\/checkout\/payment\/result\?status=success/, { timeout: 30000 });
@@ -123,12 +127,21 @@ test.describe('S009 — Payment verify', () => {
     expect(hit?.payment_status).toBe('paid');
   });
 
-  test('step 2: verify API invoked on confirm', async ({ page }) => {
+  test('step 2: verify API invoked on confirm', async ({ page, request }) => {
     const verifyHit = page.waitForRequest(
       (req) => req.url().includes('/api/checkout/payment/verify') && req.method() === 'POST',
       { timeout: 35000 },
     );
     await placeToPayment(page);
+    const session = await page.evaluate(() => {
+      const raw = sessionStorage.getItem('aqond-m-checkout-payment');
+      return raw ? JSON.parse(raw) : null;
+    });
+    await simulatePaysoCapture(request, {
+      ref: session?.action?.payso_reference_id || session?.action?.ref,
+      orderIds: session?.orderIds,
+      buyerId: E2E_OWNER,
+    });
     await page.locator('[data-testid="checkout-payment-confirm"]').click();
     const req = await verifyHit;
     const body = req.postDataJSON() as { ref?: string; order_ids?: string[]; buyer_id?: string };
@@ -140,8 +153,23 @@ test.describe('S009 — Payment verify', () => {
 
   test('step 3: idempotent re-verify returns success', async ({ request }) => {
     const placed = await placePromptPayViaApi(request);
-    const ref = placed.payment_action?.ref || `PP-TEST`;
+    const ref = placed.payment_action?.payso_reference_id || placed.payment_action?.ref || `PP-TEST`;
     const expires = Date.now() + 60 * 60 * 1000;
+
+    const blind = await request.post('/api/checkout/payment/verify', {
+      data: {
+        ref,
+        order_ids: [placed.order_id],
+        buyer_id: E2E_OWNER,
+        expires_at: expires,
+        amount: placed.payment_action?.amount || '238.00',
+        intent_id: placed.payment_action?.intent_id,
+        payso_reference_id: ref,
+      },
+    });
+    expect((await blind.json()).status).toBe('failed');
+
+    await simulateCaptureForPlacedOrder(request, placed, E2E_OWNER);
 
     const first = await request.post('/api/checkout/payment/verify', {
       data: {
@@ -150,6 +178,8 @@ test.describe('S009 — Payment verify', () => {
         buyer_id: E2E_OWNER,
         expires_at: expires,
         amount: placed.payment_action?.amount || '238.00',
+        intent_id: placed.payment_action?.intent_id,
+        payso_reference_id: ref,
       },
     });
     const firstJson = await first.json();
@@ -162,6 +192,8 @@ test.describe('S009 — Payment verify', () => {
         buyer_id: E2E_OWNER,
         expires_at: expires,
         amount: placed.payment_action?.amount || '238.00',
+        intent_id: placed.payment_action?.intent_id,
+        payso_reference_id: ref,
       },
     });
     const secondJson = await second.json();
@@ -218,8 +250,17 @@ test.describe('S009 — Payment verify', () => {
     expect(json.status).toBe('failed');
   });
 
-  test('step 7: confirm button shows verifying state', async ({ page }) => {
+  test('step 7: confirm button shows verifying state', async ({ page, request }) => {
     await placeToPayment(page);
+    const session = await page.evaluate(() => {
+      const raw = sessionStorage.getItem('aqond-m-checkout-payment');
+      return raw ? JSON.parse(raw) : null;
+    });
+    await simulatePaysoCapture(request, {
+      ref: session?.action?.payso_reference_id || session?.action?.ref,
+      orderIds: session?.orderIds,
+      buyerId: E2E_OWNER,
+    });
     await page.locator('[data-testid="checkout-payment-confirm"]').click();
     await expect(page.locator('[data-testid="checkout-payment-confirm"]')).toContainText('กำลังตรวจสอบ', {
       timeout: 5000,
@@ -227,7 +268,7 @@ test.describe('S009 — Payment verify', () => {
     await expect(page).toHaveURL(/status=success/, { timeout: 30000 });
   });
 
-  test('step 8: telemetry posted for payment verify', async ({ page }) => {
+  test('step 8: telemetry posted for payment verify', async ({ page, request }) => {
     const telemetryHit = page.waitForRequest(
       (req) => {
         if (!req.url().includes('/api/experience/telemetry') || req.method() !== 'POST') return false;
@@ -241,6 +282,15 @@ test.describe('S009 — Payment verify', () => {
       { timeout: 35000 },
     );
     await placeToPayment(page);
+    const session = await page.evaluate(() => {
+      const raw = sessionStorage.getItem('aqond-m-checkout-payment');
+      return raw ? JSON.parse(raw) : null;
+    });
+    await simulatePaysoCapture(request, {
+      ref: session?.action?.payso_reference_id || session?.action?.ref,
+      orderIds: session?.orderIds,
+      buyerId: E2E_OWNER,
+    });
     await page.locator('[data-testid="checkout-payment-confirm"]').click();
     await expect(page).toHaveURL(/status=success/, { timeout: 30000 });
     const req = await telemetryHit;

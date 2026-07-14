@@ -1,68 +1,122 @@
-import React, { useEffect, useState } from 'react';
-import { useLanguage } from '../context/LanguageContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useState } from "react";
+import { useLanguage } from "../context/LanguageContext";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import {
   NEXUS_MODULE2_CATEGORIES,
   CATEGORIES_WITH_QUESTIONS,
   getModule2PassedCategories,
-} from '../services/nexusExamService';
-import { ClipboardList, ChevronRight, CheckCircle, Lock, Clock, BookOpen, X } from 'lucide-react';
+} from "../services/nexusExamService";
+import { fetchCompassStatus } from "../services/compassOnboardingService";
+import {
+  TransportSkillGuide,
+  transportCategoryHint,
+} from "../components/TransportSkillGuide";
+import {
+  ClipboardList,
+  ChevronRight,
+  CheckCircle,
+  Lock,
+  Clock,
+  BookOpen,
+  X,
+} from "lucide-react";
 
 // ── Metadata: label ภาษาไทย + emoji สำหรับแต่ละ category ──
-const CATEGORY_META: Record<string, { label: string; emoji: string; group: string }> = {
+const CATEGORY_META: Record<
+  string,
+  { label: string; emoji: string; group: string }
+> = {
   // งานบ้าน
-  'Cleaning':      { label: 'แม่บ้าน / ทำความสะอาด', emoji: '🏠', group: 'งานบ้าน' },
-  'Gardening':     { label: 'ช่างสวน / จัดสวน',       emoji: '🌱', group: 'งานบ้าน' },
-  'Moving':        { label: 'ขนย้ายสิ่งของ',           emoji: '🚛', group: 'งานบ้าน' },
+  Cleaning: { label: "แม่บ้าน / ทำความสะอาด", emoji: "🏠", group: "งานบ้าน" },
+  Gardening: { label: "ช่างสวน / จัดสวน", emoji: "🌱", group: "งานบ้าน" },
+  Moving: { label: "ขนย้ายสิ่งของ", emoji: "🚛", group: "งานบ้าน" },
   // ช่าง
-  'Repair':        { label: 'ช่างซ่อมแซมทั่วไป',       emoji: '🔧', group: 'ช่าง' },
-  'AC Technician': { label: 'ช่างแอร์',                emoji: '❄️', group: 'ช่าง' },
-  'Construction':  { label: 'ช่างก่อสร้าง',            emoji: '🏗️', group: 'ช่าง' },
+  Repair: { label: "ช่างซ่อมแซมทั่วไป", emoji: "🔧", group: "ช่าง" },
+  "AC Technician": { label: "ช่างแอร์", emoji: "❄️", group: "ช่าง" },
+  Construction: { label: "ช่างก่อสร้าง", emoji: "🏗️", group: "ช่าง" },
   // ขนส่ง & ความปลอดภัย
-  'Delivery':      { label: 'ขนส่ง / จัดส่งพัสดุ',    emoji: '📦', group: 'ขนส่ง & ความปลอดภัย' },
-  'Driving':       { label: 'พนักงานขับรถ',            emoji: '🚗', group: 'ขนส่ง & ความปลอดภัย' },
-  'Security':      { label: 'รปภ. / ยาม',              emoji: '🛡️', group: 'ขนส่ง & ความปลอดภัย' },
+  Delivery: {
+    label: "ขนส่ง / จัดส่งพัสดุ",
+    emoji: "📦",
+    group: "ขนส่ง & ความปลอดภัย",
+  },
+  Driving: {
+    label: "พนักงานขับรถ (ผู้โดยสาร)",
+    emoji: "🚗",
+    group: "ขนส่ง & ความปลอดภัย",
+  },
+  Messenger: {
+    label: "Messenger รับ-ส่งเร่งด่วน",
+    emoji: "🏍️",
+    group: "ขนส่ง & ความปลอดภัย",
+  },
+  "Public Transport": {
+    label: "ขนส่งผู้โดยสารสาธารณะ (ป้ายเหลือง)",
+    emoji: "🚌",
+    group: "ขนส่ง & ความปลอดภัย",
+  },
+  Security: { label: "รปภ. / ยาม", emoji: "🛡️", group: "ขนส่ง & ความปลอดภัย" },
   // อาหาร
-  'Chef':          { label: 'พ่อครัว / แม่ครัว',      emoji: '👨‍🍳', group: 'อาหาร' },
-  'Catering':      { label: 'จัดเลี้ยง / Catering',   emoji: '🍽️', group: 'อาหาร' },
+  Chef: { label: "พ่อครัว / แม่ครัว", emoji: "👨‍🍳", group: "อาหาร" },
+  Catering: { label: "จัดเลี้ยง / Catering", emoji: "🍽️", group: "อาหาร" },
   // ดูแลบุคคล
-  'Babysitter':    { label: 'พี่เลี้ยงเด็ก',          emoji: '👶', group: 'ดูแลบุคคล' },
-  'Elderly':       { label: 'ผู้ดูแลผู้สูงอายุ',      emoji: '👴', group: 'ดูแลบุคคล' },
-  'Massage':       { label: 'นักนวด / นวดแผนไทย',     emoji: '💆', group: 'ดูแลบุคคล' },
+  Babysitter: { label: "พี่เลี้ยงเด็ก", emoji: "👶", group: "ดูแลบุคคล" },
+  Elderly: { label: "ผู้ดูแลผู้สูงอายุ", emoji: "👴", group: "ดูแลบุคคล" },
+  Massage: { label: "นักนวด / นวดแผนไทย", emoji: "💆", group: "ดูแลบุคคล" },
   // สุขภาพ & ความงาม
-  'Beauty':        { label: 'ความงาม / เสริมสวย',     emoji: '💅', group: 'สุขภาพ & ความงาม' },
-  'Trainer':       { label: 'เทรนเนอร์ฟิตเนส',        emoji: '💪', group: 'สุขภาพ & ความงาม' },
+  Beauty: {
+    label: "ความงาม / เสริมสวย",
+    emoji: "💅",
+    group: "สุขภาพ & ความงาม",
+  },
+  Trainer: { label: "เทรนเนอร์ฟิตเนส", emoji: "💪", group: "สุขภาพ & ความงาม" },
   // สัตว์เลี้ยง
-  'Pet Care':      { label: 'ดูแลสัตว์เลี้ยง',        emoji: '🐾', group: 'สัตว์เลี้ยง' },
+  "Pet Care": { label: "ดูแลสัตว์เลี้ยง", emoji: "🐾", group: "สัตว์เลี้ยง" },
   // ไอที
-  'IT Support':    { label: 'ช่างซ่อมคอมพิวเตอร์ / IT', emoji: '💻', group: 'ไอที' },
+  "IT Support": {
+    label: "ช่างซ่อมคอมพิวเตอร์ / IT",
+    emoji: "💻",
+    group: "ไอที",
+  },
   // การสอน & ฝึก
-  'Tutor':         { label: 'ครูสอนพิเศษ / ติวเตอร์', emoji: '🎓', group: 'การสอน & ฝึก' },
-  'Tutoring':      { label: 'สอนพิเศษ (ทั่วไป)',       emoji: '📚', group: 'การสอน & ฝึก' },
+  Tutor: {
+    label: "ครูสอนพิเศษ / ติวเตอร์",
+    emoji: "🎓",
+    group: "การสอน & ฝึก",
+  },
+  Tutoring: { label: "สอนพิเศษ (ทั่วไป)", emoji: "📚", group: "การสอน & ฝึก" },
   // ครีเอทีฟ
-  'Photography':   { label: 'ช่างภาพ / วิดีโอ',       emoji: '📷', group: 'ครีเอทีฟ' },
-  'Design':        { label: 'ออกแบบ / กราฟิก',         emoji: '🎨', group: 'ครีเอทีฟ' },
+  Photography: { label: "ช่างภาพ / วิดีโอ", emoji: "📷", group: "ครีเอทีฟ" },
+  Design: { label: "ออกแบบ / กราฟิก", emoji: "🎨", group: "ครีเอทีฟ" },
   // ธุรกิจ & วิชาชีพ
-  'Event':         { label: 'จัดงานอีเวนต์',           emoji: '🎉', group: 'ธุรกิจ & วิชาชีพ' },
-  'Accounting':    { label: 'บัญชี / การเงิน',         emoji: '📊', group: 'ธุรกิจ & วิชาชีพ' },
-  'Legal':         { label: 'กฎหมาย / นิติกรรม',       emoji: '⚖️', group: 'ธุรกิจ & วิชาชีพ' },
-  'Medical':       { label: 'สาธารณสุข / การแพทย์',   emoji: '🏥', group: 'ธุรกิจ & วิชาชีพ' },
+  Event: { label: "จัดงานอีเวนต์", emoji: "🎉", group: "ธุรกิจ & วิชาชีพ" },
+  Accounting: {
+    label: "บัญชี / การเงิน",
+    emoji: "📊",
+    group: "ธุรกิจ & วิชาชีพ",
+  },
+  Legal: { label: "กฎหมาย / นิติกรรม", emoji: "⚖️", group: "ธุรกิจ & วิชาชีพ" },
+  Medical: {
+    label: "สาธารณสุข / การแพทย์",
+    emoji: "🏥",
+    group: "ธุรกิจ & วิชาชีพ",
+  },
 };
 
 // จัดกลุ่ม categories ตาม group
 const GROUPS = [
-  'งานบ้าน',
-  'ช่าง',
-  'ขนส่ง & ความปลอดภัย',
-  'อาหาร',
-  'ดูแลบุคคล',
-  'สุขภาพ & ความงาม',
-  'สัตว์เลี้ยง',
-  'ไอที',
-  'การสอน & ฝึก',
-  'ครีเอทีฟ',
-  'ธุรกิจ & วิชาชีพ',
+  "งานบ้าน",
+  "ช่าง",
+  "ขนส่ง & ความปลอดภัย",
+  "อาหาร",
+  "ดูแลบุคคล",
+  "สุขภาพ & ความงาม",
+  "สัตว์เลี้ยง",
+  "ไอที",
+  "การสอน & ฝึก",
+  "ครีเอทีฟ",
+  "ธุรกิจ & วิชาชีพ",
 ];
 
 export default function NexusExamModule2Select() {
@@ -71,17 +125,40 @@ export default function NexusExamModule2Select() {
   const fromProfile = searchParams.get("from") === "profile";
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [passedCategories, setPassedCategories] = useState<Set<string>>(new Set());
+  const [passedCategories, setPassedCategories] = useState<Set<string>>(
+    new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) { setLoading(false); return; }
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     getModule2PassedCategories(user.id)
-      .then((cats) => setPassedCategories(new Set(cats.map((c) => c.skill_name))))
+      .then((cats) =>
+        setPassedCategories(new Set(cats.map((c) => c.skill_name))),
+      )
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void fetchCompassStatus().then((s) => {
+      if (!s.compassMode || !s.m2Category) return;
+      if (passedCategories.has(s.m2Category)) return;
+      if (!CATEGORIES_WITH_QUESTIONS.has(s.m2Category)) return;
+      const locked = searchParams.get("compass") !== "0";
+      if (locked) {
+        navigate(
+          `/training/nexus-module2/quiz/${encodeURIComponent(s.m2Category)}`,
+          { replace: true },
+        );
+      }
+    });
+  }, [user?.id, navigate, passedCategories, searchParams]);
 
   const handleSelect = (category: string) => {
     if (passedCategories.has(category)) return;
@@ -93,12 +170,12 @@ export default function NexusExamModule2Select() {
   const grouped = GROUPS.map((group) => ({
     group,
     items: NEXUS_MODULE2_CATEGORIES.filter(
-      (cat) => (CATEGORY_META[cat]?.group ?? 'อื่นๆ') === group
+      (cat) => (CATEGORY_META[cat]?.group ?? "อื่นๆ") === group,
     ),
   })).filter((g) => g.items.length > 0);
 
   const totalAvailable = NEXUS_MODULE2_CATEGORIES.filter((c) =>
-    CATEGORIES_WITH_QUESTIONS.has(c)
+    CATEGORIES_WITH_QUESTIONS.has(c),
   ).length;
 
   return (
@@ -125,20 +202,27 @@ export default function NexusExamModule2Select() {
                 </p>
                 <ol className="list-decimal list-inside space-y-1.5 text-slate-700 leading-relaxed">
                   <li>
-                    <strong>เลือกหมวดอาชีพ</strong> ที่ตรงกับประเภทงานที่คุณจะรับ (เช่น ขับรถ แม่บ้าน ช่างซ่อม)
+                    <strong>เลือกหมวดอาชีพ</strong>{" "}
+                    ที่ตรงกับประเภทงานที่คุณจะรับ (เช่น ขับรถ แม่บ้าน ช่างซ่อม)
                   </li>
                   <li>
-                    กดที่แถวหมวดนั้นเพื่อเข้าทำ<strong>แบบทดสอบ</strong> — เฉพาะหมวดที่กดได้ (ไม่มีป้าย &quot;เร็วๆ นี้&quot;)
+                    กดที่แถวหมวดนั้นเพื่อเข้าทำ<strong>แบบทดสอบ</strong> —
+                    เฉพาะหมวดที่กดได้ (ไม่มีป้าย &quot;เร็วๆ นี้&quot;)
                   </li>
                   <li>
-                    ตอบให้ครบและผ่านเกณฑ์ที่กำหนด จากนั้นทักษะหมวดนั้นจะขึ้นในโปรไฟล์เป็น <strong>Certified</strong>
+                    ตอบให้ครบและผ่านเกณฑ์ที่กำหนด
+                    จากนั้นทักษะหมวดนั้นจะขึ้นในโปรไฟล์เป็น{" "}
+                    <strong>Certified</strong>
                   </li>
                   <li>
-                    ทำได้หลายหมวดตามงานที่รับ — หมวดที่สอบผ่านแล้วจะล็อกไม่ให้ทำซ้ำ
+                    ทำได้หลายหมวดตามงานที่รับ —
+                    หมวดที่สอบผ่านแล้วจะล็อกไม่ให้ทำซ้ำ
                   </li>
                 </ol>
                 <p className="mt-3 text-xs text-slate-600 border-t border-emerald-200/60 pt-2">
-                  รูปผลงาน / พอร์ต — แก้ที่แท็บ <strong>Portfolio / Expert</strong> ในโปรไฟล์ (แยกจากข้อสอบทักษะนี้)
+                  รูปผลงาน / พอร์ต — แก้ที่แท็บ{" "}
+                  <strong>Portfolio / Expert</strong> ในโปรไฟล์
+                  (แยกจากข้อสอบทักษะนี้)
                 </p>
               </div>
             </div>
@@ -172,10 +256,10 @@ export default function NexusExamModule2Select() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <ClipboardList size={28} className="text-emerald-600" />
-            {t('training.module2_select_title')}
+            {t("training.module2_select_title")}
           </h1>
           <p className="text-slate-600 mt-1 text-sm">
-            {t('training.module2_select_subtitle')}
+            {t("training.module2_select_subtitle")}
           </p>
 
           {/* Stats bar */}
@@ -183,18 +267,28 @@ export default function NexusExamModule2Select() {
             {passedCategories.size > 0 && (
               <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center gap-1.5">
                 <CheckCircle size={13} />
-                {t('training.passed_categories').replace('{n}', String(passedCategories.size))}
+                {t("training.passed_categories").replace(
+                  "{n}",
+                  String(passedCategories.size),
+                )}
               </div>
             )}
             <div className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-600 flex items-center gap-1.5">
               <ClipboardList size={13} />
-              {t('training.ready_exam').replace('{n}', String(totalAvailable))}
+              {t("training.ready_exam").replace("{n}", String(totalAvailable))}
             </div>
+          </div>
+
+          {/* คู่มือสกิลขนส่ง — การ์ดแบบเดียวกับ admin */}
+          <div className="mt-4">
+            <TransportSkillGuide defaultOpen />
           </div>
         </div>
 
         {loading ? (
-          <div className="text-center py-16 text-slate-500">{t('training.loading_exam')}</div>
+          <div className="text-center py-16 text-slate-500">
+            {t("training.loading_exam")}
+          </div>
         ) : (
           <div className="space-y-6">
             {grouped.map(({ group, items }) => (
@@ -209,6 +303,7 @@ export default function NexusExamModule2Select() {
                     const isPassed = passedCategories.has(cat);
                     const hasQuestions = CATEGORIES_WITH_QUESTIONS.has(cat);
                     const isDisabled = isPassed || !hasQuestions;
+                    const hint = transportCategoryHint(cat, t);
 
                     return (
                       <button
@@ -218,20 +313,24 @@ export default function NexusExamModule2Select() {
                         disabled={isDisabled}
                         className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left font-medium shadow-sm transition-all ${
                           isPassed
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-800 cursor-not-allowed'
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 cursor-not-allowed"
                             : !hasQuestions
-                            ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
-                            : 'border-slate-200 bg-white text-slate-800 hover:bg-emerald-50 hover:border-emerald-300 hover:shadow cursor-pointer'
+                              ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-800 hover:bg-emerald-50 hover:border-emerald-300 hover:shadow cursor-pointer"
                         }`}
                       >
                         {/* Left: emoji + label */}
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-xl flex-shrink-0">{meta?.emoji ?? '📋'}</span>
+                          <span className="text-xl flex-shrink-0">
+                            {meta?.emoji ?? "📋"}
+                          </span>
                           <div className="min-w-0">
                             <div className="text-sm font-semibold truncate">
                               {meta?.label ?? cat}
                             </div>
-                            <div className="text-xs text-slate-400 mt-0.5">{cat}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">
+                              {hint ?? cat}
+                            </div>
                           </div>
                         </div>
 
@@ -253,7 +352,10 @@ export default function NexusExamModule2Select() {
                           ) : !hasQuestions ? (
                             <Clock size={16} className="text-slate-300" />
                           ) : (
-                            <ChevronRight size={18} className="text-slate-400" />
+                            <ChevronRight
+                              size={18}
+                              className="text-slate-400"
+                            />
                           )}
                         </div>
                       </button>

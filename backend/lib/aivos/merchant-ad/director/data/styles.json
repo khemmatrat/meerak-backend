@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "dimension": "style_preset",
+  "entries": {
+    "friendly_seller": {
+      "label_th": "คนขายเป็นกันเอง",
+      "motion": "Handheld selfie, natural smile, show product at chest level, casual walk toward camera.",
+      "tone": "Warm, friendly, conversational Thai."
+    },
+    "tiktok_creator": {
+      "label_th": "TikTok Creator",
+      "motion": "Energetic handheld selfie, quick natural gestures, creator-style authenticity.",
+      "tone": "Excited, trendy, short punchy Thai phrases."
+    },
+    "luxury_brand": {
+      "label_th": "แบรนด์พรีเมียม",
+      "motion": "Slow stable framing, minimal gesture, elegant presentation.",
+      "tone": "Polished, refined, concise premium Thai."
+    },
+    "restaurant_owner": {
+      "label_th": "เจ้าของร้านอาหาร",
+      "motion": "Kitchen or counter background, hold dish toward camera, proud presentation.",
+      "tone": "Proud home-style hospitality, inviting Thai."
+    },
+    "beauty_influencer": {
+      "label_th": "Beauty Influencer",
+      "motion": "Ring-light selfie, show product near face, authentic recommendation.",
+      "tone": "Friendly influencer recommendation in Thai."
+    },
+    "professional_consultant": {
+      "label_th": "ที่ปรึกษามืออาชีพ",
+      "motion": "Stable professional framing, confident posture, office or site background.",
+      "tone": "Trustworthy expert tone, clear Thai."
+    },
+    "_default": {
+      "label_th": "คนขายทั่วไป",
+      "motion": "Handheld selfie toward camera, natural UGC movement.",
+      "tone": "Friendly conversational Thai."
+    }
+  }
+}

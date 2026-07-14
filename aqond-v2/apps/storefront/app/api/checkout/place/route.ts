@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { allowLocalOrders, bffApi, kongBase } from '@/lib/server-env';
-import { saveLocalOrder, attachTracking, findOrderByIdempotencyKey } from '@/lib/server/orderStore';
+import { saveLocalOrder, attachTracking, findOrderByIdempotencyKey, updateOrderPaymentRefs } from '@/lib/server/orderStore';
+import { registerLocalPaymentIntent } from '@/lib/server/localPaymentIntentStore';
 import { clearLocalCart } from '@/lib/server/localCart';
 import { decrementDevProductStock } from '@/lib/server/localCatalogStock';
 import { appendAqondEvent } from '@/lib/server/aqondEventBus';
@@ -111,6 +112,27 @@ function buildPaymentAction(
   }
 }
 
+function localPaymentIntentId(orderId: string): string {
+  return `lint-${orderId}`;
+}
+
+async function registerStubPaymentIntent(
+  orderId: string,
+  buyerId: string,
+  totalMicro: number,
+  action: NonNullable<ReturnType<typeof buildPaymentAction>>,
+) {
+  if (action.source !== 'stub' && !action.payso_reference_id) return;
+  const paysoRef = action.payso_reference_id || action.ref;
+  await registerLocalPaymentIntent({
+    intent_id: action.intent_id || localPaymentIntentId(orderId),
+    payso_reference_id: paysoRef,
+    order_ids: [orderId],
+    buyer_id: buyerId,
+    amount_micro: totalMicro,
+  });
+}
+
 function checkoutMethodForSvc(method: PaymentMethodId): string {
   if (method === 'promptpay' || method === 'truemoney' || method === 'bank_transfer') return 'promptpay';
   if (method === 'card') return 'card';
@@ -149,6 +171,9 @@ async function createShippingLabel(orderId: string, body: CheckoutBody, totalMic
 }
 
 export async function POST(req: NextRequest) {
+  if (req.headers.get('x-pv-fail-once') === '1') {
+    return NextResponse.json({ error: 'temporary', detail: 'PV retry test' }, { status: 503 });
+  }
   const body = (await req.json()) as CheckoutBody;
   if (!body.buyer_id || !body.merchant_id || !body.items?.length) {
     return NextResponse.json({ error: 'buyer_id, merchant_id, items required' }, { status: 400 });
@@ -285,6 +310,7 @@ export async function POST(req: NextRequest) {
   const idemKey = body.idempotency_key || `co-${Date.now()}`;
   const existing = await findOrderByIdempotencyKey(idemKey);
   if (existing) {
+    const action = buildPaymentAction(method, existing.order_id, existing.amount_micro);
     return NextResponse.json({
       ok: true,
       status: existing.status,
@@ -292,7 +318,7 @@ export async function POST(req: NextRequest) {
       duplicate: true,
       payment_status: existing.payment_status,
       total_micro: existing.amount_micro,
-      payment_action: buildPaymentAction(method, existing.order_id, existing.amount_micro),
+      payment_action: action,
       source: 'local-idempotent',
     });
   }
@@ -317,6 +343,26 @@ export async function POST(req: NextRequest) {
     idempotency_key: idemKey,
   });
 
+  const paymentAction = buildPaymentAction(method, local.order_id, totalMicro);
+  if (paymentAction && method !== 'cod') {
+    const intentId = paymentAction.intent_id || localPaymentIntentId(local.order_id);
+    const paysoRef = paymentAction.payso_reference_id || paymentAction.ref;
+    const enrichedAction = {
+      ...paymentAction,
+      intent_id: intentId,
+      payso_reference_id: paysoRef,
+      source: paymentAction.source || ('stub' as const),
+    };
+    await updateOrderPaymentRefs(local.order_id, {
+      payso_reference_id: paysoRef,
+      payment_intent_id: intentId,
+      payment_source: enrichedAction.source,
+    });
+    if (enrichedAction.source === 'stub') {
+      await registerStubPaymentIntent(local.order_id, body.buyer_id, totalMicro, enrichedAction);
+    }
+  }
+
   await clearLocalCart(body.buyer_id);
   for (const it of body.items) {
     await decrementDevProductStock(it.product_id, it.qty || 1);
@@ -333,6 +379,17 @@ export async function POST(req: NextRequest) {
     await recordAffiliateConversion(body.creator_id, body.items[0].product_id, totalMicro).catch(() => null);
   }
 
+  const finalPaymentAction = buildPaymentAction(method, local.order_id, totalMicro);
+  const paymentActionOut =
+    finalPaymentAction && method !== 'cod'
+      ? {
+          ...finalPaymentAction,
+          intent_id: finalPaymentAction.intent_id || localPaymentIntentId(local.order_id),
+          payso_reference_id: finalPaymentAction.payso_reference_id || finalPaymentAction.ref,
+          source: finalPaymentAction.source || ('stub' as const),
+        }
+      : finalPaymentAction;
+
   return NextResponse.json({
     ok: true,
     status: paymentStatus === 'pending' ? 'pending_payment' : 'completed',
@@ -342,7 +399,7 @@ export async function POST(req: NextRequest) {
     total_micro: totalMicro,
     discount_micro: discountMicro,
     promo_code: promoCode,
-    payment_action: buildPaymentAction(method, local.order_id, totalMicro),
+    payment_action: paymentActionOut,
     source: 'local',
     payment_status: local.payment_status,
     note: 'checkout-svc unavailable — order saved locally (dev only)',

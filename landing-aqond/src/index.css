@@ -1,6 +1,192 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-@import "tailwindcss" source("../");
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+/* สแกนเฉพาะโฟลเดอร์นี้ (src/) — ค่า source("../") เดิมทำให้คลาสใน component บางไฟล์ไม่ถูก generate */
+@source "./**/*.{html,js,ts,jsx,tsx}";
 @config "../tailwind.config.js";
+
+/* Fallback ชัดเจน: ถ้า Tailwind ไม่ดึง arbitrary class จากไฟล์ใดไฟล์หนึ่ง พื้นหลัง footer ยังทำงาน */
+@layer components {
+  .aqond-footer-bg {
+    background-color: #cbd5e1;
+  }
+  .aqond-footer-panel-bg {
+    background-color: #e2e8f0;
+  }
+  .aqond-ai-strip-bg {
+    background-color: #050a14;
+  }
+  .aqond-ai-bridge-gradient {
+    background: linear-gradient(to bottom, #050a14, rgba(15, 23, 42, 0.8), #cbd5e1);
+  }
+  .aqond-gold-frame {
+    padding: 1.5px;
+    border-radius: 1rem;
+    background: linear-gradient(
+      135deg,
+      #f4e4a6 0%,
+      #fffdf2 18%,
+      #e8c547 42%,
+      #fff9e6 58%,
+      #c9a227 78%,
+      #fef3c7 100%
+    );
+    box-shadow:
+      0 0 0 1px rgba(180, 140, 40, 0.12),
+      0 12px 48px -8px rgba(212, 175, 55, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+
+  /* AI marquee: ขอบเลือน + เลื่อนอัตโนมัติ (ไม่พึ่ง purge ของ Tailwind) */
+  .aqond-ai-marquee-fade {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  }
+
+  @keyframes aqond-marquee-x {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .aqond-ai-marquee-track {
+    display: flex;
+    width: max-content;
+    flex-wrap: nowrap;
+    animation: aqond-marquee-x 42s linear infinite;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aqond-ai-marquee-track {
+      animation: none;
+    }
+  }
+
+  /* Instagram brand gradient (official multi-stop) */
+  .aqond-social-instagram {
+    background: linear-gradient(
+      45deg,
+      #f09433 0%,
+      #e6683c 25%,
+      #dc2743 50%,
+      #cc2366 75%,
+      #bc1888 100%
+    );
+  }
+
+  /* Grand Opening countdown — subtle pulse on digits */
+  @keyframes aqond-countdown-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.04);
+      opacity: 0.92;
+    }
+  }
+
+  .aqond-countdown-num {
+    animation: aqond-countdown-pulse 2s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aqond-countdown-num {
+      animation: none;
+    }
+  }
+
+  /* ปุ่มโซเชียล: บังคับสีแบรนด์ + stroke ขาว (กัน lucide ไม่รับ text-* จาก Tailwind) */
+  .aqond-social-btn svg {
+    stroke: #ffffff;
+  }
+  .aqond-social-btn--fb {
+    background-color: #0866ff;
+    color: #fff;
+  }
+  .aqond-social-btn--li {
+    background-color: #0a66c2;
+    color: #fff;
+  }
+  .aqond-social-btn--yt {
+    background-color: #ff0000;
+    color: #fff;
+  }
+  /* Discord — ใช้ CSS ตรงกันกับปุ่มโซเชียลอื่น (กัน Tailwind arbitrary ไม่ถูก build) */
+  .aqond-social-btn--discord {
+    background-color: #5865f2;
+    color: #fff;
+  }
+  .aqond-social-btn--discord svg {
+    stroke: none;
+    fill: #ffffff;
+  }
+
+  .aqond-footer-bottom-bar {
+    background-color: #2d3139;
+  }
+
+  .aqond-store-badge-icon-slot {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .aqond-store-badge-icon-slot svg {
+    width: 28px !important;
+    height: 28px !important;
+    max-width: 28px !important;
+    max-height: 28px !important;
+    display: block;
+  }
+
+  /* การ์ดดาวน์โหลดแอป — โทนเดียวกับพื้นเข้ม ไม่ตัดข้อความ */
+  .aqond-store-download-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: stretch;
+    justify-content: flex-end;
+  }
+
+  @media (max-width: 1023px) {
+    .aqond-store-download-row {
+      justify-content: center;
+    }
+  }
+
+  .aqond-store-download-card {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 76px;
+    width: 100%;
+    max-width: 204px;
+    min-width: 176px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.22);
+  }
+
+  .aqond-store-download-card--huawei {
+    border-color: rgba(206, 14, 45, 0.4);
+    background: rgba(206, 14, 45, 0.1);
+  }
+}
 
 @layer base {
   :root {

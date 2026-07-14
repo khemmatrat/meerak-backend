@@ -1,5 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Banknote, CheckCircle, XCircle, AlertTriangle, ShieldCheck, Download, RefreshCw, Zap, Wallet, Users, Settings, Link2, UserCheck, Landmark, Eye, ExternalLink, Info } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Banknote,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ShieldCheck,
+  Download,
+  RefreshCw,
+  Zap,
+  Wallet,
+  Users,
+  Settings,
+  Link2,
+  UserCheck,
+  Landmark,
+  Eye,
+  ExternalLink,
+  Info,
+} from "lucide-react";
 import {
   getAdminPayouts,
   patchAdminPayout,
@@ -14,49 +32,57 @@ import {
   type PayoutGatewayBalanceResponse,
   type PayoutStatsResponse,
   type PayoutConfigResponse,
-} from '../services/adminApi';
+} from "../services/adminApi";
 
 function describePayoutError(e: unknown): string {
   const code = getAdminApiErrorCode(e);
-  if (code === 'payout_approve_super_admin_only') {
-    return 'รายการนี้เป็นปลายทางบัญชีบริษัท (sole disbursement) — อนุมัติ / โอนมือ / ส่งจ่ายได้เฉพาะ SUPER_ADMIN เท่านั้น';
+  if (code === "payout_approve_super_admin_only") {
+    return "รายการนี้เป็นปลายทางบัญชีบริษัท (sole disbursement) — อนุมัติ / โอนมือ / ส่งจ่ายได้เฉพาะ SUPER_ADMIN เท่านั้น";
   }
-  return (e as Error).message || 'ดำเนินการไม่สำเร็จ';
+  return (e as Error).message || "ดำเนินการไม่สำเร็จ";
 }
 
 function formatGatewayProviderLabel(provider?: string): string {
-  if (!provider) return 'Payment Gateway';
+  if (!provider) return "Payment Gateway";
   const p = provider.toLowerCase();
   const map: Record<string, string> = {
-    paysolution: 'Paysolution',
-    http: 'HTTP (Omise-compatible API)',
-    gbprime: 'GB Prime',
-    manual: 'Manual',
+    paysolution: "Paysolution",
+    http: "HTTP (Omise-compatible API)",
+    gbprime: "GB Prime",
+    manual: "Manual",
   };
   return map[p] || provider;
 }
 
 // Map backend status to display status
-type DisplayStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+type DisplayStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 function toDisplayStatus(s: string): DisplayStatus {
-  const lower = (s || '').toLowerCase();
-  if (lower === 'pending') return 'PENDING';
-  if (lower === 'approved') return 'APPROVED';
-  if (lower === 'rejected') return 'REJECTED';
-  return 'PENDING';
+  const lower = (s || "").toLowerCase();
+  if (lower === "pending") return "PENDING";
+  if (lower === "approved") return "APPROVED";
+  if (lower === "rejected") return "REJECTED";
+  return "PENDING";
 }
 
-function fromBankDetails(bd: Record<string, unknown> | null): { bankName: string; accountNumber: string } {
-  if (!bd || typeof bd !== 'object') return { bankName: '-', accountNumber: '-' };
-  const bankName = String(bd.bank_name || bd.provider_name || bd.bankName || '').trim() || '-';
-  const accountNumber = String(bd.account_number || bd.accountNumber || '').trim() || '-';
+function fromBankDetails(bd: Record<string, unknown> | null): {
+  bankName: string;
+  accountNumber: string;
+} {
+  if (!bd || typeof bd !== "object")
+    return { bankName: "-", accountNumber: "-" };
+  const bankName =
+    String(bd.bank_name || bd.provider_name || bd.bankName || "").trim() || "-";
+  const accountNumber =
+    String(bd.account_number || bd.accountNumber || "").trim() || "-";
   return { bankName, accountNumber };
 }
 
 /** URL สลิปที่เคยแนบมากับคำขอ (legacy / ไม่บังคับ) — หลักฐานการโอนจริงควรเป็น paid_manually_slip_url หรือสลิปจาก gateway */
-function extractPayoutSlipUrl(bd: Record<string, unknown> | null | undefined): string | null {
-  if (!bd || typeof bd !== 'object') return null;
+function extractPayoutSlipUrl(
+  bd: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!bd || typeof bd !== "object") return null;
   const candidates = [
     bd.slip_url,
     bd.slipUrl,
@@ -66,33 +92,33 @@ function extractPayoutSlipUrl(bd: Record<string, unknown> | null | undefined): s
     bd.attachment_url,
   ];
   for (const c of candidates) {
-    const s = typeof c === 'string' ? c.trim() : '';
+    const s = typeof c === "string" ? c.trim() : "";
     if (s && /^https?:\/\//i.test(s)) return s;
   }
   return null;
 }
 
 function isPdfUrl(url: string): boolean {
-  return /\.pdf(\?|$)/i.test(url) || url.toLowerCase().includes('pdf');
+  return /\.pdf(\?|$)/i.test(url) || url.toLowerCase().includes("pdf");
 }
 
 function ReconciliationBadge({ st }: { st?: string | null }) {
-  const u = (st || 'PENDING').toUpperCase();
-  if (u === 'PASS') {
+  const u = (st || "PENDING").toUpperCase();
+  if (u === "PASS") {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-400">
         PASS
       </span>
     );
   }
-  if (u === 'FAIL') {
+  if (u === "FAIL") {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-400">
         FAIL
       </span>
     );
   }
-  if (u === 'WARN') {
+  if (u === "WARN") {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-950 border border-amber-400 animate-pulse">
         WARN
@@ -108,56 +134,99 @@ function ReconciliationBadge({ st }: { st?: string | null }) {
 
 /** ป้องกัน toLocaleString on undefined — คืน '-' ถ้าไม่ใช่ตัวเลข */
 function fmtNum(v: unknown): string {
-  if (v == null || v === '') return '-';
+  if (v == null || v === "") return "-";
   const n = Number(v);
-  return isNaN(n) ? '-' : n.toLocaleString();
+  return isNaN(n) ? "-" : n.toLocaleString();
 }
 
-export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (view: string) => void }> = ({
+export const UserPayoutView: React.FC<{
+  currentUserRole: string;
+  onNavigate?: (view: string) => void;
+  initialUserId?: string | null;
+  initialStatus?: "all" | "pending" | "approved" | "rejected";
+  onInitialFocusConsumed?: () => void;
+}> = ({
   currentUserRole,
   onNavigate,
+  initialUserId,
+  initialStatus,
+  onInitialFocusConsumed,
 }) => {
   const [requests, setRequests] = useState<AdminPayoutRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<
+    "ALL" | "PENDING" | "APPROVED" | "REJECTED"
+  >("ALL");
+  const [userIdFilter, setUserIdFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Gateway (Paysolution / configured provider) & Stats
-  const [gatewayBalance, setGatewayBalance] = useState<PayoutGatewayBalanceResponse | null>(null);
+  const [gatewayBalance, setGatewayBalance] =
+    useState<PayoutGatewayBalanceResponse | null>(null);
   const [stats, setStats] = useState<PayoutStatsResponse | null>(null);
   const [config, setConfig] = useState<PayoutConfigResponse | null>(null);
   const [runningRelease, setRunningRelease] = useState(false);
   const [runningPayout, setRunningPayout] = useState(false);
 
-  const [actionModal, setActionModal] = useState<{ req: AdminPayoutRow; action: 'approve' | 'reject' } | null>(null);
-  const [actionNotes, setActionNotes] = useState('');
+  const [actionModal, setActionModal] = useState<{
+    req: AdminPayoutRow;
+    action: "approve" | "reject";
+  } | null>(null);
+  const [actionNotes, setActionNotes] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [detailRequest, setDetailRequest] = useState<AdminPayoutRow | null>(null);
+  const [detailRequest, setDetailRequest] = useState<AdminPayoutRow | null>(
+    null,
+  );
   /** PaySo ล่ม / วันหยุด — อนุมัติโดยโอนมือ + URL สลิป */
   const [manualModal, setManualModal] = useState<AdminPayoutRow | null>(null);
-  const [manualSlipUrl, setManualSlipUrl] = useState('');
-  const [manualTxnId, setManualTxnId] = useState('');
-  const [manualNotes, setManualNotes] = useState('');
+  const [manualSlipUrl, setManualSlipUrl] = useState("");
+  const [manualTxnId, setManualTxnId] = useState("");
+  const [manualNotes, setManualNotes] = useState("");
   const [manualSubmitting, setManualSubmitting] = useState(false);
 
   const fetchPayouts = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getAdminPayouts({ limit: 200 });
+      const uid = userIdFilter.trim();
+      const res = await getAdminPayouts({
+        limit: 200,
+        user_id: uid || undefined,
+        status:
+          filterStatus === "PENDING"
+            ? "pending"
+            : filterStatus === "APPROVED"
+              ? "approved"
+              : filterStatus === "REJECTED"
+                ? "rejected"
+                : undefined,
+      });
       setRequests(res.payouts || []);
     } catch (e) {
-      setError((e as Error).message || 'Failed to load payouts');
+      setError((e as Error).message || "Failed to load payouts");
       setRequests([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userIdFilter, filterStatus]);
+
+  useEffect(() => {
+    if (!initialUserId) return;
+    setUserIdFilter(initialUserId);
+    if (initialStatus === "pending") setFilterStatus("PENDING");
+    else if (initialStatus === "approved") setFilterStatus("APPROVED");
+    else if (initialStatus === "rejected") setFilterStatus("REJECTED");
+    else if (initialStatus === "all") setFilterStatus("ALL");
+    onInitialFocusConsumed?.();
+  }, [initialUserId, initialStatus, onInitialFocusConsumed]);
 
   const fetchGatewayAndStats = useCallback(async () => {
     try {
-      const [bal, st] = await Promise.all([getPayoutGatewayBalance(), getPayoutStats()]);
+      const [bal, st] = await Promise.all([
+        getPayoutGatewayBalance(),
+        getPayoutStats(),
+      ]);
       setGatewayBalance(bal);
       setStats(st);
     } catch {
@@ -187,16 +256,20 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
     return () => clearTimeout(t);
   }, [fetchConfig]);
 
-  // Filter Logic (client-side for consistency with existing UX)
+  // Filter Logic (client-side status when ALL; user_id already server-filtered when set)
   const filteredRequests = (requests || []).filter(
-    (req) => req && (filterStatus === 'ALL' || toDisplayStatus(req?.status || '') === filterStatus)
+    (req) =>
+      req &&
+      (filterStatus === "ALL" ||
+        toDisplayStatus(req?.status || "") === filterStatus) &&
+      (!userIdFilter.trim() || String(req.user_id) === userIdFilter.trim()),
   );
 
   const handleManualApprove = async () => {
     if (!manualModal) return;
     const slip = manualSlipUrl.trim();
     if (!/^https?:\/\//i.test(slip)) {
-      setError('กรุณาใส่ slip_url เป็น https');
+      setError("กรุณาใส่ slip_url เป็น https");
       return;
     }
     setManualSubmitting(true);
@@ -207,12 +280,21 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         transaction_id: manualTxnId.trim() || undefined,
       });
       setRequests((prev) =>
-        prev.map((req) => (req.id === manualModal.id ? { ...req, status: 'approved', paid_manually: true, paid_manually_slip_url: slip } : req))
+        prev.map((req) =>
+          req.id === manualModal.id
+            ? {
+                ...req,
+                status: "approved",
+                paid_manually: true,
+                paid_manually_slip_url: slip,
+              }
+            : req,
+        ),
       );
       setManualModal(null);
-      setManualSlipUrl('');
-      setManualTxnId('');
-      setManualNotes('');
+      setManualSlipUrl("");
+      setManualTxnId("");
+      setManualNotes("");
       fetchGatewayAndStats();
     } catch (e) {
       setError(describePayoutError(e));
@@ -221,7 +303,7 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
     }
   };
 
-  const handleAction = async (id: string, action: 'approved' | 'rejected') => {
+  const handleAction = async (id: string, action: "approved" | "rejected") => {
     setActionSubmitting(true);
     try {
       await patchAdminPayout(id, {
@@ -229,12 +311,10 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         admin_notes: actionNotes || undefined,
       });
       setRequests((prev) =>
-        prev.map((req) =>
-          req.id === id ? { ...req, status: action } : req
-        )
+        prev.map((req) => (req.id === id ? { ...req, status: action } : req)),
       );
       setActionModal(null);
-      setActionNotes('');
+      setActionNotes("");
       fetchGatewayAndStats();
     } catch (e) {
       setError(describePayoutError(e));
@@ -249,9 +329,11 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
     let ok = 0;
     for (const id of selectedIds) {
       try {
-        await patchAdminPayout(id, { status: 'approved' });
+        await patchAdminPayout(id, { status: "approved" });
         setRequests((prev) =>
-          prev.map((req) => (req.id === id ? { ...req, status: 'approved' } : req))
+          prev.map((req) =>
+            req.id === id ? { ...req, status: "approved" } : req,
+          ),
         );
         ok++;
       } catch (e) {
@@ -263,7 +345,7 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
       setError(
         `อนุมัติสำเร็จ ${ok} รายการ — ล้มเหลว ${failures.length} รายการ:\n${failures
           .map((f) => `${f.id.slice(0, 8)}… ${f.reason}`)
-          .join('\n')}`
+          .join("\n")}`,
       );
     } else if (ok > 0) {
       setError(null);
@@ -272,37 +354,44 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
   };
 
   const handleExportCSV = () => {
-    const header = 'ID,User,Bank,Account,Amount,Status,Date\n';
+    const header = "ID,User,Bank,Account,Amount,Status,Date\n";
     const rows = filteredRequests
       .map((r) => {
         const { bankName, accountNumber } = fromBankDetails(r.bank_details);
-        return `${r.id},${r.user_name || r.user_id},${bankName},${accountNumber},${r.amount},${r.status},${r.created_at || ''}`;
+        return `${r.id},${r.user_name || r.user_id},${bankName},${accountNumber},${r.amount},${r.status},${r.created_at || ""}`;
       })
-      .join('\n');
-    const blob = new Blob([header + rows], { type: 'text/csv' });
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `payouts-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `payouts-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
   };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
     );
   };
 
   const handleRunAutoRelease = async () => {
-    if (!confirm('รัน Auto-Release ตอนนี้? (ปล่อย wallet_pending → wallet_balance สำหรับงานที่ครบ release_deadline)')) return;
+    if (
+      !confirm(
+        "รัน Auto-Release ตอนนี้? (ปล่อย wallet_pending → wallet_balance สำหรับงานที่ครบ release_deadline)",
+      )
+    )
+      return;
     setRunningRelease(true);
     try {
       const res = await runAutoRelease();
-      alert(`Released: ${res?.released ?? 0} jobs${res?.errors?.length ? `\nErrors: ${res.errors.length}` : ''}`);
+      alert(
+        `Released: ${res?.released ?? 0} jobs${res?.errors?.length ? `\nErrors: ${res.errors.length}` : ""}`,
+      );
       fetchPayouts();
       fetchGatewayAndStats();
     } catch (e) {
-      alert((e as Error).message || 'Failed');
+      alert((e as Error).message || "Failed");
     } finally {
       setRunningRelease(false);
     }
@@ -312,11 +401,11 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
     const prov =
       config?.payment_gateway_provider ||
       gatewayBalance?.payment_gateway_provider ||
-      'paysolution';
+      "paysolution";
     const label = formatGatewayProviderLabel(prov);
     if (
       !confirm(
-        `รัน Auto-Payout ผ่าน ${label} ตอนนี้?\n(ต้องเปิด AUTO_PAYOUT_GATEWAY_TRANSFER_ENABLED=1 หรือ AUTO_PAYOUT_OMISE_ENABLED=1 และมี PAYMENT_GATEWAY_SECRET_KEY)`
+        `รัน Auto-Payout ผ่าน ${label} ตอนนี้?\n(ต้องเปิด AUTO_PAYOUT_GATEWAY_TRANSFER_ENABLED=1 หรือ AUTO_PAYOUT_OMISE_ENABLED=1 และมี PAYMENT_GATEWAY_SECRET_KEY)`,
       )
     ) {
       return;
@@ -324,20 +413,23 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
     setRunningPayout(true);
     try {
       const res = await runAutoPayout();
-      alert(`Processed: ${res?.processed ?? 0} payouts${res?.errors?.length ? `\nErrors: ${res.errors.length}` : ''}`);
+      alert(
+        `Processed: ${res?.processed ?? 0} payouts${res?.errors?.length ? `\nErrors: ${res.errors.length}` : ""}`,
+      );
       fetchPayouts();
       fetchGatewayAndStats();
     } catch (e) {
-      alert((e as Error).message || 'Failed');
+      alert((e as Error).message || "Failed");
     } finally {
       setRunningPayout(false);
     }
   };
 
   const riskScore = (req: AdminPayoutRow): number => {
-    const kyc = (req.kyc_status || '').toLowerCase();
-    if (kyc === 'verified') return Math.min(20, Math.max(0, 100 - (req.rating || 0) * 10));
-    if (kyc === 'rejected' || kyc === 'failed') return 90;
+    const kyc = (req.kyc_status || "").toLowerCase();
+    if (kyc === "verified")
+      return Math.min(20, Math.max(0, 100 - (req.rating || 0) * 10));
+    if (kyc === "rejected" || kyc === "failed") return 90;
     return 50;
   };
 
@@ -349,29 +441,54 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <Banknote size={20} className="text-indigo-600" />
             อนุมัติการถอนเงิน (User Payout Requests)
           </h2>
-          <p className="text-slate-500 text-sm">ตรวจสอบและดำเนินการโอนเงินให้ผู้ใช้งาน</p>
-          <p className="text-xs text-slate-400 mt-1">บทบาท: {currentUserRole.replace(/_/g, ' ')}</p>
+          <p className="text-slate-500 text-sm">
+            ตรวจสอบและดำเนินการโอนเงินให้ผู้ใช้งาน
+          </p>
+          {userIdFilter ? (
+            <p className="text-xs text-indigo-700 mt-1 font-medium">
+              กรอง user: {userIdFilter.slice(0, 8)}…
+              <button
+                type="button"
+                onClick={() => setUserIdFilter("")}
+                className="ml-2 text-slate-500 hover:text-slate-800 underline"
+              >
+                ล้าง
+              </button>
+            </p>
+          ) : null}
+          <p className="text-xs text-slate-400 mt-1">
+            บทบาท: {currentUserRole.replace(/_/g, " ")}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => { fetchPayouts(); fetchGatewayAndStats(); fetchConfig(); }}
+            onClick={() => {
+              fetchPayouts();
+              fetchGatewayAndStats();
+              fetchConfig();
+            }}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200"
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />{" "}
+            Refresh
           </button>
           <div className="flex bg-white border border-slate-200 rounded-lg p-1">
-            {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
-                  filterStatus === status ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                {status}
-              </button>
-            ))}
+            {(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map(
+              (status) => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                    filterStatus === status
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  {status}
+                </button>
+              ),
+            )}
           </div>
           <button
             onClick={handleExportCSV}
@@ -388,7 +505,10 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
           อนุมัติ = หักวอลเล็ตผู้ใช้ทันทีในระบบ
         </p>
         <p className="mt-1 text-xs leading-relaxed opacity-95">
-          กดอนุมัติแล้วระบบจะหักเงินจาก wallet ลูกค้าทันที — คุณต้องโอนเงินจริงจากบัญชีบริษัทไปยังบัญชีลูกค้าตามข้อมูลในแถว (ข้อมูลธนาคารมาจากฐานข้อมูล ไม่แก้ในตารางนี้) หากโอนผิดบัญชีหรือช้าเกินไป จะก่อความเสียหายทางการเงิน
+          กดอนุมัติแล้วระบบจะหักเงินจาก wallet ลูกค้าทันที —
+          คุณต้องโอนเงินจริงจากบัญชีบริษัทไปยังบัญชีลูกค้าตามข้อมูลในแถว
+          (ข้อมูลธนาคารมาจากฐานข้อมูล ไม่แก้ในตารางนี้)
+          หากโอนผิดบัญชีหรือช้าเกินไป จะก่อความเสียหายทางการเงิน
         </p>
       </div>
 
@@ -399,22 +519,37 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         </p>
         <ol className="list-decimal list-inside space-y-1.5 text-indigo-950/95 leading-relaxed pl-1">
           <li>
-            <strong>ลูกค้า</strong>แจ้งถอนในแอป — ระบบแสดงคำขอที่นี่ พร้อมบัญชีรับเงิน / PromptPay จากที่ลูกค้าลงใน Settings (ไม่ต้องแนบสลิปจากลูกค้าตอนแจ้งถอน)
+            <strong>ลูกค้า</strong>แจ้งถอนในแอป — ระบบแสดงคำขอที่นี่
+            พร้อมบัญชีรับเงิน / PromptPay จากที่ลูกค้าลงใน Settings
+            (ไม่ต้องแนบสลิปจากลูกค้าตอนแจ้งถอน)
           </li>
           <li>
-            <strong>แอดมิน</strong>ตรวจรายการ → โอนเงินจากบัญชีบริษัทไปยังเลขบัญชีหรือ PromptPay ของลูกค้าตามที่แสดง
+            <strong>แอดมิน</strong>ตรวจรายการ →
+            โอนเงินจากบัญชีบริษัทไปยังเลขบัญชีหรือ PromptPay ของลูกค้าตามที่แสดง
           </li>
           <li>
-            <strong>หลังโอนสำเร็จ</strong> ต้องเก็บ<strong className="text-indigo-950">สลิปการโอน (ขาออก)</strong>เป็นหลักฐานในระบบ: ใช้ปุ่ม <em>โอนมือ + สลิป</em> (กรอก URL สลิป → บันทึก <code className="text-xs bg-white/80 px-1 rounded">paid_manually_slip_url</code>) หรือช่องทาง PaySo / Auto-Payout ตามที่ตั้งค่า
+            <strong>หลังโอนสำเร็จ</strong> ต้องเก็บ
+            <strong className="text-indigo-950">สลิปการโอน (ขาออก)</strong>
+            เป็นหลักฐานในระบบ: ใช้ปุ่ม <em>โอนมือ + สลิป</em> (กรอก URL สลิป →
+            บันทึก{" "}
+            <code className="text-xs bg-white/80 px-1 rounded">
+              paid_manually_slip_url
+            </code>
+            ) หรือช่องทาง PaySo / Auto-Payout ตามที่ตั้งค่า
           </li>
           <li>
-            สลิปนี้ใช้คู่กับ Ledger / Reconciliation และตรวจสอบยอดขาเข้า–ขาออก — ดูเพิ่มใน{' '}
+            สลิปนี้ใช้คู่กับ Ledger / Reconciliation และตรวจสอบยอดขาเข้า–ขาออก —
+            ดูเพิ่มใน{" "}
             {onNavigate ? (
-              <button type="button" onClick={() => onNavigate('financial-audit')} className="text-indigo-700 font-bold hover:underline">
+              <button
+                type="button"
+                onClick={() => onNavigate("financial-audit")}
+                className="text-indigo-700 font-bold hover:underline"
+              >
                 Financial Audit
               </button>
             ) : (
-              'Financial Audit'
+              "Financial Audit"
             )}
           </li>
         </ol>
@@ -424,29 +559,39 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
-            <Wallet size={16} /> ยอด Gateway ({formatGatewayProviderLabel(gatewayBalance?.payment_gateway_provider || config?.payment_gateway_provider)})
+            <Wallet size={16} /> ยอด Gateway (
+            {formatGatewayProviderLabel(
+              gatewayBalance?.payment_gateway_provider ||
+                config?.payment_gateway_provider,
+            )}
+            )
           </div>
           <div className="text-xl font-bold text-slate-800">
             ฿{fmtNum(gatewayBalance?.available)}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            Pending: ฿{fmtNum(gatewayBalance?.total_pending_payouts)} · Safety: ฿{fmtNum(gatewayBalance?.safety_gap)}
+            Pending: ฿{fmtNum(gatewayBalance?.total_pending_payouts)} · Safety:
+            ฿{fmtNum(gatewayBalance?.safety_gap)}
           </div>
           {gatewayBalance?.error && (
-            <div className="text-xs text-amber-600 mt-1">{gatewayBalance.error}</div>
+            <div className="text-xs text-amber-600 mt-1">
+              {gatewayBalance.error}
+            </div>
           )}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
             <Zap size={16} /> Pending Release
           </div>
-          <div className="text-xl font-bold text-slate-800">{stats?.pending_release_jobs ?? '-'} jobs</div>
+          <div className="text-xl font-bold text-slate-800">
+            {stats?.pending_release_jobs ?? "-"} jobs
+          </div>
           <button
             onClick={handleRunAutoRelease}
             disabled={runningRelease || !stats?.pending_release_jobs}
             className="mt-2 text-xs px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg font-bold hover:bg-indigo-200 disabled:opacity-50"
           >
-            {runningRelease ? 'Running...' : 'Run Auto-Release'}
+            {runningRelease ? "Running..." : "Run Auto-Release"}
           </button>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -454,14 +599,15 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <Banknote size={16} /> Pending Payouts
           </div>
           <div className="text-xl font-bold text-slate-800">
-            {stats?.pending_payout_count ?? '-'} · ฿{fmtNum(stats?.pending_payout_total)}
+            {stats?.pending_payout_count ?? "-"} · ฿
+            {fmtNum(stats?.pending_payout_total)}
           </div>
           <button
             onClick={handleRunAutoPayout}
             disabled={runningPayout || !stats?.pending_payout_count}
             className="mt-2 text-xs px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold hover:bg-emerald-200 disabled:opacity-50"
           >
-            {runningPayout ? 'Running...' : 'Run Auto-Payout (Gateway)'}
+            {runningPayout ? "Running..." : "Run Auto-Payout (Gateway)"}
           </button>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -469,7 +615,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <Users size={16} /> Coach-Trainee
           </div>
           <div className="text-sm font-bold text-slate-800">
-            Active: {stats?.connections?.active ?? '-'} · Pending: {stats?.connections?.pending ?? '-'} · Graduated: {stats?.connections?.graduated ?? '-'}
+            Active: {stats?.connections?.active ?? "-"} · Pending:{" "}
+            {stats?.connections?.pending ?? "-"} · Graduated:{" "}
+            {stats?.connections?.graduated ?? "-"}
           </div>
         </div>
       </div>
@@ -482,19 +630,25 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         {config?.temporary_payout_account ? (
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="text-sm text-slate-700">
-              <div className="font-bold text-slate-800">{config.temporary_payout_account.label}</div>
+              <div className="font-bold text-slate-800">
+                {config.temporary_payout_account.label}
+              </div>
               <div>
-                {config.temporary_payout_account.bank_name} · {config.temporary_payout_account.account_holder_name}
+                {config.temporary_payout_account.bank_name} ·{" "}
+                {config.temporary_payout_account.account_holder_name}
               </div>
               <div className="font-mono text-xs text-slate-600 mt-1">
-                เลขบัญชี (mask): {config.temporary_payout_account.account_number_masked}
-                {config.temporary_payout_account.has_prompt_pay ? ' · มี PromptPay' : ''}
+                เลขบัญชี (mask):{" "}
+                {config.temporary_payout_account.account_number_masked}
+                {config.temporary_payout_account.has_prompt_pay
+                  ? " · มี PromptPay"
+                  : ""}
               </div>
             </div>
             {onNavigate && (
               <button
                 type="button"
-                onClick={() => onNavigate('personal-settlement-manual')}
+                onClick={() => onNavigate("personal-settlement-manual")}
                 className="shrink-0 px-4 py-2 bg-slate-100 text-slate-800 rounded-lg text-xs font-bold hover:bg-slate-200"
               >
                 ไปบันทึกรายการ / แก้ไขบัญชี
@@ -504,12 +658,13 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         ) : (
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <p className="text-sm text-slate-600">
-              ยังไม่ได้ตั้งค่าบัญชีรับชั่วคราว — ใช้เมื่อโอนเงินให้ Talent ด้วยมือ (หรือคู่กับ Gateway ภายหลัง)
+              ยังไม่ได้ตั้งค่าบัญชีรับชั่วคราว — ใช้เมื่อโอนเงินให้ Talent
+              ด้วยมือ (หรือคู่กับ Gateway ภายหลัง)
             </p>
             {onNavigate && (
               <button
                 type="button"
-                onClick={() => onNavigate('personal-settlement-manual')}
+                onClick={() => onNavigate("personal-settlement-manual")}
                 className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700"
               >
                 ตั้งค่าบัญชีรับชั่วคราว
@@ -528,8 +683,14 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
             <Zap size={16} className="text-indigo-500" />
             <span>Auto-Release:</span>
-            <span className={`font-bold ${config?.auto_release_enabled ? 'text-emerald-600' : 'text-slate-500'}`}>
-              {config ? (config.auto_release_enabled ? `เปิด (${config.auto_release_hours ?? 24}h)` : 'ปิด') : '-'}
+            <span
+              className={`font-bold ${config?.auto_release_enabled ? "text-emerald-600" : "text-slate-500"}`}
+            >
+              {config
+                ? config.auto_release_enabled
+                  ? `เปิด (${config.auto_release_hours ?? 24}h)`
+                  : "ปิด"
+                : "-"}
             </span>
           </div>
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
@@ -537,16 +698,18 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <span>Auto-Payout (Gateway):</span>
             <span
               className={`font-bold ${
-                (config?.auto_payout_gateway_transfer_enabled ?? config?.auto_payout_omise_enabled)
-                  ? 'text-emerald-600'
-                  : 'text-amber-600'
+                (config?.auto_payout_gateway_transfer_enabled ??
+                config?.auto_payout_omise_enabled)
+                  ? "text-emerald-600"
+                  : "text-amber-600"
               }`}
             >
               {config
-                ? (config.auto_payout_gateway_transfer_enabled ?? config.auto_payout_omise_enabled)
-                    ? `เปิด (${formatGatewayProviderLabel(config.payment_gateway_provider)})`
-                    : 'ปิด'
-                : '-'}
+                ? (config.auto_payout_gateway_transfer_enabled ??
+                  config.auto_payout_omise_enabled)
+                  ? `เปิด (${formatGatewayProviderLabel(config.payment_gateway_provider)})`
+                  : "ปิด"
+                : "-"}
             </span>
           </div>
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
@@ -554,17 +717,29 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <span>Gateway key:</span>
             <span
               className={`font-bold ${
-                (config?.gateway_configured ?? config?.omise_configured) ? 'text-emerald-600' : 'text-amber-600'
+                (config?.gateway_configured ?? config?.omise_configured)
+                  ? "text-emerald-600"
+                  : "text-amber-600"
               }`}
             >
-              {config ? (config.gateway_configured ?? config.omise_configured ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง') : '-'}
+              {config
+                ? (config.gateway_configured ?? config.omise_configured)
+                  ? "ตั้งแล้ว"
+                  : "ยังไม่ตั้ง"
+                : "-"}
             </span>
           </div>
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
             <Landmark size={16} className="text-teal-600" />
             <span>บัญชีรับชั่วคราว:</span>
-            <span className={`font-bold ${config?.temporary_payout_account ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {config ? (config.temporary_payout_account ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง') : '-'}
+            <span
+              className={`font-bold ${config?.temporary_payout_account ? "text-emerald-600" : "text-amber-600"}`}
+            >
+              {config
+                ? config.temporary_payout_account
+                  ? "ตั้งแล้ว"
+                  : "ยังไม่ตั้ง"
+                : "-"}
             </span>
           </div>
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
@@ -579,7 +754,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
           </div>
         </div>
         {config?.payout_rail_hint && (
-          <p className="text-xs text-slate-500 mt-2 font-mono">rail: {config.payout_rail_hint}</p>
+          <p className="text-xs text-slate-500 mt-2 font-mono">
+            rail: {config.payout_rail_hint}
+          </p>
         )}
         {config?.hint && (
           <p className="text-xs text-slate-500 mt-2">{config.hint}</p>
@@ -592,7 +769,12 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             <AlertTriangle size={18} className="shrink-0 mt-0.5" /> {error}
           </span>
           <button
-            onClick={() => { setError(null); fetchPayouts(); fetchGatewayAndStats(); fetchConfig(); }}
+            onClick={() => {
+              setError(null);
+              fetchPayouts();
+              fetchGatewayAndStats();
+              fetchConfig();
+            }}
             className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-sm font-bold hover:bg-rose-200"
           >
             Retry
@@ -602,7 +784,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
 
       {selectedIds.length > 0 && (
         <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex items-center justify-between">
-          <span className="text-sm font-bold text-indigo-700">{selectedIds.length} items selected</span>
+          <span className="text-sm font-bold text-indigo-700">
+            {selectedIds.length} items selected
+          </span>
           <button
             onClick={handleBulkApprove}
             className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700"
@@ -625,7 +809,11 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                   <input
                     type="checkbox"
                     onChange={(e) =>
-                      setSelectedIds(e.target.checked ? filteredRequests.map((r) => r.id) : [])
+                      setSelectedIds(
+                        e.target.checked
+                          ? filteredRequests.map((r) => r.id)
+                          : [],
+                      )
                     }
                   />
                 </th>
@@ -640,7 +828,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRequests.map((req) => {
-                const { bankName, accountNumber } = fromBankDetails(req.bank_details);
+                const { bankName, accountNumber } = fromBankDetails(
+                  req.bank_details,
+                );
                 const status = toDisplayStatus(req.status);
                 const risk = riskScore(req);
                 const slipUrl = extractPayoutSlipUrl(req.bank_details);
@@ -651,15 +841,20 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                         type="checkbox"
                         checked={selectedIds.includes(req.id)}
                         onChange={() => toggleSelect(req.id)}
-                        disabled={status !== 'PENDING'}
+                        disabled={status !== "PENDING"}
                       />
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-bold text-slate-800">{req.id}</div>
-                      <div className="text-slate-500 text-xs mt-1">{req.created_at || '-'}</div>
+                      <div className="text-slate-500 text-xs mt-1">
+                        {req.created_at || "-"}
+                      </div>
                       <div className="flex items-center gap-1 mt-1 text-xs">
-                        <span className="text-slate-600 font-medium">{req.user_name || req.user_id}</span>
-                        {(req.kyc_status || '').toLowerCase() === 'verified' && (
+                        <span className="text-slate-600 font-medium">
+                          {req.user_name || req.user_id}
+                        </span>
+                        {(req.kyc_status || "").toLowerCase() ===
+                          "verified" && (
                           <ShieldCheck size={12} className="text-emerald-500" />
                         )}
                       </div>
@@ -667,7 +862,10 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                     <td className="px-6 py-4 text-center">
                       <ReconciliationBadge st={req.reconciliation_status} />
                       {req.slip_hash && (
-                        <div className="text-[9px] font-mono text-slate-500 mt-1 max-w-[100px] truncate mx-auto" title={req.slip_hash}>
+                        <div
+                          className="text-[9px] font-mono text-slate-500 mt-1 max-w-[100px] truncate mx-auto"
+                          title={req.slip_hash}
+                        >
                           {req.slip_hash.slice(0, 10)}…
                         </div>
                       )}
@@ -676,11 +874,13 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${risk > 50 ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                            className={`h-full rounded-full ${risk > 50 ? "bg-rose-500" : "bg-emerald-500"}`}
                             style={{ width: `${risk}%` }}
                           />
                         </div>
-                        <span className={`font-bold text-xs ${risk > 50 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        <span
+                          className={`font-bold text-xs ${risk > 50 ? "text-rose-600" : "text-emerald-600"}`}
+                        >
                           {risk}
                         </span>
                       </div>
@@ -711,22 +911,28 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                         ดู
                       </button>
                       {slipUrl && (
-                        <div className="text-[10px] text-emerald-600 mt-1">มีสลิป</div>
+                        <div className="text-[10px] text-emerald-600 mt-1">
+                          มีสลิป
+                        </div>
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      {status === 'PENDING' ? (
+                      {status === "PENDING" ? (
                         <div className="flex flex-col items-center gap-2">
                           <div className="flex justify-center gap-2">
                             <button
-                              onClick={() => setActionModal({ req, action: 'approve' })}
+                              onClick={() =>
+                                setActionModal({ req, action: "approve" })
+                              }
                               className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"
                               title="Approve"
                             >
                               <CheckCircle size={18} />
                             </button>
                             <button
-                              onClick={() => setActionModal({ req, action: 'reject' })}
+                              onClick={() =>
+                                setActionModal({ req, action: "reject" })
+                              }
                               className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100"
                               title="Reject"
                             >
@@ -737,9 +943,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                             type="button"
                             onClick={() => {
                               setManualModal(req);
-                              setManualSlipUrl('');
-                              setManualTxnId('');
-                              setManualNotes('');
+                              setManualSlipUrl("");
+                              setManualTxnId("");
+                              setManualNotes("");
                             }}
                             className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
                             title="เมื่อ PaySo ล่ม — อนุมัติหลังโอนมือแล้ว แนบ URL สลิป"
@@ -750,7 +956,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                       ) : (
                         <div
                           className={`text-center text-xs font-bold px-2 py-1 rounded-full ${
-                            status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                            status === "APPROVED"
+                              ? "bg-emerald-100 text-emerald-600"
+                              : "bg-rose-100 text-rose-600"
                           }`}
                         >
                           {status}
@@ -785,52 +993,75 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
               <div className="grid grid-cols-1 gap-2">
                 <div>
                   <span className="text-slate-500 text-xs">Request ID</span>
-                  <div className="font-mono font-bold text-slate-800">{detailRequest.id}</div>
+                  <div className="font-mono font-bold text-slate-800">
+                    {detailRequest.id}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   <div>
                     <span className="text-slate-500 text-xs">สถานะ</span>
-                    <div className="font-bold text-slate-800">{detailRequest.status}</div>
+                    <div className="font-bold text-slate-800">
+                      {detailRequest.status}
+                    </div>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">จำนวน</span>
-                    <div className="font-bold text-slate-800">฿{fmtNum(detailRequest.amount)}</div>
+                    <div className="font-bold text-slate-800">
+                      ฿{fmtNum(detailRequest.amount)}
+                    </div>
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500 text-xs">ผู้ใช้</span>
-                  <div className="text-slate-800">{detailRequest.user_name || detailRequest.user_id}</div>
+                  <div className="text-slate-800">
+                    {detailRequest.user_name || detailRequest.user_id}
+                  </div>
                   {detailRequest.user_phone && (
-                    <div className="text-xs text-slate-600">โทร: {detailRequest.user_phone}</div>
+                    <div className="text-xs text-slate-600">
+                      โทร: {detailRequest.user_phone}
+                    </div>
                   )}
                   {detailRequest.user_email && (
-                    <div className="text-xs text-slate-600">อีเมล: {detailRequest.user_email}</div>
+                    <div className="text-xs text-slate-600">
+                      อีเมล: {detailRequest.user_email}
+                    </div>
                   )}
                 </div>
                 <div>
                   <span className="text-slate-500 text-xs">KYC / Tier</span>
                   <div className="text-slate-800">
-                    {detailRequest.kyc_status || '-'} · {detailRequest.membership_tier || '-'}
+                    {detailRequest.kyc_status || "-"} ·{" "}
+                    {detailRequest.membership_tier || "-"}
                   </div>
                 </div>
                 <div>
-                  <span className="text-slate-500 text-xs">สร้างเมื่อ / ดำเนินการ</span>
+                  <span className="text-slate-500 text-xs">
+                    สร้างเมื่อ / ดำเนินการ
+                  </span>
                   <div className="text-slate-800 text-xs">
-                    {detailRequest.created_at || '-'}
+                    {detailRequest.created_at || "-"}
                     {detailRequest.processed_at && (
-                      <span className="block text-slate-600">processed: {detailRequest.processed_at}</span>
+                      <span className="block text-slate-600">
+                        processed: {detailRequest.processed_at}
+                      </span>
                     )}
                   </div>
                 </div>
                 {detailRequest.transaction_id && (
                   <div>
-                    <span className="text-slate-500 text-xs">Transaction ID (หลังอนุมัติ)</span>
-                    <div className="font-mono text-xs text-slate-800 break-all">{detailRequest.transaction_id}</div>
+                    <span className="text-slate-500 text-xs">
+                      Transaction ID (หลังอนุมัติ)
+                    </span>
+                    <div className="font-mono text-xs text-slate-800 break-all">
+                      {detailRequest.transaction_id}
+                    </div>
                   </div>
                 )}
                 {detailRequest.paid_manually && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50/90 p-3">
-                    <span className="text-amber-900 text-xs font-bold">โอนมือ (สำรอง PaySo)</span>
+                    <span className="text-amber-900 text-xs font-bold">
+                      โอนมือ (สำรอง PaySo)
+                    </span>
                     {detailRequest.paid_manually_slip_url && (
                       <a
                         href={detailRequest.paid_manually_slip_url}
@@ -842,50 +1073,73 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                       </a>
                     )}
                     {detailRequest.paid_manually_at && (
-                      <p className="text-[10px] text-slate-600 mt-1">เมื่อ: {detailRequest.paid_manually_at}</p>
+                      <p className="text-[10px] text-slate-600 mt-1">
+                        เมื่อ: {detailRequest.paid_manually_at}
+                      </p>
                     )}
                   </div>
                 )}
-                {(detailRequest.payso_reference_id || detailRequest.payso_transaction_id) && (
+                {(detailRequest.payso_reference_id ||
+                  detailRequest.payso_transaction_id) && (
                   <div className="rounded-lg border border-teal-200 bg-teal-50/80 p-3">
-                    <span className="text-teal-800 text-xs font-bold uppercase">Payso (PromptPay)</span>
+                    <span className="text-teal-800 text-xs font-bold uppercase">
+                      Payso (PromptPay)
+                    </span>
                     {detailRequest.payso_reference_id && (
                       <div className="mt-1">
-                        <span className="text-slate-500 text-[10px]">Reference ID</span>
-                        <div className="font-mono text-xs text-slate-900 break-all">{detailRequest.payso_reference_id}</div>
+                        <span className="text-slate-500 text-[10px]">
+                          Reference ID
+                        </span>
+                        <div className="font-mono text-xs text-slate-900 break-all">
+                          {detailRequest.payso_reference_id}
+                        </div>
                       </div>
                     )}
                     {detailRequest.payso_transaction_id && (
                       <div className="mt-1">
-                        <span className="text-slate-500 text-[10px]">Payso Transaction ID</span>
-                        <div className="font-mono text-xs text-slate-900 break-all">{detailRequest.payso_transaction_id}</div>
+                        <span className="text-slate-500 text-[10px]">
+                          Payso Transaction ID
+                        </span>
+                        <div className="font-mono text-xs text-slate-900 break-all">
+                          {detailRequest.payso_transaction_id}
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
                 {detailRequest.admin_notes && (
                   <div>
-                    <span className="text-slate-500 text-xs">หมายเหตุแอดมิน</span>
-                    <div className="text-slate-800 bg-slate-50 rounded p-2 text-xs">{detailRequest.admin_notes}</div>
+                    <span className="text-slate-500 text-xs">
+                      หมายเหตุแอดมิน
+                    </span>
+                    <div className="text-slate-800 bg-slate-50 rounded p-2 text-xs">
+                      {detailRequest.admin_notes}
+                    </div>
                   </div>
                 )}
               </div>
 
               <div>
-                <span className="text-slate-500 text-xs font-bold uppercase">ข้อมูลธนาคาร / ช่องทาง (bank_details)</span>
+                <span className="text-slate-500 text-xs font-bold uppercase">
+                  ข้อมูลธนาคาร / ช่องทาง (bank_details)
+                </span>
                 <pre className="mt-1 p-3 bg-slate-50 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap break-all">
                   {JSON.stringify(detailRequest.bank_details || {}, null, 2)}
                 </pre>
               </div>
 
               <div>
-                <span className="text-slate-500 text-xs font-bold uppercase">สลิปการโอน (แนบจากผู้ใช้)</span>
+                <span className="text-slate-500 text-xs font-bold uppercase">
+                  สลิปการโอน (แนบจากผู้ใช้)
+                </span>
                 {(() => {
                   const u = extractPayoutSlipUrl(detailRequest.bank_details);
                   if (!u) {
                     return (
                       <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                        ไม่พบสลิปในรายการนี้ — รายการเก่าอาจสร้างก่อนบังคับสลิป หรือข้อมูลไม่ครบ ควรตรวจ Ledger และหลักฐานอื่นก่อนอนุมัติ
+                        ไม่พบสลิปในรายการนี้ — รายการเก่าอาจสร้างก่อนบังคับสลิป
+                        หรือข้อมูลไม่ครบ ควรตรวจ Ledger
+                        และหลักฐานอื่นก่อนอนุมัติ
                       </p>
                     );
                   }
@@ -916,12 +1170,15 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                             alt="สลิปการโอน"
                             className="w-full max-h-80 object-contain"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
                             }}
                           />
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-600">ไฟล์ PDF — ใช้ลิงก์ด้านบนเพื่อเปิดดู</p>
+                        <p className="text-xs text-slate-600">
+                          ไฟล์ PDF — ใช้ลิงก์ด้านบนเพื่อเปิดดู
+                        </p>
                       )}
                     </div>
                   );
@@ -936,15 +1193,24 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
       {manualModal && (
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md">
-            <h3 className="font-bold text-lg mb-2">อนุมัติแบบโอนมือ + สลิป (ขาออก)</h3>
+            <h3 className="font-bold text-lg mb-2">
+              อนุมัติแบบโอนมือ + สลิป (ขาออก)
+            </h3>
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              หลังคุณ<strong>โอนเงินจากบัญชีบริษัทไปยังลูกค้าแล้ว</strong> ให้แนบ URL สลิป<strong>การโอนออก</strong> (หลักฐานที่ธนาคาร/Gateway ออกให้) — ไม่ใช่สลิปจากลูกค้า
-              ใช้เมื่อ PaySo / API ไม่พร้อม — หัก wallet เหมือนอนุมัติปกติ ต้องเป็น URL แบบ https (อัปโหลดรูปไป S3/Cloudinary แล้วก็ได้)
+              หลังคุณ<strong>โอนเงินจากบัญชีบริษัทไปยังลูกค้าแล้ว</strong>{" "}
+              ให้แนบ URL สลิป<strong>การโอนออก</strong>{" "}
+              (หลักฐานที่ธนาคาร/Gateway ออกให้) — ไม่ใช่สลิปจากลูกค้า ใช้เมื่อ
+              PaySo / API ไม่พร้อม — หัก wallet เหมือนอนุมัติปกติ ต้องเป็น URL
+              แบบ https (อัปโหลดรูปไป S3/Cloudinary แล้วก็ได้)
             </p>
-            <p className="text-sm font-mono text-slate-800 mb-3">ID: {manualModal.id}</p>
+            <p className="text-sm font-mono text-slate-800 mb-3">
+              ID: {manualModal.id}
+            </p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="text-xs font-bold text-slate-500">slip_url (https) *</label>
+                <label className="text-xs font-bold text-slate-500">
+                  slip_url (https) *
+                </label>
                 <input
                   type="url"
                   value={manualSlipUrl}
@@ -954,7 +1220,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500">เลขอ้างอิงโอน (ถ้ามี)</label>
+                <label className="text-xs font-bold text-slate-500">
+                  เลขอ้างอิงโอน (ถ้ามี)
+                </label>
                 <input
                   type="text"
                   value={manualTxnId}
@@ -963,7 +1231,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500">หมายเหตุ</label>
+                <label className="text-xs font-bold text-slate-500">
+                  หมายเหตุ
+                </label>
                 <input
                   type="text"
                   value={manualNotes}
@@ -977,9 +1247,9 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                 type="button"
                 onClick={() => {
                   setManualModal(null);
-                  setManualSlipUrl('');
-                  setManualTxnId('');
-                  setManualNotes('');
+                  setManualSlipUrl("");
+                  setManualTxnId("");
+                  setManualNotes("");
                 }}
                 className="flex-1 py-2 border rounded text-slate-600 font-bold"
               >
@@ -991,7 +1261,7 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                 disabled={manualSubmitting}
                 className="flex-1 py-2 rounded font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
               >
-                {manualSubmitting ? '...' : 'ยืนยันโอนมือ'}
+                {manualSubmitting ? "..." : "ยืนยันโอนมือ"}
               </button>
             </div>
           </div>
@@ -1003,13 +1273,15 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-xl w-96">
             <h3 className="font-bold text-lg mb-4">
-              {actionModal.action === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ'} คำขอถอน
+              {actionModal.action === "approve" ? "อนุมัติ" : "ปฏิเสธ"} คำขอถอน
             </h3>
             <p className="text-sm text-slate-600 mb-2">
               ID: {actionModal.req.id} · ฿{fmtNum(actionModal.req?.amount)}
             </p>
             <div className="mb-4">
-              <label className="text-xs font-bold text-slate-500 uppercase">Admin Notes (optional)</label>
+              <label className="text-xs font-bold text-slate-500 uppercase">
+                Admin Notes (optional)
+              </label>
               <input
                 type="text"
                 value={actionNotes}
@@ -1022,7 +1294,7 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
               <button
                 onClick={() => {
                   setActionModal(null);
-                  setActionNotes('');
+                  setActionNotes("");
                 }}
                 className="flex-1 py-2 border rounded text-slate-600 font-bold"
               >
@@ -1032,21 +1304,26 @@ export const UserPayoutView: React.FC<{ currentUserRole: string; onNavigate?: (v
                 onClick={() =>
                   handleAction(
                     actionModal.req.id,
-                    actionModal.action === 'approve' ? 'approved' : 'rejected'
+                    actionModal.action === "approve" ? "approved" : "rejected",
                   )
                 }
                 disabled={actionSubmitting}
                 className={`flex-1 py-2 rounded font-bold text-white ${
-                  actionModal.action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                  actionModal.action === "approve"
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-rose-600 hover:bg-rose-700"
                 }`}
               >
-                {actionSubmitting ? '...' : actionModal.action === 'approve' ? 'Approve' : 'Reject'}
+                {actionSubmitting
+                  ? "..."
+                  : actionModal.action === "approve"
+                    ? "Approve"
+                    : "Reject"}
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

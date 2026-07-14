@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Analytics</title>
+  <style>
+    :root { --bg: #0b1020; --card: #151d30; --text: #e8edf5; --muted: #8fa3bf; --accent: #0ea5e9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #243049; }
+    main { max-width: 1000px; margin: 0 auto; padding: 1.25rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card { background: var(--card); border: 1px solid #243049; border-radius: 12px; padding: 1rem; }
+    .card h3 { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
+    .card .val { font-size: 1.75rem; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #243049; }
+    button { margin-top: 1rem; padding: 0.55rem 1rem; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+    .badge { font-size: 0.75rem; background: #0c4a6e; color: #7dd3fc; padding: 0.15rem 0.5rem; border-radius: 999px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>AQOND Analytics</strong> <span class="badge">P7 CrewAI re-rank</span>
+  </header>
+  <main>
+    <div class="grid" id="stats"></div>
+    <h2>Live Directory (Crew re-rank)</h2>
+    <table>
+      <thead><tr><th>#</th><th>Stream</th><th>Score</th><th>Reason</th></tr></thead>
+      <tbody id="ranked"></tbody>
+    </table>
+    <button id="btnRerank">Run Crew Re-rank</button>
+  </main>
+  <script>
+    const key = new URLSearchParams(location.search).get("key") || "";
+    const headers = key ? { "X-Analytics-Api-Key": key, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+
+    async function loadSummary() {
+      const url = "/api/v1/analytics/summary" + (key ? "?key=" + encodeURIComponent(key) : "");
+      const res = await fetch(url, { headers: key ? { "X-Analytics-Api-Key": key } : {} });
+      const data = await res.json();
+      const counts = Object.fromEntries((data.event_counts || []).map((r) => [r.event_type, r.cnt]));
+      document.getElementById("stats").innerHTML = `
+        <div class="card"><h3>Live streams</h3><div class="val">${data.live_count || 0}</div></div>
+        <div class="card"><h3>Products tracked</h3><div class="val">${data.product_count || 0}</div></div>
+        <div class="card"><h3>Impressions</h3><div class="val">${counts.impression || 0}</div></div>
+        <div class="card"><h3>Purchases</h3><div class="val">${counts.purchase || 0}</div></div>
+      `;
+    }
+
+    async function runRerank() {
+      const res = await fetch("/api/v1/analytics/rerank", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ entity_type: "live", limit: 10 }),
+      });
+      const data = await res.json();
+      const tbody = document.getElementById("ranked");
+      tbody.innerHTML = (data.ranked || []).map((r, i) =>
+        `<tr><td>${i + 1}</td><td>${r.id}</td><td>${(r.score * 100).toFixed(0)}%</td><td>${r.reason || ""}</td></tr>`
+      ).join("") || "<tr><td colspan=4>No data — run live/shop first</td></tr>";
+    }
+
+    document.getElementById("btnRerank").addEventListener("click", runRerank);
+    loadSummary().then(runRerank);
+  </script>
+</body>
+</html>

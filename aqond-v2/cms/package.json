@@ -1,0 +1,11 @@
+{
+  "name": "aqond-v2-cms-service",
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.679.0",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1"
+  }
+}

@@ -1,0 +1,277 @@
+/**
+ * AQOND Admin Console — AXS token bridge (Sprint 26)
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-admin {
+  --tt-bg: var(--axs-bg);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  min-height: 100vh;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+.axs-admin .tt-header {
+  background: var(--axs-surface);
+  border-bottom: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-admin-page {
+  padding-bottom: calc(var(--axs-space-8) + env(safe-area-inset-bottom));
+}
+
+.axs-admin-login {
+  padding: var(--axs-space-6) var(--axs-space-4);
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.axs-admin-login .aq-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-admin-tabs {
+  display: flex;
+  gap: var(--axs-space-2);
+  padding: var(--axs-space-3) var(--axs-space-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+}
+
+.axs-admin-tab {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--axs-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.axs-admin-tab.active {
+  border-color: rgba(184, 134, 11, 0.45);
+  background: rgba(184, 134, 11, 0.1);
+  color: var(--axs-primary-hover);
+}
+
+.axs-admin-section {
+  margin: var(--axs-space-4);
+  padding: var(--axs-space-4);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-admin-section h2 {
+  margin: 0 0 var(--axs-space-3);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.axs-admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--axs-space-2);
+}
+
+.axs-admin-stat {
+  padding: var(--axs-space-3);
+  background: var(--axs-surface-2);
+  border-radius: var(--axs-radius-input);
+}
+
+.axs-admin-stat span {
+  display: block;
+  font-size: 12px;
+  color: var(--axs-text-muted);
+}
+
+.axs-admin-stat strong {
+  display: block;
+  font-size: 18px;
+  margin-top: 4px;
+  color: var(--axs-primary);
+}
+
+.axs-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-2);
+}
+
+.axs-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--axs-space-2);
+  padding: var(--axs-space-3);
+  background: var(--axs-surface-2);
+  border-radius: var(--axs-radius-input);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-admin-row button {
+  flex-shrink: 0;
+}
+
+.axs-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--axs-space-2);
+}
+
+.axs-admin-pipeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--axs-space-2);
+}
+
+.axs-admin-pipeline-col {
+  background: var(--axs-surface-2);
+  border-radius: var(--axs-radius-input);
+  padding: var(--axs-space-2);
+  min-height: 80px;
+}
+
+.axs-admin-pipeline-col h3 {
+  margin: 0 0 var(--axs-space-2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--axs-text-secondary);
+}
+
+.axs-admin-pipeline-item {
+  font-size: 11px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--axs-surface);
+  border-radius: 8px;
+  border: 1px solid var(--axs-border);
+  cursor: pointer;
+}
+
+.axs-admin-pipeline-item:hover {
+  border-color: var(--axs-primary);
+}
+
+.axs-heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--axs-space-2);
+}
+
+.axs-heatmap-cell {
+  padding: var(--axs-space-2);
+  border-radius: var(--axs-radius-input);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+  font-size: 12px;
+}
+
+.axs-heatmap-rider {
+  border-color: rgba(184, 134, 11, 0.35);
+}
+
+.axs-heatmap-job {
+  border-color: rgba(3, 105, 161, 0.35);
+}
+
+.axs-admin .tt-btn-primary,
+.axs-admin .aq-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+}
+
+.axs-admin-event-row {
+  font-size: 13px;
+  padding: var(--axs-space-2) 0;
+  border-bottom: 1px solid var(--axs-border);
+}
+
+.axs-admin-event-row:last-child {
+  border-bottom: none;
+}
+
+.axs-admin-loading {
+  padding: var(--axs-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-admin-order-row {
+  cursor: pointer;
+}
+
+.axs-admin-order-row:hover {
+  border-color: var(--axs-primary);
+}
+
+.axs-admin-msg-ok {
+  margin: var(--axs-space-2) var(--axs-space-4);
+  color: var(--axs-success);
+  font-size: 14px;
+}
+
+.axs-admin-msg-err {
+  margin: var(--axs-space-2) var(--axs-space-4);
+  color: var(--axs-danger);
+  font-size: 14px;
+}
+
+.axs-breakglass-banner {
+  margin: var(--axs-space-3) var(--axs-space-4) 0;
+  padding: var(--axs-space-3) var(--axs-space-4);
+  border-radius: var(--axs-radius-card);
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--axs-text);
+}
+
+.axs-breakglass-banner strong {
+  display: block;
+  color: var(--axs-danger);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.axs-breakglass-banner p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--axs-text-secondary);
+  line-height: 1.45;
+}
+
+.axs-breakglass-banner a {
+  color: var(--axs-primary);
+  font-weight: 600;
+}
+
+.axs-breakglass-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--axs-space-2);
+  padding: var(--axs-space-2) var(--axs-space-4);
+  font-size: 13px;
+}

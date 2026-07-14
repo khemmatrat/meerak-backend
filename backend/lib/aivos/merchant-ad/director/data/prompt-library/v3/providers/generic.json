@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "provider": "generic",
+  "label": "Generic video AI",
+  "prefix": "Generate a vertical mobile ad video.",
+  "spoken_wrapper": "{spoken_instruction} Script: \"{spoken}\"",
+  "suffix": "Preserve reference identity. Natural motion. Mobile ad quality. No on-screen text."
+}

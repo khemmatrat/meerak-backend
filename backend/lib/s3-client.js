@@ -34,7 +34,10 @@ function getPublicUrl(key) {
 export async function uploadToS3(buffer, options = {}) {
   const folder = options.folder || 'uploads';
   const ext = options.extension || '';
-  const key = options.key || `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}${ext}`;
+  const key =
+    options.key ||
+    (options.filename ? `${folder}/${options.filename}` : null) ||
+    `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}${ext}`;
 
   const contentType = options.contentType || (options.resourceType === 'video' ? 'video/mp4' : 'application/octet-stream');
 

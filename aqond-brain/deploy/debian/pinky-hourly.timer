@@ -1,0 +1,11 @@
+[Unit]
+Description=รัน Pinky ทุก 1 ชั่วโมง
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

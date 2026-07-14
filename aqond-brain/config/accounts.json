@@ -1,0 +1,55 @@
+{
+  "_comment": "ผู้จัดการจะมากรอกเองหลังสมัครเสร็จ: 10 users สำหรับ Thomas. รูปแบบนี้ใช้โดย orchestrator เพื่อสร้าง post_task แยกบัญชี",
+  "accounts": [
+    {
+      "account_id": "user_01",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_02",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_03",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_04",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_05",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_06",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_07",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_08",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_09",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "account_id": "user_10",
+      "platform": "tiktok",
+      "timezone": "Asia/Bangkok"
+    }
+  ]
+}

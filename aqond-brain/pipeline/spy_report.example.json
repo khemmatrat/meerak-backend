@@ -1,0 +1,21 @@
+{
+  "brief": "สร้างโฆษณาวิดีโอ 45 วินาทีสำหรับ Aqond — แอปเรียนออนไลน์สไตล์มหาวิทยาลัย\n\nจุดเด่น:\n- AI Tutor ส่วนตัวตอบคำถาม 24/7\n- เน้นวิชา STEM ระดับปริญญาตรี\n- เรียนได้ทุกที่ทุกเวลา\n- ราคาเริ่มต้น 299 บาท/เดือน\n\nTarget: Gen Z, มหาลัย, ทำงานแล้วอยากเรียนต่อ\n\nTone: Modern, สนุก, Aspirational\n\nCTA: ดาวน์โหลด Aqond วันนี้ — ทดลองฟรี 7 วัน",
+  "competitors": [
+    {
+      "name": "Coursera",
+      "strength": "มีคอร์สจากมหาลัยดัง",
+      "weakness": "ไม่มี AI tutor ส่วนตัว"
+    },
+    {
+      "name": "edX",
+      "strength": "ราคาสมเหตุสมผล",
+      "weakness": "UX ไม่เป็นมิตรกับมือถือ"
+    }
+  ],
+  "market_trends": [
+    "Gen Z ชอบ short-form video บน TikTok",
+    "AI education กำลังมาแรง",
+    "Micro-learning เป็นที่ต้องการ"
+  ],
+  "updated_at": "2026-03-18T16:45:00Z"
+}

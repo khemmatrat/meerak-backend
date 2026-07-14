@@ -66,6 +66,7 @@ async function upsertUser(userConfig) {
         wallet_balance = COALESCE(wallet_balance, $6),
         provider_status = COALESCE($7, provider_status),
         firebase_uid = COALESCE($8, firebase_uid),
+        can_sell_courses = TRUE,
         provider_available = CASE WHEN $9 THEN TRUE ELSE provider_available END,
         expert_category = CASE WHEN $9 AND expert_category IS NULL THEN 'party_guest' ELSE expert_category END,
         account_status = COALESCE(account_status, 'active'),
@@ -94,9 +95,9 @@ async function upsertUser(userConfig) {
       `INSERT INTO users (
         id, firebase_uid, email, phone, full_name, password_hash,
         role, provider_status, kyc_level, wallet_balance,
-        provider_available, expert_category, account_status,
+        provider_available, expert_category, account_status, can_sell_courses,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'level_2', $9, $10, $11, $12, NOW(), NOW())`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'level_2', $9, $10, $11, $12, TRUE, NOW(), NOW())`,
       [
         userId,
         userConfig.firebase_uid || `apple-demo-${userConfig.role}`,

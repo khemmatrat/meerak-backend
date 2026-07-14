@@ -1,0 +1,71 @@
+{
+  "version": "1.0.0",
+  "strategies": {
+    "sell_time": {
+      "label_th": "ขายเวลา",
+      "label_en": "Sell time",
+      "emotion_id": "relief",
+      "angle": "Save time, simplify life, convenient now."
+    },
+    "sell_freedom": {
+      "label_th": "ขายอิสระ",
+      "label_en": "Sell freedom",
+      "emotion_id": "liberation",
+      "angle": "Freedom from hassle, flexible lifestyle."
+    },
+    "sell_hope": {
+      "label_th": "ขายความหวัง",
+      "label_en": "Sell hope",
+      "emotion_id": "aspiration",
+      "angle": "Better future, positive transformation ahead."
+    },
+    "sell_confidence": {
+      "label_th": "ขายความมั่นใจ",
+      "label_en": "Sell confidence",
+      "emotion_id": "empowerment",
+      "angle": "Feel confident, capable, ready to shine."
+    },
+    "sell_beauty": {
+      "label_th": "ขายความสวย",
+      "label_en": "Sell beauty",
+      "emotion_id": "glow",
+      "angle": "Look and feel beautiful effortlessly."
+    },
+    "sell_health": {
+      "label_th": "ขายสุขภาพ",
+      "label_en": "Sell health",
+      "emotion_id": "vitality",
+      "angle": "Healthy body and mind, feel your best."
+    },
+    "sell_luxury": {
+      "label_th": "ขายความหรูหรา",
+      "label_en": "Sell luxury",
+      "emotion_id": "prestige",
+      "angle": "Premium quality, exclusive refined experience."
+    },
+    "sell_acceptance": {
+      "label_th": "ขายการยอมรับ",
+      "label_en": "Sell acceptance",
+      "emotion_id": "belonging",
+      "angle": "Be accepted, fit in, social proof."
+    },
+    "sell_memory": {
+      "label_th": "ขายความทรงจำ",
+      "label_en": "Sell memory",
+      "emotion_id": "nostalgia",
+      "angle": "Nostalgic taste, familiar warmth, memorable moments."
+    },
+    "sell_happiness": {
+      "label_th": "ขายความสุข",
+      "label_en": "Sell happiness",
+      "emotion_id": "joy",
+      "angle": "Happy moments, share joy with loved ones."
+    },
+    "sell_value": {
+      "label_th": "ขายความคุ้มค่า",
+      "label_en": "Sell value",
+      "emotion_id": "smart_choice",
+      "angle": "Worth every baht, smart purchase decision."
+    }
+  }
+}

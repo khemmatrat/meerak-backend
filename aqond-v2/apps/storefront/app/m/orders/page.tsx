@@ -7,13 +7,16 @@ import { useAuth } from '@/lib/auth';
 import { useCartOwner } from '@/lib/cartOwner';
 import { formatCatalogPrice, formatDate } from '@/lib/format';
 import { paymentMethodLabel } from '@/lib/payment';
-import { foodItemImageUrl } from '@/lib/foodVisual';
 import { FULFILLMENT_LABELS } from '@/lib/merchant';
-import { reorderOrder, receiptPdfUrl } from '@/lib/orders';
+import { reorderOrder } from '@/lib/orders';
 import { useRouter } from 'next/navigation';
 import { TtOrderReceiptCard } from '@/components/mobile/TtOrderReceiptCard';
 import { TtDisputeReportSheet } from '@/components/mobile/TtDisputeReportSheet';
+import { TtReceiptPdfModal } from '@/components/mobile/TtReceiptPdfModal';
 import { MpPurchasesSection } from '@/components/mobile/MpPurchasesSection';
+import { TtReturnRefundCard } from '@/components/mobile/TtReturnRefundCard';
+import { IconLuxCart, IconLuxPin, IconLuxReturn, IconLuxShield, IconLuxToShip, IconLuxTruckRoad } from '@/components/mobile/TtLuxuryIcons';
+import { marketplaceItemImageUrl } from '@/lib/marketplaceVisual';
 import {
   ORDER_TABS,
   countOrdersByTab,
@@ -32,7 +35,16 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function parseTab(raw: string | null): OrderTab {
-  if (raw === 'topay' || raw === 'toship' || raw === 'toreceive' || raw === 'torate') return raw;
+  if (
+    raw === 'topay' ||
+    raw === 'toship' ||
+    raw === 'toreceive' ||
+    raw === 'completed' ||
+    raw === 'returnrefund' ||
+    raw === 'torate'
+  ) {
+    return raw;
+  }
   return 'all';
 }
 
@@ -48,7 +60,29 @@ export default function MobileOrdersPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [disputeOrder, setDisputeOrder] = useState<any | null>(null);
+  const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState('');
+  const [returnRows, setReturnRows] = useState<any[]>([]);
+  const [returnCount, setReturnCount] = useState(0);
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [rateCount, setRateCount] = useState(0);
+
+  const loadReturns = (seed = false) => {
+    setReturnLoading(true);
+    const qs = new URLSearchParams({ buyer_id: owner });
+    if (seed) qs.set('seed_if_empty', '1');
+    return fetch(`/api/return/v1/buyer/returns?${qs}`)
+      .then((r) => r.json())
+      .then((body) => {
+        setReturnRows(body.returns || []);
+        setReturnCount(body.count || 0);
+      })
+      .catch(() => {
+        setReturnRows([]);
+        setReturnCount(0);
+      })
+      .finally(() => setReturnLoading(false));
+  };
 
   useEffect(() => {
     if (!ownerReady && !auth?.userId) return;
@@ -57,10 +91,28 @@ export default function MobileOrdersPage() {
       .then(setData)
       .catch(() => setData({ orders: [] }))
       .finally(() => setLoading(false));
+    void loadReturns(true);
+    fetch(`/api/reviews/pending?buyer_id=${encodeURIComponent(owner)}&seed_if_empty=1`, {
+      cache: 'no-store',
+    })
+      .then((r) => r.json())
+      .then((body) => setRateCount(body.count || 0))
+      .catch(() => setRateCount(0));
   }, [owner, ownerReady, auth?.userId]);
 
+  useEffect(() => {
+    if (tab === 'torate') router.replace('/m/orders/ratings');
+  }, [tab, router]);
+
+  useEffect(() => {
+    if (tab === 'returnrefund') void loadReturns(true);
+  }, [tab, owner]);
+
   const orders = data?.orders || [];
-  const counts = useMemo(() => countOrdersByTab(orders), [orders]);
+  const counts = useMemo(
+    () => ({ ...countOrdersByTab(orders), returnrefund: returnCount, torate: rateCount }),
+    [orders, returnCount, rateCount],
+  );
   const filtered = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab]);
   const tabLabel = ORDER_TABS.find((t) => t.id === tab)?.label;
 
@@ -72,7 +124,7 @@ export default function MobileOrdersPage() {
         </Link>
         <h1>การซื้อของฉัน</h1>
         <Link href="/m/cart" className="tt-mp-orders-cart" aria-label="รถเข็น">
-          🛒
+          <IconLuxCart size={22} />
         </Link>
       </header>
 
@@ -94,7 +146,9 @@ export default function MobileOrdersPage() {
       />
 
       <Link href="/m/orders/active" className="tt-mp-order-active-banner">
-        <span className="tt-mp-order-active-icon" aria-hidden>🚚</span>
+        <span className="tt-mp-order-active-icon" aria-hidden>
+          <IconLuxTruckRoad size={54} />
+        </span>
         <span className="tt-mp-order-active-text">ติดตามออเดอร์ที่กำลังส่ง</span>
         <strong>ดูทั้งหมด</strong>
       </Link>
@@ -105,13 +159,47 @@ export default function MobileOrdersPage() {
       {!loading && tab !== 'all' && tabLabel && (
         <div className="tt-mp-orders-tab-chip">
           <span>{tabLabel}</span>
-          <em>{filtered.length}</em>
+          <em>{tab === 'returnrefund' ? returnCount : filtered.length}</em>
         </div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && tab === 'returnrefund' && returnLoading && (
+        <p className="tt-loading">กำลังโหลดรายการคืนเงิน…</p>
+      )}
+
+      {!loading && tab === 'returnrefund' && !returnLoading && returnRows.length === 0 && (
         <div className="tt-empty-cart">
-          <div className="tt-empty-icon">📦</div>
+          <div className="tt-empty-icon tt-empty-icon-lux">
+            <IconLuxReturn size={56} />
+          </div>
+          <h1 className="tt-empty-title">ยังไม่มีรายการคืนเงิน/คืนสินค้า</h1>
+          <p className="tt-empty-sub">เมื่อขอคืนเงิน รายการจะแสดงที่นี่</p>
+        </div>
+      )}
+
+      {tab === 'returnrefund' && (
+        <div className="tt-rr-list">
+          {returnRows.map((row) => (
+            <TtReturnRefundCard
+              key={row.return_id}
+              returnId={row.return_id}
+              orderId={row.order_id}
+              buyerId={owner}
+              merchantName={row.merchant_name}
+              statusLabel={row.refund_state_label_th || row.state_label_th}
+              refundAmountThb={row.amount_thb}
+              purchaseAmountThb={row.purchase_amount_thb}
+              items={row.items}
+            />
+          ))}
+        </div>
+      )}
+
+      {!loading && tab !== 'returnrefund' && filtered.length === 0 && (
+        <div className="tt-empty-cart">
+          <div className="tt-empty-icon tt-empty-icon-lux">
+            <IconLuxToShip size={56} />
+          </div>
           <h1 className="tt-empty-title">ยังไม่มีคำสั่งซื้อในหมวดนี้</h1>
           <p className="tt-empty-sub">สั่งซื้อครั้งแรกแล้วติดตามสถานะได้ที่นี่</p>
           <Link href="/m/home" className="tt-btn-primary">
@@ -121,7 +209,7 @@ export default function MobileOrdersPage() {
       )}
 
       <div className="tt-order-list">
-        {filtered.map((o: any) => {
+        {tab !== 'returnrefund' && filtered.map((o: any) => {
           const oid = o.order_id || o.id;
           const status = o.status || 'pending';
           const fs = o.fulfillment_status;
@@ -155,7 +243,7 @@ export default function MobileOrdersPage() {
                     title: it.title || it.product_id || 'สินค้า',
                     qty: it.qty || 1,
                     unit_price_micro: it.unit_price_micro || 0,
-                    image_url: foodItemImageUrl(it.product_id, it.title),
+                    image_url: marketplaceItemImageUrl(it.product_id, it.title, String(oid), it.image_url),
                   }))}
                   itemCount={o.items.reduce((n: number, it: any) => n + (it.qty || 1), 0)}
                   totalMicro={o.amount_micro || o.total_micro}
@@ -166,11 +254,16 @@ export default function MobileOrdersPage() {
               )}
               {(o.recipient || o.shipping_address) && (
                 <div className="tt-order-delivery">
+                  <span className="tt-order-delivery-pin" aria-hidden>
+                    <IconLuxPin size={20} />
+                  </span>
+                  <div className="tt-order-delivery-content">
                   <p className="tt-order-delivery-label">ส่งมอบให้</p>
                   <div className="tt-order-delivery-body">
                     {o.recipient && <p className="tt-order-delivery-name">{o.recipient}</p>}
                     {o.shipping_address && <p className="tt-order-delivery-addr">{o.shipping_address}</p>}
                     {o.phone && <p className="tt-order-delivery-phone">{o.phone}</p>}
+                  </div>
                   </div>
                 </div>
               )}
@@ -212,27 +305,54 @@ export default function MobileOrdersPage() {
                 >
                   สั่งซ้ำ
                 </button>
-                <a
-                  href={receiptPdfUrl(String(oid), owner)}
+                <button
+                  type="button"
                   className="tt-btn-ghost tt-order-action-btn"
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={() => setReceiptOrderId(String(oid))}
                 >
                   ใบเสร็จ PDF
-                </a>
+                </button>
               </div>
+              {!isFood && (status === 'paid' || status === 'completed' || fs === 'delivered') && (
+                <>
+                  <Link
+                    href={`/m/orders/${oid}?buyer_id=${encodeURIComponent(owner)}`}
+                    className="tt-btn-ghost tt-order-action-btn"
+                    style={{ display: 'block', textAlign: 'center', marginTop: 8 }}
+                  >
+                    รายละเอียดคำสั่งซื้อ
+                  </Link>
+                  <Link
+                    href={`/m/orders/${oid}/return?buyer_id=${encodeURIComponent(owner)}`}
+                    className="tt-btn-ghost tt-order-action-btn"
+                    style={{ display: 'block', textAlign: 'center', marginTop: 8 }}
+                  >
+                    ขอคืนเงิน
+                  </Link>
+                </>
+              )}
               <button
                 type="button"
-                className="tt-btn-ghost tt-order-dispute-btn"
+                className="tt-btn-ghost tt-order-dispute-btn tt-order-dispute-btn-lux"
                 onClick={() => setDisputeOrder(o)}
               >
-                🛡️ แจ้งปัญหา
+                <span className="tt-order-dispute-icon" aria-hidden>
+                  <IconLuxShield size={18} />
+                </span>
+                แจ้งปัญหา
               </button>
               </div>
             </article>
           );
         })}
       </div>
+
+      <TtReceiptPdfModal
+        open={!!receiptOrderId}
+        onClose={() => setReceiptOrderId(null)}
+        orderId={receiptOrderId || ''}
+        buyerId={owner}
+      />
 
       <TtDisputeReportSheet
         open={!!disputeOrder}

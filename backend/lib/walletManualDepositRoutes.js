@@ -3,6 +3,7 @@
  * Does not touch payment-gateway webhooks or /api/wallet/topup immediate credit.
  */
 import crypto from 'crypto';
+import fs from 'fs';
 import { uploadToS3 } from './s3-client.js';
 import { creditWalletDepositFromManualApproval } from './walletDepositHybrid.js';
 
@@ -187,7 +188,7 @@ export function attachWalletManualDepositRoutes(app, deps) {
                 status: row.status || 'manual_pending_verification',
               }),
             ]
-          ).catch(() => {});
+          ).catch(() => { });
           return res.status(201).json({
             id: row.id,
             status: row.status,
@@ -270,6 +271,7 @@ export function attachWalletManualDepositRoutes(app, deps) {
     try {
       const sourceTypeRaw = String(req.query.source_type || req.query.sourceType || '').trim().toLowerCase();
       const statusRaw = String(req.query.status || '').trim().toLowerCase();
+      const userIdRaw = String(req.query.user_id || req.query.userId || '').trim();
       const limitRaw = Number(req.query.limit || 200);
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 500) : 200;
       const where = [];
@@ -281,6 +283,10 @@ export function attachWalletManualDepositRoutes(app, deps) {
       if (statusRaw && statusRaw !== 'all') {
         params.push(statusRaw);
         where.push(`LOWER(COALESCE(c.status, '')) = $${params.length}`);
+      }
+      if (userIdRaw) {
+        params.push(userIdRaw);
+        where.push(`c.user_id = $${params.length}::uuid`);
       }
       params.push(limit);
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -318,7 +324,7 @@ export function attachWalletManualDepositRoutes(app, deps) {
         user_email: r.user_email || null,
       }));
       // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H9",location:"backend/lib/walletManualDepositRoutes.js:/api/admin/wallet-deposit-charges",message:"admin wallet deposit charge list queried",data:{source_type:sourceTypeRaw || "all",status:statusRaw || "all",row_count:rows.length},timestamp:Date.now()})}).catch(()=>{});
+      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1d8d58" }, body: JSON.stringify({ sessionId: "1d8d58", runId: "m1-smoke", hypothesisId: "H9", location: "backend/lib/walletManualDepositRoutes.js:/api/admin/wallet-deposit-charges", message: "admin wallet deposit charge list queried", data: { source_type: sourceTypeRaw || "all", status: statusRaw || "all", row_count: rows.length }, timestamp: Date.now() }) }).catch(() => { });
       // #endregion
       return res.json({ rows });
     } catch (err) {
@@ -449,18 +455,18 @@ export function attachWalletManualDepositRoutes(app, deps) {
         },
         ledger: ledger
           ? {
-              id: String(ledger.id),
-              event_type: ledger.event_type,
-              gateway: ledger.gateway,
-              amount: Number(ledger.amount || 0),
-              net_amount: ledger.net_amount != null ? Number(ledger.net_amount) : null,
-              gateway_fee_amount: ledger.gateway_fee_amount != null ? Number(ledger.gateway_fee_amount) : null,
-              platform_margin_amount: ledger.platform_margin_amount != null ? Number(ledger.platform_margin_amount) : null,
-              status: ledger.status || null,
-              bill_no: ledger.bill_no || null,
-              transaction_no: ledger.transaction_no || null,
-              created_at: ledger.created_at ? new Date(ledger.created_at).toISOString() : null,
-            }
+            id: String(ledger.id),
+            event_type: ledger.event_type,
+            gateway: ledger.gateway,
+            amount: Number(ledger.amount || 0),
+            net_amount: ledger.net_amount != null ? Number(ledger.net_amount) : null,
+            gateway_fee_amount: ledger.gateway_fee_amount != null ? Number(ledger.gateway_fee_amount) : null,
+            platform_margin_amount: ledger.platform_margin_amount != null ? Number(ledger.platform_margin_amount) : null,
+            status: ledger.status || null,
+            bill_no: ledger.bill_no || null,
+            transaction_no: ledger.transaction_no || null,
+            created_at: ledger.created_at ? new Date(ledger.created_at).toISOString() : null,
+          }
           : null,
         webhook_logs: webhookRows.map((w) => ({
           id: String(w.id),
@@ -707,7 +713,7 @@ export function attachWalletManualDepositRoutes(app, deps) {
               status: 'approved',
             }),
           ]
-        ).catch(() => {});
+        ).catch(() => { });
         return res.json({ ok: true });
       } catch (e) {
         if (e?.code === 'MANUAL_DEPOSIT_INVALID') {
@@ -795,12 +801,84 @@ export function attachWalletManualDepositRoutes(app, deps) {
             rejection_reason: composed.json,
           }),
         ]
-      ).catch(() => {});
+      ).catch(() => { });
 
       return res.json({ ok: true });
     } catch (err) {
       console.error('POST /api/admin/manual-deposits/:id/reject error:', err?.message || err);
       return res.status(500).json({ error: err?.message || 'ปฏิเสธรายการล้มเหลว' });
+    }
+  });
+
+  app.post('/api/admin/wallet-deposit-charges/export-async', adminAuthMiddleware, async (req, res) => {
+    try {
+      const { createAdminAsyncExportJob } = await import('./adminAsyncExportJobs.js');
+      const params = {
+        source_type: String(req.body?.source_type || req.query?.source_type || 'all').trim(),
+        status: String(req.body?.status || req.query?.status || 'all').trim(),
+        user_id: String(req.body?.user_id || req.query?.user_id || '').trim() || undefined,
+      };
+      const job = await createAdminAsyncExportJob(pool, {
+        jobType: 'wallet_deposit_charges_csv',
+        params,
+        createdBy: String(req.adminUser?.id || req.adminUser?.email || 'admin'),
+      });
+      return res.status(202).json({ job_id: job.id, status: 'queued', poll_url: `/api/admin/export-jobs/${job.id}` });
+    } catch (err) {
+      console.error('POST /api/admin/wallet-deposit-charges/export-async error:', err?.message || err);
+      return res.status(500).json({ error: err?.message || 'สร้างงาน export ล้มเหลว' });
+    }
+  });
+
+  app.get('/api/admin/export-jobs/:id', adminAuthMiddleware, async (req, res) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      const r = await pool.query(
+        `SELECT id, job_type, status, row_count, error, result_filename, created_at, completed_at
+         FROM admin_async_export_jobs WHERE id = $1::uuid LIMIT 1`,
+        [id],
+      );
+      if (!r.rows?.length) return res.status(404).json({ error: 'export_job_not_found' });
+      const row = r.rows[0];
+      const out = {
+        id: row.id,
+        job_type: row.job_type,
+        status: row.status,
+        row_count: row.row_count,
+        error: row.error,
+        created_at: row.created_at,
+        completed_at: row.completed_at,
+        download_url:
+          row.status === 'done' && row.result_filename
+            ? `/api/admin/export-jobs/${row.id}/download`
+            : null,
+      };
+      return res.json(out);
+    } catch (err) {
+      return res.status(500).json({ error: err?.message || 'โหลดสถานะ export ล้มเหลว' });
+    }
+  });
+
+  app.get('/api/admin/export-jobs/:id/download', adminAuthMiddleware, async (req, res) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      const r = await pool.query(
+        `SELECT result_filename, status FROM admin_async_export_jobs WHERE id = $1::uuid LIMIT 1`,
+        [id],
+      );
+      if (!r.rows?.length || r.rows[0].status !== 'done' || !r.rows[0].result_filename) {
+        return res.status(404).json({ error: 'export_not_ready' });
+      }
+      const { getAdminExportFilePath } = await import('./adminAsyncExportJobs.js');
+      const fp = getAdminExportFilePath(r.rows[0].result_filename);
+      if (!fp || !fs.existsSync(fp)) {
+        return res.status(404).json({ error: 'export_file_missing' });
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${r.rows[0].result_filename}"`);
+      return res.sendFile(fp);
+    } catch (err) {
+      return res.status(500).json({ error: err?.message || 'ดาวน์โหลด export ล้มเหลว' });
     }
   });
 }

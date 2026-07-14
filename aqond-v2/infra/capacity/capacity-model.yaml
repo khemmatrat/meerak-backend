@@ -1,0 +1,60 @@
+# P172 capacity model — extrapolated RPS/QPS per service at scale tiers.
+# Used by sre-svc headroom calculator and readiness review (P199).
+
+tiers:
+  100M:
+    dau: 100000000
+    peak_rps_total: 500000
+    headroom_pct: 30
+  500M:
+    dau: 500000000
+    peak_rps_total: 2500000
+    headroom_pct: 35
+  1B:
+    dau: 1000000000
+    peak_rps_total: 5000000
+    headroom_pct: 40
+
+services:
+  order-svc:
+    share_of_peak: 0.15
+    cpu_per_1k_rps: 2
+    conn_per_1k_rps: 50
+  catalog-svc:
+    share_of_peak: 0.20
+    cpu_per_1k_rps: 1
+    conn_per_1k_rps: 30
+  feed-svc:
+    share_of_peak: 0.25
+    cpu_per_1k_rps: 3
+    conn_per_1k_rps: 20
+  search-svc:
+    share_of_peak: 0.10
+    cpu_per_1k_rps: 2
+    conn_per_1k_rps: 40
+  payment-svc:
+    share_of_peak: 0.08
+    cpu_per_1k_rps: 2
+    conn_per_1k_rps: 60
+  bff-svc:
+    share_of_peak: 0.12
+    cpu_per_1k_rps: 2
+    conn_per_1k_rps: 25
+  checkout-svc:
+    share_of_peak: 0.05
+    cpu_per_1k_rps: 1
+    conn_per_1k_rps: 40
+
+data_tiers:
+  postgres:
+    connections_at_100M: 5000
+    connections_at_1B: 50000
+  redis:
+    shards_at_100M: 6
+    shards_at_1B: 48
+  kafka:
+    partitions_at_100M: 64
+    partitions_at_1B: 512
+  scylla:
+    nodes_at_100M: 6
+    nodes_at_1B: 36

@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "th",
+  "spoken_instruction": "พูดภาษาไทยชัดเจน",
+  "placeholder_spoken": "แนะนำ{product} {offer} {cta}",
+  "motion_hint": "กล้องมือถือ selfie",
+  "tone_hint": "เป็นกันเอง"
+}

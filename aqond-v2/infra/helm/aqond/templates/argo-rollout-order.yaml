@@ -1,0 +1,59 @@
+{{- if .Values.progressiveDelivery.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: order-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.autoscaling.keda.orderMinReplicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: order-svc-canary
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: order-svc-canary
+    spec:
+      containers:
+        - name: order-svc
+          image: {{ include "aqond.image" (dict "Values" .Values "name" "order-svc") }}
+          ports:
+            - containerPort: 8113
+  strategy:
+    canary:
+      steps:
+        - setWeight: 25
+        - pause: { duration: 60s }
+        - setWeight: 50
+        - pause: { duration: 60s }
+        - setWeight: 100
+      trafficRouting:
+        istio:
+          virtualService:
+            name: order-svc-vs
+          destinationRule:
+            name: order-svc-dr
+      analysis:
+        templates:
+          - templateName: order-success-rate
+        startingStep: 1
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: order-success-rate
+  namespace: {{ .Values.global.namespace }}
+spec:
+  metrics:
+    - name: success-rate
+      interval: 30s
+      successCondition: result[0] >= 0.99
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(rate(http_requests_total{service="order-svc",status!~"5.."}[1m]))
+            / sum(rate(http_requests_total{service="order-svc"}[1m]))
+{{- end }}

@@ -11,6 +11,28 @@ import { Server } from 'socket.io';
 import express from 'express';
 import multer from 'multer';
 import { uploadToS3, deleteFromS3, listS3Files, checkS3Health, tryDeleteS3ObjectFromPublicUrl } from './lib/s3-client.js';
+import { toggleVideoSave, recordVideoView } from './lib/videoEngagement.js';
+import {
+  togglePromotedClipSave,
+  listSavedPromotedClips,
+  listSavedPromotedCreativeIds,
+} from './lib/promotedClipSaves.js';
+import { onBookingConfirmed, onJobHired, bindAdClickFromBooking } from './lib/adsOutcomeAttribution.js';
+import {
+  listHomeBannersPublic,
+  listHomeBannersAdmin,
+  createHomeBanner,
+  updateHomeBanner,
+  deleteHomeBanner,
+  filterBannersByPlacement,
+  filterBannersPublicDisplayWindow,
+  todayDateYmdBangkok,
+} from './lib/homeBanners.js';
+import {
+  claimPromoVoucher,
+  listUserPromoVouchers,
+  usePromoVoucher,
+} from './lib/promoVoucherService.js';
 import stream from 'stream';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -20,11 +42,139 @@ import v8 from 'node:v8';
 import fs from 'node:fs';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { bcryptHashRegistration, startupBcryptWorkerPoolSilently } from './lib/bcryptWorkerPool.mjs';
+import { signupRegisterEntryOrchestration } from './lib/registrationEvolution/signupOrchestrator.js';
+import { agentDebugLog } from './lib/agentDebugLog.js';
+import { mountSignupIntentRoutes } from './lib/registrationEvolution/signupIntentRoutes.js';
+import { startIntentExpirationSweeper } from './lib/registrationEvolution/signupIntentSweeper.js';
+import { runSignupShadowExecutionSafe } from './lib/registrationEvolution/shadowExecution.js';
+import { bootstrapSignupRuntime } from './lib/registrationEvolution/runtimeBootstrap.js';
+import {
+  buildCompassStatus,
+  submitCompassSurvey,
+  saveCategoryPack,
+  getCompassKycPrefill,
+  listCompassQueue,
+  resolveM2Category,
+} from './lib/compassOnboarding.js';
+import {
+  getGrowthStatus,
+  syncReferralMilestones,
+  markWalletActivated,
+  recordIntentEvents,
+  recordAppOpenPattern,
+  getPersonalizedHomeHints,
+  listSubscriptionPlans,
+  claimMysteryVoucher,
+  GROWTH_CAMPAIGNS,
+} from './lib/growthEngine.js';
+import {
+  getTalentVideoEntitlement,
+  createTalentVideoJob,
+  getTalentVideoJob,
+  listTalentVideoJobs,
+} from './lib/talentVideoService.js';
+import {
+  generateTalentResumeDraft,
+  publishTalentResumeDraft,
+  buildTalentProfileContext,
+} from './lib/talentResumeService.js';
+import {
+  getIncubationStatus,
+  getOrCreateWeeklyBrief,
+  composeIncubationClip,
+  runIncubationBriefCron,
+} from './lib/incubationService.js';
+import { INCUBATION_OVERLAY_VERSION } from './lib/incubationCompose.js';
+import {
+  getMerchantTop10,
+  runMerchantTop10WeeklyCron,
+} from './lib/merchantTop10Service.js';
+import {
+  getAqondPassStatus,
+  activateAqondPass,
+  runAqondPassCron,
+} from './lib/aqondPassService.js';
+import {
+  checkoutSubscription799,
+  getGrowthConversionFunnel,
+  getUpsell799Status,
+} from './lib/subscription799Service.js';
+import { inspectPassiveDispatchCycle } from './lib/registrationEvolution/passiveDispatchRuntime.js';
+import { reserveSignupQueueEnvelope, inspectReservedQueueState } from './lib/registrationEvolution/queueReservationRuntime.js';
+import { inspectPassiveAcknowledgements } from './lib/registrationEvolution/passiveAcknowledgeRuntime.js';
+import { inspectPassiveReplayRecovery } from './lib/registrationEvolution/passiveReplayRecoveryRuntime.js';
+import { inspectPassiveRetryOrchestration } from './lib/registrationEvolution/passiveRetryOrchestrator.js';
+import { inspectPassiveDeadLetterRouting } from './lib/registrationEvolution/passiveDeadLetterRouter.js';
+import { executeActiveDispatchCycle } from './lib/registrationEvolution/activeDispatchRuntime.js';
+import { commitExecutionArtifacts, inspectCommittedExecutions } from './lib/registrationEvolution/executionCommitCoordinator.js';
+import { advanceRuntimeLifecycle, inspectLifecycleAdvancements } from './lib/registrationEvolution/runtimeLifecycleCoordinator.js';
+import { createExecutionWindow, executeWindowCycle, closeExecutionWindow, inspectExecutionWindows } from './lib/registrationEvolution/executionWindowCoordinator.js';
+import { appendExecutionJournalEntry, inspectExecutionJournal, SIGNUP_JOURNAL_EVENT_TYPES } from './lib/registrationEvolution/executionJournal.js';
+import { replayExecutionJournal, validateReplayIntegrity } from './lib/registrationEvolution/executionReplayEngine.js';
+import { getAllowedTransitions, detectCyclesFrom, EXECUTION_LIFECYCLE_STATES } from './lib/registrationEvolution/executionStateMachine.js';
+import { dispatchExecution, buildDispatchPlan } from './lib/registrationEvolution/executionDispatcher.js';
+import { runControlledExecution } from './lib/registrationEvolution/executionRuntime.js';
+import { generateExecutionFingerprint, validateExecutionFencing, clearExecutionFence } from './lib/registrationEvolution/executionFencing.js';
+import { createExecutionScope, resolveScopeKey, getScopeHierarchy } from './lib/registrationEvolution/executionScope.js';
+import { registerRuntimeInstance, assignScopeToRuntime, resolveExecutionOwnership, clearCoordinationState } from './lib/registrationEvolution/multiRuntimeCoordinator.js';
+import { validateKernelIntegrity, generateReadinessReport, freezeKernel, getKernelSummary } from './lib/registrationEvolution/kernelFinalizer.js';
+import { registerNode, assignScopeToNode, validatePartitionConsistency, clearNodeRegistry } from './lib/registrationEvolution/executionPartitioner.js';
+import { resolveExecutionRoute, simulateRouting, getRoutingStats } from './lib/registrationEvolution/executionRouter.js';
+import { computeDistributedDispatch, simulateClusterDispatch } from './lib/registrationEvolution/distributedDispatcherSync.js';
+import { replayWithConsistencyCheck, normalizeReplayInput, validateReplayDeterminism } from './lib/registrationEvolution/crossNodeReplayConsistency.js';
+import { computeCanonicalState, detectStateConflicts, buildConvergencePlan } from './lib/registrationEvolution/executionConvergence.js';
+import { detectSystemDrift, simulateStabilizationStep, validateMeshStability } from './lib/registrationEvolution/eventualConsistencyMesh.js';
+import { evaluateExecutionGate, classifyExecutionRisk, buildExecutionGateReport } from './lib/registrationEvolution/executionGateway.js';
+import { executeThroughGateway, simulateExecutionFlow } from './lib/registrationEvolution/executionRuntimeBridge.js';
+import { getExecutionMode, buildModeExecutionPolicy, isRealExecutionAllowed } from './lib/registrationEvolution/executionModes.js';
+import { applyExecutionMode, buildModeExecutionPlan, shouldCommitExecution } from './lib/registrationEvolution/executionModeController.js';
+import { activateControlledExecution, buildActivationPipeline, isExecutionActivated } from './lib/registrationEvolution/executionActivationEngine.js';
+import { createExecutionLifecycle, transitionExecutionLifecycle, finalizeExecutionLifecycle, validateLifecycleIntegrity } from './lib/registrationEvolution/executionLifecycleBoundary.js';
+import { buildExecutionRecoveryPlan, simulateCrashRecovery, computeRecoveryChecksum } from './lib/registrationEvolution/executionDurabilityFoundation.js';
+import { finalizeExecutionGovernance, validateGovernanceIntegrity, buildGovernanceFinalSnapshot, isGovernanceFrozen } from './lib/registrationEvolution/executionGovernanceFinalizer.js';
+import { ingestTrafficRequest, normalizeTrafficPayload, validateIngressRequest, buildIngressContext, isTrafficAllowed } from './lib/registrationEvolution/trafficIngressGateway.js';
+import { classifyTrafficIntent, buildRoutingIntent, resolveExposureRoute, getTrafficExposureProfile, validateRoutingIntent } from './lib/registrationEvolution/executionExposureRouter.js';
+import { simulateShadowExecution, buildShadowTrace, compareShadowVsExpected, validateShadowIntegrity } from './lib/registrationEvolution/executionShadowEngine.js';
+import { createExecutionTrace, recordExecutionMetric, buildObservabilitySnapshot, detectTraceAnomalies } from './lib/registrationEvolution/executionObservabilityHub.js';
+import { evaluateGlobalExecutionPolicy, buildPolicySnapshot, isExecutionCompliant, detectPolicyViolationSignals } from './lib/registrationEvolution/executionPolicyEnforcer.js';
+import { evaluateFinalExecutionGate, isExecutionGuardPassed, buildGuardDecisionTrace, resolveExecutionFinality } from './lib/registrationEvolution/executionGuardKernel.js';
+import { analyzeExecutionForensics, buildForensicReport, detectDecisionDrift, validateForensicIntegrity, computeForensicHash } from './lib/registrationEvolution/executionForensicsEngine.js';
+import { generateConsistencyProof, validateSystemConsistency, compareConsistencyStates, buildConsistencyGraph, isSystemConsistent } from './lib/registrationEvolution/executionConsistencyProofEngine.js';
+import { createProductionSeal, validateSealIntegrity, isSystemSealed, buildSealReport, verifySealConsistency } from './lib/registrationEvolution/executionProductionSeal.js';
+import { createIntentEnvelope, parseIntentContract, isIntentReplaySafe, computeIntentHash } from './lib/registrationEvolution/intentContractLayer.js';
+import { registerIntentDefinition, listRegisteredIntents, validateIntentCompatibility, freezeIntentRegistry, isIntentRegistryFrozen } from './lib/registrationEvolution/intentRegistry.js';
+import { registerRuntimeCapabilityMapping, resolveRuntimeCapability, validateRuntimeCapability, freezeRuntimeCapabilityRegistry, isRuntimeCapabilityRegistryFrozen } from './lib/registrationEvolution/runtimeCapabilityMapper.js';
+import { createWorkflowDefinition, validateWorkflowDefinition, buildWorkflowExecutionPlan, detectWorkflowCycles, freezeWorkflowRegistry, isWorkflowRegistryFrozen } from './lib/registrationEvolution/workflowCompositionLayer.js';
+import { createWorkflowRuntimeSession, advanceWorkflowRuntime, getExecutableWorkflowSteps, pauseWorkflowRuntime, resumeWorkflowRuntime, finalizeWorkflowRuntime, validateWorkflowRuntimeIntegrity } from './lib/registrationEvolution/workflowRuntimeOrchestrator.js';
+import { createWorkflowCheckpoint, restoreWorkflowCheckpoint, buildWorkflowRecoveryPlan, validateWorkflowCheckpoint, compareWorkflowCheckpoints, isWorkflowRecoverable } from './lib/registrationEvolution/workflowCheckpointRuntime.js';
+import { registerWorkflowRuntimeNode, assignWorkflowSession, transferWorkflowSession, resolveWorkflowSessionOwner, buildDistributedWorkflowMap, validateDistributedWorkflowIntegrity, computeDistributedWorkflowHash } from './lib/registrationEvolution/distributedWorkflowCoordinator.js';
+import { createRuntimeClient, submitRuntimeIntent, createWorkflowSession as createSdkWorkflowSession, buildRuntimeInvocation, validateRuntimeInvocation, buildSdkRuntimeSnapshot, computeSdkSurfaceHash } from './lib/registrationEvolution/runtimeSdkSurface.js';
+import { validateProductKernelIntegrity, buildProductKernelSnapshot, freezeProductKernel, validateKernelDeterminism, verifyProductKernelConsistency, isProductKernelFrozen, computeProductKernelHash } from './lib/registrationEvolution/productKernelFinalizer.js';
+import { createRuntimeHttpSurface, registerRuntimeRoute, handleRuntimeRequest, buildRuntimeHttpSnapshot, computeRuntimeSurfaceHash } from './lib/registrationEvolution/runtimeHttpSurface.js';
+import { registerApiClient, computeRequestSignature, authenticateRuntimeRequest, authorizeRuntimeRequest, handleGatewayRuntimeRequest, buildApiGatewaySnapshot, computeApiGatewayHash } from './lib/registrationEvolution/runtimeApiGateway.js';
+import { registerTenant, bindClientToTenant, resolveTenantNamespace, validateTenantIsolation, buildTenantRuntimeContext, buildTenantProvisioningSnapshot, computeTenantProvisioningHash } from './lib/registrationEvolution/tenantProvisioningLayer.js';
+import { registerTenantRuntimePolicy, resolveTenantRuntimePolicy, validateTenantRuntimePolicy, buildTenantPolicyRuntimeContext, buildTenantPolicySnapshot, computeTenantPolicyHash } from './lib/registrationEvolution/tenantRuntimePolicyLayer.js';
+import { registerUsageMeter, recordRuntimeUsage, resolveRuntimeQuotaState, validateRuntimeQuota, buildRuntimeUsageSnapshot, computeRuntimeUsageHash } from './lib/registrationEvolution/runtimeUsageMeter.js';
+import { createAuditLedgerEntry, resolveAuditLedger, validateAuditLedgerIntegrity, buildAuditEvidenceChain, buildRuntimeAuditSnapshot, computeRuntimeAuditHash } from './lib/registrationEvolution/runtimeAuditLedger.js';
+import { registerProvenanceNode, linkProvenanceNodes, buildProvenanceGraph, validateProvenanceGraph, traceCausalLineage, buildProvenanceSnapshot, computeProvenanceHash } from './lib/registrationEvolution/runtimeEventProvenanceGraph.js';
+import { buildSystemConvergenceModel, detectSystemContradictions, buildUnifiedTruthSnapshot, computeSystemConvergenceHash, validateSystemConvergence, freezeSystemConvergence, isSystemConvergenceFrozen } from './lib/registrationEvolution/runtimeSystemConvergenceEngine.js';
+import { computeFinalSystemHash, createFinalSystemSeal, validateFinalSealIntegrity, buildFinalSystemAttestation, freezeFinalSystemSeal, isSystemFinalSealed } from './lib/registrationEvolution/runtimeFinalSealEngine.js';
+import { createProductPlatform, defineProductPlan, bindTenantToPlan, buildProductRuntimeSnapshot, computeProductPlatformHash, freezeProductPlatform, isProductPlatformFrozen } from './lib/registrationEvolution/runtimeProductizationLayer.js';
+import { createSdkClient, sdkSubmitIntent, sdkCreateWorkflow, sdkInvokeWorkflow, buildSdkPackageSnapshot, computeSdkPackageHash, freezeSdkPackage, isSdkPackageFrozen } from './lib/registrationEvolution/runtimeSdkPackagingLayer.js';
+import { createMarketOffering, definePricingStrategy, registerGoToMarketBundle, evaluateMarketReadiness, freezeGoToMarketLayer, buildGoToMarketSnapshot, computeGoToMarketHash, isGoToMarketFrozen } from './lib/registrationEvolution/runtimeGoToMarketLayer.js';
+import { createDashboardSession, buildDashboardView, getDashboardWidgetData, registerDashboardAction, simulateDashboardInteraction, buildDashboardSnapshot, computeDashboardHash, freezeDashboardLayer, isDashboardFrozen } from './lib/registrationEvolution/runtimeSaaSDashboardLayer.js';
+import { getShadowInfra, isShadowInfraReady } from './lib/registrationEvolution/runtimeShadowInfra.js';
+import { processSignupShadow, mapSignupToIntent, processEventShadow, mapEventToIntent } from './lib/registrationEvolution/runtimeSignupIntegrationBridge.js';
+import { createShadowMiddleware, interceptEvent, getInterceptorStats } from './lib/registrationEvolution/runtimeShadowInterceptor.js';
+import { buildUnifiedAdminView, getAdminMetrics } from './lib/registrationEvolution/runtimeMinimalAdminBridge.js';
+import { resolveActivationStep, verifyGoLive, buildActivationReport } from './lib/registrationEvolution/runtimeProductActivation.js';
 import { createAuditService } from './auditService.js';
 import { getModule2Questions, getCorrectAnswer, AVAILABLE_CATEGORIES as M2_CATEGORIES_WITH_DATA } from './data/module2Questions.js';
 import { PaymentHttpClient } from './lib/paymentHttpClient.js';
 import {
   getPaymentGatewaySecretKey,
+  getPaymentGatewayPublicKey,
   getPaymentGatewayWebhookSecret,
   isAutoPayoutGatewayTransferEnabled,
 } from './lib/paymentManager.js';
@@ -32,9 +182,52 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import logger, { logPayment, logSecurity, logError } from './lib/logger.js';
-import { apiLimiter, authLimiter, paymentLimiter, withdrawalLimiter, profileLimiter } from './middleware/security.js';
+import {
+  apiLimiter,
+  authLimiter,
+  paymentLimiter,
+  withdrawalLimiter,
+  payoutQuoteLimiter,
+  profileLimiter,
+  consumeSelfRateLimitUnlock,
+  grantRateLimitUnlock,
+  getRateLimitUnlockStatus,
+  isRateLimitUnlocked,
+} from './middleware/security.js';
 import { getAutoReplyWithContext as getRukReply } from './lib/chatService.js';
 import { maskPiiForLlm } from './lib/piiMask.js';
+import { registerAntiBypassAdminRoutes } from './lib/antiBypassAdminRoutes.js';
+import {
+  ensureAdvanceQuotationColumns,
+  ensureQuotationVersionsTable,
+  normalizeAdvanceQuotationInput,
+  validateQuotationAntiBypass,
+  computeQuoteExpiresAt,
+  computeQuotationScores,
+  computeTrustScore,
+  mapQuotationRow,
+  saveQuotationVersion,
+  updateApplicantQuotation,
+  getQuotationVersions,
+  MAX_QUOTE_VERSIONS,
+  isQuoteExpired,
+} from './lib/advanceQuotation.js';
+import {
+  ensureAdvanceProcurementTables,
+  createProcurementRevision,
+  buildProcurementCsv,
+  buildProcurementAgencyJson,
+  buildProcurementPdfBuffer,
+  recordProcurementDocument,
+  computeProcurementAiInsights,
+} from './lib/advanceProcurement.js';
+import { fetchEnabledAntiBypassRules, registerJobChatMessagesRoute } from './lib/jobChatMessagesRoute.js';
+import { inspectChatUploadedImageForAntiBypass, getAntiBypassImageFilterMode } from './lib/chatImageAntiBypass.js';
+import { resolveUserIdFromBearerAuthHeader } from './lib/bearerAuth.js';
+import {
+  notifyAdvanceJobBoardEvent,
+  ADVANCE_JOB_PUSH_KINDS,
+} from './lib/advanceJobBoardPushBridge.js';
 import { recordSupportUserMessage, getCrisisStatus } from './lib/supportCrisis.js';
 import { saveLearningFeedback } from './lib/learningFeedback.js';
 import { recordSentimentSample, getSentimentTrend } from './lib/supportSentimentHistory.js';
@@ -42,7 +235,7 @@ import { generateFaqFromTranscript } from './lib/supportFaqDraft.js';
 import { insertKnowledgeDraft, listKnowledgeDrafts, getKnowledgeDraftById, markDraftPromoted } from './lib/knowledgeBaseDrafts.js';
 import { summarizeMediaUrl } from './lib/supportMediaVision.js';
 import { verifyJobProofImages } from './lib/jobProofVision.js';
-import { saveFaq, listFaq, deleteFaq } from './lib/faqKnowledge.js';
+import { searchFaq, saveFaq, listFaq, deleteFaq } from './lib/faqKnowledge.js';
 import { getCommissionBooking, calcVipAdminFundSiphon, calcDepositFeeBreakdown } from './lib/aqondPayFees.js';
 import {
   calcMatchJobProviderInflow,
@@ -57,11 +250,13 @@ import {
   PLATFORM_COMMISSION_RATE,
   TAX_SERVICE_RATE
 } from './lib/financialEngine.js';
+import { loadSlotFeeConfig, normalizeSlotFeeRates } from './lib/bookingFeeConfig.js';
 import {
   calcMatchJobEmployerOutflowDynamic,
   getPaymentProviderGateSnapshot,
   normalizePaymentChannel,
   getLocalGatewayFromEnv,
+  getTransportMatchMarkupRate,
 } from './lib/paymentProviderGate.js';
 import { handlePaymentsConfirmWebhook } from './lib/paymentsWebhookConfirm.js';
 import { setSignatureVerifier } from './lib/paymentWebhookWorker.js';
@@ -94,19 +289,54 @@ import { sendFcmToTokens } from './lib/fcmAdmin.js';
 import { isSkipperEligible, isWithinPierRadius, isCheckInWindowValid, isBoatCompatibleWithPier, hasCarBoatConflict, requiresSafetyDeposit, calcDepositAmount, getDepositPercent, getCancellationRefundPercent } from './lib/marineLogic.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { registerTrainingLmsRoutes } from './routes/trainingLms.js';
+import { registerCourseMarketplaceRoutes } from './routes/courseMarketplace.js';
+import { registerCourseStudioRoutes } from './routes/courseStudio.js';
+import { registerCoursePurchaseRoutes } from './routes/coursePurchase.js';
 import { registerRescueNetTelecomRoutes } from './routes/rescueNetTelecom.js';
 import { registerGigastoreWebhookRoutes } from './routes/gigastoreWebhooks.js';
 import { registerSecurityPulseRoutes } from './routes/securityPulse.js';
 import { sendFcmMulticast } from './lib/fcmService.js';
+import {
+  AQOND_FCM_CHANNEL_APP_NEWS,
+  AQOND_NOTIFICATION_SOUND_APP_NEWS,
+} from './lib/fcmPushDefaults.js';
+import {
+  insertAdminBroadcast,
+  listAdminBroadcasts,
+  listBroadcastsForMobileUserMerge,
+  listBroadcastsForAnonymousMerge,
+} from './lib/adminBroadcastNotifications.js';
+import {
+  createStory,
+  listStoryTray,
+  listStoriesForUser,
+  recordStoryView,
+  deleteStory,
+  purgeExpiredStories,
+  userHasActiveStories,
+} from './lib/userStories.js';
 import { sendAlertEmail } from './lib/alertNotifier.js';
+import {
+  verifyTotpToken,
+  signAdminMfaPendingJwt,
+  verifyAdminMfaPendingJwt,
+  signAdminAccessToken,
+  generateTotpSecret,
+  totpQrDataUrl,
+} from './lib/adminSecurity.js';
+import { verifyFirebaseIdTokenWithPublicKeys } from './lib/verifyFirebaseIdTokenPublic.js';
 import {
   ensureReferralCode,
   recordReferralOnSignup,
   onJobCompleted,
   getReferralStats,
+  getReferralEarningsRecent,
+  getReferralPendingTotal,
   getLeaderboard,
   resolveCodeToUserId,
+  resolveReferrerPublicByCode,
   getActiveBudget,
+  getReferralCampaignPublicSnapshot,
   processPendingPayouts,
 } from './lib/referralService.js';
 import {
@@ -117,6 +347,8 @@ import {
   checkRapidLedger,
   isNightOwlHour,
   recordAnomaly,
+  getHighRiskUsers,
+  AUTO_SUSPEND_THRESHOLD,
 } from './lib/anomalyService.js';
 import { generateTaxRefIdForInsert } from './lib/taxIdService.js';
 import {
@@ -124,20 +356,109 @@ import {
   getBrandAdviserProfilePayload,
   insertBrandAdviserAudit,
 } from './lib/brandAdviser.js';
+import {
+  loadBrandAdviserCampaignConfig,
+  getCampaignStatsForReferrer,
+  getCampaignLeaderboard,
+  getCampaignGrowthSeries,
+  getPlatformCampaignStats,
+  getCampaignFraudFlags,
+  reconcileCampaignSnapshots,
+  recordCampaignBuyerPurchase,
+  publicCampaignPayload,
+} from './lib/brandAdviserCampaign.js';
+import { getPayoutWithdrawalThresholds } from './lib/payoutControlConfig.js';
+import {
+  computeWithdrawalFeeQuote,
+  normalizeWithdrawalFeePolicy,
+  mergeAndValidateWithdrawalFeePolicyForPersistence,
+  WithdrawalFeePolicyValidationError,
+} from './lib/payoutWithdrawalFee.js';
+import {
+  buildDailyReconciliationPdfBuffer,
+  buildDailyReconciliationReportData,
+  buildReconciliationSummary,
+  dailyReportToCsv,
+  insertPayoutReconciliationAuditLog,
+  runPayoutReconciliation,
+} from './lib/payoutReconciliation.js';
 import { attachWalletManualDepositRoutes } from './lib/walletManualDepositRoutes.js';
+import { attachAdsRoutes } from './lib/adsRoutes.js';
+import { attachAdsAdminRoutes } from './lib/adsAdminRoutes.js';
+import { attachPrbRoutes } from './lib/prbRoutes.js';
+import { registerWorkspaceRoutes } from './lib/aivos/workspaceRoutes.js';
+import { registerAivosRoutes } from './lib/aivos/index.js';
+import { attachGoldLottoRoutes } from './lib/goldLottoRoutes.js';
+import { attachBeautyBookingRoutes } from './lib/beautyBookingRoutes.js';
+import { attachBeautyBookingAdminRoutes } from './lib/beautyBookingAdminRoutes.js';
+import { attachFoodMerchantAdminRoutes } from './lib/foodMerchantAdminRoutes.js';
+import { attachMarketplaceCommissionAdminRoutes } from './lib/marketplaceCommissionAdminRoutes.js';
+import { attachExperienceRoutes } from './lib/experience/experienceRoutes.js';
+import { attachJarvisRoutes } from './lib/jarvis/jarvisRoutes.js';
+import { unlockBeautyPayouts } from './lib/beautyBookingService.js';
+import { registerWalletLiquidityAdminRoutes } from './lib/walletLiquidityAdminRoutes.js';
+import { registerUserFinancialMovementsAdminRoutes } from './lib/userFinancialMovementsAdminRoutes.js';
+import { registerUserCommerceAdminRoutes } from './lib/userCommerceAdminRoutes.js';
+import { registerUserSupportAdminRoutes } from './lib/userSupportAdminRoutes.js';
+import { registerAdminCronRoutes } from './lib/adminCronRoutes.js';
+import { registerPartnerApiRoutes } from './lib/partnerApiRoutes.js';
+import { registerDeliveryPartnerRoutes } from './lib/deliveryPartnerRoutes.js';
+import { startExecutiveDailyReportScheduler } from './lib/executiveDailyCsvReport.js';
+import { scheduleCommerceEmitFromLedger, scheduleCommerceEmitForJob, emitCommerceEvent } from './lib/userCommerceEvents.js';
+import { getDistancePricingFromPool, mergeDistancePricingPatch, DISTANCE_PRICING_DEFAULTS } from './lib/distancePricing.js';
 import { isPaysoEnabledFromEnv } from './lib/paysoEnvFlag.js';
 import {
   createPaysoWalletDepositCharge,
+  createPaysoCardWalletDepositCharge,
+  createPaysoTrueMoneyWalletDepositCharge,
+  createPaysoMobileBankingRedirectWalletDepositCharge,
   queryPaysoWalletDepositStatus,
   verifyPaysoWebhookSignature,
   parsePaysoWebhookPayload,
 } from './services/paysoService.js';
+import {
+  parseUserBankAccounts,
+  normalizeBankDigits,
+  findMatchingBankAccountForMb,
+  assertMbProfileGate,
+} from './lib/walletDepositMobileBankingProfile.js';
 import { creditWalletDepositFromPayso } from './lib/walletDepositHybrid.js';
+import {
+  enqueueWalletDepositWebhookJob,
+  isAsyncEnabled as isPaysoWebhookAsyncEnabled,
+  startWalletDepositWebhookWorker,
+} from './lib/walletDepositWebhookQueue.js';
+import { postProviderWhtForEarning } from './lib/providerWhtService.js';
+import {
+  CSV_BOM,
+  buildMonthlyTaxPack,
+  buildPlatformRevenueReport,
+  buildProviderIncomeReport,
+  buildVatSalesReport,
+  buildWalletFlowReport,
+  buildWhtReport,
+  parseMonthYear,
+} from './lib/taxExportService.js';
+import {
+  createDryRunEtaxAdapter,
+  persistEtaxDryRunResult,
+} from './lib/etaxAdapterService.js';
+import {
+  calculateLine,
+  createCreditNoteForDocument,
+  generateFiscalDocumentDraft,
+  getDocumentWithLines,
+  issueFiscalDocument,
+  mapFiscalDocument,
+  splitVatInclusive,
+  tryGenerateWalletFiscalDocumentDraft,
+  voidFiscalDocument,
+} from './lib/taxDocumentService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// โหลด .env: ลอง backend/.env ก่อน แล้วค่อย root .env (ถ้ามี)
-dotenv.config({ path: join(__dirname, '.env') });
+// โหลด .env: root ก่อน แล้วให้ backend/.env ทับค่าเฉพาะ backend เสมอ
 dotenv.config({ path: join(__dirname, '..', '.env') });
+dotenv.config({ path: join(__dirname, '.env'), override: true });
 
 /** ใน production ไม่พิมพ์รายการ credential — เปิดด้วย STARTUP_VERBOSE=1 หรือ NODE_ENV!=production */
 const STARTUP_VERBOSE = process.env.STARTUP_VERBOSE === '1' || process.env.NODE_ENV !== 'production';
@@ -150,11 +471,11 @@ if (STARTUP_VERBOSE) {
   console.log("  AWS Access Key:", process.env.AWS_ACCESS_KEY_ID ? "✅ Loaded" : "❌ Missing");
   console.log("  AWS Secret Key:", process.env.AWS_SECRET_ACCESS_KEY ? "✅ Loaded" : "❌ Missing");
 }
-const paymentGatewayPublicKey = process.env.PAYMENT_GATEWAY_PUBLIC_KEY || (process.env.NODE_ENV !== 'production' ? process.env.PAYMENT_GATEWAY_PUBLIC_KEY_TEST : null);
+const paymentGatewayPublicKey = getPaymentGatewayPublicKey();
 const paymentGatewaySecretKey = getPaymentGatewaySecretKey();
 if (STARTUP_VERBOSE) {
-  console.log("  Payment gateway public key:", paymentGatewayPublicKey ? "✅ Loaded" : "❌ Missing");
-  console.log("  Payment gateway secret key:", paymentGatewaySecretKey ? "✅ Loaded" : "❌ Missing");
+  console.log("  PaySo card API key:", paymentGatewayPublicKey ? "✅ Loaded" : "❌ Missing (PAYSO_PUBLIC_KEY / PAYSO_INQUIRY_API_KEY)");
+  console.log("  PaySo card secret key:", paymentGatewaySecretKey ? "✅ Loaded" : "❌ Missing (PAYSO_SECRET_KEY / PAYSO_MERCHANT_SECRET_KEY)");
   if (process.env.NODE_ENV !== 'production' && paymentGatewaySecretKey) console.log("  → Using TEST keys (NODE_ENV != production)");
 }
 
@@ -206,7 +527,7 @@ async function getJobMeetCodeEntry(jobId) {
 }
 async function deleteJobMeetCodeEntry(jobId) {
   if (redisClient) {
-    await redisClient.del(JOB_MEET_REDIS_PREFIX + String(jobId)).catch(() => {});
+    await redisClient.del(JOB_MEET_REDIS_PREFIX + String(jobId)).catch(() => { });
   } else {
     jobMeetCodes.delete(String(jobId));
   }
@@ -304,9 +625,6 @@ async function appendWalletDepositWebhookLog({
 app.post('/api/webhooks/checkout', express.raw({ type: 'application/json' }), (req, res, next) => {
   const raw = req.body;
   if (Buffer.isBuffer(raw)) req.rawBody = raw;
-  // #region agent log
-  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H12",location:"backend/server.js:/api/webhooks/checkout",message:"legacy checkout webhook endpoint hit",data:{hasRawBody:Buffer.isBuffer(req.body),contentType:req.headers?.["content-type"]||null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   next();
 }, (req, res) => {
   const handler = req.app.get('paymentWebhookHandler');
@@ -333,20 +651,13 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
     const rawBody = Buffer.isBuffer(req.body)
       ? req.body
       : Buffer.from(
-          typeof req.body === 'string'
-            ? req.body
-            : JSON.stringify(req.body || {}),
-          'utf8'
-        );
+        typeof req.body === 'string'
+          ? req.body
+          : JSON.stringify(req.body || {}),
+        'utf8'
+      );
     const hasSecret = String(process.env.PAYSO_WEBHOOK_SECRET || '').trim().length > 0;
     const signatureOk = verifyPaysoWebhookSignature(rawBody, req.headers || {});
-    const hasSigHeader =
-      !!req.headers?.['x-payso-signature'] ||
-      !!req.headers?.['x-signature'] ||
-      !!req.headers?.['x-hub-signature-256'];
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H17",location:"backend/server.js:/api/webhooks/payso:entry",message:"payso webhook entry observed",data:{hasSecret,signatureOk,contentType:req.headers?.["content-type"]||null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     let payload = null;
     try {
       payload = JSON.parse(rawBody.toString('utf8'));
@@ -358,17 +669,20 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
       }
       payload = Object.fromEntries(sp.entries());
     }
-    const allowUnsignedManual = String(process.env.PAYSO_WEBHOOK_ALLOW_UNSIGNED_MANUAL || '').trim() === '1';
-    const contentType = String(req.headers?.['content-type'] || '').toLowerCase();
-    const isFormEncoded = contentType.includes('application/x-www-form-urlencoded');
-    const merchantMatches =
-      String(payload?.merchantid || payload?.merchantID || '').trim() ===
-      String(process.env.PAYSO_MERCHANT_ID || '').trim();
-    const hasRef = !!String(payload?.refno || payload?.referenceNo || payload?.reference_id || '').trim();
-    const bypassUnsigned = allowUnsignedManual && !hasSigHeader && isFormEncoded && merchantMatches && hasRef;
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H21",location:"backend/server.js:/api/webhooks/payso:signature-gate",message:"signature gate decision for payso webhook",data:{hasSecret,signatureOk,hasSigHeader,allowUnsignedManual,isFormEncoded,merchantMatches,hasRef,bypassUnsigned},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    if (!hasSecret) {
+      await appendFinancialDepositAudit({
+        actorType: 'webhook',
+        action: 'PAYSO_WEBHOOK_REJECTED',
+        entityType: 'wallet_deposit_webhook',
+        entityId: String(payload?.refno || payload?.referenceNo || payload?.reference_id || `payso-${Date.now()}`),
+        reason: 'webhook_secret_not_configured',
+        stateAfter: { hasSecret: false },
+      }).catch(() => null);
+      return res.status(503).json({
+        error: 'webhook_secret_not_configured',
+        code: 'PAYSO_WEBHOOK_SECRET_missing',
+      });
+    }
     let normalized = null;
     const persistAndRespond = async (statusCode, body, extra = {}) => {
       await appendWalletDepositWebhookLog({
@@ -382,7 +696,7 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
         eventStatus: extra.eventStatus || normalized?.status || null,
         httpStatus: statusCode,
         signatureValid: signatureOk,
-        bypassUnsigned,
+        bypassUnsigned: false,
         headers: req.headers || {},
         payload: payload || {},
         rawBody: rawBody.toString('utf8'),
@@ -393,23 +707,20 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
       });
       return res.status(statusCode).json(body);
     };
-    if (hasSecret && !signatureOk && !bypassUnsigned) {
+    if (!signatureOk) {
       await appendFinancialDepositAudit({
         actorType: 'webhook',
         action: 'PAYSO_WEBHOOK_REJECTED',
         entityType: 'wallet_deposit_webhook',
         entityId: String(normalized?.reference_id || payload?.refno || `payso-${Date.now()}`),
         reason: 'invalid_signature',
-        stateAfter: { hasSecret, signatureOk, bypassUnsigned },
+        stateAfter: { hasSecret, signatureOk },
       });
       return persistAndRespond(403, { error: 'invalid_signature' }, {
         processingResult: { reason: 'invalid_signature' },
       });
     }
     normalized = parsePaysoWebhookPayload(payload);
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H20",location:"backend/server.js:/api/webhooks/payso:parsed",message:"parsed payso webhook payload",data:{reference_id:normalized?.reference_id||null,status:normalized?.status||null,transaction_id:normalized?.transaction_id||null,payload_keys:Object.keys(payload||{}).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!normalized?.reference_id) {
       return persistAndRespond(200, { ok: true, ignored: 'missing_reference_id' }, {
         processingResult: { ignored: 'missing_reference_id' },
@@ -426,7 +737,7 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
         status: normalized?.status || null,
         transaction_id: normalized?.transaction_id || null,
         signature_ok: signatureOk,
-        bypass_unsigned: bypassUnsigned,
+        bypass_unsigned: false,
       },
     });
     const st = String(normalized.status || '').toLowerCase();
@@ -469,9 +780,6 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
       const amountMatches =
         Number.isFinite(amountFromPayload) &&
         Math.abs(amountFromPayload - Number(rec.amount || 0)) <= 0.02;
-      // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H19",location:"backend/server.js:/api/webhooks/payso:implicit-success-check",message:"payso webhook missing explicit status; evaluate by ref+amount",data:{charge_id:rec.charge_id,status_raw:st||null,amount_from_payload:Number.isFinite(amountFromPayload)?amountFromPayload:null,amount_expected:Number(rec.amount||0),amount_matches:amountMatches},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (!amountMatches) {
         await appendFinancialDepositAudit({
           actorType: 'webhook',
@@ -502,15 +810,46 @@ app.post('/api/webhooks/payso', express.raw({ type: '*/*' }), async (req, res) =
         processingResult: { duplicate: true },
       });
     }
+    if (isPaysoWebhookAsyncEnabled()) {
+      const enq = await enqueueWalletDepositWebhookJob(pool, {
+        chargeId: rec.charge_id,
+        userId: rec.user_id,
+        grossAmount: Number(rec.amount),
+        transactionNoSuffix: String(normalized.transaction_id || Date.now()),
+        payload: payload || {},
+        headers: req.headers || {},
+        rawBody: rawBody.toString('utf8'),
+      });
+      await appendFinancialDepositAudit({
+        actorType: 'webhook',
+        action: 'PAYSO_WEBHOOK_QUEUED',
+        entityType: 'wallet_deposit_charge',
+        entityId: String(rec.charge_id),
+        correlationId: String(rec.charge_id),
+        reason: enq.duplicate ? 'duplicate_queue_job' : 'async_credit_queued',
+        stateAfter: { job_id: enq.job_id || null, queued: enq.queued === true },
+      });
+      return persistAndRespond(200, {
+        ok: true,
+        charge_id: rec.charge_id,
+        queued: true,
+        duplicate: enq.duplicate === true,
+        job_id: enq.job_id || null,
+      }, {
+        chargeId: rec.charge_id,
+        userId: rec.user_id,
+        sourceType: 'payso',
+        amount: Number(rec.amount || 0),
+        eventStatus: 'success',
+        processingResult: { queued: true, job_id: enq.job_id || null },
+      });
+    }
     const credited = await creditWalletDepositFromPayso(pool, {
       userId: rec.user_id,
       chargeId: rec.charge_id,
       grossAmount: Number(rec.amount),
       transactionNoSuffix: String(normalized.transaction_id || Date.now()),
     });
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H18",location:"backend/server.js:/api/webhooks/payso:credited",message:"payso webhook credited wallet",data:{charge_id:rec.charge_id,ledger_id:credited?.ledgerId||null,duplicate:credited?.duplicate===true},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     await appendFinancialDepositAudit({
       actorType: 'webhook',
       action: 'PAYSO_WEBHOOK_CREDITED',
@@ -559,9 +898,6 @@ app.post(
     const pgPool = req.app.get('pool');
     if (!pgPool) return res.status(503).json({ error: 'server_not_ready' });
     try {
-      // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H13",location:"backend/server.js:/api/payments/webhook:entry",message:"payments webhook request arrived",data:{hasRawBody:!!req.rawBody,contentType:req.headers?.["content-type"]||null,hasXWebhookSignature:!!req.headers?.["x-webhook-signature"],hasXPaymentSignature:!!req.headers?.["x-payment-signature"]},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       console.log('[DBG-H13] /api/payments/webhook entry', {
         contentType: req.headers?.['content-type'] || null,
         hasRawBody: !!req.rawBody,
@@ -569,9 +905,6 @@ app.post(
         hasXPaymentSignature: !!req.headers?.['x-payment-signature'],
       });
       const out = await handlePaymentsConfirmWebhook(req, pgPool);
-      // #region agent log
-      fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H7",location:"backend/server.js:/api/payments/webhook",message:"payments webhook intake result",data:{status:out?.status,queued:out?.body?.queued,duplicate:out?.body?.duplicate,event_id:out?.body?.event_id || null,idempotency_key:out?.body?.idempotency_key || null,failure_code:out?.body?.failure_code || null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return res.status(out.status).json(out.body);
     } catch (e) {
       console.error('[payments webhook]', e);
@@ -580,25 +913,7 @@ app.post(
   },
 );
 
-// ✅ CORS ต้องมาก่อน — รวม preflight และ error responses
-const corsHeaders = (req, res) => {
-  const origin = req.headers.origin || '';
-  const allowed = ['https://app.aqond.com', 'https://admin.aqond.com', 'https://aqond.com', 'https://www.aqond.com', 'http://localhost:3000', 'http://localhost:3002', 'http://localhost:3004', 'http://127.0.0.1:3000', 'http://127.0.0.1:3002', 'http://192.168.1.41:3000', 'http://147.50.231.183:3000'];
-  const allowOrigin = allowed.includes(origin) ? origin : allowed[0];
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-};
-app.use((req, res, next) => {
-  corsHeaders(req, res);
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-// CORS: รองรับ frontend 3006 และ nexus-admin 3004
+// ✅ CORS ต้องมาก่อน — รวม preflight และ error responses (ใช้รายการเดียวกับ cors() ด้านล่าง)
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
   : [];
@@ -607,10 +922,13 @@ const defaultOrigins = [
   'http://localhost:3002',
   'http://localhost:3004',
   'http://localhost:3006',
+  'http://localhost:4173',
+  'http://localhost:4174',
   'http://localhost:5173',
   'http://localhost:5174',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3002',
+  'http://127.0.0.1:4173',
   // Local network (mobile dev)
   'http://192.168.1.41:3000',
   'http://192.168.0.1:3000',
@@ -622,15 +940,55 @@ const defaultOrigins = [
   'https://app.aqond.com',        // Mobile App
   'https://api.aqond.com',        // API
   'https://admin.aqond.com',      // Admin Dashboard
+  'https://ads-admin.aqond.com',  // Ads Admin (route 2)
   'https://aqond.com',            // Landing
   'https://www.aqond.com',
 ];
 const origins = corsOrigins.length ? corsOrigins : defaultOrigins;
+
+/** คืน origin ที่อนุญาต หรือ null — อย่าตั้ง ACAO เป็นโดเมนอื่น (ทำให้ browser ขึ้น Failed to fetch) */
+function resolveCorsAllowOrigin(origin) {
+  if (!origin || typeof origin !== 'string') return null;
+  if (origins.includes(origin)) return origin;
+  try {
+    const u = new URL(origin);
+    const h = u.hostname.toLowerCase();
+    if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return origin;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+const corsHeaders = (req, res) => {
+  const allowOrigin = resolveCorsAllowOrigin(req.headers.origin || '');
+  if (!allowOrigin) return;
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Idempotency-Key, X-Session-Id, X-Course-Session',
+  );
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+};
+app.use((req, res, next) => {
+  corsHeaders(req, res);
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
 app.use(cors({
-  origin: origins,
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    const allowed = resolveCorsAllowOrigin(origin);
+    if (allowed) return callback(null, allowed);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Session-Id', 'X-Course-Session'],
 }));
 
 // ============ BLOCKED IP CHECK (runs early; pool set later) ============
@@ -656,7 +1014,8 @@ app.use(async (req, res, next) => {
 // Helmet: Security Headers (XSS Protection, Content Security Policy, etc.)
 app.use(helmet({
   contentSecurityPolicy: false, // ปิดเพื่อไม่ให้ขัดแย้งกับ CORS
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
 // Compression: Gzip response เพื่อลดขนาด payload
@@ -673,7 +1032,8 @@ app.use(morgan(morganFormat, {
 // API Rate Limiting - ป้องกันการยิง API มากเกินไป
 app.use('/api/', apiLimiter);
 
-
+// Phase 10.5: V2 Shadow Interceptor (feature-gated, fail-open, fire-and-forget)
+try { app.use(createShadowMiddleware()); } catch (_) { /* fail-open */ }
 
 // ============ STORAGE (AWS S3) ============
 // ใช้ AWS S3 แทน Cloudinary — ตั้งค่า AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET, AWS_REGION ใน .env
@@ -682,7 +1042,7 @@ app.use('/api/', apiLimiter);
 app.get("/", (req, res) => {
   res.json({
     message: "🚀 Production Backend with AWS S3",
-    max_file_size: "50MB",
+    max_file_size: "100MB",
     endpoints: {
       "GET /health": "Health check",
       "GET /api/profile": "User profile",
@@ -696,7 +1056,8 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "healthy",
-    max_upload_size: "50MB",
+    max_upload_size: "100MB",
+    features: { user_stories_api: true },
     timestamp: new Date().toISOString()
   });
 });
@@ -797,13 +1158,59 @@ app.post("/api/upload/image", async (req, res) => {
     let imageBuffer = Buffer.from(base64Data, "base64");
 
     const forKyc = req.body.forKyc === true || req.query.for === 'kyc';
+    const uploadTagRaw = req.body.tag != null ? String(req.body.tag) : (req.query.tag != null ? String(req.query.tag) : '');
+    const forChatUpload = uploadTagRaw.toLowerCase() === 'chat';
+
+    if (forKyc && forChatUpload) {
+      return res.status(400).json({ error: 'Invalid upload combination', code: 'BAD_REQUEST' });
+    }
+
     if (forKyc) {
       imageBuffer = await stripExifFromImageBuffer(imageBuffer);
     }
 
+    /** PR-3 chat — auth + QR / OCR when ANTI_BYPASS_IMAGE_FILTER=block; EXIF strip only in block mode (parity when off). */
+    if (forChatUpload) {
+      const tokenUserId = resolveUserIdFromBearerAuthHeader(req.headers.authorization);
+      if (!tokenUserId) {
+        return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ', code: 'UNAUTHORIZED' });
+      }
+      if (getAntiBypassImageFilterMode() === 'block') {
+        imageBuffer = await stripExifFromImageBuffer(imageBuffer);
+      }
+      const mimeCt = req.body.file?.match(/^data:([^;]+)/)?.[1] || 'image/jpeg';
+      try {
+        const rules = pool ? await fetchEnabledAntiBypassRules(pool) : [];
+        const inspect = await inspectChatUploadedImageForAntiBypass(imageBuffer, mimeCt, {
+          dbRules: rules,
+        });
+        if (!inspect.ok) {
+          return res.status(inspect.status || 403).json({
+            error: inspect.error || 'Rejected',
+            code: inspect.code,
+            ...(inspect.reasons ? { reasons: inspect.reasons } : {}),
+            ...(inspect.matchedMasked ? { matchedMasked: inspect.matchedMasked } : {}),
+          });
+        }
+      } catch (chatInspectErr) {
+        console.warn('[upload/image chat tag] inspect error:', chatInspectErr?.message);
+        return res.status(500).json({ error: 'Chat image verification failed', code: 'CHAT_IMAGE_INSPECT_FAILED' });
+      }
+    }
+
+    let s3Folder = 'images';
+    let s3KeyPrefix = 'images';
+    if (forKyc) {
+      s3Folder = 'kyc_uploads';
+      s3KeyPrefix = 'kyc_uploads';
+    } else if (forChatUpload) {
+      s3Folder = 'chat_uploads';
+      s3KeyPrefix = 'chat_uploads';
+    }
+
     const result = await uploadToS3(imageBuffer, {
-      folder: forKyc ? "kyc_uploads" : "images",
-      key: `${forKyc ? "kyc_uploads" : "images"}/img_${Date.now()}`,
+      folder: s3Folder,
+      key: `${s3KeyPrefix}/img_${Date.now()}`,
       contentType: req.body.file?.match(/^data:([^;]+)/)?.[1] || 'image/jpeg',
       resourceType: 'image'
     });
@@ -816,7 +1223,9 @@ app.post("/api/upload/image", async (req, res) => {
       width: result.width,
       height: result.height,
       size: `${(result.bytes / 1024).toFixed(2)}KB`,
-      exif_stripped: forKyc
+      exif_stripped:
+        !!forKyc || !!(forChatUpload && getAntiBypassImageFilterMode() === 'block'),
+      ...(forChatUpload ? { chat_tagged: true } : {}),
     });
 
   } catch (error) {
@@ -862,7 +1271,16 @@ app.post("/api/upload/video", async (req, res) => {
 
 // ✅ 4. Upload ผ่าน FormData (เหมาะสำหรับ Frontend)
 const multerStorage = multer.memoryStorage();
-const uploadMulter = multer({ storage: multerStorage });
+/** Talent video upload — สูงสุด 100MB ตรง health.max_upload_size + nginx client_max_body_size */
+const uploadMulter = multer({
+  storage: multerStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
+/** Single-file image docs (KYC, portfolio, slip) — จำกัดขนาดเพื่อลดความเสี่ยง OOM และคืน JSON ผ่าน error handler */
+const uploadMulterDocument = multer({
+  storage: multerStorage,
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 
 // ============ STORAGE (S3) MANAGEMENT ============
@@ -927,13 +1345,13 @@ async function optionalAuth(req, res, next) {
     try {
       const payload = JSON.parse(Buffer.from(token.slice(5), 'base64').toString('utf8'));
       userId = payload.user_id ? String(payload.user_id) : null;
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!userId && process.env.JWT_SECRET) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       userId = String(payload.sub);
-    } catch (_) {}
+    } catch (_) { }
   }
   req.user = userId ? { id: userId } : null;
   next();
@@ -946,6 +1364,7 @@ app.get("/api/videos/feed", optionalAuth, async (req, res) => {
     const cursor = req.query.cursor || null;
     const userId = req.user?.id ? await resolveUserIdToUuid(req.user.id).catch(() => null) : null;
     const hasLikesTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_likes'`).then(r => r.rows?.length > 0);
+    const hasSavesTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_saves'`).then(r => r.rows?.length > 0);
     const hasBlockedTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_blocked_video_creators'`).then(r => r.rows?.length > 0);
     let videos = [];
     try {
@@ -957,12 +1376,17 @@ app.get("/api/videos/feed", optionalAuth, async (req, res) => {
              (SELECT COUNT(*)::INT FROM video_comments WHERE video_id = v.id) AS comment_count
              ${userId ? `, (SELECT EXISTS(SELECT 1 FROM video_likes WHERE video_id = v.id AND user_id = $${cursor ? 3 : 2})) AS liked_by_me` : ''}`
           : '';
+        const saveSelect = hasSavesTable
+          ? `, (SELECT COUNT(*)::INT FROM video_saves WHERE video_id = v.id) AS save_count
+             ${userId ? `, (SELECT EXISTS(SELECT 1 FROM video_saves WHERE video_id = v.id AND user_id = $${cursor ? 3 : 2})) AS saved_by_me` : ''}`
+          : '';
+        const engagementSelect = `${likeCommentSelect}${saveSelect}`;
         const q = cursor
-          ? `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${likeCommentSelect}
+          ? `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${engagementSelect}
              FROM talent_videos v LEFT JOIN users u ON u.id = v.talent_id
              WHERE v.is_approved = true AND v.created_at < (SELECT created_at FROM talent_videos WHERE id::text = $1)${blockedWhere}
              ORDER BY v.created_at DESC LIMIT $2`
-          : `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${likeCommentSelect}
+          : `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar${engagementSelect}
              FROM talent_videos v LEFT JOIN users u ON u.id = v.talent_id
              WHERE v.is_approved = true${blockedWhere}
              ORDER BY v.created_at DESC LIMIT $1`;
@@ -982,6 +1406,8 @@ app.get("/api/videos/feed", optionalAuth, async (req, res) => {
           like_count: hasLikesTable ? (row.like_count ?? 0) : 0,
           comment_count: hasLikesTable ? (row.comment_count ?? 0) : 0,
           liked_by_me: hasLikesTable && userId ? !!row.liked_by_me : false,
+          save_count: hasSavesTable ? (row.save_count ?? 0) : 0,
+          saved_by_me: hasSavesTable && userId ? !!row.saved_by_me : false,
         }));
       }
     } catch (e) { console.warn('talent_videos query:', e.message); }
@@ -1000,10 +1426,16 @@ app.get("/api/videos/feed", optionalAuth, async (req, res) => {
         like_count: 0,
         comment_count: 0,
         liked_by_me: false,
+        save_count: 0,
+        saved_by_me: false,
       }));
     }
-    const last = videos[videos.length - 1];
-    res.json({ videos, nextCursor: last ? last.id : null, hasMore: videos.length >= limit });
+    let feedVideos = videos;
+    if (typeof app.injectAdsIntoVideoFeed === 'function') {
+      feedVideos = await app.injectAdsIntoVideoFeed(videos, req, userId);
+    }
+    const last = feedVideos[feedVideos.length - 1];
+    res.json({ videos: feedVideos, nextCursor: last ? last.id : null, hasMore: feedVideos.length >= limit });
   } catch (err) {
     console.error('GET /api/videos/feed:', err);
     res.status(500).json({ error: err.message });
@@ -1057,9 +1489,14 @@ app.get("/api/videos/my", authenticateToken, async (req, res) => {
     let videos = [];
     try {
       const hasTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'talent_videos'`).then(r => r.rows?.length > 0);
+      const hasSavesTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_saves'`).then(r => r.rows?.length > 0);
       if (hasTable) {
+        const saveSelect = hasSavesTable
+          ? `, (SELECT COUNT(*)::INT FROM video_saves WHERE video_id = v.id) AS save_count,
+             (SELECT EXISTS(SELECT 1 FROM video_saves WHERE video_id = v.id AND user_id = $1)) AS saved_by_me`
+          : '';
         const r = await pool.query(
-          `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, v.is_approved
+          `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description, v.duration_seconds, v.created_at, v.is_approved${saveSelect}
            FROM talent_videos v WHERE v.talent_id = $1 ORDER BY v.created_at DESC`,
           [userId]
         );
@@ -1073,6 +1510,8 @@ app.get("/api/videos/my", authenticateToken, async (req, res) => {
           duration_seconds: row.duration_seconds,
           created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
           is_approved: row.is_approved,
+          save_count: hasSavesTable ? (row.save_count ?? 0) : 0,
+          saved_by_me: hasSavesTable ? !!row.saved_by_me : false,
         }));
       }
     } catch (e) { console.warn('talent_videos my:', e.message); }
@@ -1093,6 +1532,108 @@ app.get("/api/videos/my", authenticateToken, async (req, res) => {
     res.json({ videos });
   } catch (err) {
     console.error('GET /api/videos/my:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/videos/saved — คลิปที่ผู้ใช้บันทึกไว้ (ต้อง login)
+app.get('/api/videos/saved', authenticateToken, async (req, res) => {
+  try {
+    const userUuid = await resolveAuthenticatedUserUuid(req);
+    if (!userUuid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const hasSaves = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_saves'`).then((r) => r.rows?.length > 0);
+    if (!hasSaves) return res.json({ videos: [] });
+
+    const hasComments = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_comments'`).then((x) => x.rows?.length > 0);
+
+    const hasLikesTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'video_likes'`).then((x) => x.rows?.length > 0);
+
+    const likeCountSql = hasLikesTable ? `(SELECT COUNT(*)::INT FROM video_likes WHERE video_id = v.id)` : '0';
+    const commentCountSql = hasComments ? `(SELECT COUNT(*)::INT FROM video_comments WHERE video_id = v.id)` : '0';
+    const likedSql = hasLikesTable
+      ? `CASE WHEN EXISTS (SELECT 1 FROM video_likes vl WHERE vl.video_id = v.id AND vl.user_id = $2::uuid) THEN true ELSE false END`
+      : 'false';
+
+    const r = await pool.query(
+      `SELECT v.id, v.talent_id, v.video_url, v.thumbnail_url, v.title, v.description,
+              v.duration_seconds, v.created_at, u.full_name AS talent_name, u.avatar_url AS talent_avatar,
+              ${likeCountSql} AS like_count,
+              ${commentCountSql} AS comment_count,
+              (SELECT COUNT(*)::bigint FROM video_saves sv WHERE sv.video_id = v.id) AS save_count,
+              ${likedSql} AS liked_by_me
+       FROM video_saves s
+       JOIN talent_videos v ON v.id = s.video_id
+       LEFT JOIN users u ON u.id = v.talent_id
+       WHERE s.user_id = $1::uuid AND COALESCE(v.is_approved, true) = true
+       ORDER BY s.created_at DESC
+       LIMIT 100`,
+      hasLikesTable ? [userUuid, userUuid] : [userUuid],
+    );
+
+    const videos = (r.rows || []).map((row) => ({
+      id: String(row.id),
+      talent_id: String(row.talent_id),
+      video_url: row.video_url,
+      thumbnail_url: row.thumbnail_url,
+      title: row.title,
+      description: row.description,
+      duration_seconds: row.duration_seconds,
+      created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+      talent_name: row.talent_name,
+      talent_avatar: row.talent_avatar,
+      like_count: Number(row.like_count ?? 0),
+      comment_count: Number(row.comment_count ?? 0),
+      save_count: Number(row.save_count || 0),
+      saved_by_me: true,
+      liked_by_me: !!row.liked_by_me,
+      mixKind: 'organic',
+    }));
+
+    const promoted = await listSavedPromotedClips(pool, userUuid);
+    const merged = [...videos, ...promoted].sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
+
+    res.json({ videos: merged });
+  } catch (err) {
+    console.error('GET /api/videos/saved:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/videos/saved/promoted-creative-ids — creative ที่ผู้ใช้บันทึกไว้ (สำหรับ mark saved ในฟีด)
+app.get('/api/videos/saved/promoted-creative-ids', authenticateToken, async (req, res) => {
+  try {
+    const userUuid = await resolveAuthenticatedUserUuid(req);
+    if (!userUuid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const creativeIds = await listSavedPromotedCreativeIds(pool, userUuid);
+    res.json({ creativeIds });
+  } catch (err) {
+    console.error('GET /api/videos/saved/promoted-creative-ids:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/videos/saved/promoted — สลับบันทึกคลิปโปรโมต (snapshot ตาม creative_id)
+app.post('/api/videos/saved/promoted', authenticateToken, async (req, res) => {
+  try {
+    const userUuid = await resolveAuthenticatedUserUuid(req);
+    if (!userUuid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const body = req.body || {};
+    const creativeId = String(body.creative_id || body.creativeId || '').trim();
+    if (!creativeId) return res.status(400).json({ error: 'creative_id required' });
+    const result = await togglePromotedClipSave(pool, userUuid, body);
+    if (result.error === 'invalid_id') return res.status(400).json({ error: 'รหัสโฆษณาไม่ถูกต้อง' });
+    if (result.error === 'not_configured') {
+      return res.status(503).json({
+        error: 'ระบบบันทึกคลิปโปรโมตยังไม่พร้อม — รัน migration 252_saved_promoted_clips.sql',
+      });
+    }
+    res.json({ saved: result.saved, save_count: result.save_count, creative_id: result.creative_id });
+  } catch (err) {
+    console.error('POST /api/videos/saved/promoted:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1186,6 +1727,177 @@ app.get("/api/videos/upload-status/:jobId", authenticateToken, async (req, res) 
   } catch (err) {
     console.error('GET /api/videos/upload-status:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ USER STORIES (24h — Instagram-style) ============
+app.get('/api/stories/tray', authenticateToken, async (req, res) => {
+  try {
+    const viewerId = await resolveAuthenticatedUserUuid(req);
+    if (!viewerId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const tray = await listStoryTray(pool, viewerId).catch((e) => {
+      if (String(e?.code) === '42P01') return [];
+      throw e;
+    });
+    const hasOwn = await userHasActiveStories(pool, viewerId).catch(() => false);
+    res.json({ tray, has_own_story: hasOwn, viewer_id: viewerId });
+  } catch (e) {
+    console.error('GET /api/stories/tray:', e);
+    res.status(500).json({ error: e.message || 'Failed to fetch stories tray' });
+  }
+});
+
+app.get('/api/stories/user/:userId', authenticateToken, async (req, res) => {
+  try {
+    const viewerId = await resolveAuthenticatedUserUuid(req);
+    if (!viewerId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const targetId = await resolveUserIdToUuid(req.params.userId);
+    if (!targetId) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const data = await listStoriesForUser(pool, targetId, viewerId).catch((e) => {
+      if (String(e?.code) === '42P01') return { user: null, stories: [] };
+      throw e;
+    });
+    const isOwnStories = String(viewerId) === String(targetId);
+    if (
+      !isOwnStories &&
+      typeof app.injectAdsIntoStories === 'function' &&
+      data?.stories?.length
+    ) {
+      try {
+        data.stories = await app.injectAdsIntoStories(data.stories, req, viewerId);
+      } catch (e) {
+        console.warn('[stories] injectAdsIntoStories failed:', e?.message || e);
+      }
+    }
+    res.json(data);
+  } catch (e) {
+    console.error('GET /api/stories/user:', e);
+    res.status(500).json({ error: e.message || 'Failed to fetch stories' });
+  }
+});
+
+app.post(
+  '/api/stories',
+  authenticateToken,
+  uploadMulter.single('media'),
+  async (req, res) => {
+    try {
+      const userId = await resolveAuthenticatedUserUuid(req);
+      if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+
+      console.log('[stories] POST /api/stories', {
+        userId: String(userId),
+        hasFile: !!req.file,
+        fileBytes: req.file?.size ?? 0,
+        mediaType: req.body?.media_type,
+      });
+
+      const body = req.body || {};
+      let mediaType = String(body.media_type || 'image').toLowerCase();
+      if (!['text', 'image', 'video'].includes(mediaType)) mediaType = 'image';
+
+      let mediaUrl = body.media_url ? String(body.media_url).trim() : null;
+      let backgroundStyle = {};
+      try {
+        if (body.background_style) {
+          backgroundStyle =
+            typeof body.background_style === 'string'
+              ? JSON.parse(body.background_style)
+              : body.background_style;
+        }
+      } catch (_) {
+        backgroundStyle = {};
+      }
+      const textOverlay = body.text_overlay ? String(body.text_overlay).slice(0, 500) : null;
+
+      if (req.file) {
+        const mime = String(req.file.mimetype || '').toLowerCase();
+        if (mime.startsWith('video/')) mediaType = 'video';
+        else if (mime.startsWith('image/')) {
+          if (mediaType !== 'text') mediaType = 'image';
+        } else {
+          return res.status(400).json({ error: 'invalid_file_type', message: 'รองรับเฉพาะรูปหรือวิดีโอ' });
+        }
+        const ext = (() => {
+          if (mime === 'image/png') return '.png';
+          if (mime === 'image/jpeg' || mime === 'image/jpg') return '.jpg';
+          if (mime === 'image/webp') return '.webp';
+          if (mime === 'video/mp4') return '.mp4';
+          if (mime === 'video/webm') return '.webm';
+          return '';
+        })();
+        const safeBase = String(req.file.originalname || 'story')
+          .replace(/\.[a-z0-9]+$/i, '')
+          .replace(/[^a-z0-9_-]+/gi, '_')
+          .slice(0, 48) || 'story';
+        const key = `public/stories/${userId}/${Date.now()}_${safeBase}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+        const uploaded = await uploadToS3(req.file.buffer, {
+          key,
+          folder: 'public/stories',
+          extension: ext,
+          contentType: mime || 'application/octet-stream',
+          resourceType: mediaType === 'video' ? 'video' : 'image',
+        });
+        mediaUrl = uploaded.secure_url || uploaded.url;
+      }
+
+      if (!mediaUrl && mediaType === 'text') {
+        return res.status(400).json({
+          error: 'text_story_requires_media',
+          message: 'โพสต์ข้อความต้องส่งรูปที่ render จาก canvas หรือ media_url',
+        });
+      }
+      if (!mediaUrl) {
+        return res.status(400).json({ error: 'media_required', message: 'กรุณาแนบรูปหรือวิดีโอ' });
+      }
+
+      const story = await createStory(pool, {
+        userId,
+        mediaType,
+        mediaUrl,
+        textOverlay,
+        backgroundStyle,
+      });
+      console.log('[stories] created', { storyId: story?.id, userId: String(userId), mediaType });
+      res.status(201).json({ story });
+    } catch (e) {
+      if (String(e?.code) === '42P01') {
+        return res.status(503).json({ error: 'รัน migration 211_user_stories.sql ก่อน' });
+      }
+      console.error('POST /api/stories:', e);
+      res.status(500).json({ error: e.message || 'Failed to create story' });
+    }
+  },
+);
+
+app.post('/api/stories/:id/view', authenticateToken, async (req, res) => {
+  try {
+    const viewerId = await resolveAuthenticatedUserUuid(req);
+    if (!viewerId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const storyId = req.params.id;
+    const exists = await pool.query(
+      `SELECT id FROM user_stories WHERE id = $1::uuid AND expires_at > NOW()`,
+      [storyId],
+    );
+    if (!exists.rows?.length) return res.status(404).json({ error: 'story_not_found' });
+    await recordStoryView(pool, storyId, viewerId);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('POST /api/stories/:id/view:', e);
+    res.status(500).json({ error: e.message || 'Failed to record view' });
+  }
+});
+
+app.delete('/api/stories/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = await resolveAuthenticatedUserUuid(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const ok = await deleteStory(pool, req.params.id, userId);
+    if (!ok) return res.status(404).json({ error: 'ไม่พบสตอรี่หรือไม่มีสิทธิ์ลบ' });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('DELETE /api/stories/:id:', e);
+    res.status(500).json({ error: e.message || 'Failed to delete story' });
   }
 });
 
@@ -1332,6 +2044,44 @@ app.post("/api/videos/:id/block", authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/videos/:id/view — นับยอดดู (dedup รายวันต่อ visitor/user)
+app.post('/api/videos/:id/view', optionalAuth, async (req, res) => {
+  try {
+    const videoId = (req.params.id || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) {
+      return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    }
+    const userId = req.user?.id
+      ? await resolveUserIdToUuid(req.user.id).catch(() => null)
+      : null;
+    const visitorId = String(req.body?.visitor_id || '').trim();
+    const result = await recordVideoView(pool, { videoId, userId, visitorId });
+    res.json({ success: true, counted: result.counted, view_count: result.view_count });
+  } catch (err) {
+    console.error('POST /api/videos/:id/view:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/videos/:id/save — สลับบันทึกคลิป (ต้อง login, ตาราง video_saves จาก migration 176)
+app.post('/api/videos/:id/save', authenticateToken, async (req, res) => {
+  try {
+    const userUuid = await resolveAuthenticatedUserUuid(req);
+    if (!userUuid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const videoId = (req.params.id || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    const result = await toggleVideoSave(pool, userUuid, videoId);
+    if (result.error === 'invalid_id') return res.status(400).json({ error: 'รหัสคลิปไม่ถูกต้อง' });
+    if (result.error === 'not_configured')
+      return res.status(503).json({ error: 'ระบบบันทึกคลิปยังไม่พร้อม — รัน migration 176_video_feed_views_shares_saves.sql' });
+    if (result.error === 'not_found') return res.status(404).json({ error: 'ไม่พบคลิป' });
+    res.json({ saved: result.saved, save_count: result.save_count });
+  } catch (err) {
+    console.error('POST /api/videos/:id/save:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ✅ Employer: บันทึก Talent (Like/Heart) — สำหรับจ้างภายหลัง
 app.post('/api/employer/saved-talents', authenticateToken, async (req, res) => {
   try {
@@ -1420,6 +2170,77 @@ app.delete('/api/employer/blocked-providers/:providerId', authenticateToken, asy
   }
 });
 
+// ── Geo: reverse lookup (proxies OSM Nominatim; avoids browser CORS) ────────
+app.get('/api/geo/reverse', authenticateToken, async (req, res) => {
+  try {
+    const rawLat = req.query.lat;
+    const rawLon = req.query.lon;
+    const lat =
+      typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat ?? ''));
+    const lon =
+      typeof rawLon === 'number' ? rawLon : parseFloat(String(rawLon ?? ''));
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return res.status(400).json({ error: 'พิกัดไม่ถูกต้อง' });
+    }
+
+    const q = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      format: 'json',
+      'accept-language': 'th,en',
+    });
+    const url = `https://nominatim.openstreetmap.org/reverse?${q.toString()}`;
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 12500);
+
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          // Nominatim policy: descriptive User-Agent identifying the application
+          'User-Agent':
+            process.env.NOMINATIM_USER_AGENT ||
+            'Meerak/1 (reverse geocode; configure NOMINATIM_USER_AGENT per https://operations.osmfoundation.org/policies/nominatim/)',
+        },
+        signal: ac.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!upstream.ok) {
+      return res.status(502).json({
+        error: 'ไม่สามารถดึงที่อยู่จากแผนที่ภายนอกได้',
+      });
+    }
+
+    const payload = await upstream.json();
+    const display =
+      typeof payload?.display_name === 'string'
+        ? String(payload.display_name).trim().slice(0, 512)
+        : '';
+
+    res.json({ address: display || null });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      return res.status(504).json({
+        error: 'หมดเวลารอผลที่อยู่ — ลองใหม่ในสักครู่',
+      });
+    }
+    console.error('GET /api/geo/reverse:', e?.message || e);
+    res.status(500).json({ error: e?.message || 'reverse geocode failed' });
+  }
+});
+
 // ── Provider Advance: availability, location pin, residential address ────────
 app.patch('/api/provider/availability', authenticateToken, async (req, res) => {
   try {
@@ -1439,16 +2260,58 @@ app.patch('/api/provider/availability', authenticateToken, async (req, res) => {
 
 app.patch('/api/provider/location-pin', authenticateToken, async (req, res) => {
   try {
-    const userId = await resolveUserIdToUuid(req.user?.id);
-    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
-    const { lat, lng, address } = req.body || {};
-    const loc = (lat != null && lng != null) ? { lat: parseFloat(lat), lng: parseFloat(lng), address: address || null } : null;
-    await pool.query(
-      `UPDATE users SET location = $1, location_pinned_at = CASE WHEN $1 IS NOT NULL THEN NOW() ELSE NULL END, updated_at = NOW() WHERE id = $2`,
-      [loc ? JSON.stringify(loc) : null, userId]
-    );
+    const userUuid = await resolveAuthenticatedUserUuid(req);
+    if (!userUuid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const { lat: rawLat, lng: rawLng, address } = req.body || {};
+    let loc = null;
+    if (rawLat != null && rawLng != null) {
+      const lat = typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat));
+      const lng = typeof rawLng === 'number' ? rawLng : parseFloat(String(rawLng));
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return res.status(400).json({ error: 'พิกัดไม่ถูกต้อง' });
+      }
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({ error: 'พิกัดอยู่นอกช่วงที่อนุญาต' });
+      }
+      loc = {
+        lat,
+        lng,
+        address: address != null && String(address).trim() ? String(address).trim() : null,
+      };
+    }
+
+    const hasLocationCol = await pool
+      .query(
+        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'location'`,
+      )
+      .then((r) => r.rows?.length > 0);
+    if (!hasLocationCol) {
+      return res.status(503).json({
+        error: 'ระบบยังไม่มีคอลัมน์ location — รัน migration backend/db/migrations/060_provider_advance_and_connection.sql',
+      });
+    }
+
+    const hasPinnedAtCol = await pool
+      .query(
+        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'location_pinned_at'`,
+      )
+      .then((r) => r.rows?.length > 0);
+
+    // pg จะแมป JS object ↔ jsonb — อย่า JSON.stringify เพื่อหลีกเลี่ยง double-encoding / syntax error
+    if (hasPinnedAtCol) {
+      await pool.query(
+        `UPDATE users SET location = $1::jsonb, location_pinned_at = CASE WHEN $1 IS NOT NULL THEN NOW() ELSE NULL END, updated_at = NOW() WHERE id = $2::uuid`,
+        [loc, userUuid],
+      );
+    } else {
+      await pool.query(`UPDATE users SET location = $1::jsonb, updated_at = NOW() WHERE id = $2::uuid`, [
+        loc,
+        userUuid,
+      ]);
+    }
     res.json({ success: true, location: loc });
   } catch (e) {
+    console.error('PATCH /api/provider/location-pin:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1482,7 +2345,7 @@ app.patch('/api/users/me/app-mode', authenticateToken, async (req, res) => {
     await pool.query(
       `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_before, state_after) VALUES ('user', $1, 'APP_MODE_SWITCH', 'users', $1, $2, $3)`,
       [userId, JSON.stringify({ role: oldRole }), JSON.stringify({ role: appRole })]
-    ).catch(() => {});
+    ).catch(() => { });
     res.json({ success: true, role: appRole });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1508,7 +2371,7 @@ app.patch('/api/users/me/peace-mode', authenticateToken, async (req, res) => {
     await pool.query(
       `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_before, state_after) VALUES ('user', $1, 'PEACE_MODE_TOGGLE', 'users', $1, $2, $3)`,
       [userId, JSON.stringify(prev.rows?.[0] || {}), JSON.stringify({ is_peace_mode: isPeace, peace_mode_until: peaceUntil })]
-    ).catch(() => {});
+    ).catch(() => { });
     res.json({ success: true, is_peace_mode: isPeace, peace_mode_until: peaceUntil ? peaceUntil.toISOString() : null });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1675,7 +2538,7 @@ app.get('/api/connection/list', authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/upload/form", uploadMulter.single("file"), async (req, res) => {
+app.post("/api/upload/form", uploadMulterDocument.single("file"), async (req, res) => {
   try {
     const cbImg = await getCircuitStatus('image_processing');
     if (cbImg === 'open') {
@@ -1726,7 +2589,7 @@ app.post("/api/upload/form", uploadMulter.single("file"), async (req, res) => {
 // ✅ POST /api/upload/document — KYC document upload (Thai ID, Driving License, Vehicle Reg)
 // SECURITY: All document images go to secure backend. Private S3 or Secure Vault in production.
 // Returns URL only; never persist base64 in client.
-app.post("/api/upload/document", authenticateToken, uploadMulter.single("file"), async (req, res) => {
+app.post("/api/upload/document", authenticateToken, uploadMulterDocument.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const ext = req.file.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.jpg';
@@ -1745,7 +2608,7 @@ app.post("/api/upload/document", authenticateToken, uploadMulter.single("file"),
 });
 
 // ✅ POST /api/upload/portfolio — อัปโหลดรูปผลงาน (Portfolio/Expert)
-app.post("/api/upload/portfolio", authenticateToken, uploadMulter.single("image"), async (req, res) => {
+app.post("/api/upload/portfolio", authenticateToken, uploadMulterDocument.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No image file uploaded" });
     const ext = req.file.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.jpg';
@@ -1811,14 +2674,14 @@ function createPaymentWebhookHandler() {
       if (!row.rows?.length) return res.status(200).send('OK');
       const rec = row.rows[0];
       if (rec.status === 'success') return res.status(200).send('OK');
-    const grossAmount = parseFloat(rec.amount);
-    const userId = rec.user_id;
-    const sourceType = (rec.source_type || 'promptpay').toLowerCase();
-    const feeBreakdown = calcDepositFeeBreakdown(grossAmount, sourceType);
-    const creditAmount = feeBreakdown.net_to_wallet;
-    const userFrozen = await isWalletFrozen(userId);
-    if (userFrozen) return res.status(200).send('OK'); // Don't credit frozen wallet; webhook still ack
-    const ledgerId = `L-deposit-${chargeId}-${Date.now()}`;
+      const grossAmount = parseFloat(rec.amount);
+      const userId = rec.user_id;
+      const sourceType = (rec.source_type || 'promptpay').toLowerCase();
+      const feeBreakdown = calcDepositFeeBreakdown(grossAmount, sourceType);
+      const creditAmount = feeBreakdown.net_to_wallet;
+      const userFrozen = await isWalletFrozen(userId);
+      if (userFrozen) return res.status(200).send('OK'); // Don't credit frozen wallet; webhook still ack
+      const ledgerId = `L-deposit-${chargeId}-${Date.now()}`;
       const billNo = `DEP-${chargeId}`;
       const txnNo = `T-DEP-${chargeId}-${Date.now()}`;
       await pool.query('BEGIN');
@@ -1852,15 +2715,21 @@ function createPaymentWebhookHandler() {
         [ledgerId, chargeId]
       );
       await pool.query('COMMIT');
-      
+      await tryGenerateWalletFiscalDocumentDraft(pool, {
+        ledgerId,
+        actorType: 'system',
+        actorId: 'wallet_deposit_webhook',
+        reason: 'wallet_deposit_success_tax_draft',
+      });
+
       // Send notification to user
       pushUserNotification(
-        userId, 
-        'เติมเงินสำเร็จ', 
+        userId,
+        'เติมเงินสำเร็จ',
         `เติมเงินสำเร็จ ฿${creditAmount.toLocaleString()} พร้อมใช้งานแล้ว`
       );
     } catch (e) {
-      await pool.query('ROLLBACK').catch(() => {});
+      await pool.query('ROLLBACK').catch(() => { });
       console.error('Payment webhook error:', e);
     }
     res.status(200).send('OK');
@@ -1893,13 +2762,138 @@ if (process.env.REDIS_URL) {
     } catch (qErr) {
       console.warn('⚠️ Bull queues init skipped:', qErr.message);
     }
+    try {
+      const { startAdsScaleServices } = await import('./lib/adsScaleScheduler.js');
+      startAdsScaleServices(pool, redisClient);
+    } catch (adsScaleErr) {
+      console.warn('⚠️ Ads scale scheduler skipped:', adsScaleErr.message);
+    }
+    if (typeof globalThis.__aqPushQueue?.add !== 'function') {
+      try {
+        const { createAqPushQueueAdapter } = await import('./lib/advanceJobPushDelivery.js');
+        globalThis.__aqPushQueue = createAqPushQueueAdapter(pool, null);
+        console.log('✅ Advance job push queue (direct FCM fallback) wired');
+      } catch (pushErr) {
+        console.warn('⚠️ Advance job push fallback skipped:', pushErr.message);
+      }
+    }
   } catch (error) {
     console.error('❌ Redis connection failed:', error.message);
     redisClient = null;
+    try {
+      const { createAqPushQueueAdapter } = await import('./lib/advanceJobPushDelivery.js');
+      globalThis.__aqPushQueue = createAqPushQueueAdapter(pool, null);
+      console.log('✅ Advance job push queue (direct FCM fallback) wired');
+    } catch (pushErr) {
+      console.warn('⚠️ Advance job push fallback skipped:', pushErr.message);
+    }
   }
 } else {
   console.log('⚠️ Redis URL not set, skipping Redis connection');
+  try {
+    const { createAqPushQueueAdapter } = await import('./lib/advanceJobPushDelivery.js');
+    globalThis.__aqPushQueue = createAqPushQueueAdapter(pool, null);
+    console.log('✅ Advance job push queue (direct FCM fallback) wired');
+  } catch (pushErr) {
+    console.warn('⚠️ Advance job push fallback skipped:', pushErr.message);
+  }
 }
+
+attachAdsRoutes(app, {
+  pool,
+  redisClient,
+  authenticateToken,
+  optionalAuth,
+  adminAuthMiddleware,
+  resolveUserIdToUuid,
+  uploadMulter,
+  uploadToS3,
+});
+
+attachAdsAdminRoutes(app, {
+  pool,
+  adminAuthMiddleware,
+  resolveUserIdToUuid,
+  redisClient,
+});
+
+attachPrbRoutes(app, {
+  pool,
+  authenticateToken,
+  adminAuthMiddleware,
+});
+
+registerAivosRoutes(app, {
+  pool,
+  authenticateToken,
+  runtimeEnabled:
+    process.env.AIVOS_RUNTIME_ENABLED === '1' || process.env.AIVOS_RUNTIME_ENABLED === 'true',
+  syncExecute: process.env.AIVOS_RUNTIME_ASYNC !== '1',
+  enqueueJob: async ({ jobId, traceId }) => {
+    const { getBullQueues } = await import('./lib/queues.js');
+    const q = getBullQueues().aivosRuntimeJobsQueue;
+    if (!q) return { enqueued: false, reason: 'queue_not_initialized' };
+    await q.add({ jobId, traceId }, { jobId: `aivos-runtime:${jobId}`, removeOnComplete: 100, removeOnFail: 100 });
+    return { enqueued: true };
+  },
+});
+
+attachGoldLottoRoutes(app, {
+  pool,
+  authenticateToken,
+  adminAuthMiddleware,
+});
+
+registerWorkspaceRoutes(app, {
+  pool,
+  authenticateToken,
+  runtimeEnabled: process.env.AIVOS_RUNTIME_ENABLED === '1',
+  workspaceEnabled: process.env.AIVOS_WORKSPACE_ENABLED === '1',
+});
+
+attachBeautyBookingRoutes(app, {
+  pool,
+  authenticateToken,
+  getBookingUserId,
+});
+
+attachExperienceRoutes(app, {
+  pool,
+  optionalAuth,
+  adminAuthMiddleware,
+});
+
+attachJarvisRoutes(app, {
+  pool,
+  optionalAuth,
+});
+
+attachBeautyBookingAdminRoutes(app, {
+  pool,
+  adminAuthMiddleware,
+});
+
+attachFoodMerchantAdminRoutes(app, {
+  adminAuthMiddleware,
+});
+
+attachMarketplaceCommissionAdminRoutes(app, {
+  adminAuthMiddleware,
+});
+
+setInterval(() => {
+  unlockBeautyPayouts(pool).catch((e) => console.warn('[beauty] unlock payouts:', e?.message));
+}, 15 * 60 * 1000);
+
+setInterval(() => {
+  import('./lib/vipSubscriptionService.js')
+    .then(({ processVipExpirations }) =>
+      processVipExpirations(pool, (uid, title, msg) =>
+        pushUserNotificationIfNotPeaceMode(uid, title, msg),
+      ),
+    )
+    .catch((e) => console.warn('[vip expiry]', e?.message));
+}, 60 * 60 * 1000);
 
 // ============ RATE LIMITING (Redis + in-memory fallback) - Login & OTP ============
 // ✅ หลวมเพื่อไม่ให้ผู้ใช้ทั่วไปติด rate limit — localhost = ไม่จำกัด
@@ -1948,6 +2942,70 @@ async function checkRateLimit(prefix, identifier, { max: maxReq, windowSec }) {
     console.warn('Rate limit check failed:', e.message);
     return checkRateLimitMemory(prefix, identifier, { max: maxReq, windowSec });
   }
+}
+
+function rateLimitIdentifierVariants(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const variants = new Set([raw]);
+  const compact = raw.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+  if (compact) variants.add(compact);
+  if (compact.startsWith('66') && compact.length >= 10) variants.add('0' + compact.slice(2));
+  if (compact.startsWith('0') && compact.length === 10) {
+    variants.add('66' + compact.slice(1));
+    variants.add('+66' + compact.slice(1));
+  }
+  return [...variants].filter(Boolean);
+}
+
+async function clearRateLimitBucketsForUser(userId, { includeIp } = {}) {
+  const uid = String(userId || '').trim();
+  if (!uid) return { cleared: 0, redis: 0, memory: 0 };
+
+  const row = await pool
+    .query('SELECT id, phone, email FROM users WHERE id::text = $1 LIMIT 1', [uid])
+    .then((r) => r.rows?.[0] || null)
+    .catch(() => null);
+  const identifiers = new Map();
+  const add = (prefix, value) => {
+    for (const v of rateLimitIdentifierVariants(value)) {
+      identifiers.set(`${prefix}:${v}`, { prefix, value: v });
+    }
+  };
+
+  add('otp_request_user', uid);
+  add('login_phone', row?.phone);
+  add('login_phone', row?.email);
+  if (includeIp) add('login_ip', includeIp);
+  if (includeIp) add('otp_request_ip', includeIp);
+
+  let memory = 0;
+  for (const key of [...rateLimitMemory.keys()]) {
+    if ([...identifiers.keys()].some((id) => key === id || key.endsWith(`:${id.split(':').slice(1).join(':')}`))) {
+      rateLimitMemory.delete(key);
+      memory += 1;
+    }
+  }
+
+  let redis = 0;
+  if (redisClient) {
+    const redisKeys = [];
+    for (const item of identifiers.values()) {
+      redisKeys.push(
+        `ratelimit:${item.prefix}:${String(item.value).replace(/[^a-zA-Z0-9@._-]/g, '_')}`,
+      );
+    }
+    if (redisKeys.length > 0) {
+      try {
+        const deleted = await redisClient.del([...new Set(redisKeys)]);
+        redis = Number(deleted || 0);
+      } catch (e) {
+        console.warn('[RateLimit] user unlock Redis clear failed:', e?.message);
+      }
+    }
+  }
+
+  return { cleared: memory + redis, redis, memory };
 }
 
 function getClientIp(req) {
@@ -2084,7 +3142,7 @@ const JobModel = {
     if (!userId) return [];
     const uid = String(userId).trim();
     const includeExpired = options.includeExpired || false;
-    
+
     let rows = [];
     try {
       // ✅ กรองงานที่หมดอายุและ status ไม่ active
@@ -2093,7 +3151,7 @@ const JobModel = {
         SELECT * FROM jobs 
         WHERE (created_by::text = $1 OR accepted_by::text = $1 OR client_id::text = $1)
       `;
-      
+
       if (!includeExpired) {
         // ✅ กรองงานที่ยังไม่หมดอายุ และ status เป็น active/open
         // รวมงานที่เพิ่งโพสต์ (created_at ภายใน 7 วัน) แม้ datetime จะผ่านไปแล้ว — แก้ปัญหา "งานใหม่ไม่โผล่ใน Posted"
@@ -2105,19 +3163,19 @@ const JobModel = {
           AND status NOT IN ('expired', 'deleted', 'cancelled')
         `;
       }
-      
+
       query += ` ORDER BY created_at DESC`;
-      
+
       const r = await pool.query(query, [uid]);
       rows = r.rows || [];
-      
+
       console.log(`📋 [JobModel.findByUserId] Found ${rows.length} jobs for user ${uid} (includeExpired: ${includeExpired})`);
     } catch (e) {
       if (e.code === '42703') {
         rows = []; // created_by/accepted_by ไม่มี — จะใช้ client_id/provider_id ด้านล่าง
       } else throw e;
     }
-    
+
     try {
       const userRow = await pool.query('SELECT id FROM users WHERE firebase_uid = $1 OR id::text = $1 LIMIT 1', [uid]);
       if (userRow.rows?.length > 0) {
@@ -2127,13 +3185,13 @@ const JobModel = {
           clientQuery += ` AND (created_at > NOW() - INTERVAL '2 days') AND (datetime IS NULL OR datetime > NOW() OR created_at > NOW() - INTERVAL '36 hours') AND status NOT IN ('expired', 'deleted', 'cancelled')`;
         }
         clientQuery += ` ORDER BY created_at DESC`;
-        
+
         const byClient = await pool.query(clientQuery, [internalId]);
         const seen = new Set(rows.map((j) => String(j.id)));
         (byClient.rows || []).forEach((j) => { if (!seen.has(String(j.id))) { seen.add(String(j.id)); rows.push(j); } });
       }
-    } catch (_) {}
-    
+    } catch (_) { }
+
     const byId = new Map(rows.map((j) => [String(j.id), j]));
     return Array.from(byId.values()).sort(
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -2471,7 +3529,7 @@ app.post('/api/payments/process', async (req, res) => {
           await pool.query(
             `UPDATE jobs SET paid_at = NOW() WHERE id::text = $1`,
             [String(jobId)]
-          ).catch(() => {});
+          ).catch(() => { });
 
           // Demo: หัก/เพิ่ม wallet จริง (provider ได้ net หลังหัก fee)
           if (paymentMethod === 'wallet' && job.created_by && job.accepted_by) {
@@ -2887,6 +3945,8 @@ app.post('/api/payments/process', async (req, res) => {
 
       // 7. Ledger 3 ขา + ขา 4 (Insurance) + Tax ID — ภายใน transaction (atomic: ถ้า disk full จะ rollback ทั้งหมด)
       const ledgerId = (s) => `L-${jobId}-${s}-${Date.now()}`;
+      const debitLedgerId = ledgerId('debit');
+      const commissionLedgerId = ledgerId('commission');
       const gate = employerCashPosting ? 'cash' : (paymentMethod === 'wallet' ? 'wallet' : 'bank_transfer');
       const resolvedMarkup = includesMarkup ? round2(finalPrice - jobFee - insuranceAmount) : employerOutflow.paymentMarkup;
       const debitMeta = {
@@ -2904,71 +3964,103 @@ app.post('/api/payments/process', async (req, res) => {
       };
       const taxRefDebit = await generateTaxRefIdForInsert(pool, 'payment_created', debitMeta);
       await dbClient.query(
-          `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+        `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
            VALUES ($1, $2, 'payment_created', $3, $4, $5, $6, 'THB', 'completed', $7, $8, $9, $10)`,
-          [ledgerId('debit'), taxRefDebit, jobId, gate, jobId, finalPrice, jobId, `T-${jobId}-${Date.now()}`, job.created_by, JSON.stringify(debitMeta)]
-        );
-        const providerMeta = { leg: 'provider_net', job_fee: jobFee, gross_earnings: jobFee, sourcing: handlingFeeAmount, commission: commissionFeeAmount, tax_service: taxServiceAmount, coach_fee: coachFeeAmount || 0, employer_expense: finalPrice, provider_income: talentNet, company_fee: feeAmount };
-        const taxRefProvider = await generateTaxRefIdForInsert(pool, 'escrow_held', providerMeta);
+        [debitLedgerId, taxRefDebit, jobId, gate, jobId, finalPrice, jobId, `T-${jobId}-${Date.now()}`, job.created_by, JSON.stringify(debitMeta)]
+      );
+      const providerMeta = { leg: 'provider_net', job_fee: jobFee, gross_earnings: jobFee, sourcing: handlingFeeAmount, commission: commissionFeeAmount, tax_service: taxServiceAmount, coach_fee: coachFeeAmount || 0, employer_expense: finalPrice, provider_income: talentNet, company_fee: feeAmount };
+      const taxRefProvider = await generateTaxRefIdForInsert(pool, 'escrow_held', providerMeta);
+      await dbClient.query(
+        `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
+           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
+        [ledgerId('provider'), taxRefProvider, jobId, jobId, talentNet, jobId, `T-${jobId}-${Date.now()}-p`, providerActualId, JSON.stringify(providerMeta)]
+      );
+      if (coachFeeAmount > 0 && coachId) {
+        const coachMeta = { leg: 'coach_training_fee', trainee_id: job.accepted_by };
+        const taxRefCoach = await generateTaxRefIdForInsert(pool, 'escrow_held', coachMeta);
         await dbClient.query(
           `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
-           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
-          [ledgerId('provider'), taxRefProvider, jobId, jobId, talentNet, jobId, `T-${jobId}-${Date.now()}-p`, providerActualId, JSON.stringify(providerMeta)]
-        );
-        if (coachFeeAmount > 0 && coachId) {
-          const coachMeta = { leg: 'coach_training_fee', trainee_id: job.accepted_by };
-          const taxRefCoach = await generateTaxRefIdForInsert(pool, 'escrow_held', coachMeta);
-          await dbClient.query(
-            `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
              VALUES ($1, $2, 'coach_training_fee', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8, $9)`,
-            [ledgerId('coach'), taxRefCoach, jobId, jobId, coachFeeAmount, jobId, `T-${jobId}-${Date.now()}-c`, coachId, JSON.stringify(coachMeta)]
-          );
-        }
-        // Ledger: append-only with full metadata (jobFee, insurance, markup, sourcing, commission, tax_service)
-        const ledgerMeta = buildMatchJobLedgerMetadata(employerOutflow, providerInflow, {
-          leg: 'commission',
-          sub_category: 'Sourcing',
-          vip_discount_applied: vipApplied,
-          vip_discount_amount: vipDiscountAmount,
-          employer_expense: finalPrice,
-          provider_income: talentNet,
-          company_fee: feeAmount
-        });
-        const taxRefCommission = await generateTaxRefIdForInsert(pool, 'escrow_held', ledgerMeta);
+          [ledgerId('coach'), taxRefCoach, jobId, jobId, coachFeeAmount, jobId, `T-${jobId}-${Date.now()}-c`, coachId, JSON.stringify(coachMeta)]
+        );
+      }
+      // Ledger: append-only with full metadata (jobFee, insurance, markup, sourcing, commission, tax_service)
+      const ledgerMeta = buildMatchJobLedgerMetadata(employerOutflow, providerInflow, {
+        leg: 'commission',
+        sub_category: 'Sourcing',
+        vip_discount_applied: vipApplied,
+        vip_discount_amount: vipDiscountAmount,
+        employer_expense: finalPrice,
+        provider_income: talentNet,
+        company_fee: feeAmount
+      });
+      const taxRefCommission = await generateTaxRefIdForInsert(pool, 'escrow_held', ledgerMeta);
+      await dbClient.query(
+        `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
+           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)`,
+        [commissionLedgerId, taxRefCommission, jobId, jobId, feeAmount, jobId, `T-${jobId}-${Date.now()}-f`, JSON.stringify(ledgerMeta)]
+      );
+      const vatConfigRow = await dbClient.query(`SELECT vat_rate_percent FROM tax_company_settings WHERE id = 'aqond' LIMIT 1`).catch(() => ({ rows: [] }));
+      const vatRatePercent = Number(vatConfigRow.rows?.[0]?.vat_rate_percent ?? 7) || 7;
+      const platformServiceGross = round2(feeAmount + Math.max(0, resolvedMarkup));
+      const platformServiceVat = splitVatInclusive(platformServiceGross, vatRatePercent);
+      await generateFiscalDocumentDraft(dbClient, {
+        sourceEventId: debitLedgerId,
+        documentType: 'tax_invoice',
+        partyRole: 'customer',
+        partyUserId: job.created_by,
+        lines: [
+          calculateLine({
+            description: 'ยอดค่าจ้างผู้รับงาน (แสดงเพื่ออ้างอิง ไม่ใช่รายได้ AQOND)',
+            taxable_amount: 0,
+            unit_amount: 0,
+            vat_rate_percent: 0,
+            total_amount: jobFee,
+            metadata: { source_event_id: debitLedgerId, source_job_id: String(jobId), component: 'provider_service_principal', informational: true },
+          }),
+          calculateLine({
+            description: 'ค่าบริการแพลตฟอร์ม AQOND จากงาน Match',
+            taxable_amount: platformServiceVat.vat_base_amount,
+            unit_amount: platformServiceVat.vat_base_amount,
+            vat_rate_percent: vatRatePercent,
+            vat_amount: platformServiceVat.vat_amount,
+            total_amount: platformServiceVat.gross_amount,
+            metadata: { source_event_id: commissionLedgerId, source_job_id: String(jobId), component: 'platform_service_fee', taxable_revenue_type: 'platform_fee', platform_revenue_source: fromAdvanceJobs ? 'advance_job_commission' : 'match_job_commission', vat_inclusive: true, fee_amount: feeAmount, payment_markup: resolvedMarkup },
+          }),
+        ],
+        actorType: 'system',
+        actorId: 'job_payment',
+        reason: 'employer_job_tax_invoice_draft',
+      });
+      if (insuranceAmount > 0) {
+        const insMeta = { leg: 'insurance_liability', sub_category: 'Insurance', reserve_60: round2(insuranceAmount * 0.6), manageable_40: round2(insuranceAmount * 0.4), job_fee: jobFee, insurance_amount: insuranceAmount };
+        const taxRefIns = await generateTaxRefIdForInsert(pool, 'insurance_liability_credit', insMeta);
         await dbClient.query(
           `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
-           VALUES ($1, $2, 'escrow_held', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)`,
-          [ledgerId('commission'), taxRefCommission, jobId, jobId, feeAmount, jobId, `T-${jobId}-${Date.now()}-f`, JSON.stringify(ledgerMeta)]
-        );
-        if (insuranceAmount > 0) {
-          const insMeta = { leg: 'insurance_liability', sub_category: 'Insurance', reserve_60: round2(insuranceAmount * 0.6), manageable_40: round2(insuranceAmount * 0.4), job_fee: jobFee, insurance_amount: insuranceAmount };
-          const taxRefIns = await generateTaxRefIdForInsert(pool, 'insurance_liability_credit', insMeta);
-          await dbClient.query(
-            `INSERT INTO payment_ledger_audit (id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata)
              VALUES ($1, $2, 'insurance_liability_credit', $3, 'wallet', $4, $5, 'THB', 'completed', $6, $7, $8)`,
-            [ledgerId('insurance'), taxRefIns, jobId, jobId, insuranceAmount, `INS-${jobId}`, `T-${jobId}-${Date.now()}-ins`, JSON.stringify(insMeta)]
-          );
-          await dbClient.query(
-            `INSERT INTO insurance_fund_movements (id, type, amount, job_id, reference_id, note, metadata, created_at)
+          [ledgerId('insurance'), taxRefIns, jobId, jobId, insuranceAmount, `INS-${jobId}`, `T-${jobId}-${Date.now()}-ins`, JSON.stringify(insMeta)]
+        );
+        await dbClient.query(
+          `INSERT INTO insurance_fund_movements (id, type, amount, job_id, reference_id, note, metadata, created_at)
              VALUES ($1, 'liability_credit', $2, $3, $4, $5, $6, NOW())`,
-            [ledgerId('ins-mov'), insuranceAmount, jobId, jobId, `Payment job ${jobId}`, JSON.stringify({ job_fee: jobFee, rate_percent: insuranceRatePercent })]
-          );
-          await dbClient.query(
-            `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
+          [ledgerId('ins-mov'), insuranceAmount, jobId, jobId, `Payment job ${jobId}`, JSON.stringify({ job_fee: jobFee, rate_percent: insuranceRatePercent })]
+        );
+        await dbClient.query(
+          `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
              VALUES ($1, 'insurance_premium', $2, $3, $4)`,
-            [ledgerId('insurance'), insuranceAmount, jobFee, JSON.stringify({ job_id: jobId, policy_number: policyNumber, rate_percent: insuranceRatePercent })]
-          );
-        }
-        // VIP Admin Fund: 12.5% ของ gross profit จากธุรกรรม VIP
-        const vipTierForSiphon = clientVip.eligible ? (clientVip.tier || 'silver') : (provider.vip_tier || 'none');
-        const siphonAmount = calcVipAdminFundSiphon(feeAmount, vipTierForSiphon);
-        if (siphonAmount > 0) {
-          await dbClient.query(
-            `INSERT INTO vip_admin_fund (amount, source_event_type, source_ledger_id, source_job_id, source_metadata, vip_tier, gross_profit, siphon_percent)
+          [ledgerId('insurance'), insuranceAmount, jobFee, JSON.stringify({ job_id: jobId, policy_number: policyNumber, rate_percent: insuranceRatePercent })]
+        );
+      }
+      // VIP Admin Fund: 12.5% ของ gross profit จากธุรกรรม VIP
+      const vipTierForSiphon = clientVip.eligible ? (clientVip.tier || 'silver') : (provider.vip_tier || 'none');
+      const siphonAmount = calcVipAdminFundSiphon(feeAmount, vipTierForSiphon);
+      if (siphonAmount > 0) {
+        await dbClient.query(
+          `INSERT INTO vip_admin_fund (amount, source_event_type, source_ledger_id, source_job_id, source_metadata, vip_tier, gross_profit, siphon_percent)
              VALUES ($1, 'job_match_payment', $2, $3, $4, $5, $6, 12.5)`,
-            [siphonAmount, ledgerId('commission'), jobId, JSON.stringify({ job_id: jobId, leg: 'commission', vip_applied: vipApplied }), vipTierForSiphon, feeAmount]
-          );
-        }
+          [siphonAmount, commissionLedgerId, jobId, JSON.stringify({ job_id: jobId, leg: 'commission', vip_applied: vipApplied }), vipTierForSiphon, feeAmount]
+        );
+      }
 
       // Maturity Rewards: mark voucher used on successful payment
       if (maturityVoucherId && userId) {
@@ -2976,12 +4068,18 @@ app.post('/api/payments/process', async (req, res) => {
           `UPDATE maturity_rewards_vouchers SET used_at = NOW(), used_for_job_id = $1, remaining_baht = 0
            WHERE id = $2 AND user_id = $3 AND used_at IS NULL`,
           [jobId, maturityVoucherId, String(userId)]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       await dbClient.query('COMMIT');
 
-      setImmediate(() => onJobCompleted(pool, job.accepted_by, jobId, finalPrice, new Date()).catch(() => {}));
+      scheduleCommerceEmitForJob(pool, jobId);
+
+      setImmediate(() => onJobCompleted(pool, job.accepted_by, jobId, finalPrice, new Date()).catch(() => { }));
+      const campaignBuyer = job.client_id || job.created_by;
+      if (campaignBuyer) {
+        hookBrandAdviserCampaignPurchase(campaignBuyer, 'job', String(jobId), finalPrice, new Date());
+      }
 
       // ดึง employer หลังหักเงิน เพื่อส่งให้ frontend อัปเดต wallet
       const employerRow = await pool.query(
@@ -3036,13 +4134,17 @@ app.post('/api/payments/process', async (req, res) => {
 app.get('/api/payments/fee-config', async (req, res) => {
   try {
     const cfg = await getFeeConfig();
+    const slotConfig = await loadSlotFeeConfig(pool);
     res.json({
       paymentMarkupPercent: cfg.paymentMarkupPercent,
       handlingFeePercent: cfg.handlingFeePercent,
+      platformFee: slotConfig.platform_fee,
+      bookingFee: slotConfig.commission_booking,
+      bookingMarkup: slotConfig.platform_fee,
+      bookingSourcingPercent: slotConfig.booking_sourcing_percent,
+      biddingFeePercent: slotConfig.bidding_fee_percent,
       sourcingFee: { none: 8, silver: 8, gold: 6, platinum: 6 },
-      bookingFee: { none: 32, silver: 28, gold: 24, platinum: 20 },
       biddingFee: { none: 9.3, silver: 9.3, gold: 8.3, platinum: 6.3 },
-      /** ต้องตรงกับ INTERCITY_CANCEL_GRACE_MINUTES ใน backend/.env (ฝั่งหน้าใช้ VITE_INTERCITY_CANCEL_GRACE_MINUTES) */
       intercityCancelGraceMinutes: getIntercityCancelGraceMinutes(),
       paymentProvider: getPaymentProviderGateSnapshot(),
     });
@@ -3057,6 +4159,24 @@ app.get('/api/payments/fee-config', async (req, res) => {
       paymentProvider: getPaymentProviderGateSnapshot(),
     });
   }
+});
+
+// GET /api/payments/card-token-config — public key + SDK สำหรับ tokenize บัตร (อ่านจาก PaySo .env)
+app.get('/api/payments/card-token-config', async (req, res) => {
+  try {
+    const { getPaysoCardClientConfig } = await import('./lib/paysoCardGateway.js');
+    res.json(getPaysoCardClientConfig());
+  } catch (e) {
+    res.status(500).json({ error: 'card_token_config_failed' });
+  }
+});
+
+// POST /api/payments/card-token — disabled until PaySo card tokenization is production-ready (no PAN intake).
+app.post('/api/payments/card-token', authenticateToken, async (_req, res) => {
+  return res.status(410).json({
+    error: 'card_token_endpoint_disabled',
+    message: 'Card tokenization is not enabled. Do not send card numbers to this server.',
+  });
 });
 
 // GET /api/payments/provider-config — Payso/Ksher/Stripe + MDR snapshot (public; อ่านจาก ENV)
@@ -3117,7 +4237,7 @@ app.get('/api/admin/internal-gateway/metrics', adminAuthMiddleware, async (req, 
       ip,
       metadata: { days },
       reasonTag: rr.reason,
-    }).catch(() => {});
+    }).catch(() => { });
     res.json(data);
   } catch (e) {
     const code = e && e.code;
@@ -3149,7 +4269,7 @@ app.get('/api/admin/internal-gateway/transactions', adminAuthMiddleware, async (
       ip,
       metadata: { limit },
       reasonTag: rr.reason,
-    }).catch(() => {});
+    }).catch(() => { });
     res.json({ rows, limit });
   } catch (e) {
     const code = e && e.code;
@@ -3181,7 +4301,7 @@ app.get('/api/admin/internal-gateway/settlement-reports', adminAuthMiddleware, a
       ip,
       metadata: { limit },
       reasonTag: rr.reason,
-    }).catch(() => {});
+    }).catch(() => { });
     res.json({ rows, limit });
   } catch (e) {
     const code = e && e.code;
@@ -3321,7 +4441,7 @@ app.get('/api/admin/internal-gateway/audit-logs', adminAuthMiddleware, async (re
       ip,
       metadata: { limit },
       reasonTag: rr.reason,
-    }).catch(() => {});
+    }).catch(() => { });
     res.json({ rows: r.rows, limit });
   } catch (e) {
     const code = e && e.code;
@@ -3660,7 +4780,7 @@ app.post('/api/payments/hold', async (req, res) => {
           const defRow = await pool.query(`SELECT rate_percent FROM insurance_rate_by_category WHERE category = 'default'`).catch(() => ({ rows: [] }));
           rate = defRow.rows?.[0] ? parseFloat(defRow.rows[0].rate_percent) || 10 : 10;
         }
-      } catch (_) {}
+      } catch (_) { }
       insuranceAmount = round2(jobFee * (rate / 100));
     }
     const { finalPrice: holdAmount } = calcMatchJobEmployerOutflowDynamic(jobFee, insuranceAmount);
@@ -3778,7 +4898,7 @@ app.post('/api/payments/release', async (req, res) => {
         [jobId]
       );
       if (upd.rowCount === 0) {
-        await pool.query(`UPDATE advance_jobs SET updated_at = NOW() WHERE id::text = $1`, [jobId]).catch(() => {});
+        await pool.query(`UPDATE advance_jobs SET updated_at = NOW() WHERE id::text = $1`, [jobId]).catch(() => { });
       }
       console.log('🔓 Demo job payment released (wallet pending→balance):', jobId);
       return res.json({ success: true, message: 'Demo payment released', jobId });
@@ -3914,6 +5034,33 @@ app.post('/api/payments/release', async (req, res) => {
           message: 'ไม่สามารถโอนเงินให้ผู้รับงานได้ — ไม่พบผู้ใช้ในระบบ'
         });
       }
+      const providerActualId = provRelease.rows[0].id;
+      const providerLedgerRow = await dbClient.query(
+        `SELECT id, metadata
+         FROM payment_ledger_audit
+         WHERE provider_id::text = $1::text
+           AND job_id::text = $2::text
+           AND event_type = 'escrow_held'
+           AND metadata->>'leg' = 'provider_net'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [String(providerActualId), String(jobId)]
+      ).catch(() => ({ rows: [] }));
+      const providerLedger = providerLedgerRow.rows?.[0] || null;
+      const whtSourceId = providerLedger?.id || `job-release-${jobId}-${providerActualId}`;
+      const jobFeeForWht = round2(Number(paymentDetails.job_fee || paymentDetails.gross_earnings || providerReceive) || providerReceive);
+      const platformFeeForWht = round2(Number(paymentDetails.fee_amount || 0) || Math.max(0, jobFeeForWht - providerReceive));
+      const whtPosting = await postProviderWhtForEarning(dbClient, {
+        sourceEventId: whtSourceId,
+        sourceEventType: 'job_provider_release',
+        providerUserId: providerActualId,
+        grossIncomeAmount: jobFeeForWht,
+        platformFeeAmount: platformFeeForWht,
+        sourcePaymentId: String(jobId),
+        sourceJobId: String(jobId),
+        actorId: 'job_release',
+        applyBalanceMutation: true,
+      });
 
       // Safety Net: Ensure wallet_pending has no rounding dust. If cents remain, clear to 0 and log for Admin review.
       const newPending = parseFloat(provRelease.rows[0]?.wallet_pending || 0);
@@ -3943,6 +5090,17 @@ app.post('/api/payments/release', async (req, res) => {
 
       await dbClient.query('COMMIT');
 
+      void emitCommerceEvent(pool, {
+        userId: String(providerActualId),
+        eventType: 'escrow_released',
+        category: 'job',
+        amount: providerReceive,
+        jobId: String(jobId),
+        sourceTable: 'jobs',
+        sourceId: `${jobId}:released:${providerActualId}`,
+        metadata: { stage: 'release', wht: Number(whtPosting?.withheldAmount || 0) },
+      }).catch(() => { });
+
       // Audit: บันทึกการปล่อยเงิน (สำหรับ Refund/Dispute audit trail)
       const releaseActorId = req.adminUser?.id || req.body?.userId || 'system';
       auditService.log(releaseActorId, 'PAYMENT_RELEASED', {
@@ -3955,6 +5113,8 @@ app.post('/api/payments/release', async (req, res) => {
         success: true,
         message: 'Payment released successfully',
         amount: providerReceive,
+        wht_withheld: Number(whtPosting?.withheldAmount || 0),
+        net_available: round2(providerReceive - Number(whtPosting?.withheldAmount || 0)),
         providerId
       });
 
@@ -4079,6 +5239,29 @@ app.post('/api/admin/payments/refund', adminAuthMiddleware, async (req, res) => 
       }
 
       await dbClient.query('COMMIT');
+      scheduleCommerceEmitForJob(pool, jobId);
+      void emitCommerceEvent(pool, {
+        userId: String(employerId),
+        eventType: 'job_disputed',
+        category: 'job',
+        amount: refundToEmployer,
+        jobId: String(jobId),
+        sourceTable: 'jobs',
+        sourceId: `${jobId}:refund:employer`,
+        metadata: { stage: 'refund', include_commission: includeCommission },
+      }).catch(() => { });
+      if (providerId) {
+        void emitCommerceEvent(pool, {
+          userId: String(providerId),
+          eventType: 'job_disputed',
+          category: 'job',
+          amount: providerReceive,
+          jobId: String(jobId),
+          sourceTable: 'jobs',
+          sourceId: `${jobId}:refund:provider`,
+          metadata: { stage: 'refund' },
+        }).catch(() => { });
+      }
     } catch (e) {
       await dbClient.query('ROLLBACK');
       throw e;
@@ -4172,7 +5355,7 @@ app.get('/api/jobs/create-check', async (req, res) => {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     res.json({
       canCreate: userFound,
@@ -4319,23 +5502,23 @@ app.post('/api/jobs', async (req, res) => {
         const isAppleDemoTalent = /apple-demo-talent|demo talent/i.test(String(createdBy));
         let demoName, demoWallet, demoEmail, demoPhone, demoRole, firebaseUid;
         if (isAppleDemoTalent) {
-            demoName = 'Demo Talent (Apple Review)';
-            demoWallet = 5000;
-            demoEmail = 'tester.talent@aqond.com';
-            demoPhone = '0812345602';
-            demoRole = 'provider';
-          } else if (isAppleDemoEmployer) {
-            demoName = 'Demo Employer (Apple Review)';
-            demoWallet = 50000;
-            demoEmail = 'tester.employer@aqond.com';
-            demoPhone = '0812345601';
-            demoRole = 'user';
-          } else {
-            demoName = createdBy === 'demo-bob-id' ? 'Bob Provider' : 'Anna Employer';
-            demoWallet = createdBy === 'demo-bob-id' ? 100 : 50000;
-            demoEmail = createdBy === 'demo-bob-id' ? 'bob@meerak.app' : 'anna@meerak.app';
-            demoPhone = createdBy === 'demo-bob-id' ? '0800000002' : '0800000001';
-            demoRole = createdBy === 'demo-bob-id' ? 'provider' : 'user';
+          demoName = 'Demo Talent (Apple Review)';
+          demoWallet = 5000;
+          demoEmail = 'tester.talent@aqond.com';
+          demoPhone = '0812345602';
+          demoRole = 'provider';
+        } else if (isAppleDemoEmployer) {
+          demoName = 'Demo Employer (Apple Review)';
+          demoWallet = 50000;
+          demoEmail = 'tester.employer@aqond.com';
+          demoPhone = '0812345601';
+          demoRole = 'user';
+        } else {
+          demoName = createdBy === 'demo-bob-id' ? 'Bob Provider' : 'Anna Employer';
+          demoWallet = createdBy === 'demo-bob-id' ? 100 : 50000;
+          demoEmail = createdBy === 'demo-bob-id' ? 'bob@meerak.app' : 'anna@meerak.app';
+          demoPhone = createdBy === 'demo-bob-id' ? '0800000002' : '0800000001';
+          demoRole = createdBy === 'demo-bob-id' ? 'provider' : 'user';
         }
         firebaseUid = isAppleDemoEmployer ? 'apple-demo-employer' : isAppleDemoTalent ? 'apple-demo-talent' : createdBy;
         try {
@@ -4558,18 +5741,18 @@ app.post('/api/jobs', async (req, res) => {
       : '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16';
     const insertValues = hasAcceptedBy
       ? [
-          jobData.id, jobData.title, jobData.description, jobData.category, jobData.price, jobData.status,
-          JSON.stringify(jobData.location), locationLat, locationLng, jobData.datetime || new Date().toISOString(),
-          jobData.created_by, jobData.created_by_name || 'Client', jobData.created_by_avatar || '', jobData.client_id,
-          String(jobData.accepted_by), jobData.accepted_by_name,
-          jobData.created_at || new Date().toISOString(), jobData.updated_at || new Date().toISOString()
-        ]
+        jobData.id, jobData.title, jobData.description, jobData.category, jobData.price, jobData.status,
+        JSON.stringify(jobData.location), locationLat, locationLng, jobData.datetime || new Date().toISOString(),
+        jobData.created_by, jobData.created_by_name || 'Client', jobData.created_by_avatar || '', jobData.client_id,
+        String(jobData.accepted_by), jobData.accepted_by_name,
+        jobData.created_at || new Date().toISOString(), jobData.updated_at || new Date().toISOString()
+      ]
       : [
-          jobData.id, jobData.title, jobData.description, jobData.category, jobData.price, jobData.status,
-          JSON.stringify(jobData.location), locationLat, locationLng, jobData.datetime || new Date().toISOString(),
-          jobData.created_by, jobData.created_by_name || 'Client', jobData.created_by_avatar || '', jobData.client_id,
-          jobData.created_at || new Date().toISOString(), jobData.updated_at || new Date().toISOString()
-        ];
+        jobData.id, jobData.title, jobData.description, jobData.category, jobData.price, jobData.status,
+        JSON.stringify(jobData.location), locationLat, locationLng, jobData.datetime || new Date().toISOString(),
+        jobData.created_by, jobData.created_by_name || 'Client', jobData.created_by_avatar || '', jobData.client_id,
+        jobData.created_at || new Date().toISOString(), jobData.updated_at || new Date().toISOString()
+      ];
 
     const result = await pool.query(
       `INSERT INTO jobs (${insertCols}) VALUES (${insertPlaceholders}) RETURNING *`,
@@ -4901,22 +6084,59 @@ app.post('/api/kyc/submit', uploadMulter.fields([
 ]), async (req, res) => {
   try {
     const { userId, fullName, birthDate, idCardNumber } = req.body;
+    const addressRaw = req.body?.address;
+    const vehiclesJsonRaw = req.body?.vehiclesJson;
 
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
     }
 
+    /** ผู้ใช้อาจส่ง Postgres UUID / firebase_uid / เบอร์ — อย่าบังคับให้เป็น uuid อย่างเดียว (มิฉะนั้นคิวรีชน error) */
+    const userLookup = await pool.query(
+      `SELECT id, firebase_uid FROM users
+       WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1
+       LIMIT 1`,
+      [String(userId).trim()],
+    );
+    if (!userLookup.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+    }
+
+    const dbUserRow = userLookup.rows[0];
+    const resolvedUserUuid = dbUserRow.id;
+    let firebaseUid = dbUserRow.firebase_uid != null ? String(dbUserRow.firebase_uid).trim() : '';
+    firebaseUid = firebaseUid || null;
+
+    // บางบัญชี OTP/รหัสผ่านเท่านั้นยังไม่มี firebase_uid — เก็บ KYC ได้ (คอลัมน์มัก nullable หลัง migration 205)
+
+    const idDigits = idCardNumber != null ? String(idCardNumber).replace(/\D/g, '') : '';
+    const idCardNorm = idDigits.length > 0 ? idDigits.slice(0, 13) : null;
+    const birthDateNorm =
+      birthDate != null && String(birthDate).trim() ? String(birthDate).trim().slice(0, 32) : null;
+
+    let vehiclesJsonParam = '[]';
+    if (vehiclesJsonRaw != null && String(vehiclesJsonRaw).trim()) {
+      try {
+        const parsed = JSON.parse(String(vehiclesJsonRaw));
+        vehiclesJsonParam = JSON.stringify(Array.isArray(parsed) ? parsed : []);
+      } catch (_) {
+        vehiclesJsonParam = '[]';
+      }
+    }
+
     const uploadedFiles = {};
     const uploadPromises = [];
 
+    const canonicalUserTag = String(resolvedUserUuid);
+
     // Upload ไฟล์ทีละตัว
-    for (const [fieldName, fileArray] of Object.entries(req.files)) {
+    for (const [fieldName, fileArray] of Object.entries(req.files || {})) {
       if (fileArray && fileArray[0]) {
         const file = fileArray[0];
         const ext = fieldName.includes('video') ? '.mp4' : '.jpg';
         const uploadPromise = uploadToS3(file.buffer, {
-          folder: `kyc/${userId}`,
-          key: `kyc/${userId}/${fieldName}_${Date.now()}${ext}`,
+          folder: `kyc/${canonicalUserTag}`,
+          key: `kyc/${canonicalUserTag}/${fieldName}_${Date.now()}${ext}`,
           contentType: fieldName.includes('video') ? 'video/mp4' : 'image/jpeg',
           resourceType: fieldName.includes('video') ? 'video' : 'image'
         }).then(result => {
@@ -4929,28 +6149,29 @@ app.post('/api/kyc/submit', uploadMulter.fields([
 
     await Promise.all(uploadPromises);
 
-    // บันทึกข้อมูล KYC ลง database
+    const addressNorm =
+      addressRaw != null && String(addressRaw).trim() ? String(addressRaw).trim().slice(0, 4000) : null;
+
+    const { parseKycExtendedFields, parseKycExpiryFields, kycInsertSql, kycInsertParams } = await import('./lib/kycSubmissionPersist.js');
+    const kycExtended = parseKycExtendedFields(req.body || {});
+    const kycExpiry = parseKycExpiryFields(req.body || {});
+
     const result = await pool.query(
-      `INSERT INTO kyc_submissions (
-        user_id, full_name, birth_date, id_card_number,
-        id_card_front_url, id_card_back_url, selfie_photo_url,
-        driving_license_front_url, driving_license_back_url,
-        selfie_video_url, status, submitted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-      RETURNING *`,
-      [
-        userId,
-        fullName,
-        birthDate,
-        idCardNumber,
-        uploadedFiles.idCardFront,
-        uploadedFiles.idCardBack,
-        uploadedFiles.selfiePhoto,
-        uploadedFiles.drivingLicenseFront,
-        uploadedFiles.drivingLicenseBack,
-        uploadedFiles.selfieVideo,
-        'pending_review'
-      ]
+      kycInsertSql(),
+      kycInsertParams(
+        {
+          resolvedUserUuid,
+          firebaseUid,
+          fullName,
+          birthDateNorm,
+          idCardNorm,
+          addressNorm,
+          vehiclesJsonParam,
+        },
+        kycExtended,
+        uploadedFiles,
+        kycExpiry,
+      ),
     );
 
     // อัพเดท user kyc status
@@ -4958,11 +6179,40 @@ app.post('/api/kyc/submit', uploadMulter.fields([
       `UPDATE users SET 
         kyc_status = 'pending_review',
         kyc_submitted_at = NOW()
-       WHERE id = $1`,
-      [userId]
+       WHERE id = $1::uuid`,
+      [resolvedUserUuid]
     );
 
     // TODO: Trigger AI verification process
+
+    const opsHook = (process.env.KYC_SUBMISSION_OPS_WEBHOOK_URL || '').trim();
+    if (opsHook) {
+      const body = JSON.stringify({
+        event: 'kyc_submitted',
+        user_id: canonicalUserTag,
+        firebase_uid: firebaseUid,
+        submission_id: result.rows[0]?.id,
+        submitted_at: new Date().toISOString(),
+      });
+      setImmediate(() => {
+        fetch(opsHook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }).catch((e) => console.warn('KYC_SUBMISSION_OPS_WEBHOOK_URL:', e?.message));
+      });
+    }
+
+    try {
+      const { notifyAdminKycSubmitted } = await import('./lib/adminLiveEvents.js');
+      await notifyAdminKycSubmitted(pool, {
+        userId: resolvedUserUuid,
+        submissionId: result.rows[0]?.id,
+        isSupplement: false,
+      });
+    } catch (e) {
+      console.warn('notifyAdminKycSubmitted:', e?.message);
+    }
 
     res.json({
       success: true,
@@ -4974,7 +6224,346 @@ app.post('/api/kyc/submit', uploadMulter.fields([
 
   } catch (error) {
     console.error('KYC submission error:', error);
-    res.status(500).json({ error: 'KYC submission failed' });
+    const devDetails =
+      process.env.NODE_ENV !== 'production'
+        ? {
+          details: typeof error?.message === 'string' ? error.message : String(error),
+          code: error?.code,
+        }
+        : {};
+    res.status(500).json({ error: 'KYC submission failed', ...devDetails });
+  }
+});
+
+/** ไม่ฟิชชิ่งจาก URL — โฟลเดอร์จาก /upload/document (kyc_uploads) และจาก submit multipart (…/kyc/<uuid>/…) */
+function isTrustedKycImageUrl(candidate) {
+  const s = typeof candidate === 'string' ? candidate.trim() : '';
+  if (!s.startsWith('https://') || s.length > 6000) return false;
+  if (s.includes('kyc_uploads')) return true;
+  if (/\/kyc\/[0-9a-fA-F-]{36}\//i.test(s)) return true;
+  const extraRaw = process.env.KYC_EXTRA_TRUST_IMAGE_URL_REGEX;
+  if (extraRaw != null && String(extraRaw).trim()) {
+    try {
+      const re = new RegExp(extraRaw.trim().slice(0, 200), 'i');
+      if (re.test(s)) return true;
+    } catch (_) { /* ignore */ }
+  }
+  return false;
+}
+
+// ✅ 1b Submit KYC จาก URL ที่อัปโหลดผ่าน /upload/document แล้ว (ไม่ส่ง multipart ซ้ำ — ลดโอกาสถูก proxy ตัดกลางคัน)
+app.post('/api/kyc/submit-from-uploads', authenticateToken, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const {
+      userId,
+      fullName,
+      birthDate,
+      idCardNumber,
+      address: addressRaw,
+      vehiclesJson: vehiclesJsonRaw,
+      idCardFrontUrl,
+      idCardBackUrl,
+      selfiePhotoUrl,
+      drivingLicenseFrontUrl,
+    } = body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const userLookup = await pool.query(
+      `SELECT id, firebase_uid FROM users
+       WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1
+       LIMIT 1`,
+      [String(userId).trim()],
+    );
+    if (!userLookup.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+    }
+
+    const dbUserRow = userLookup.rows[0];
+    const resolvedUserUuid = dbUserRow.id;
+    let firebaseUid = dbUserRow.firebase_uid != null ? String(dbUserRow.firebase_uid).trim() : '';
+    firebaseUid = firebaseUid || null;
+
+    let jwtCanon = null;
+    try {
+      const jR = await pool.query(
+        `SELECT id::text FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 OR email = $1 LIMIT 1`,
+        [String(req.user.id)],
+      );
+      jwtCanon = jR.rows?.[0]?.id || null;
+    } catch (_) { /* noop */ }
+
+    const selfOk =
+      jwtCanon &&
+      resolvedUserUuid != null &&
+      String(jwtCanon) === String(resolvedUserUuid);
+    if (!selfOk) {
+      return res.status(403).json({ error: 'Forbidden: can only submit your own KYC' });
+    }
+
+    const uFront = typeof idCardFrontUrl === 'string' ? idCardFrontUrl.trim() : '';
+    const uBack = typeof idCardBackUrl === 'string' ? idCardBackUrl.trim() : '';
+    const uSelfie = typeof selfiePhotoUrl === 'string' ? selfiePhotoUrl.trim() : '';
+    if (!isTrustedKycImageUrl(uFront) || !isTrustedKycImageUrl(uSelfie)) {
+      return res.status(400).json({
+        error: 'รูปภาพต้องเป็นลิงก์ https จากการอัปโหลดในแอปเท่านั้น — กรุณาเลือกรูปใหม่จากขั้นตอนก่อนหน้า',
+      });
+    }
+    if (uBack && !isTrustedKycImageUrl(uBack)) {
+      return res.status(400).json({ error: 'ลิงก์รูปบัตรด้านหลังไม่ถูกต้อง' });
+    }
+
+    let dlHttps = null;
+    if (drivingLicenseFrontUrl != null && String(drivingLicenseFrontUrl).trim()) {
+      dlHttps = String(drivingLicenseFrontUrl).trim();
+      if (!isTrustedKycImageUrl(dlHttps)) {
+        return res.status(400).json({ error: 'ลิงก์ใบขับขี่ไม่ถูกต้อง' });
+      }
+    }
+
+    const idDigits = idCardNumber != null ? String(idCardNumber).replace(/\D/g, '') : '';
+    const idCardNorm = idDigits.length > 0 ? idDigits.slice(0, 13) : null;
+    const birthDateNorm =
+      birthDate != null && String(birthDate).trim() ? String(birthDate).trim().slice(0, 32) : null;
+
+    let vehiclesJsonParam = '[]';
+    if (vehiclesJsonRaw != null && String(vehiclesJsonRaw).trim()) {
+      try {
+        const parsed = JSON.parse(String(vehiclesJsonRaw));
+        vehiclesJsonParam = JSON.stringify(Array.isArray(parsed) ? parsed : []);
+      } catch (_) {
+        vehiclesJsonParam = '[]';
+      }
+    }
+
+    const addressNorm =
+      addressRaw != null && String(addressRaw).trim() ? String(addressRaw).trim().slice(0, 4000) : null;
+
+    const uploadedFiles = {
+      idCardFront: uFront,
+      idCardBack: uBack || null,
+      selfiePhoto: uSelfie,
+      drivingLicenseFront: dlHttps,
+      drivingLicenseBack: null,
+      selfieVideo: null,
+    };
+
+    const canonicalUserTag = String(resolvedUserUuid);
+
+    const { parseKycExtendedFields, parseKycExpiryFields, kycInsertSql, kycInsertParams } = await import('./lib/kycSubmissionPersist.js');
+    const kycExtended = parseKycExtendedFields(body);
+    const kycExpiry = parseKycExpiryFields(body);
+    for (const [key, val] of [
+      ['yellow_plate_photo_url', kycExtended.yellow_plate_photo_url],
+      ['public_transport_license_front_url', kycExtended.public_transport_license_front_url],
+      ['public_transport_license_back_url', kycExtended.public_transport_license_back_url],
+    ]) {
+      if (val && !isTrustedKycImageUrl(val)) {
+        return res.status(400).json({ error: `ลิงก์รูป ${key} ไม่ถูกต้อง` });
+      }
+    }
+    if (kycExtended.wants_public_transport) {
+      if (!kycExtended.yellow_plate_photo_url || !kycExtended.public_transport_license_front_url) {
+        return res.status(400).json({
+          error: 'รถสาธารณะ: ต้องแนบรูปป้ายเหลืองและใบอนุญาตขับขี่สาธารณะ (หน้า)',
+        });
+      }
+    }
+
+    const result = await pool.query(
+      kycInsertSql(),
+      kycInsertParams(
+        {
+          resolvedUserUuid,
+          firebaseUid,
+          fullName,
+          birthDateNorm,
+          idCardNorm,
+          addressNorm,
+          vehiclesJsonParam,
+        },
+        kycExtended,
+        uploadedFiles,
+        kycExpiry,
+      ),
+    );
+
+    await pool.query(
+      `UPDATE users SET 
+        kyc_status = 'pending_review',
+        kyc_submitted_at = NOW()
+       WHERE id = $1::uuid`,
+      [resolvedUserUuid],
+    );
+
+    const opsHook = (process.env.KYC_SUBMISSION_OPS_WEBHOOK_URL || '').trim();
+    if (opsHook) {
+      const payload = JSON.stringify({
+        event: 'kyc_submitted',
+        user_id: canonicalUserTag,
+        firebase_uid: firebaseUid,
+        submission_id: result.rows[0]?.id,
+        submitted_at: new Date().toISOString(),
+        channel: 'from_uploads_json',
+      });
+      setImmediate(() => {
+        fetch(opsHook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        }).catch((e) => console.warn('KYC_SUBMISSION_OPS_WEBHOOK_URL:', e?.message));
+      });
+    }
+
+    try {
+      const { notifyAdminKycSubmitted } = await import('./lib/adminLiveEvents.js');
+      await notifyAdminKycSubmitted(pool, {
+        userId: resolvedUserUuid,
+        submissionId: result.rows[0]?.id,
+        isSupplement: false,
+      });
+    } catch (e) {
+      console.warn('notifyAdminKycSubmitted:', e?.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'KYC documents submitted successfully',
+      submissionId: result.rows[0].id,
+      status: 'pending_review',
+      files: ['idCardFront', 'idCardBack', 'selfiePhoto'].concat(dlHttps ? ['drivingLicenseFront'] : []),
+    });
+  } catch (error) {
+    console.error('KYC submit-from-uploads error:', error);
+    const devDetails =
+      process.env.NODE_ENV !== 'production'
+        ? {
+          details: typeof error?.message === 'string' ? error.message : String(error),
+          code: error?.code,
+        }
+        : {};
+    res.status(500).json({ error: 'KYC submission failed', ...devDetails });
+  }
+});
+
+/** Map kyc_submissions row → mobile owner shape (see kycSubmissionMapper.js). */
+async function kycSubmissionRowToMobileOwner(row) {
+  const { kycSubmissionToMobileOwner } = await import('./lib/kycSubmissionMapper.js');
+  return kycSubmissionToMobileOwner(row);
+}
+
+// ✅ Authenticated owner: latest KYC row with document URLs (mobile Settings / Thai ID tab)
+app.get('/api/kyc/my-latest', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+    }
+    const r = await pool.query(
+      `SELECT * FROM kyc_submissions
+       WHERE user_id = $1::uuid
+       ORDER BY submitted_at DESC NULLS LAST
+       LIMIT 1`,
+      [userId],
+    );
+    const row = r.rows[0];
+    if (!row) {
+      return res.json({ found: false, submission: null });
+    }
+    return res.json({
+      found: true,
+      submission: await kycSubmissionRowToMobileOwner(row),
+    });
+  } catch (err) {
+    console.error('GET /api/kyc/my-latest error:', err?.message || err);
+    return res.status(500).json({ error: 'failed to load KYC submission' });
+  }
+});
+
+/** บันทึกวันหมดอายุบัตร/ใบขับขี่ลง kyc_submissions ล่าสุด (จาก Settings OCR) */
+app.post('/api/kyc/sync-document-meta', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+
+    const { parseKycExpiryFields } = await import('./lib/kycSubmissionPersist.js');
+    const { patchLatestKycExpiryFields } = await import('./lib/userPaymentMethods.js');
+    const expiry = parseKycExpiryFields(req.body || {});
+
+    const result = await patchLatestKycExpiryFields(pool, userId, {
+      idCardExpiryDate: expiry.id_card_expiry_date,
+      driverLicenseExpiry: expiry.driver_license_expiry,
+    });
+
+    if (!result.updated) {
+      return res.status(404).json({ error: 'ไม่พบ KYC submission — ส่ง KYC ก่อนหรือใช้ Wizard' });
+    }
+
+    return res.json({
+      success: true,
+      id_card_expiry_date: result.row?.id_card_expiry_date ?? null,
+      driver_license_expiry: result.row?.driver_license_expiry ?? null,
+    });
+  } catch (err) {
+    console.error('POST /api/kyc/sync-document-meta error:', err?.message || err);
+    return res.status(500).json({ error: 'sync document meta failed' });
+  }
+});
+
+/** บันทึกเอกสารรถสาธารณะ (ป้ายเหลือง + ใบขับขี่สาธารณะ) ลง kyc_submissions ล่าสุด */
+app.post('/api/kyc/sync-public-transport-docs', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+
+    const body = req.body || {};
+    const { patchLatestKycPublicTransportDocs } = await import('./lib/userPaymentMethods.js');
+
+    const result = await patchLatestKycPublicTransportDocs(
+      pool,
+      userId,
+      {
+        wantsPublicTransport: body.wantsPublicTransport ?? body.wants_public_transport,
+        yellowPlatePhotoUrl: body.yellowPlatePhotoUrl ?? body.yellow_plate_photo_url,
+        publicTransportLicenseFrontUrl:
+          body.publicTransportLicenseFrontUrl ?? body.public_transport_license_front_url,
+        publicTransportLicenseBackUrl:
+          body.publicTransportLicenseBackUrl ?? body.public_transport_license_back_url,
+      },
+      { validateUrl: isTrustedKycImageUrl },
+    );
+
+    return res.json({ success: true, submission: result.row });
+  } catch (err) {
+    const code = err?.statusCode && Number.isFinite(err.statusCode) ? err.statusCode : 500;
+    console.error('POST /api/kyc/sync-public-transport-docs error:', err?.message || err);
+    return res.status(code).json({ error: err?.message || 'sync public transport docs failed' });
+  }
+});
+
+/** เพิ่มบัตรเครดิต/เดบิตผ่าน PaySo token → users.bank_accounts */
+app.post('/api/users/payment-methods/card', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+
+    const cardToken = req.body?.cardToken ?? req.body?.card_token ?? req.body?.token;
+    const holderName = req.body?.holderName ?? req.body?.holder_name ?? req.body?.account_name;
+
+    const { addPaysoCardFromToken } = await import('./lib/userPaymentMethods.js');
+    const { account, bank_accounts } = await addPaysoCardFromToken(pool, userId, {
+      cardToken,
+      holderName,
+    });
+
+    return res.json({ success: true, account, bank_accounts });
+  } catch (err) {
+    const code = err?.statusCode && Number.isFinite(err.statusCode) ? err.statusCode : 500;
+    console.error('POST /api/users/payment-methods/card error:', err?.message || err);
+    return res.status(code).json({ error: err?.message || 'add card failed' });
   }
 });
 
@@ -4986,7 +6575,9 @@ app.get('/api/kyc/status/:userId', async (req, res) => {
 
     // ✅ ใช้ PostgreSQL แทน UserModel (Mongoose)
     const userResult = await pool.query(
-      `SELECT id, kyc_status, kyc_level, kyc_submitted_at, kyc_verified_at, kyc_next_reverify_at 
+      `SELECT id, kyc_status, kyc_level, kyc_submitted_at, kyc_verified_at, kyc_next_reverify_at,
+              kyc_rejection_reason, kyc_admin_instruction, kyc_resubmission_deadline, kyc_required_steps,
+              kyc_resubmit_trigger
        FROM users 
        WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1
        LIMIT 1`,
@@ -5026,6 +6617,36 @@ app.get('/api/kyc/status/:userId', async (req, res) => {
     const needsReverify = (user.kyc_status === 'verified' || user.kyc_status === 'approved') &&
       (nextReverifyAt && nextReverifyAt <= now);
 
+    const bearerUserId = resolveUserIdFromBearerAuthHeader(req.headers.authorization);
+    const submissionForOwner =
+      latestSubmission &&
+        bearerUserId &&
+        String(user.id) === String(bearerUserId)
+        ? await kycSubmissionRowToMobileOwner(latestSubmission)
+        : null;
+
+    let supplementRequest = null;
+    try {
+      const { getPendingSupplementRequest } = await import('./lib/kycSupplementService.js');
+      supplementRequest = await getPendingSupplementRequest(pool, user.id);
+    } catch (_) { /* noop */ }
+
+    let documentVerification = null;
+    try {
+      const { buildKycDocumentVerification } = await import('./lib/kycDocumentStatus.js');
+      documentVerification = buildKycDocumentVerification(user, latestSubmission);
+    } catch (_) { /* noop */ }
+
+    let kycRequiredSteps = [];
+    try {
+      const raw = user.kyc_required_steps;
+      if (Array.isArray(raw)) kycRequiredSteps = raw.map((x) => String(x));
+      else if (typeof raw === 'string' && raw.trim()) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p)) kycRequiredSteps = p.map((x) => String(x));
+      }
+    } catch (_) { /* noop */ }
+
     res.json({
       kycStatus: user.kyc_status || 'not_submitted',
       kycLevel: user.kyc_level || 'level_1',
@@ -5034,11 +6655,22 @@ app.get('/api/kyc/status/:userId', async (req, res) => {
       kycNextReverifyAt: nextReverifyAt ? nextReverifyAt.toISOString() : null,
       needsReverify: !!needsReverify,
       verificationStatus: latestSubmission?.status,
+      kycRejectionReason: user.kyc_rejection_reason || null,
+      kycAdminInstruction: user.kyc_admin_instruction || null,
+      kycResubmissionDeadline: user.kyc_resubmission_deadline
+        ? new Date(user.kyc_resubmission_deadline).toISOString()
+        : null,
+      kycRequiredSteps,
+      kycSupplementMode: user.kyc_status === 'supplement_required' && !!supplementRequest,
+      kycSupplementRequest: supplementRequest,
+      kycResubmitTrigger: user.kyc_resubmit_trigger || null,
+      documentVerification,
       lastSubmission: latestSubmission ? {
         id: latestSubmission.id,
         submittedAt: latestSubmission.submitted_at,
         status: latestSubmission.status
-      } : null
+      } : null,
+      submissionForOwner
     });
   } catch (error) {
     console.error('🔴 KYC status error:', error);
@@ -5099,11 +6731,11 @@ app.get('/api/admin/kyc', adminAuthMiddleware, async (req, res) => {
     const result = await pool.query(`
       SELECT
         u.id, u.email, COALESCE(u.full_name, u.name) AS full_name, u.phone,
-        u.kyc_status, u.kyc_level, u.kyc_submitted_at AS created_at,
+        u.kyc_status, u.kyc_level, u.kyc_submitted_at AS created_at, u.kyc_resubmit_trigger,
         (SELECT COUNT(*)::text FROM kyc_submissions k2 WHERE k2.user_id = u.id) AS doc_count,
         (SELECT COUNT(*)::text FROM kyc_submissions k3 WHERE k3.user_id = u.id AND k3.status IN ('pending_review','pending','under_review')) AS pending_docs
       FROM users u
-      WHERE u.kyc_status IN ('pending_review','pending','under_review')
+      WHERE u.kyc_status IN ('pending_review','pending','under_review','resubmission_required','supplement_required')
       ORDER BY u.kyc_submitted_at DESC NULLS LAST
       LIMIT $1 OFFSET $2
     `, [limit, offset]).catch((err) => {
@@ -5121,6 +6753,7 @@ app.get('/api/admin/kyc', adminAuthMiddleware, async (req, res) => {
       full_name: r.full_name || null,
       phone: r.phone || null,
       kyc_status: r.kyc_status || 'pending',
+      kyc_resubmit_trigger: r.kyc_resubmit_trigger || null,
       kyc_level: r.kyc_level || null,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       doc_count: r.doc_count || '0',
@@ -5134,6 +6767,64 @@ app.get('/api/admin/kyc', adminAuthMiddleware, async (req, res) => {
   } catch (err) {
     console.error('GET /api/admin/kyc error:', err);
     res.status(500).json({ error: err?.message || 'Failed to fetch KYC list' });
+  }
+});
+
+// ✅ GET /api/admin/kyc/overview — ตัวเลขหน้า KYC Review (ต้องประกาศก่อน /api/admin/kyc/:userId)
+app.get('/api/admin/kyc/overview', adminAuthMiddleware, async (req, res) => {
+  try {
+    const summary = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(kyc_status, ''))) IN ('pending_review', 'pending', 'under_review'))::int AS pending_review_users,
+        COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(kyc_status, ''))) = 'resubmission_required')::int AS resubmission_required_users,
+        COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(kyc_status, ''))) IN ('rejected', 'verification_failed'))::int AS rejected_users
+      FROM users
+    `).catch(() => ({
+      rows: [{
+        pending_review_users: 0,
+        resubmission_required_users: 0,
+        rejected_users: 0,
+      }],
+    }));
+
+    let resubmissionDeadlineOverdue = 0;
+    try {
+      const od = await pool.query(`
+        SELECT COUNT(*)::int AS c
+        FROM users
+        WHERE LOWER(TRIM(COALESCE(kyc_status, ''))) = 'resubmission_required'
+          AND kyc_resubmission_deadline IS NOT NULL
+          AND kyc_resubmission_deadline < NOW()
+      `);
+      resubmissionDeadlineOverdue = parseInt(od.rows?.[0]?.c, 10) || 0;
+    } catch (_) {
+      resubmissionDeadlineOverdue = 0;
+    }
+
+    const byRows = await pool.query(`
+      SELECT LOWER(TRIM(COALESCE(kyc_status, ''))) AS st, COUNT(*)::int AS c
+      FROM users
+      GROUP BY 1
+      ORDER BY 1
+    `).catch(() => ({ rows: [] }));
+
+    const countsByKycStatus = {};
+    for (const r of byRows.rows || []) {
+      const k = String(r.st || 'unknown').trim() || 'unknown';
+      countsByKycStatus[k] = parseInt(r.c, 10) || 0;
+    }
+
+    const s = summary.rows?.[0] || {};
+    return res.json({
+      countsByKycStatus,
+      pendingReviewUsers: parseInt(s.pending_review_users, 10) || 0,
+      resubmissionRequiredUsers: parseInt(s.resubmission_required_users, 10) || 0,
+      rejectedUsers: parseInt(s.rejected_users, 10) || 0,
+      resubmissionDeadlineOverdue,
+    });
+  } catch (err) {
+    console.error('GET /api/admin/kyc/overview error:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to fetch KYC overview' });
   }
 });
 
@@ -5155,21 +6846,8 @@ app.get('/api/admin/kyc/:userId', adminAuthMiddleware, async (req, res) => {
     );
 
     const user = userRow.rows[0];
-    const documents = (docsRow.rows || []).map((d) => ({
-      id: d.id,
-      status: d.status,
-      submitted_at: d.submitted_at,
-      id_card_front_url: d.id_card_front_url,
-      id_card_back_url: d.id_card_back_url,
-      selfie_photo_url: d.selfie_photo_url,
-      driving_license_front_url: d.driving_license_front_url,
-      driving_license_back_url: d.driving_license_back_url,
-      selfie_video_url: d.selfie_video_url,
-      full_name: d.full_name,
-      birth_date: d.birth_date,
-      id_card_number: d.id_card_number,
-      rejection_reason: d.rejection_reason,
-    }));
+    const { kycSubmissionToAdminDocument } = await import('./lib/kycSubmissionMapper.js');
+    const documents = (docsRow.rows || []).map((d) => kycSubmissionToAdminDocument(d));
 
     res.json({
       user: {
@@ -5209,9 +6887,18 @@ app.post('/api/admin/kyc/:userId/approve', adminAuthMiddleware, async (req, res)
     await pool.query(
       `UPDATE kyc_submissions SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE user_id = $2`,
       [adminId, uid]
-    ).catch(() => {});
+    ).catch(() => { });
 
     auditService.log(adminId, 'KYC_APPROVED', { entityId: uid, entityName: 'users' }, { actorRole: 'Admin', ipAddress: getClientIp(req) });
+
+    if (req.body?.notify !== false) {
+      const welcomeTitle = (req.body?.notify_title || 'ยินดีด้วย! ระบบเปิดรับงานแล้ว').slice(0, 200);
+      const welcomeMsg = (req.body?.notify_message
+        || 'ยินดีด้วย ระบบได้เปิดรับให้คุณรับงานแล้ว โปรดไปที่ Training Dashboard เพื่อเพิ่มทักษะที่คุณต้องการจะเป็นผู้รับงาน').slice(0, 4000);
+      const { insertAdminUserNotification } = await import('./lib/adminUserCompetency.js');
+      await insertAdminUserNotification(pool, uid, welcomeTitle, welcomeMsg, adminId, { template: 'kyc_approved' });
+      await pushUserNotificationIfNotPeaceMode(uid, welcomeTitle, welcomeMsg);
+    }
 
     res.json({ success: true, kyc_status: 'approved' });
   } catch (err) {
@@ -5238,7 +6925,7 @@ app.post('/api/admin/kyc/:userId/reject', adminAuthMiddleware, async (req, res) 
     await pool.query(
       `UPDATE kyc_submissions SET status = 'rejected', rejection_reason = $1, reviewed_by = $2, reviewed_at = NOW() WHERE user_id = $3`,
       [reason || 'Rejected by admin', adminId, uid]
-    ).catch(() => {});
+    ).catch(() => { });
 
     auditService.log(adminId, 'KYC_REJECTED', { entityId: uid, entityName: 'users', reason }, { actorRole: 'Admin', ipAddress: getClientIp(req) });
 
@@ -5246,6 +6933,197 @@ app.post('/api/admin/kyc/:userId/reject', adminAuthMiddleware, async (req, res) 
   } catch (err) {
     console.error('POST /api/admin/kyc/:userId/reject error:', err);
     res.status(500).json({ error: err?.message || 'Failed to reject KYC' });
+  }
+});
+
+// ✅ POST /api/admin/kyc/:userId/request-resubmit — สั่งกรอก KYC ใหม่ทั้งชุด (ไม่ใช่ supplement)
+app.post('/api/admin/kyc/:userId/request-resubmit', adminAuthMiddleware, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { instruction = '', deadline = null, required_steps: requiredSteps = [], trigger = 'admin_manual' } = req.body || {};
+    const adminId = req.adminUser?.id || 'admin';
+
+    const userRow = await pool.query(
+      'SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1',
+      [userId],
+    );
+    if (!userRow.rows[0]) return res.status(404).json({ error: 'User not found' });
+    const uid = userRow.rows[0].id;
+
+    let deadlineTs = null;
+    if (deadline != null && String(deadline).trim()) {
+      const d = new Date(deadline);
+      if (!Number.isNaN(d.getTime())) deadlineTs = d.toISOString();
+    }
+
+    const { requestKycResubmit } = await import('./lib/kycSupplementService.js');
+    const result = await requestKycResubmit(pool, {
+      userUuid: uid,
+      adminId,
+      instruction,
+      deadline: deadlineTs,
+      requiredSteps,
+      resubmitTrigger: trigger,
+    });
+
+    auditService.log(
+      adminId,
+      'KYC_RESUBMIT_REQUESTED',
+      { entityId: uid, entityName: 'users', instruction: result.instruction },
+      { actorRole: 'Admin', ipAddress: getClientIp(req) },
+    );
+
+    const notifyTitle = 'ทีมงานขอเอกสารยืนยันตัวตนเพิ่มเติม';
+    const notifyMsg = (result.instruction || 'กรุณาส่งเอกสารยืนยันตัวตนใหม่').slice(0, 4000);
+    await pushUserNotificationIfNotPeaceMode(uid, notifyTitle, notifyMsg);
+
+    res.json({ success: true, kyc_status: 'resubmission_required' });
+  } catch (err) {
+    console.error('POST /api/admin/kyc/:userId/request-resubmit error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to request KYC resubmit' });
+  }
+});
+
+// ✅ POST /api/admin/kyc/:userId/request-supplement — ขอเฉพาะป้ายเหลือง / ใบขับขี่สาธารณะ
+app.post('/api/admin/kyc/:userId/request-supplement', adminAuthMiddleware, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const {
+      instruction = '',
+      deadline = null,
+      requested_docs: requestedDocs = null,
+    } = req.body || {};
+    const adminId = req.adminUser?.id || 'admin';
+
+    const userRow = await pool.query(
+      'SELECT id, full_name, phone FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1',
+      [userId],
+    );
+    if (!userRow.rows[0]) return res.status(404).json({ error: 'User not found' });
+    const uid = userRow.rows[0].id;
+
+    let deadlineTs = null;
+    if (deadline != null && String(deadline).trim()) {
+      const d = new Date(deadline);
+      if (!Number.isNaN(d.getTime())) deadlineTs = d.toISOString();
+    }
+
+    const { requestKycSupplement } = await import('./lib/kycSupplementService.js');
+    const result = await requestKycSupplement(pool, {
+      userUuid: uid,
+      adminId,
+      instruction: instruction || 'กรุณาแนบรูปป้ายเหลืองและใบอนุญาตขับขี่สาธารณะ (ด้านหน้า)',
+      deadline: deadlineTs,
+      requestedDocs,
+    });
+
+    auditService.log(
+      adminId,
+      'KYC_SUPPLEMENT_REQUESTED',
+      {
+        entityId: uid,
+        entityName: 'users',
+        requested_docs: result.requested_docs,
+        instruction: result.request?.instruction,
+      },
+      { actorRole: 'Admin', ipAddress: getClientIp(req) },
+    );
+
+    const notifyTitle = 'ทีมงานขอเอกสารเพิ่ม (รถสาธารณะ)';
+    const notifyMsg = (result.request?.instruction || instruction).slice(0, 4000);
+    await pushUserNotificationIfNotPeaceMode(uid, notifyTitle, notifyMsg);
+
+    res.json({
+      success: true,
+      kyc_status: 'supplement_required',
+      requested_docs: result.requested_docs,
+      step_labels: result.step_labels,
+    });
+  } catch (err) {
+    console.error('POST /api/admin/kyc/:userId/request-supplement error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to request KYC supplement' });
+  }
+});
+
+// ✅ POST /api/kyc/submit-supplement — user ส่งเฉพาะเอกสารที่แอดมินขอ
+app.post('/api/kyc/submit-supplement', authenticateToken, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { userId, yellowPlatePhotoUrl, publicTransportLicenseFrontUrl, publicTransportLicenseBackUrl } = body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const userLookup = await pool.query(
+      `SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1`,
+      [String(userId).trim()],
+    );
+    if (!userLookup.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+    }
+    const resolvedUserUuid = userLookup.rows[0].id;
+
+    let jwtCanon = null;
+    try {
+      const jR = await pool.query(
+        `SELECT id::text FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 OR email = $1 LIMIT 1`,
+        [String(req.user.id)],
+      );
+      jwtCanon = jR.rows?.[0]?.id || null;
+    } catch (_) { /* noop */ }
+
+    if (!jwtCanon || String(jwtCanon) !== String(resolvedUserUuid)) {
+      return res.status(403).json({ error: 'Forbidden: can only submit your own KYC supplement' });
+    }
+
+    const urlChecks = [
+      ['yellowPlatePhotoUrl', yellowPlatePhotoUrl],
+      ['publicTransportLicenseFrontUrl', publicTransportLicenseFrontUrl],
+      ['publicTransportLicenseBackUrl', publicTransportLicenseBackUrl],
+    ];
+    for (const [, val] of urlChecks) {
+      if (val != null && String(val).trim() && !isTrustedKycImageUrl(String(val).trim())) {
+        return res.status(400).json({ error: 'ลิงก์รูปไม่ถูกต้อง — กรุณาอัปโหลดจากแอปใหม่' });
+      }
+    }
+
+    const { submitKycSupplement } = await import('./lib/kycSupplementService.js');
+    const result = await submitKycSupplement(pool, {
+      userUuid: resolvedUserUuid,
+      yellowPlatePhotoUrl: yellowPlatePhotoUrl ? String(yellowPlatePhotoUrl).trim() : null,
+      publicTransportLicenseFrontUrl: publicTransportLicenseFrontUrl
+        ? String(publicTransportLicenseFrontUrl).trim()
+        : null,
+      publicTransportLicenseBackUrl: publicTransportLicenseBackUrl
+        ? String(publicTransportLicenseBackUrl).trim()
+        : null,
+    });
+
+    try {
+      const { notifyAdminKycSubmitted } = await import('./lib/adminLiveEvents.js');
+      await notifyAdminKycSubmitted(pool, {
+        userId: resolvedUserUuid,
+        submissionId: result.submissionId,
+        isSupplement: true,
+      });
+    } catch (e) {
+      console.warn('notifyAdminKycSubmitted supplement:', e?.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'ส่งเอกสารเพิ่มสำเร็จ — รอการตรวจสอบจากเจ้าหน้าที่',
+      submissionId: result.submissionId,
+      status: 'pending_review',
+    });
+  } catch (err) {
+    const code = err?.statusCode || 500;
+    if (code !== 500) {
+      return res.status(code).json({ error: err?.message || 'Invalid supplement submission' });
+    }
+    console.error('POST /api/kyc/submit-supplement error:', err);
+    res.status(500).json({ error: err?.message || 'KYC supplement submission failed' });
   }
 });
 
@@ -5552,7 +7430,7 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
               'UPDATE users SET firebase_uid = $1, updated_at = NOW() WHERE id::text = $2',
               [userId, String(userByPhone.id)]
             );
-          } catch (_) {}
+          } catch (_) { }
           const u = userByPhone;
           const uFrozen = !!(u.wallet_frozen || u.account_status === 'suspended' || u.account_status === 'banned');
           const response = {
@@ -5585,7 +7463,7 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
           try {
             const ba = await getBrandAdviserProfilePayload(pool, u.id);
             Object.assign(response, ba);
-          } catch (_) {}
+          } catch (_) { }
           return res.json(response);
         }
       }
@@ -5655,7 +7533,12 @@ app.get('/api/users/profile/:id', profileLimiter, async (req, res) => {
       expert_category: user.expert_category || null,
       portfolio_urls: Array.isArray(user.portfolio_urls) ? user.portfolio_urls : (user.portfolio_urls ? (typeof user.portfolio_urls === 'string' ? JSON.parse(user.portfolio_urls) : user.portfolio_urls) : []),
       greeting_video_url: user.greeting_video_url || null,
-      verified_badge: user.verified_badge || null,
+      verified_badge: (() => {
+        const v = user.verified_badge;
+        if (v == null || v === '') return null;
+        if (typeof v === 'boolean') return v ? 'Verified' : null;
+        return String(v);
+      })(),
       signature_service: user.signature_service || null,
       the_journey: user.the_journey || null,
       instagram_url: user.instagram_url || null,
@@ -5836,10 +7719,10 @@ app.get('/api/users/jobs/:userId', async (req, res) => {
   try {
     const uid = String(req.params.userId || '').trim();
     if (!uid) return res.json([]);
-    
+
     // ✅ รองรับ query parameter ?includeExpired=true สำหรับดูงานหมดอายุ
     const includeExpired = req.query.includeExpired === 'true';
-    
+
     const jobs = await JobModel.findByUserId(uid, { includeExpired });
     res.json(jobs.map(normalizeJobForApi));
   } catch (e) {
@@ -6003,7 +7886,7 @@ app.post('/api/payments/tip', authenticateToken, async (req, res) => {
         await client.query(
           `UPDATE jobs SET tips_amount = COALESCE(tips_amount, 0) + $1, updated_at = NOW() WHERE id::text = $2`,
           [tipAmount, jobId]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       await client.query('COMMIT');
@@ -6029,7 +7912,7 @@ app.post('/api/payments/tip', authenticateToken, async (req, res) => {
         employer_wallet_pending: parseFloat(senderWallet.rows?.[0]?.wallet_pending || 0)
       });
     } catch (txErr) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw txErr;
     } finally {
       client.release();
@@ -6233,7 +8116,7 @@ app.post('/api/bids/accept/:bidId', authenticateToken, async (req, res) => {
       await pool.query(
         `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_after, reason) VALUES ('system', $1, 'COLLISION_24HR_BAN', 'users', $1, $2, 'Conflict ignored on bid accept')`,
         [talentUuid, JSON.stringify({ ban_expires_at: banUntil, bid_id: bidId, conflicting })]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     const client = await pool.connect();
@@ -6288,7 +8171,7 @@ app.post('/api/bids/accept/:bidId', authenticateToken, async (req, res) => {
       io.to(`bidder:${bid.bidder_id}`).emit('my_bid_accepted', { bid_id: bid.id, booking_id: bookingId });
       res.json({ success: true, message: 'Accept สำเร็จ — Escrow ล็อคแล้ว', booking_id: bookingId });
     } catch (txErr) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw txErr;
     } finally {
       client.release();
@@ -6642,7 +8525,7 @@ app.get('/api/providers', async (req, res) => {
     console.log('👥 [PROVIDERS] Fetching all providers');
 
     const category = (req.query.category || '').toString().trim().toLowerCase();
-    const validCategories = ['chef', 'tailor', 'artist', 'barber', 'wellness', 'beauty_wellness', 'tech_it', 'event_entertainment', 'professional_services'];
+    const validCategories = ['chef', 'tailor', 'artist', 'barber', 'wellness', 'beauty', 'beauty_wellness', 'tech_it', 'event_entertainment', 'professional_services'];
     const filterCategory = validCategories.includes(category) ? category : null;
     const verifiedOnly = req.query.verified === 'true' || req.query.verified === '1';
 
@@ -6706,7 +8589,12 @@ app.get('/api/providers', async (req, res) => {
       expert_category: user.expert_category || null,
       portfolio_urls: Array.isArray(user.portfolio_urls) ? user.portfolio_urls : (user.portfolio_urls ? (typeof user.portfolio_urls === 'string' ? JSON.parse(user.portfolio_urls) : user.portfolio_urls) : []),
       greeting_video_url: user.greeting_video_url || null,
-      verified_badge: user.verified_badge || null,
+      verified_badge: (() => {
+        const v = user.verified_badge;
+        if (v == null || v === '') return null;
+        if (typeof v === 'boolean') return v ? 'Verified' : null;
+        return String(v);
+      })(),
       signature_service: user.signature_service || null,
       the_journey: user.the_journey || null,
       instagram_url: user.instagram_url || null,
@@ -6781,7 +8669,16 @@ app.get('/api/providers', async (req, res) => {
     }
 
     console.log(`👥 [PROVIDERS] Returning ${providers.length} providers`);
-    res.json(providers);
+    let feedProviders = providers;
+    if (typeof app.injectAdsIntoProviders === 'function') {
+      const userId = req.user?.id ? await resolveUserIdToUuid(req.user?.id).catch(() => null) : null;
+      try {
+        feedProviders = await app.injectAdsIntoProviders(providers, req, userId);
+      } catch (e) {
+        console.warn('[providers] injectAdsIntoProviders failed:', e?.message || e);
+      }
+    }
+    res.json(feedProviders);
 
   } catch (error) {
     console.error('❌ [PROVIDERS] Error:', error);
@@ -6887,13 +8784,13 @@ function getBookingUserId(req) {
       const raw = Buffer.from(token.slice(5), 'base64').toString('utf8');
       const payload = JSON.parse(raw);
       userId = payload.user_id ? String(payload.user_id) : null;
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!userId && process.env.JWT_SECRET) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       userId = String(payload.sub);
-    } catch (_) {}
+    } catch (_) { }
   }
   return userId;
 }
@@ -7073,6 +8970,17 @@ app.post('/api/bookings', async (req, res) => {
     if (start <= new Date()) return res.status(400).json({ error: 'ไม่สามารถจองช่วงเวลาที่ผ่านมาแล้ว' });
     const depositAmount = Math.max(0, Number(req.body.deposit_amount) || 0);
     const depositStatus = depositAmount > 0 ? 'pending' : 'none';
+    const adBody = req.body || {};
+    if (adBody.adClickPublicId) {
+      await bindAdClickFromBooking(pool, {
+        meerakUserId: bookerUuid,
+        adClickPublicId: String(adBody.adClickPublicId),
+        adCampaignId: adBody.adCampaignId || null,
+        adCreativeId: adBody.adCreativeId || null,
+        adImpressionId: adBody.adImpressionId || null,
+        surface: adBody.adSurface || 'VIDEO_FEED',
+      }).catch((e) => console.warn('[ads] bind booking click:', e?.message));
+    }
     const ins = await pool.query(
       `INSERT INTO bookings (slot_id, booker_id, talent_id, status, deposit_amount, deposit_status)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -7112,6 +9020,8 @@ app.get('/api/bookings/me', async (req, res) => {
     const result = await pool.query(
       `SELECT b.id, b.slot_id, b.booker_id, b.talent_id, b.status, b.job_id, b.created_at, b.updated_at,
               b.deposit_amount, b.deposit_status, b.started_at, b.session_status,
+              b.booking_type, b.location_mode, b.quoted_price, b.employer_total, b.remaining_balance,
+              b.amount_paid,
               s.start_time, s.end_time,
               u.full_name AS booker_name, u.phone AS booker_phone, u.email AS booker_email, u.avatar_url AS booker_avatar
        FROM bookings b
@@ -7137,6 +9047,12 @@ app.get('/api/bookings/me', async (req, res) => {
       deposit_status: r.deposit_status || 'none',
       started_at: r.started_at || null,
       session_status: r.session_status || 'awaiting_checkin',
+      booking_type: r.booking_type || 'general',
+      location_mode: r.location_mode || null,
+      quoted_price: r.quoted_price != null ? Number(r.quoted_price) : null,
+      employer_total: r.employer_total != null ? Number(r.employer_total) : null,
+      remaining_balance: r.remaining_balance != null ? Number(r.remaining_balance) : null,
+      amount_paid: r.amount_paid != null ? Number(r.amount_paid) : 0,
       booker_name: r.booker_name || null,
       booker_phone: r.booker_phone || null,
       booker_email: r.booker_email || null,
@@ -7201,7 +9117,7 @@ app.patch('/api/bookings/:id', async (req, res) => {
         await pool.query(
           `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_after, reason) VALUES ('system', $1, 'COLLISION_24HR_BAN', 'users', $1, $2, 'Conflict ignored on booking confirm')`,
           [talentUuid, JSON.stringify({ ban_expires_at: banUntil, booking_id: bookingId, conflicting })]
-        ).catch(() => {});
+        ).catch(() => { });
       }
     }
     await pool.query(
@@ -7210,6 +9126,11 @@ app.patch('/api/bookings/:id', async (req, res) => {
     );
     if (newStatus === 'confirmed' && booking.booker_id) {
       await pushUserNotificationIfNotPeaceMode(booking.booker_id, 'คิวยืนยันแล้ว', 'คิวของคุณได้รับการยืนยันแล้ว!');
+      onBookingConfirmed(pool, {
+        bookingId: String(booking.id),
+        bookerId: booking.booker_id,
+        talentId: booking.talent_id,
+      }).catch((e) => console.warn('[ads] booking outcome attribution:', e?.message));
     }
     // Talent ยกเลิก: ถ้ามัดจำเป็น 'held' คืนเงินนายจ้าง 100% (แอปไม่หัก)
     if (newStatus === 'cancelled') {
@@ -7249,21 +9170,23 @@ app.get('/api/bookings/my-requests', async (req, res) => {
   try {
     const userId = getBookingUserId(req);
     console.log(`📋 Fetching bookings for user: ${userId}`);
-    
+
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ', bookings: [] });
-    
+
     const userRow = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 LIMIT 1', [userId]);
     const bookerUuid = userRow.rows?.[0]?.id;
-    
+
     // ✅ ถ้าไม่มี User ให้คืน empty array แทน 500
     if (!bookerUuid) {
       console.warn(`⚠️ User not found for bookings: ${userId}, returning empty`);
       return res.json({ bookings: [] });
     }
-    
+
     const result = await pool.query(
       `SELECT b.id, b.slot_id, b.booker_id, b.talent_id, b.status, b.job_id, b.created_at, b.updated_at,
               b.deposit_amount, b.deposit_status, b.started_at, b.session_status,
+              b.booking_type, b.location_mode, b.quoted_price, b.employer_total, b.remaining_balance,
+              b.amount_paid,
               s.start_time, s.end_time,
               u.full_name AS talent_name, u.phone AS talent_phone, u.email AS talent_email, u.avatar_url AS talent_avatar
        FROM bookings b
@@ -7301,7 +9224,13 @@ app.get('/api/bookings/my-requests', async (req, res) => {
       talent_avatar: r.talent_avatar || null,
       pending_challenges: challengeCounts[String(r.id)] || 0,
       started_at: r.started_at || null,
-      session_status: r.session_status || 'awaiting_checkin'
+      session_status: r.session_status || 'awaiting_checkin',
+      booking_type: r.booking_type || 'general',
+      location_mode: r.location_mode || null,
+      quoted_price: r.quoted_price != null ? Number(r.quoted_price) : null,
+      employer_total: r.employer_total != null ? Number(r.employer_total) : null,
+      remaining_balance: r.remaining_balance != null ? Number(r.remaining_balance) : null,
+      amount_paid: r.amount_paid != null ? Number(r.amount_paid) : 0,
     }));
     return res.json({ bookings });
   } catch (err) {
@@ -7341,17 +9270,69 @@ app.post('/api/bookings/:id/pay-deposit', async (req, res) => {
     if (bookerFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถชำระมัดจำได้' });
     const bookerVipRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [bookerUuid]).catch(() => ({ rows: [] }));
     const bookerVipTier = bookerVipRow.rows?.[0]?.vip_tier || 'none';
-    const { totalToPay, markupAmount } = calcBookingEmployerOutflow(depositAmount, bookerVipTier);
+    const slotConfig = await loadSlotFeeConfig(pool);
+    const { totalToPay, markupAmount } = calcBookingEmployerOutflow(depositAmount, bookerVipTier, slotConfig);
     const walletRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [bookerUuid]);
     const balance = parseFloat(walletRow.rows?.[0]?.wallet_balance || 0);
     if (balance < totalToPay) {
       return res.status(400).json({ error: 'ยอดในกระเป๋าไม่พอ กรุณาเติมเงิน (ต้องการ ฿' + totalToPay.toLocaleString() + ')' });
     }
     await pool.query('UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2', [totalToPay, bookerUuid]);
+    const bookingPaymentLedgerId = `L-booking-deposit-${String(b.id)}-employer-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
+       VALUES ($1, 'payment_created', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6::uuid, $7::jsonb)`,
+      [
+        bookingPaymentLedgerId,
+        String(b.id),
+        totalToPay,
+        `BOOK-DEP-${String(b.id)}`,
+        `T-BOOK-DEP-${String(b.id)}-${Date.now()}`,
+        bookerUuid,
+        JSON.stringify({ leg: 'booking_deposit_employer_payment', booking_id: String(b.id), deposit_amount: depositAmount, markup_amount: markupAmount, employer_expense: totalToPay }),
+      ],
+    ).catch((e) => console.warn('Booking employer payment ledger insert failed:', e.message));
     if (markupAmount > 0) {
       const platformUser = await pool.query("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1").catch(() => ({ rows: [] }));
       if (platformUser.rows?.length) {
         await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2::uuid', [markupAmount, platformUser.rows[0].id]);
+      }
+    }
+    if (markupAmount > 0) {
+      try {
+        const vatConfigRow = await pool.query(`SELECT vat_rate_percent FROM tax_company_settings WHERE id = 'aqond' LIMIT 1`).catch(() => ({ rows: [] }));
+        const vatRatePercent = Number(vatConfigRow.rows?.[0]?.vat_rate_percent ?? 7) || 7;
+        const markupVat = splitVatInclusive(markupAmount, vatRatePercent);
+        await generateFiscalDocumentDraft(pool, {
+          sourceEventId: bookingPaymentLedgerId,
+          documentType: 'tax_invoice',
+          partyRole: 'customer',
+          partyUserId: bookerUuid,
+          lines: [
+            calculateLine({
+              description: 'ยอดมัดจำ Booking (แสดงเพื่ออ้างอิง ไม่ใช่รายได้ AQOND)',
+              taxable_amount: 0,
+              unit_amount: 0,
+              vat_rate_percent: 0,
+              total_amount: depositAmount,
+              metadata: { source_event_id: bookingPaymentLedgerId, source_booking_id: String(b.id), component: 'provider_service_principal', informational: true },
+            }),
+            calculateLine({
+              description: 'ค่าบริการแพลตฟอร์ม AQOND จาก Booking',
+              taxable_amount: markupVat.vat_base_amount,
+              unit_amount: markupVat.vat_base_amount,
+              vat_rate_percent: vatRatePercent,
+              vat_amount: markupVat.vat_amount,
+              total_amount: markupVat.gross_amount,
+              metadata: { source_event_id: bookingPaymentLedgerId, source_booking_id: String(b.id), component: 'platform_booking_markup', taxable_revenue_type: 'platform_fee', platform_revenue_source: 'booking_fee', vat_inclusive: true },
+            }),
+          ],
+          actorType: 'system',
+          actorId: 'booking_deposit',
+          reason: 'employer_booking_tax_invoice_draft',
+        });
+      } catch (e) {
+        console.warn('Booking employer fiscal draft skipped:', e.message);
       }
     }
     await pool.query("UPDATE bookings SET deposit_status = 'held', updated_at = NOW() WHERE id = $1", [b.id]);
@@ -7547,7 +9528,7 @@ app.post('/api/bookings/:id/challenge', async (req, res) => {
         message: 'ส่งคำท้าชิงเรียบร้อย รอผู้จองคนแรกตอบกลับ (24 ชม.)'
       });
     } catch (txErr) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw txErr;
     } finally {
       client.release();
@@ -7657,7 +9638,7 @@ app.post('/api/bookings/:id/challenge-response', async (req, res) => {
         return res.json({ success: true, message: 'รับค่าชดเชยแล้ว (30% ของส่วนต่างเข้ากระเป๋า)', compensation: toFirstCompensate });
       }
     } catch (txErr) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw txErr;
     } finally {
       client.release();
@@ -7708,7 +9689,7 @@ app.get('/api/bookings/:id/check-in-qr', async (req, res) => {
     try {
       const QRCode = (await import('qrcode')).default;
       qr_data_url = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', width: 256, margin: 2 });
-    } catch (_) {}
+    } catch (_) { }
     return res.json({
       qr_payload: payload,
       qr_data_url: qr_data_url,
@@ -7818,7 +9799,11 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     const talentRow = await pool.query('SELECT vip_tier FROM users WHERE id = $1 LIMIT 1', [b.talent_id]).catch(() => ({ rows: [] }));
     const talentVipTier = talentRow.rows?.[0]?.vip_tier || 'none';
     const waiveBaBooking = await isPlatformCommissionWaivedForUser(pool, b.talent_id);
-    const result = calcBookingRelease(baseDeposit, finalBidPrice, talentVipTier, { waiveBookingCommission: waiveBaBooking });
+    const slotConfig = await loadSlotFeeConfig(pool);
+    const result = calcBookingRelease(baseDeposit, finalBidPrice, talentVipTier, {
+      waiveBookingCommission: waiveBaBooking,
+      slotConfig,
+    });
     const { talentPayout, totalPlatformRevenue: feeAmount, sourcingFee: baseFeeAmount, biddingFee: biddingDiffFeeAmount } = result;
 
     await pool.query(
@@ -7837,6 +9822,7 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
 
     const bid = String(b.id);
     const ledgerId = (s) => `L-booking-${bid}-${s}-${Date.now()}`;
+    const payoutLedgerId = ledgerId('payout');
     const billNo = `BOOK-${bid}`;
     const txnNo = (s) => `T-BOOK-${bid}-${s}-${Date.now()}`;
     const receiptId = `RECEIPT-${bid}-${Date.now()}`;
@@ -7880,8 +9866,19 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'talent_booking_payout', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
-      [ledgerId('payout'), bid, talentPayout, billNo, txnNo('payout'), b.talent_id, JSON.stringify(receiptMeta)]
+      [payoutLedgerId, bid, talentPayout, billNo, txnNo('payout'), b.talent_id, JSON.stringify(receiptMeta)]
     ).catch((e) => console.warn('Ledger talent_booking_payout insert failed:', e.message));
+    const bookingWhtPosting = await postProviderWhtForEarning(pool, {
+      sourceEventId: payoutLedgerId,
+      sourceEventType: 'talent_booking_payout',
+      providerUserId: b.talent_id,
+      grossIncomeAmount: totalAmount,
+      platformFeeAmount: feeAmount,
+      sourcePaymentId: bid,
+      sourceBookingId: bid,
+      actorId: 'booking_release',
+      applyBalanceMutation: true,
+    });
 
     const startedAt = b.started_at ? new Date(b.started_at) : null;
     const slotRow = await pool.query('SELECT s.start_time, s.end_time FROM availability_slots s JOIN bookings bk ON bk.slot_id = s.id WHERE bk.id = $1 LIMIT 1', [b.id]);
@@ -7891,13 +9888,14 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
       await pool.query(
         'UPDATE users SET verified_hours = COALESCE(verified_hours, 0) + $1, updated_at = NOW() WHERE id = $2',
         [Math.round(hours * 100) / 100, b.talent_id]
-      ).catch(() => {});
+      ).catch(() => { });
     }
     await pool.query(
       "UPDATE bookings SET deposit_status = 'released', status = 'completed', session_status = 'completed', updated_at = NOW() WHERE id = $1",
       [b.id]
     );
-    await pushUserNotificationIfNotPeaceMode(b.talent_id, 'มัดจำเข้าหมดแล้ว', 'นายจ้างยืนยันรับบริการแล้ว เงินมัดจำ ฿' + talentPayout.toLocaleString() + ' (หลังหักค่าธรรมเนียม) เข้ากระเป๋าคุณแล้ว');
+    hookBrandAdviserCampaignPurchase(b.booker_id, 'booking', String(b.id), totalAmount, new Date());
+    await pushUserNotificationIfNotPeaceMode(b.talent_id, 'มัดจำเข้าหมดแล้ว', 'นายจ้างยืนยันรับบริการแล้ว เงินมัดจำ ฿' + round2(talentPayout - Number(bookingWhtPosting?.withheldAmount || 0)).toLocaleString() + ' (หลังหักค่าธรรมเนียม/ภาษีหัก ณ ที่จ่ายถ้ามี) เข้ากระเป๋าคุณแล้ว');
 
     // VIP Admin Fund: 12.5% ของ gross profit จาก Booking VIP
     if (feeAmount > 0) {
@@ -7917,6 +9915,8 @@ app.post('/api/bookings/:id/release-deposit', async (req, res) => {
       deposit_status: 'released',
       status: 'completed',
       talent_payout: talentPayout,
+      wht_withheld: Number(bookingWhtPosting?.withheldAmount || 0),
+      talent_net_available: round2(talentPayout - Number(bookingWhtPosting?.withheldAmount || 0)),
       commission: feeAmount,
       receipt: {
         gross: totalAmount,
@@ -7985,7 +9985,7 @@ app.get('/api/earnings/receipt/job/:id', async (req, res) => {
       try {
         const p = jwt.verify(auth.slice(7), process.env.JWT_SECRET);
         userId = p.sub;
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const jobId = String(req.params.id || '').trim();
@@ -8241,6 +10241,55 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ✅ Auth diagnostic — ตรวจสอบ DB schema + user existence สำหรับ debug production
+app.get('/api/debug/auth-check', async (req, res) => {
+  try {
+    const phone = String(req.query.phone || '').trim();
+
+    const colCheck = await pool.query(
+      `SELECT column_name, data_type FROM information_schema.columns
+       WHERE table_name = 'users' AND column_name IN ('password', 'password_hash')
+       ORDER BY column_name`
+    );
+
+    const totalUsers = await pool.query('SELECT COUNT(*)::int AS cnt FROM users');
+
+    let userRow = null;
+    if (phone) {
+      const phoneNorm = normalizePhoneForStorage(phone);
+      const phoneAlt = phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
+      const r = await pool.query(
+        `SELECT id, phone, full_name, role, created_at,
+                (password IS NOT NULL)       AS has_password,
+                (password_hash IS NOT NULL)  AS has_password_hash,
+                LEFT(password_hash, 7)       AS hash_prefix,
+                account_status
+         FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) LIMIT 1`,
+        [phoneNorm, phoneAlt]
+      );
+      userRow = r.rows[0] || null;
+    }
+
+    const appConfig = await getMobileAppConfig();
+
+    res.json({
+      fix_deployed: true,
+      fix_version: '2026-05-27-auth-diag',
+      signups_enabled: appConfig.featureFlags.enableSignups,
+      maintenance_mode: appConfig.featureFlags.maintenanceMode,
+      db_columns: colCheck.rows,
+      password_col_exists: colCheck.rows.some(c => c.column_name === 'password'),
+      password_hash_col_exists: colCheck.rows.some(c => c.column_name === 'password_hash'),
+      total_users: totalUsers.rows[0]?.cnt || 0,
+      queried_phone: phone || null,
+      user_found: !!userRow,
+      user: userRow,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ✅ 4. เพิ่ม GET /api/users/ สำหรับ debug
 app.get('/api/users', async (req, res) => {
   try {
@@ -8374,7 +10423,24 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
     } catch (_) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    if (String(sub) !== String(userId)) {
+    // รองรับ URL :id = UUID หรือ firebase_uid และโปรไฟล์จาก cache/Firestore ที่ id ไม่ตรง sub
+    let jwtCanon = null;
+    let paramCanon = null;
+    try {
+      const rJwt = await pool.query(
+        `SELECT id::text FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 OR email = $1 LIMIT 1`,
+        [String(sub)],
+      );
+      jwtCanon = rJwt.rows?.[0]?.id || null;
+      const rParam = await pool.query(
+        `SELECT id::text FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 OR email = $1 LIMIT 1`,
+        [String(userId)],
+      );
+      paramCanon = rParam.rows?.[0]?.id || null;
+    } catch (_) { /* auth resolution failed below */ }
+    const directMatch = String(sub) === String(userId);
+    const sameAccount = jwtCanon && paramCanon && jwtCanon === paramCanon;
+    if (!directMatch && !sameAccount) {
       return res.status(403).json({ error: 'Forbidden: can only update your own profile' });
     }
 
@@ -8413,7 +10479,16 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
     let paramIndex = 1;
 
     const jsonbColumns = ['bank_accounts', 'location', 'portfolio_urls', 'trainings', 'skills'];
-    const allowedColumns = ['full_name', 'email', 'phone', 'avatar_url', 'bio', 'display_name', 'bank_accounts', 'location', 'portfolio_urls', 'trainings', 'skills', 'vehicle_brand', 'vehicle_type', 'vehicle_reg', 'boat_brand', 'skipper_license_number', 'skipper_license_expiry', 'boat_registration_number', 'notifications_enabled', 'blood_type', 'allergies', 'emergency_contact'];
+    const allowedColumns = [
+      'full_name', 'email', 'phone', 'avatar_url', 'bio', 'display_name',
+      'bank_accounts', 'location', 'portfolio_urls', 'trainings', 'skills',
+      'vehicle_brand', 'vehicle_type', 'vehicle_reg', 'boat_brand',
+      'skipper_license_number', 'skipper_license_expiry', 'boat_registration_number',
+      'notifications_enabled', 'blood_type', 'allergies', 'emergency_contact',
+      /* Portfolio / Talent branding (mobile Profile → Portfolio) */
+      'expert_category', 'greeting_video_url', 'verified_badge', 'signature_service', 'the_journey',
+      'instagram_url', 'line_id'
+    ];
     Object.entries(updates).forEach(([key, value]) => {
       const forbiddenFields = ['id', 'created_at', 'firebase_uid'];
       if (forbiddenFields.includes(key)) return;
@@ -8456,21 +10531,41 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
     const updatedUser = result.rows[0];
     if (phoneChange) {
       const ip = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
-      setImmediate(() => recordIdentityChange(pool, updatedUser.id, 'phone_change', ip || null).catch(() => {}));
+      setImmediate(() => recordIdentityChange(pool, updatedUser.id, 'phone_change', ip || null).catch(() => { }));
     }
 
     // ลบ cache
     try {
-      if (redisClient) await redisClient.del(`profile:${userId}`);
+      if (redisClient) {
+        await redisClient.del(`profile:${userId}`);
+        await redisClient.del(`profile:${updatedUser.id}`);
+        if (updatedUser.firebase_uid) await redisClient.del(`profile:${updatedUser.firebase_uid}`);
+      }
     } catch (redisError) {
       console.warn('Failed to clear cache:', redisError?.message);
     }
+
+    const pu = updatedUser.portfolio_urls;
+    let portfolioUrlsParsed = [];
+    try {
+      portfolioUrlsParsed = Array.isArray(pu)
+        ? pu
+        : (pu ? (typeof pu === 'string' ? JSON.parse(pu) : pu) : []);
+    } catch (_) {
+      portfolioUrlsParsed = [];
+    }
+    const mapVerifiedBadgeApi = (v) => {
+      if (v == null || v === '') return null;
+      if (typeof v === 'boolean') return v ? 'Verified' : null;
+      return String(v);
+    };
 
     res.json({
       success: true,
       message: 'Profile updated successfully',
       user: {
         id: updatedUser.id,
+        firebase_uid: updatedUser.firebase_uid || null,
         email: updatedUser.email,
         phone: updatedUser.phone,
         name: updatedUser.full_name,
@@ -8482,7 +10577,15 @@ app.patch('/api/users/profile/:id', profileLimiter, async (req, res) => {
         skills: [], // ✅ Default (ตาราง users ไม่มี column skills)
         trainings: updatedUser.trainings || [],
         location: updatedUser.location,
-        updated_at: updatedUser.updated_at
+        updated_at: updatedUser.updated_at,
+        expert_category: updatedUser.expert_category || null,
+        portfolio_urls: portfolioUrlsParsed,
+        greeting_video_url: updatedUser.greeting_video_url || null,
+        verified_badge: mapVerifiedBadgeApi(updatedUser.verified_badge),
+        signature_service: updatedUser.signature_service || null,
+        the_journey: updatedUser.the_journey || null,
+        instagram_url: updatedUser.instagram_url || null,
+        line_id: updatedUser.line_id || null,
       }
     });
 
@@ -8558,6 +10661,12 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
     }
 
     const phoneNorm = normalizePhoneForStorage(phone);
+    // #region agent log
+    agentDebugLog('H3', 'server.js:login', 'login_attempt', {
+      phoneLast4: String(phoneNorm || '').slice(-4),
+      platform: String(req.headers['x-client-platform'] || '').slice(0, 20),
+    });
+    // #endregion
     console.log(`🔐 Login attempt: ${phone} → normalized: ${phoneNorm}`);
 
     // 1. หา user จาก phone (รองรับ 0812345678, 66812345678, +66812345678)
@@ -8570,21 +10679,37 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
-      if (process.env.DEBUG_LOGIN === '1') console.log('🔐 Login: user not found for phone', phone);
+      // #region agent log
+      agentDebugLog('H2', 'server.js:login', 'login_user_not_found', {
+        phoneLast4: String(phoneNorm || '').slice(-4),
+      });
+      // #endregion
+      console.log('🔐 Login FAIL: user not found for phone', phone, '→ norm:', phoneNorm, '| alt:', phoneAlt, '| e164:', phoneE164);
       auditService.log('unknown', 'login_failed', { entityName: 'auth', entityId: phoneNorm || phone }, { status: 'Failed', ipAddress: getClientIp(req) });
-      return res.status(401).json({ error: 'Invalid phone or password' });
+      return res.status(401).json({ error: 'Invalid phone or password', code: 'USER_NOT_FOUND' });
     }
 
     const user = userResult.rows[0];
+    console.log('🔐 Login: found user id=', user.id, 'phone=', user.phone, '| has password_hash:', !!user.password_hash, '| has password:', !!user.password);
     if (!user.password_hash && !user.password) {
-      if (process.env.DEBUG_LOGIN === '1') console.log('🔐 Login: user has no password set', user.phone);
-      return res.status(401).json({ error: 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน กรุณาสมัครสมาชิกก่อน' });
+      console.log('🔐 Login FAIL: user has no password set', user.phone);
+      auditService.log(String(user.id), 'login_failed', { entityName: 'auth', entityId: user.phone }, { status: 'Failed', detail: 'no_password_set', ipAddress: getClientIp(req) });
+      return res.status(401).json({
+        error: 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน กรุณาสมัครสมาชิกก่อน',
+        code: 'PASSWORD_NOT_SET',
+      });
     }
     const ok = await checkPassword(password, user);
     if (!ok) {
-      if (process.env.DEBUG_LOGIN === '1') console.log('🔐 Login: password mismatch for', user.phone, '(has password_hash:', !!user.password_hash, ')');
+      // #region agent log
+      agentDebugLog('H1', 'server.js:login', 'login_password_mismatch', {
+        userId: String(user.id).slice(0, 8),
+        phoneLast4: String(user.phone || '').slice(-4),
+      });
+      // #endregion
+      console.log('🔐 Login FAIL: password mismatch for', user.phone, '(has password_hash:', !!user.password_hash, ', hash prefix:', (user.password_hash || '').slice(0, 7), ')');
       auditService.log(String(user.id), 'login_failed', { entityName: 'auth', entityId: user.phone }, { status: 'Failed', ipAddress: getClientIp(req) });
-      return res.status(401).json({ error: 'Invalid phone or password' });
+      return res.status(401).json({ error: 'Invalid phone or password', code: 'INVALID_PASSWORD' });
     }
 
     // 1b. ป้องกันมิจฉาชีพ: บัญชีถูกระงับหรือแบน — ห้ามเข้าสู่ระบบ
@@ -8626,7 +10751,7 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
     const userAgent = (req.headers['user-agent'] || '').toString().slice(0, 500);
     auditService.log(String(user.id), 'login_success', { entityName: 'auth', entityId: user.phone }, { status: 'Success', ipAddress: clientIp, userAgent });
     setImmediate(() => {
-      checkTeleportation(pool, user.id, clientIp).catch(() => {});
+      checkTeleportation(pool, user.id, clientIp).catch(() => { });
       pool.query(
         `INSERT INTO user_login_sessions (user_id, ip_address, user_agent) VALUES ($1, $2, $3)`,
         [user.id, clientIp || null, userAgent || null]
@@ -8635,6 +10760,12 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
 
     const name = user.name || user.full_name || user.phone;
     const walletFrozen = !!(user.wallet_frozen || user.account_status === 'suspended' || user.account_status === 'banned');
+    // #region agent log
+    agentDebugLog('H1', 'server.js:login', 'login_success', {
+      userId: String(user.id).slice(0, 8),
+      phoneLast4: String(user.phone || '').slice(-4),
+    });
+    // #endregion
     res.json({
       success: true,
       token: token,
@@ -8671,15 +10802,19 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     if (!phone || !String(phone).trim()) {
       return res.status(400).json({ error: 'Phone number required' });
     }
-    const normalized = String(phone).trim().replace(/\s/g, '').replace(/-/g, '');
-    const alt = normalized.startsWith('0') ? '66' + normalized.slice(1) : '0' + normalized.replace(/^66/, '');
+    const phoneNorm = normalizePhoneForStorage(String(phone).trim());
+    const phoneAlt = phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
+    const phoneE164 = phoneNorm.startsWith('0') ? '+66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '+' + phoneNorm : null;
+    console.log(`🔑 Forgot password: ${phone} → normalized: ${phoneNorm}, alt: ${phoneAlt}, e164: ${phoneE164}`);
     const userResult = await pool.query(
-      'SELECT id, phone FROM users WHERE phone = $1 OR phone = $2',
-      [normalized, alt]
+      'SELECT id, phone FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) OR (phone = $3 AND $3 IS NOT NULL)',
+      [phoneNorm, phoneAlt, phoneE164]
     );
     if (userResult.rows.length === 0) {
+      console.log(`🔑 Forgot password: no user found for ${phoneNorm}`);
       return res.status(404).json({ error: 'ไม่พบบัญชีที่ผูกกับเบอร์นี้' });
     }
+    console.log(`🔑 Forgot password: found user ${userResult.rows[0].id} for ${phoneNorm}`);
     res.json({
       success: true,
       message: 'พบบัญชี กรุณาขอ OTP และยืนยันเพื่อตั้งรหัสผ่านใหม่'
@@ -8699,6 +10834,62 @@ function normalizePhoneForMatch(p) {
   return s.startsWith('0') ? s : '0' + s;
 }
 
+/**
+ * ตรวจ Firebase ID token หลัง Phone Auth — ลอง Admin ก่อน จากนั้น JWKS สาธารณะของ Google (ไม่บังคับมี private key)
+ */
+async function verifyFirebasePhoneIdTokenForReset(idTokenRaw) {
+  const tid = String(idTokenRaw || '').trim();
+  if (!tid) {
+    const e = new Error('missing_firebase_token');
+    e.code = 'MISSING_TOKEN';
+    throw e;
+  }
+
+  /** ลอง Firebase Admin */
+  try {
+    const admin = await import('firebase-admin');
+    if (!admin.apps || admin.apps.length === 0) {
+      if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        admin.initializeApp({ credential: admin.credential.applicationDefault() });
+      } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        admin.initializeApp({ credential: admin.credential.cert(sa) });
+      } else {
+        const projectIdCfg = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+        const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+        if (projectIdCfg && clientEmail && privateKey) {
+          admin.initializeApp({
+            credential: admin.credential.cert({
+              projectId: projectIdCfg,
+              clientEmail,
+              privateKey,
+            }),
+          });
+        }
+      }
+    }
+    if (admin.apps?.length) {
+      return await admin.auth().verifyIdToken(tid);
+    }
+  } catch (admErr) {
+    console.warn('[reset-password] Firebase Admin verify skipped/failed:', admErr?.message || admErr);
+  }
+
+  /** Fallback: ใช้ public x509 certs (ต้องรู้ Firebase project ID เดียวกับในแอป) */
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    process.env.REACT_APP_FIREBASE_PROJECT_ID ||
+    '';
+  if (!projectId) {
+    const e = new Error('missing_firebase_project_id');
+    e.code = 'NO_FIREBASE_PROJECT';
+    throw e;
+  }
+  return verifyFirebaseIdTokenWithPublicKeys(tid, projectId);
+}
+
 // ✅ Reset Password — หลังยืนยัน OTP (Firebase) แล้ว ส่ง firebase_id_token + newPassword
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
@@ -8710,39 +10901,34 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'ต้องยืนยัน OTP ก่อน กรุณาส่ง firebase_id_token และ phone' });
     }
 
-    let firebaseAuth;
+    let decoded;
     try {
-      const admin = await import('firebase-admin');
-      if (!admin.apps || admin.apps.length === 0) {
-        if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-          admin.initializeApp({ credential: admin.credential.applicationDefault() });
-        } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-          admin.initializeApp({ credential: admin.credential.cert(sa) });
-        } else {
-          const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-          const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-          const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-          if (projectId && clientEmail && privateKey) {
-            admin.initializeApp({
-              credential: admin.credential.cert({
-                projectId,
-                clientEmail,
-                privateKey,
-              }),
-            });
-          } else {
-            return res.status(503).json({ error: 'Firebase Admin: ใส่ FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY (จาก Service Account) และใช้ VITE_FIREBASE_PROJECT_ID ได้เลย' });
-          }
-        }
+      decoded = await verifyFirebasePhoneIdTokenForReset(firebase_id_token);
+    } catch (tokErr) {
+      const tc = tokErr?.code;
+      const tmsg = String(tokErr?.message || '');
+      if (tc === 'NO_FIREBASE_PROJECT') {
+        return res.status(503).json({
+          error:
+            'เซิร์ฟเวอร์ต้องตั้ง FIREBASE_PROJECT_ID หรือ VITE_FIREBASE_PROJECT_ID ให้ตรง Firebase ในแอป (หรือตั้ง FIREBASE_* ของ Service Account) เพื่อตรวจ OTP',
+        });
       }
-      firebaseAuth = admin.auth();
-    } catch (e) {
-      console.error('Firebase Admin init:', e?.message);
-      return res.status(503).json({ error: 'ไม่สามารถตรวจสอบ OTP ได้ กรุณาติดต่อผู้ดูแลระบบ' });
+      if (tc === 'MISSING_TOKEN') {
+        return res.status(400).json({ error: 'ต้องยืนยัน OTP ก่อน กรุณาส่ง firebase_id_token และ phone' });
+      }
+      console.error('[reset-password] token verify:', tmsg);
+      const looksInvalid =
+        /invalid|expired|jwt|JsonWebTokenError|jwt expired|kid|unknown_kid|audience|issuer|invalid_token/i.test(tmsg);
+      if (looksInvalid) {
+        return res.status(401).json({
+          error: 'รหัส OTP หมดอายุหรือไม่ถูกต้อง กรุณาขอ OTP ใหม่',
+        });
+      }
+      return res.status(503).json({
+        error:
+          'ไม่สามารถตรวจสอบ OTP ในขณะนี้ กรุณาลองใหม่ภายหลังหรือติดต่อผู้ดูแลระบบ',
+      });
     }
-
-    const decoded = await firebaseAuth.verifyIdToken(firebase_id_token);
     const tokenPhone = decoded.phone_number || decoded.firebase?.identities?.phone?.[0] || '';
     const reqPhone = normalizePhoneForMatch(phone);
     const tokPhone = normalizePhoneForMatch(tokenPhone);
@@ -8765,7 +10951,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
       [hash, newPassword, userId]
     );
     const ip = getClientIp(req);
-    setImmediate(() => recordIdentityChange(pool, userId, 'password_reset', ip).catch(() => {}));
+    setImmediate(() => recordIdentityChange(pool, userId, 'password_reset', ip).catch(() => { }));
     res.json({ success: true, message: 'ตั้งรหัสผ่านใหม่สำเร็จ สามารถเข้าสู่ระบบได้เลย' });
   } catch (error) {
     if (error.message && /invalid|expired|token/i.test(error.message)) {
@@ -8803,7 +10989,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
       [hash, newPassword, userUuid]
     );
     const ip = getClientIp(req);
-    setImmediate(() => recordIdentityChange(pool, userUuid, 'password_change', ip).catch(() => {}));
+    setImmediate(() => recordIdentityChange(pool, userUuid, 'password_change', ip).catch(() => { }));
     res.json({ success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จ' });
   } catch (err) {
     console.error('POST /api/auth/change-password error:', err);
@@ -8822,10 +11008,159 @@ const ADMIN_PANEL_JWT_ROLES = new Set([
   'ACCOUNTANT',
   'SUPPORT',
   'DEVELOPER',
+  'ADS_MANAGER',
 ]);
 app.get('/api/auth/admin-login', (req, res) => {
   res.status(405).json({ error: 'Method Not Allowed', message: 'Use POST with { email, password } in JSON body' });
 });
+
+/** ADMIN_TOTP_REQUIRED=1 → ห้ามล็อกอินจนกว่าจะลงทะเบียน TOTP และเปิด admin_totp_enabled (ต้องรัน migration 152) */
+const ADMIN_TOTP_REQUIRED = () => process.env.ADMIN_TOTP_REQUIRED === '1';
+
+async function selectUserRowForAdminLogin(emailNorm) {
+  const full = `SELECT id, email, full_name, password, password_hash, firebase_uid,
+         COALESCE(NULLIF(trim(role::text), ''), 'user') AS users_table_role,
+         admin_totp_secret, admin_totp_enabled
+  FROM users WHERE email = $1`;
+  const noRole = `SELECT id, email, full_name, password, password_hash, firebase_uid,
+         admin_totp_secret, admin_totp_enabled FROM users WHERE email = $1`;
+  const minimal = `SELECT id, email, full_name, password, password_hash, firebase_uid FROM users WHERE email = $1`;
+  try {
+    return await pool.query(full, [emailNorm]);
+  } catch (e) {
+    if (e?.code === '42703') {
+      try {
+        return await pool.query(noRole, [emailNorm]);
+      } catch (e2) {
+        if (e2?.code === '42703') {
+          return await pool.query(minimal, [emailNorm]);
+        }
+        throw e2;
+      }
+    }
+    throw e;
+  }
+}
+
+async function resolveAdminPanelRole(user) {
+  let role = 'USER';
+  try {
+    const idKeys = [String(user.id)];
+    if (user.firebase_uid) idKeys.push(String(user.firebase_uid));
+    const roleResult = await pool.query(
+      `SELECT role FROM user_roles
+       WHERE user_id = ANY($1::text[])
+       ORDER BY CASE role
+         WHEN 'SUPER_ADMIN' THEN 0
+         WHEN 'ADMIN' THEN 1
+         WHEN 'DEVELOPER' THEN 2
+         WHEN 'STAFF_KYC' THEN 3
+         WHEN 'ACCOUNTANT' THEN 4
+         WHEN 'SUPPORT' THEN 5
+         WHEN 'AUDITOR' THEN 6
+         ELSE 9 END, role
+       LIMIT 1`,
+      [idKeys]
+    );
+    if (roleResult.rows.length > 0) {
+      const r = roleResult.rows[0].role;
+      if (ADMIN_PANEL_JWT_ROLES.has(r)) role = r;
+    }
+  } catch (e) {
+    console.warn('user_roles table missing or error:', e.message);
+  }
+  if (!ADMIN_PANEL_JWT_ROLES.has(role) && user.users_table_role != null) {
+    const lt = String(user.users_table_role).trim().toLowerCase().replace(/-/g, '_');
+    if (lt === 'super_admin') role = 'SUPER_ADMIN';
+    else if (lt === 'admin') role = 'ADMIN';
+    else if (lt === 'auditor') role = 'AUDITOR';
+  }
+  return role;
+}
+
+/** มีคอลัมน์ TOTP และเปิดใช้จริง */
+function userHasVerifiedAdminTotp(user) {
+  return !!(user.admin_totp_enabled === true && user.admin_totp_secret && String(user.admin_totp_secret).trim());
+}
+
+/**
+ * เสร็จหลังรหัสผ่านและ role ผ่าน — issue JWT หรือขั้น TOTP
+ * totpGuess: จาก body (totp_code / totpCode) ครั้งแรก; จากขั้นสองว่าง
+ */
+function finishAdminLoginAfterRoleOk(res, user, role, JWT_SECRET, { ip, totpGuess }) {
+  const totpCapable =
+    Object.prototype.hasOwnProperty.call(user, 'admin_totp_enabled') ||
+    Object.prototype.hasOwnProperty.call(user, 'admin_totp_secret');
+  if (ADMIN_TOTP_REQUIRED() && !totpCapable) {
+    console.warn('[admin-login] ADMIN_TOTP_REQUIRED set but DB has no admin_totp columns — allow login until migration 152 applies');
+  }
+  if (ADMIN_TOTP_REQUIRED() && totpCapable && !userHasVerifiedAdminTotp(user)) {
+    auditService.log(String(user.id), 'admin_login_denied', { entityName: 'auth', entityId: user.email }, { status: 'Failed', detail: 'totp_enrollment_required', ipAddress: ip });
+    return res.status(403).json({
+      error: 'ต้องเปิดใช้ Google Authenticator สำหรับบัญชีแอดมินก่อน (ลงทะเบียนในแผงแอดมิน)',
+      enrollment_required: true,
+    });
+  }
+
+  if (userHasVerifiedAdminTotp(user)) {
+    if (totpGuess != null && String(totpGuess).trim() !== '') {
+      if (!verifyTotpToken(user.admin_totp_secret, totpGuess)) {
+        auditService.log(String(user.id), 'admin_login_failed', { entityName: 'auth', entityId: user.email }, { status: 'Failed', detail: 'invalid_totp', ipAddress: ip });
+        return res.status(401).json({ error: 'รหัส Authenticator ไม่ถูกต้อง' });
+      }
+      const token = signAdminAccessToken(
+        { id: user.id, role, email: user.email, permissions: [] },
+        JWT_SECRET,
+        true,
+      );
+      return res.json({
+        access_token: token,
+        token_type: 'Bearer',
+        expires_in: 86400,
+        requires_totp: false,
+        user: {
+          id: String(user.id),
+          email: user.email,
+          name: user.full_name || user.email,
+          role,
+        },
+      });
+    }
+    const mfaToken = signAdminMfaPendingJwt(
+      { userId: String(user.id), email: user.email, stage: 'totp' },
+      JWT_SECRET,
+    );
+    return res.status(200).json({
+      requires_totp: true,
+      mfa_token: mfaToken,
+      user: {
+        id: String(user.id),
+        email: user.email,
+        name: user.full_name || user.email,
+        role,
+      },
+    });
+  }
+
+  const token = signAdminAccessToken(
+    { id: user.id, role, email: user.email, permissions: [] },
+    JWT_SECRET,
+    false,
+  );
+  res.json({
+    access_token: token,
+    token_type: 'Bearer',
+    expires_in: 86400,
+    requires_totp: false,
+    user: {
+      id: String(user.id),
+      email: user.email,
+      name: user.full_name || user.email,
+      role,
+    },
+  });
+}
+
 app.post('/api/auth/admin-login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -8837,24 +11172,8 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required in production' });
     }
 
-    let userResult;
-    try {
-      userResult = await pool.query(
-        `SELECT id, email, full_name, password, password_hash, firebase_uid,
-                COALESCE(NULLIF(trim(role::text), ''), 'user') AS users_table_role
-         FROM users WHERE email = $1`,
-        [email.trim().toLowerCase()]
-      );
-    } catch (e) {
-      if (e?.code === '42703') {
-        userResult = await pool.query(
-          `SELECT id, email, full_name, password, password_hash, firebase_uid FROM users WHERE email = $1`,
-          [email.trim().toLowerCase()]
-        );
-      } else {
-        throw e;
-      }
-    }
+    const emailNorm = email.trim().toLowerCase();
+    const userResult = await selectUserRowForAdminLogin(emailNorm);
     const ip = getClientIp(req);
     if (userResult.rows.length === 0) {
       auditService.log('unknown', 'admin_login_failed', { entityName: 'auth', entityId: email.trim() || 'empty' }, { status: 'Failed', ipAddress: ip });
@@ -8867,70 +11186,100 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    let role = 'USER';
-    let debugUrRowCount = 0;
-    let debugUrRawRole = null;
-    let debugUrMatchKeys = [];
-    try {
-      const idKeys = [String(user.id)];
-      if (user.firebase_uid) idKeys.push(String(user.firebase_uid));
-      debugUrMatchKeys = idKeys;
-      const roleResult = await pool.query(
-        `SELECT role FROM user_roles
-         WHERE user_id = ANY($1::text[])
-         ORDER BY CASE role
-           WHEN 'SUPER_ADMIN' THEN 0
-           WHEN 'ADMIN' THEN 1
-           WHEN 'DEVELOPER' THEN 2
-           WHEN 'STAFF_KYC' THEN 3
-           WHEN 'ACCOUNTANT' THEN 4
-           WHEN 'SUPPORT' THEN 5
-           WHEN 'AUDITOR' THEN 6
-           ELSE 9 END, role
-         LIMIT 1`,
-        [idKeys]
-      );
-      debugUrRowCount = roleResult.rows.length;
-      if (roleResult.rows.length > 0) {
-        const r = roleResult.rows[0].role;
-        debugUrRawRole = r;
-        if (ADMIN_PANEL_JWT_ROLES.has(r)) role = r;
-      }
-    } catch (e) {
-      console.warn('user_roles table missing or error:', e.message);
-    }
-    if (!ADMIN_PANEL_JWT_ROLES.has(role) && user.users_table_role != null) {
-      const lt = String(user.users_table_role).trim().toLowerCase().replace(/-/g, '_');
-      if (lt === 'super_admin') role = 'SUPER_ADMIN';
-      else if (lt === 'admin') role = 'ADMIN';
-      else if (lt === 'auditor') role = 'AUDITOR';
-    }
+    const role = await resolveAdminPanelRole(user);
     if (!ADMIN_PANEL_JWT_ROLES.has(role)) {
       auditService.log(String(user.id), 'admin_login_denied', { entityName: 'auth', entityId: user.email }, { status: 'Failed', ipAddress: ip });
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const token = jwt.sign(
-      { sub: String(user.id), role, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-    res.json({
-      access_token: token,
-      token_type: 'Bearer',
-      expires_in: 86400,
-      user: {
-        id: String(user.id),
-        email: user.email,
-        name: user.full_name || user.email,
-        role
-      }
-    });
+    const totpGuess = req.body?.totp_code ?? req.body?.totpCode;
+    return finishAdminLoginAfterRoleOk(res, user, role, JWT_SECRET, { ip, totpGuess });
   } catch (error) {
     console.error('❌ Admin login error:', error);
     res.status(500).json({
       error: 'Login failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/** ขั้นที่สอง: หลังได้ mfa_token จาก requires_totp — ส่ง { mfa_token, totp_code } */
+app.post('/api/auth/admin-login/totp', async (req, res) => {
+  try {
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) {
+      return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required in production' });
+    }
+    const mfaToken = req.body?.mfa_token || req.body?.mfaToken;
+    const totpGuess = req.body?.totp_code ?? req.body?.totpCode;
+    if (!mfaToken || totpGuess == null || String(totpGuess).trim() === '') {
+      return res.status(400).json({ error: 'ต้องส่ง mfa_token และ totp_code' });
+    }
+    const pending = verifyAdminMfaPendingJwt(mfaToken, JWT_SECRET);
+    if (!pending || pending.stage !== 'totp') {
+      return res.status(401).json({ error: 'mfa_token ไม่ถูกต้องหรือหมดอายุ' });
+    }
+    const ip = getClientIp(req);
+    let userResult;
+    try {
+      userResult = await pool.query(
+        `SELECT id, email, full_name, password, password_hash, firebase_uid,
+                COALESCE(NULLIF(trim(role::text), ''), 'user') AS users_table_role,
+                admin_totp_secret, admin_totp_enabled
+         FROM users WHERE id::text = $1`,
+        [String(pending.userId)],
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        userResult = await pool.query(
+          `SELECT id, email, full_name, password, password_hash, firebase_uid,
+                  admin_totp_secret, admin_totp_enabled FROM users WHERE id::text = $1`,
+          [String(pending.userId)],
+        );
+      } else {
+        throw e;
+      }
+    }
+    if (!userResult.rows?.length) {
+      return res.status(401).json({ error: 'ไม่พบผู้ใช้' });
+    }
+    const user = userResult.rows[0];
+    if (String(user.id) !== String(pending.userId)) {
+      return res.status(401).json({ error: 'mfa_token ไม่ตรงกับบัญชี' });
+    }
+    if (!userHasVerifiedAdminTotp(user)) {
+      return res.status(403).json({ error: 'บัญชีนี้ยังไม่ได้เปิดใช้ Authenticator' });
+    }
+    if (!verifyTotpToken(user.admin_totp_secret, totpGuess)) {
+      auditService.log(String(user.id), 'admin_login_failed', { entityName: 'auth', entityId: user.email }, { status: 'Failed', detail: 'invalid_totp_step2', ipAddress: ip });
+      return res.status(401).json({ error: 'รหัส Authenticator ไม่ถูกต้อง' });
+    }
+    const role = await resolveAdminPanelRole(user);
+    if (!ADMIN_PANEL_JWT_ROLES.has(role)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const token = signAdminAccessToken(
+      { id: user.id, role, email: user.email, permissions: [] },
+      JWT_SECRET,
+      true,
+    );
+    res.json({
+      access_token: token,
+      token_type: 'Bearer',
+      expires_in: 86400,
+      requires_totp: false,
+      user: {
+        id: String(user.id),
+        email: user.email,
+        name: user.full_name || user.email,
+        role,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Admin login TOTP step error:', error);
+    res.status(500).json({
+      error: 'Login failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });
@@ -8957,6 +11306,926 @@ function adminAuthMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+registerAntiBypassAdminRoutes(app, pool, adminAuthMiddleware);
+registerJobChatMessagesRoute(app, pool, authenticateToken);
+
+function cleanTaxText(value, maxLen = 500) {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return s.slice(0, maxLen);
+}
+
+function cleanTaxId(value) {
+  const s = cleanTaxText(value, 64);
+  if (!s) return null;
+  if (/x{2,}|xxx|000-?000|placeholder|n\/a/i.test(s)) return null;
+  return s;
+}
+
+function normalizeTaxEntityType(value) {
+  const s = String(value || '').trim().toLowerCase();
+  return ['individual', 'company', 'foreign'].includes(s) ? s : 'unknown';
+}
+
+function normalizeTaxVerifiedStatus(value, fallback = 'unverified') {
+  const s = String(value || '').trim().toLowerCase();
+  return ['unverified', 'pending_review', 'verified', 'rejected'].includes(s) ? s : fallback;
+}
+
+function taxProfilePayloadFromBody(body = {}, { admin = false } = {}) {
+  const hasIdentity =
+    cleanTaxText(body.legal_name, 255) ||
+    cleanTaxId(body.tax_id) ||
+    cleanTaxText(body.registered_address, 1000);
+  const payload = {
+    legal_name: cleanTaxText(body.legal_name, 255),
+    tax_id: cleanTaxId(body.tax_id),
+    tax_entity_type: normalizeTaxEntityType(body.tax_entity_type),
+    registered_address: cleanTaxText(body.registered_address, 1000),
+    branch_code: cleanTaxText(body.branch_code, 32),
+    branch_name: cleanTaxText(body.branch_name, 255),
+    country: (cleanTaxText(body.country, 2) || 'TH').toUpperCase(),
+    email: cleanTaxText(body.email, 255),
+    phone_optional: cleanTaxText(body.phone_optional, 64),
+    verified_status: admin
+      ? normalizeTaxVerifiedStatus(body.verified_status, hasIdentity ? 'pending_review' : 'unverified')
+      : (hasIdentity ? 'pending_review' : 'unverified'),
+  };
+  return payload;
+}
+
+function mapTaxProfileRow(row) {
+  if (!row) return null;
+  return {
+    user_id: row.user_id ? String(row.user_id) : null,
+    legal_name: row.legal_name || null,
+    tax_id: row.tax_id || null,
+    tax_entity_type: row.tax_entity_type || 'unknown',
+    registered_address: row.registered_address || null,
+    branch_code: row.branch_code || null,
+    branch_name: row.branch_name || null,
+    country: row.country || 'TH',
+    email: row.email || null,
+    phone_optional: row.phone_optional || null,
+    verified_status: row.verified_status || 'unverified',
+    reviewed_by: row.reviewed_by || null,
+    reviewed_at: row.reviewed_at ? new Date(row.reviewed_at).toISOString() : null,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+    updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
+}
+
+function mapTaxCompanySettings(row) {
+  if (!row) {
+    return {
+      id: 'aqond',
+      legal_name: 'AQOND Technology Co., Ltd.',
+      registered_address: null,
+      tax_id: null,
+      branch_code: '00000',
+      branch_name: 'สำนักงานใหญ่',
+      vat_registered: true,
+      vat_rate_percent: 7,
+      wht_rate_percent: 3,
+      support_email: null,
+      support_line: null,
+      help_center_url: null,
+      phone_optional: null,
+      tax_invoice_ready: false,
+    };
+  }
+  const taxId = cleanTaxId(row.tax_id);
+  const legalName = cleanTaxText(row.legal_name, 255);
+  const address = cleanTaxText(row.registered_address, 1000);
+  return {
+    id: row.id || 'aqond',
+    legal_name: legalName || 'AQOND Technology Co., Ltd.',
+    registered_address: address,
+    tax_id: taxId,
+    branch_code: row.branch_code || '00000',
+    branch_name: row.branch_name || 'สำนักงานใหญ่',
+    vat_registered: row.vat_registered !== false,
+    vat_rate_percent: Number(row.vat_rate_percent ?? 7),
+    wht_rate_percent: Number(row.wht_rate_percent ?? 3),
+    support_email: row.support_email || null,
+    support_line: row.support_line || null,
+    help_center_url: row.help_center_url || null,
+    phone_optional: cleanTaxText(row.phone_optional, 64),
+    updated_by: row.updated_by || null,
+    updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+    tax_invoice_ready: Boolean(taxId && legalName && address && row.vat_registered !== false),
+  };
+}
+
+async function getTaxCompanySettingsSafe() {
+  try {
+    const r = await pool.query(`SELECT * FROM tax_company_settings WHERE id = 'aqond' LIMIT 1`);
+    const mapped = mapTaxCompanySettings(r.rows?.[0]);
+    return mapped;
+  } catch (err) {
+    if (String(err?.code) !== '42P01') console.warn('getTaxCompanySettingsSafe:', err?.message || err);
+    return mapTaxCompanySettings(null);
+  }
+}
+
+async function appendTaxProfileAudit({ actorType, actorId, targetUserId, action, reason, beforeRow, afterRow, sourceIp }) {
+  try {
+    await pool.query(
+      `INSERT INTO tax_profile_audit_log
+       (actor_type, actor_id, target_user_id, action, reason, before_json, after_json, source_ip)
+       VALUES ($1, $2, $3::uuid, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+      [
+        actorType,
+        actorId ? String(actorId) : null,
+        targetUserId || null,
+        action,
+        reason || null,
+        beforeRow ? JSON.stringify(beforeRow) : null,
+        afterRow ? JSON.stringify(afterRow) : null,
+        sourceIp || null,
+      ]
+    );
+  } catch (err) {
+    console.warn('appendTaxProfileAudit skipped:', err?.message || err);
+  }
+}
+
+async function upsertTaxUserProfile({ userId, body, actorType, actorId, admin = false, reason, sourceIp }) {
+  const payload = taxProfilePayloadFromBody(body, { admin });
+  const before = await pool.query(`SELECT * FROM tax_user_profiles WHERE user_id = $1::uuid`, [userId]).then((r) => r.rows?.[0] || null);
+  const reviewedBy = admin ? cleanTaxText(actorId, 255) : (payload.verified_status === 'pending_review' ? null : before?.reviewed_by || null);
+  const reviewedAt = admin && ['verified', 'rejected'].includes(payload.verified_status) ? new Date() : null;
+  const result = await pool.query(
+    `INSERT INTO tax_user_profiles
+       (user_id, legal_name, tax_id, tax_entity_type, registered_address, branch_code, branch_name, country, email, phone_optional, verified_status, reviewed_by, reviewed_at, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+     ON CONFLICT (user_id) DO UPDATE SET
+       legal_name = EXCLUDED.legal_name,
+       tax_id = EXCLUDED.tax_id,
+       tax_entity_type = EXCLUDED.tax_entity_type,
+       registered_address = EXCLUDED.registered_address,
+       branch_code = EXCLUDED.branch_code,
+       branch_name = EXCLUDED.branch_name,
+       country = EXCLUDED.country,
+       email = EXCLUDED.email,
+       phone_optional = EXCLUDED.phone_optional,
+       verified_status = EXCLUDED.verified_status,
+       reviewed_by = COALESCE(EXCLUDED.reviewed_by, tax_user_profiles.reviewed_by),
+       reviewed_at = COALESCE(EXCLUDED.reviewed_at, tax_user_profiles.reviewed_at),
+       updated_at = NOW()
+     RETURNING *`,
+    [
+      userId,
+      payload.legal_name,
+      payload.tax_id,
+      payload.tax_entity_type,
+      payload.registered_address,
+      payload.branch_code,
+      payload.branch_name,
+      payload.country,
+      payload.email,
+      payload.phone_optional,
+      payload.verified_status,
+      reviewedBy,
+      reviewedAt,
+    ]
+  );
+  const after = result.rows?.[0] || null;
+  await appendTaxProfileAudit({
+    actorType,
+    actorId,
+    targetUserId: userId,
+    action: before ? 'TAX_PROFILE_UPDATED' : 'TAX_PROFILE_CREATED',
+    reason,
+    beforeRow: before,
+    afterRow: after,
+    sourceIp,
+  });
+  return mapTaxProfileRow(after);
+}
+
+app.get('/api/tax/profile/me', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    const result = await pool.query(`SELECT * FROM tax_user_profiles WHERE user_id = $1::uuid`, [String(userUuid)]);
+    return res.json({ profile: mapTaxProfileRow(result.rows?.[0] || null) });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING' });
+    console.error('GET /api/tax/profile/me error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดข้อมูลภาษีไม่สำเร็จ' });
+  }
+});
+
+app.post('/api/tax/profile/me', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    const profile = await upsertTaxUserProfile({
+      userId: String(userUuid),
+      body: req.body || {},
+      actorType: 'user',
+      actorId: String(userUuid),
+      admin: false,
+      reason: 'user_tax_profile_submit',
+      sourceIp: req.ip,
+    });
+    return res.json({ profile });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING' });
+    console.error('POST /api/tax/profile/me error:', err);
+    return res.status(500).json({ error: err?.message || 'บันทึกข้อมูลภาษีไม่สำเร็จ' });
+  }
+});
+
+app.get('/api/admin/tax/company-settings', adminAuthMiddleware, async (req, res) => {
+  try {
+    return res.json({ settings: await getTaxCompanySettingsSafe() });
+  } catch (err) {
+    console.error('GET /api/admin/tax/company-settings error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดข้อมูลบริษัทไม่สำเร็จ' });
+  }
+});
+
+app.patch('/api/admin/tax/company-settings', adminAuthMiddleware, async (req, res) => {
+  try {
+    const role = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'].includes(role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    const before = await pool.query(`SELECT * FROM tax_company_settings WHERE id = 'aqond' LIMIT 1`).then((r) => r.rows?.[0] || null);
+    const body = req.body || {};
+    const result = await pool.query(
+      `INSERT INTO tax_company_settings
+        (id, legal_name, registered_address, tax_id, branch_code, branch_name, vat_registered, vat_rate_percent, wht_rate_percent, support_email, support_line, help_center_url, phone_optional, updated_by, updated_at)
+       VALUES ('aqond', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+        legal_name = EXCLUDED.legal_name,
+        registered_address = EXCLUDED.registered_address,
+        tax_id = EXCLUDED.tax_id,
+        branch_code = EXCLUDED.branch_code,
+        branch_name = EXCLUDED.branch_name,
+        vat_registered = EXCLUDED.vat_registered,
+        vat_rate_percent = EXCLUDED.vat_rate_percent,
+        wht_rate_percent = EXCLUDED.wht_rate_percent,
+        support_email = EXCLUDED.support_email,
+        support_line = EXCLUDED.support_line,
+        help_center_url = EXCLUDED.help_center_url,
+        phone_optional = EXCLUDED.phone_optional,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+       RETURNING *`,
+      [
+        cleanTaxText(body.legal_name, 255) || 'AQOND Technology Co., Ltd.',
+        cleanTaxText(body.registered_address, 1000),
+        cleanTaxId(body.tax_id),
+        cleanTaxText(body.branch_code, 32) || '00000',
+        cleanTaxText(body.branch_name, 255) || 'สำนักงานใหญ่',
+        body.vat_registered !== false,
+        Number(body.vat_rate_percent ?? 7) || 7,
+        Number(body.wht_rate_percent ?? 3) || 3,
+        cleanTaxText(body.support_email, 255),
+        cleanTaxText(body.support_line, 255),
+        cleanTaxText(body.help_center_url, 500),
+        cleanTaxText(body.phone_optional, 64),
+        req.adminUser?.email || req.adminUser?.id || 'admin',
+      ]
+    );
+    await appendTaxProfileAudit({
+      actorType: 'admin',
+      actorId: req.adminUser?.email || req.adminUser?.id || 'admin',
+      targetUserId: null,
+      action: 'TAX_COMPANY_SETTINGS_UPDATED',
+      reason: cleanTaxText(body.reason, 500) || 'admin_company_tax_settings_update',
+      beforeRow: before,
+      afterRow: result.rows?.[0] || null,
+      sourceIp: req.ip,
+    });
+    const mapped = mapTaxCompanySettings(result.rows?.[0]);
+    return res.json({ settings: mapped });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING' });
+    console.error('PATCH /api/admin/tax/company-settings error:', err);
+    return res.status(500).json({ error: err?.message || 'บันทึกข้อมูลบริษัทไม่สำเร็จ' });
+  }
+});
+
+app.get('/api/admin/tax/profiles/missing', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const result = await pool.query(
+      `SELECT u.id, u.full_name, u.email, u.role, p.legal_name, p.tax_id, p.registered_address, p.verified_status, p.updated_at
+       FROM users u
+       LEFT JOIN tax_user_profiles p ON p.user_id = u.id
+       WHERE p.user_id IS NULL
+          OR NULLIF(TRIM(COALESCE(p.legal_name, '')), '') IS NULL
+          OR NULLIF(TRIM(COALESCE(p.tax_id, '')), '') IS NULL
+          OR NULLIF(TRIM(COALESCE(p.registered_address, '')), '') IS NULL
+          OR COALESCE(p.verified_status, 'unverified') <> 'verified'
+       ORDER BY COALESCE(p.updated_at, u.created_at) DESC NULLS LAST, u.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return res.json({
+      rows: (result.rows || []).map((r) => ({
+        user_id: String(r.id),
+        full_name: r.full_name || null,
+        email: r.email || null,
+        role: r.role || null,
+        legal_name: r.legal_name || null,
+        tax_id: r.tax_id || null,
+        registered_address: r.registered_address || null,
+        verified_status: r.verified_status || 'missing',
+        updated_at: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+      })),
+    });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING', rows: [] });
+    console.error('GET /api/admin/tax/profiles/missing error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดรายการ Tax Profile ไม่ครบไม่สำเร็จ', rows: [] });
+  }
+});
+
+app.get('/api/admin/tax/profiles/:userId', adminAuthMiddleware, async (req, res) => {
+  try {
+    const userUuid = await resolveUserIdToUuid(String(req.params.userId || ''));
+    if (!userUuid) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const userResult = await pool.query(`SELECT id, full_name, email, role FROM users WHERE id = $1::uuid`, [String(userUuid)]);
+    const profileResult = await pool.query(`SELECT * FROM tax_user_profiles WHERE user_id = $1::uuid`, [String(userUuid)]);
+    return res.json({
+      user: userResult.rows?.[0] || null,
+      profile: mapTaxProfileRow(profileResult.rows?.[0] || null),
+    });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING' });
+    console.error('GET /api/admin/tax/profiles/:userId error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลด Tax Profile ไม่สำเร็จ' });
+  }
+});
+
+app.patch('/api/admin/tax/profiles/:userId', adminAuthMiddleware, async (req, res) => {
+  try {
+    const role = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'].includes(role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    const userUuid = await resolveUserIdToUuid(String(req.params.userId || ''));
+    if (!userUuid) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const profile = await upsertTaxUserProfile({
+      userId: String(userUuid),
+      body: req.body || {},
+      actorType: 'admin',
+      actorId: req.adminUser?.email || req.adminUser?.id || 'admin',
+      admin: true,
+      reason: cleanTaxText(req.body?.reason, 500) || 'admin_tax_profile_update',
+      sourceIp: req.ip,
+    });
+    return res.json({ profile });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration tax identity', code: 'TAX_IDENTITY_SCHEMA_MISSING' });
+    console.error('PATCH /api/admin/tax/profiles/:userId error:', err);
+    return res.status(500).json({ error: err?.message || 'บันทึก Tax Profile ไม่สำเร็จ' });
+  }
+});
+
+function requireTaxDocumentAdmin(req, res) {
+  const role = String(req.adminUser?.role || '').toUpperCase();
+  if (!['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'].includes(role)) {
+    res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    return null;
+  }
+  return req.adminUser?.email || req.adminUser?.id || 'admin';
+}
+
+app.get('/api/admin/tax/documents', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const values = [];
+    const where = [];
+    const pushFilter = (sql, value) => {
+      values.push(value);
+      where.push(sql.replace('?', `$${values.length}`));
+    };
+    if (req.query.status) pushFilter('status = ?', String(req.query.status));
+    if (req.query.document_type) pushFilter('document_type = ?', String(req.query.document_type));
+    if (req.query.source_event_id) pushFilter('source_event_id = ?', String(req.query.source_event_id));
+    if (req.query.party_user_id) pushFilter('party_user_id = ?::uuid', String(req.query.party_user_id));
+    const source = String(req.query.source || '').trim().toLowerCase();
+    if (source === 'wallet_deposit') pushFilter('source_event_type = ?', 'wallet_deposit');
+    if (source === 'wallet_withdrawal') pushFilter('source_event_type = ?', 'user_payout_withdrawal');
+    if (source === 'provider_earning') where.push(`source_event_type LIKE '%provider_earning'`);
+    if (source === 'withholding_certificate' || source === 'wht') pushFilter('document_type = ?', 'withholding_certificate');
+    if (source === 'platform_fee') {
+      where.push(
+        `EXISTS (
+          SELECT 1 FROM fiscal_document_lines fdl
+          WHERE fdl.document_id = fiscal_documents.id
+            AND fdl.metadata->>'taxable_revenue_type' = 'platform_fee'
+        )`
+      );
+    }
+    values.push(limit);
+    const result = await pool.query(
+      `SELECT *
+       FROM fiscal_documents
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY created_at DESC
+       LIMIT $${values.length}`,
+      values,
+    );
+    return res.json({ documents: (result.rows || []).map((row) => mapFiscalDocument(row)) });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING', documents: [] });
+    console.error('GET /api/admin/tax/documents error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดเอกสารภาษีไม่สำเร็จ', documents: [] });
+  }
+});
+
+app.get('/api/admin/tax/wht-postings', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const status = String(req.query.status || '').trim();
+    const providerUserId = String(req.query.provider_user_id || '').trim();
+    const values = [];
+    const where = [];
+    if (status) {
+      values.push(status);
+      where.push(`tw.eligibility_status = $${values.length}`);
+    }
+    if (providerUserId) {
+      values.push(providerUserId);
+      where.push(`tw.provider_user_id::text = $${values.length}`);
+    }
+    values.push(limit);
+    const result = await pool.query(
+      `SELECT
+         tw.*,
+         u.full_name AS provider_name,
+         u.email AS provider_email,
+         ed.document_no AS earning_document_no,
+         ed.status AS earning_document_status,
+         wd.document_no AS wht_certificate_document_no,
+         wd.status AS wht_certificate_document_status
+       FROM tax_withholding_postings tw
+       LEFT JOIN users u ON u.id = tw.provider_user_id
+       LEFT JOIN fiscal_documents ed ON ed.id = tw.earning_document_id
+       LEFT JOIN fiscal_documents wd ON wd.id = tw.wht_certificate_document_id
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY tw.created_at DESC
+       LIMIT $${values.length}`,
+      values,
+    );
+    return res.json({ postings: result.rows || [] });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration provider WHT', code: 'PROVIDER_WHT_SCHEMA_MISSING', postings: [] });
+    console.error('GET /api/admin/tax/wht-postings error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลด WHT postings ไม่สำเร็จ', postings: [] });
+  }
+});
+
+function sendTaxExport(req, res, report, filenameBase) {
+  const wantsCsv = String(req.query.format || '').toLowerCase() === 'csv' ||
+    String(req.headers.accept || '').toLowerCase().includes('text/csv');
+  if (wantsCsv) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filenameBase}.csv"`);
+    res.setHeader('X-Report-Checksum-SHA256', report.meta.checksum_sha256);
+    res.setHeader('X-CSV-Checksum-SHA256', report.meta.csv_checksum_sha256);
+    return res.send(CSV_BOM + report.csv);
+  }
+  return res.json(report);
+}
+
+function taxExportActor(req) {
+  return req.adminUser?.email || req.adminUser?.id || 'admin';
+}
+
+app.get('/api/admin/tax/export/vat-sales', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const report = await buildVatSalesReport(pool, period, taxExportActor(req));
+    return sendTaxExport(req, res, report, `VAT_Sales_${period.year}_${String(period.month).padStart(2, '0')}`);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/vat-sales error:', err);
+    return res.status(500).json({ error: err?.message || 'export vat sales failed' });
+  }
+});
+
+app.get('/api/admin/tax/export/wht', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const report = await buildWhtReport(pool, period, taxExportActor(req));
+    return sendTaxExport(req, res, report, `WHT_${period.year}_${String(period.month).padStart(2, '0')}`);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/wht error:', err);
+    return res.status(500).json({ error: err?.message || 'export wht failed' });
+  }
+});
+
+app.get('/api/admin/tax/export/platform-revenue', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const report = await buildPlatformRevenueReport(pool, period, taxExportActor(req));
+    return sendTaxExport(req, res, report, `Platform_Revenue_${period.year}_${String(period.month).padStart(2, '0')}`);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/platform-revenue error:', err);
+    return res.status(500).json({ error: err?.message || 'export platform revenue failed' });
+  }
+});
+
+app.get('/api/admin/tax/export/provider-income', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const report = await buildProviderIncomeReport(pool, period, taxExportActor(req));
+    return sendTaxExport(req, res, report, `Provider_Income_${period.year}_${String(period.month).padStart(2, '0')}`);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/provider-income error:', err);
+    return res.status(500).json({ error: err?.message || 'export provider income failed' });
+  }
+});
+
+app.get('/api/admin/tax/export/wallet-flows', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const report = await buildWalletFlowReport(pool, period, taxExportActor(req));
+    return sendTaxExport(req, res, report, `Wallet_Flows_${period.year}_${String(period.month).padStart(2, '0')}`);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/wallet-flows error:', err);
+    return res.status(500).json({ error: err?.message || 'export wallet flows failed' });
+  }
+});
+
+app.get('/api/admin/tax/export/monthly-pack', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const period = parseMonthYear(req.query);
+    const pack = await buildMonthlyTaxPack(pool, period, taxExportActor(req));
+    return res.json(pack);
+  } catch (err) {
+    console.error('GET /api/admin/tax/export/monthly-pack error:', err);
+    return res.status(500).json({ error: err?.message || 'export monthly pack failed' });
+  }
+});
+
+app.get('/api/admin/tax/etax/readiness', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireTaxDocumentAdmin(req, res)) return;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const status = String(req.query.status || '').trim();
+    const values = [];
+    const where = [`document_type IN ('tax_invoice', 'receipt', 'withholding_certificate', 'credit_note')`];
+    if (status) {
+      values.push(status);
+      where.push(`etax_status = $${values.length}`);
+    }
+    values.push(limit);
+    const result = await pool.query(
+      `SELECT id, document_no, document_type, status, party_role, party_user_id,
+              subtotal_amount, vat_amount, wht_amount, total_amount,
+              issued_at, created_at, etax_status, etax_provider,
+              etax_provider_document_id, etax_submitted_at, etax_error,
+              etax_response_json
+       FROM fiscal_documents
+       WHERE ${where.join(' AND ')}
+       ORDER BY COALESCE(issued_at, created_at) DESC
+       LIMIT $${values.length}`,
+      values,
+    );
+    const summary = await pool.query(
+      `SELECT etax_status, COUNT(*)::int AS count
+       FROM fiscal_documents
+       WHERE document_type IN ('tax_invoice', 'receipt', 'withholding_certificate', 'credit_note')
+       GROUP BY etax_status
+       ORDER BY etax_status ASC`,
+    ).catch(() => ({ rows: [] }));
+    return res.json({
+      summary: summary.rows || [],
+      documents: (result.rows || []).map((row) => mapFiscalDocument(row)),
+    });
+  } catch (err) {
+    if (String(err?.code) === '42703') return res.status(503).json({ error: 'ยังไม่ได้รัน migration 200 e-Tax fields', code: 'ETAX_SCHEMA_MISSING', documents: [] });
+    console.error('GET /api/admin/tax/etax/readiness error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลด e-Tax readiness ไม่สำเร็จ', documents: [] });
+  }
+});
+
+app.post('/api/admin/tax/etax/documents/:id/dry-run', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    const provider = cleanTaxText(req.body?.provider, 100) || 'provider_neutral_dry_run';
+    const adapter = createDryRunEtaxAdapter({ provider });
+    await client.query('BEGIN');
+    const document = await getDocumentWithLines(client, req.params.id);
+    if (!document) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบเอกสารภาษี' });
+    }
+    const validation = adapter.validate(document);
+    const payload = validation.ok ? adapter.buildPayload(document) : null;
+    await persistEtaxDryRunResult(client, document.id, { provider, validation, payload, actorId });
+    await client.query('COMMIT');
+    return res.json({
+      dry_run: true,
+      provider,
+      document_id: document.id,
+      ok: validation.ok,
+      validation,
+      payload,
+      submit: await adapter.submit(document),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    if (String(err?.code) === '42703') return res.status(503).json({ error: 'ยังไม่ได้รัน migration 200 e-Tax fields', code: 'ETAX_SCHEMA_MISSING' });
+    console.error('POST /api/admin/tax/etax/documents/:id/dry-run error:', err);
+    return res.status(500).json({ error: err?.message || 'e-Tax dry-run ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/admin/tax/etax/documents/:id/payload', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    const provider = cleanTaxText(req.query.provider, 100) || 'provider_neutral_dry_run';
+    const adapter = createDryRunEtaxAdapter({ provider });
+    const document = await getDocumentWithLines(client, req.params.id);
+    if (!document) return res.status(404).json({ error: 'ไม่พบเอกสารภาษี' });
+    const validation = adapter.validate(document);
+    const payload = validation.ok ? adapter.buildPayload(document) : null;
+    return res.json({
+      dry_run: true,
+      provider,
+      document_id: document.id,
+      ok: validation.ok,
+      validation,
+      payload,
+    });
+  } catch (err) {
+    console.error('GET /api/admin/tax/etax/documents/:id/payload error:', err);
+    return res.status(500).json({ error: err?.message || 'สร้าง e-Tax payload ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/tax/documents/generate', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await generateFiscalDocumentDraft(client, {
+      sourceEventId: req.body?.source_event_id,
+      documentType: req.body?.document_type,
+      partyRole: req.body?.party_role,
+      partyUserId: req.body?.party_user_id,
+      lines: Array.isArray(req.body?.lines) ? req.body.lines : null,
+      actorType: 'admin',
+      actorId,
+      reason: cleanTaxText(req.body?.reason, 1000) || 'admin_generate_fiscal_document',
+      sourceIp: req.ip,
+    });
+    await client.query('COMMIT');
+    return res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING' });
+    console.error('POST /api/admin/tax/documents/generate error:', err);
+    return res.status(500).json({ error: err?.message || 'สร้างร่างเอกสารภาษีไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/tax/documents/:id/issue', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const document = await issueFiscalDocument(client, {
+      documentId: req.params.id,
+      actorType: 'admin',
+      actorId,
+      reason: cleanTaxText(req.body?.reason, 1000) || 'admin_issue_fiscal_document',
+      sourceIp: req.ip,
+    });
+    await client.query('COMMIT');
+    return res.json({ document });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING' });
+    if (err?.code === 'TAX_PROFILE_REQUIRED_FOR_ISSUE') {
+      const missingFields = Array.isArray(err.missing_fields) ? err.missing_fields : [];
+      const readiness = err.readiness || { missing_fields: missingFields };
+      await pool.query(
+        `UPDATE fiscal_documents
+         SET etax_status = 'validation_failed',
+             etax_error = $2,
+             etax_response_json = $3::jsonb,
+             updated_by = $4,
+             updated_at = NOW()
+         WHERE id = $1::uuid AND status = 'draft'`,
+        [
+          String(req.params.id),
+          `TAX_PROFILE_REQUIRED_FOR_ISSUE: ${missingFields.join(', ')}`,
+          JSON.stringify({ issue_blocked: true, code: err.code, readiness }),
+          actorId,
+        ],
+      ).catch(() => { });
+      return res.status(400).json({
+        error: 'TAX_PROFILE_REQUIRED_FOR_ISSUE',
+        code: 'TAX_PROFILE_REQUIRED_FOR_ISSUE',
+        message: 'กรุณาเติมข้อมูล Tax Profile ให้ครบก่อนออกเลขเอกสารภาษี',
+        missing_fields: missingFields,
+        readiness,
+      });
+    }
+    console.error('POST /api/admin/tax/documents/:id/issue error:', err);
+    return res.status(500).json({ error: err?.message || 'ออกเลขเอกสารภาษีไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/tax/documents/:id/void', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const document = await voidFiscalDocument(client, {
+      documentId: req.params.id,
+      actorType: 'admin',
+      actorId,
+      reason: cleanTaxText(req.body?.reason, 1000) || 'admin_void_fiscal_document',
+      sourceIp: req.ip,
+    });
+    await client.query('COMMIT');
+    return res.json({ document });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING' });
+    console.error('POST /api/admin/tax/documents/:id/void error:', err);
+    return res.status(500).json({ error: err?.message || 'ยกเลิกเอกสารภาษีไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/tax/documents/:id/credit-note', adminAuthMiddleware, async (req, res) => {
+  const actorId = requireTaxDocumentAdmin(req, res);
+  if (!actorId) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await createCreditNoteForDocument(client, {
+      documentId: req.params.id,
+      actorType: 'admin',
+      actorId,
+      reason: cleanTaxText(req.body?.reason, 1000) || 'admin_issue_credit_note',
+      sourceIp: req.ip,
+    });
+    await client.query('COMMIT');
+    return res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING' });
+    console.error('POST /api/admin/tax/documents/:id/credit-note error:', err);
+    return res.status(500).json({ error: err?.message || 'ออก credit note ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/tax/documents/me', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ', documents: [] });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน', documents: [] });
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+    const result = await pool.query(
+      `SELECT *
+       FROM fiscal_documents
+       WHERE party_user_id = $1::uuid
+         AND status IN ('issued', 'voided', 'credit_note_issued', 'exported')
+       ORDER BY COALESCE(issued_at, created_at) DESC
+       LIMIT $2`,
+      [String(userUuid), limit],
+    );
+    return res.json({ documents: (result.rows || []).map((row) => mapFiscalDocument(row)) });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING', documents: [] });
+    console.error('GET /api/tax/documents/me error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดเอกสารภาษีไม่สำเร็จ', documents: [] });
+  }
+});
+
+app.get('/api/tax/documents/me/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    const document = await getDocumentWithLines(client, req.params.id);
+    if (!document || document.party_user_id !== String(userUuid)) return res.status(404).json({ error: 'ไม่พบเอกสารภาษี' });
+    if (document.status === 'draft') return res.status(404).json({ error: 'ยังไม่พบเอกสารภาษีที่ออกแล้ว' });
+    return res.json({ document });
+  } catch (err) {
+    if (String(err?.code) === '42P01') return res.status(503).json({ error: 'ยังไม่ได้รัน migration fiscal documents', code: 'FISCAL_DOCUMENT_SCHEMA_MISSING' });
+    console.error('GET /api/tax/documents/me/:id error:', err);
+    return res.status(500).json({ error: err?.message || 'โหลดเอกสารภาษีไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/tax/documents/me/:id/pdf', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    const document = await getDocumentWithLines(client, req.params.id);
+    if (!document || document.party_user_id !== String(userUuid)) return res.status(404).json({ error: 'ไม่พบเอกสารภาษี' });
+    if (!['issued', 'exported', 'credit_note_issued'].includes(String(document.status || '').toLowerCase())) {
+      return res.status(404).json({ error: 'เอกสารยังรอฝ่ายบัญชีออกเลข จึงยังดาวน์โหลด PDF ไม่ได้' });
+    }
+
+    const PDFDocument = require('pdfkit');
+    const pdf = new PDFDocument({ margin: 48, size: 'A4' });
+    const filename = `${document.document_type}-${document.document_no || document.id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    pdf.pipe(res);
+
+    const seller = document.seller_snapshot || {};
+    const buyer = document.buyer_snapshot || {};
+    pdf.fontSize(18).text(document.document_type === 'credit_note' ? 'Credit Note' : 'Tax Invoice', { align: 'center' });
+    pdf.moveDown(0.5);
+    pdf.fontSize(10).text(`Document No: ${document.document_no || '-'}`);
+    pdf.text(`Status: ${document.status}`);
+    pdf.text(`Issued At: ${document.issued_at || '-'}`);
+    pdf.moveDown();
+    pdf.fontSize(12).text('Seller');
+    pdf.fontSize(10).text(`${seller.legal_name || 'AQOND Technology Co., Ltd.'}`);
+    pdf.text(`Tax ID: ${seller.tax_id || '-'}`);
+    pdf.text(`Branch: ${seller.branch_code || '-'} ${seller.branch_name || ''}`);
+    pdf.text(`Address: ${seller.registered_address || '-'}`);
+    pdf.moveDown();
+    pdf.fontSize(12).text('Customer');
+    pdf.fontSize(10).text(`${buyer.legal_name || '-'}`);
+    pdf.text(`Tax ID: ${buyer.tax_id || '-'}`);
+    pdf.text(`Branch: ${buyer.branch_code || '-'} ${buyer.branch_name || ''}`);
+    pdf.text(`Address: ${buyer.registered_address || '-'}`);
+    pdf.moveDown();
+    pdf.fontSize(12).text('Lines');
+    pdf.moveDown(0.25);
+    (document.lines || []).forEach((line) => {
+      const displayAmount = line.metadata?.display_amount;
+      const amountText = Number(line.total_amount || 0) !== 0
+        ? `THB ${Number(line.total_amount || 0).toFixed(2)}`
+        : (displayAmount != null ? `Display THB ${Number(displayAmount || 0).toFixed(2)}` : 'THB 0.00');
+      pdf.fontSize(10).text(`${line.line_no}. ${line.description} - ${amountText}`);
+      if (Number(line.vat_amount || 0) !== 0) {
+        pdf.text(`   VAT base THB ${Number(line.taxable_amount || 0).toFixed(2)} | VAT ${Number(line.vat_rate_percent || 0).toFixed(2)}% = THB ${Number(line.vat_amount || 0).toFixed(2)}`);
+      }
+    });
+    pdf.moveDown();
+    pdf.fontSize(11).text(`Subtotal: THB ${Number(document.subtotal_amount || 0).toFixed(2)}`);
+    pdf.text(`VAT: THB ${Number(document.vat_amount || 0).toFixed(2)}`);
+    pdf.text(`WHT: THB ${Number(document.wht_amount || 0).toFixed(2)}`);
+    pdf.fontSize(12).text(`Total: THB ${Number(document.total_amount || 0).toFixed(2)}`);
+    pdf.moveDown();
+    pdf.fontSize(8).fillColor('gray').text('Generated from immutable fiscal document snapshot. Internal gateway metadata is not exposed.');
+    pdf.end();
+  } catch (err) {
+    console.error('GET /api/tax/documents/me/:id/pdf error:', err);
+    if (!res.headersSent) return res.status(500).json({ error: err?.message || 'ดาวน์โหลด PDF ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
 
 const FINANCE_RUNTIME_CONFIG_KEY = 'finance_runtime_config';
 const DEFAULT_FINANCE_RUNTIME_CONFIG = Object.freeze({
@@ -9030,6 +12299,16 @@ app.get('/api/auth/admin-session', async (req, res) => {
       /* optional name lookup */
     }
     const permissions = [];
+    let totpEnabled = false;
+    try {
+      const tr = await pool.query(
+        'SELECT COALESCE(admin_totp_enabled, false) AS e FROM users WHERE id::text = $1 LIMIT 1',
+        [String(payload.sub)],
+      ).catch(() => ({ rows: [] }));
+      totpEnabled = !!tr.rows?.[0]?.e;
+    } catch (_) {
+      /* no column → leave false */
+    }
     res.json({
       user: {
         id: String(payload.sub),
@@ -9037,11 +12316,108 @@ app.get('/api/auth/admin-session', async (req, res) => {
         name,
         role: payload.role,
         permissions,
+        totp_enabled: totpEnabled,
+        mfa: typeof payload.mfa === 'boolean' ? payload.mfa : undefined,
       },
     });
   } catch (e) {
     console.error('GET /api/auth/admin-session:', e?.message || e);
     res.status(500).json({ error: 'Session check failed' });
+  }
+});
+
+/** ลงทะเบียน Google Authenticator (ต้องรัน migration 152) */
+app.post('/api/admin/totp/enroll/start', adminAuthMiddleware, async (req, res) => {
+  try {
+    const pending = generateTotpSecret();
+    let r;
+    try {
+      r = await pool.query(
+        `UPDATE users SET admin_totp_pending_secret = $1 WHERE id::text = $2 AND COALESCE(admin_totp_enabled,false) = false RETURNING email`,
+        [pending, String(req.adminUser.id)],
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        return res.status(501).json({ error: 'ยังไม่ได้รัน migration TOTP — ไฟล์ 152_admin_totp.sql' });
+      }
+      throw e;
+    }
+    if (!r.rowCount) {
+      return res.status(400).json({ error: 'เปิดใช้ Authenticator แล้ว หรือไม่พบบัญชี — หากจะผูกใหม่ให้เรียก /api/admin/totp/disable ด้วยรหัสปัจจุบันก่อน' });
+    }
+    const email = r.rows[0].email || req.adminUser.email;
+    const qr_data_url = await totpQrDataUrl(pending, email);
+    res.json({ qr_data_url });
+  } catch (e) {
+    console.error('POST /api/admin/totp/enroll/start:', e?.message || e);
+    res.status(500).json({ error: 'ไม่สามารถเริ่มลงทะเบียนได้' });
+  }
+});
+
+app.post('/api/admin/totp/enroll/confirm', adminAuthMiddleware, async (req, res) => {
+  const code = req.body?.totp_code ?? req.body?.totpCode;
+  if (!code) return res.status(400).json({ error: 'ต้องส่ง totp_code' });
+  try {
+    let r;
+    try {
+      r = await pool.query(
+        `SELECT admin_totp_pending_secret AS p FROM users WHERE id::text = $1`,
+        [String(req.adminUser.id)],
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        return res.status(501).json({ error: 'ยังไม่ได้รัน migration TOTP — ไฟล์ 152_admin_totp.sql' });
+      }
+      throw e;
+    }
+    const p = r.rows?.[0]?.p;
+    if (!p) return res.status(400).json({ error: 'ยังไม่ได้เรียกเริ่มลงทะเบียน (enroll/start) หมดอายุหรือไม่ครบขั้นตอน' });
+    if (!verifyTotpToken(p, code)) {
+      return res.status(401).json({ error: 'รหัส Authenticator ไม่ถูกต้อง' });
+    }
+    await pool.query(
+      `UPDATE users SET admin_totp_secret = admin_totp_pending_secret, admin_totp_enabled = true, admin_totp_pending_secret = NULL WHERE id::text = $1`,
+      [String(req.adminUser.id)],
+    );
+    res.json({ success: true, enabled: true });
+  } catch (e) {
+    console.error('POST /api/admin/totp/enroll/confirm:', e?.message || e);
+    res.status(500).json({ error: 'ยืนยันไม่สำเร็จ' });
+  }
+});
+
+/** ปิด 2FA หลักฐานด้วยรหัส 6 หลักรอบสุดท้าย — จากนั้นถึงเริ่ม enroll ใหม่ได้ */
+app.post('/api/admin/totp/disable', adminAuthMiddleware, async (req, res) => {
+  const code = req.body?.totp_code ?? req.body?.totpCode;
+  if (!code) return res.status(400).json({ error: 'ต้องส่ง totp_code' });
+  try {
+    let r;
+    try {
+      r = await pool.query(
+        `SELECT admin_totp_secret, admin_totp_enabled FROM users WHERE id::text = $1`,
+        [String(req.adminUser.id)],
+      );
+    } catch (e) {
+      if (e?.code === '42703') {
+        return res.status(501).json({ error: 'ยังไม่ได้รัน migration TOTP' });
+      }
+      throw e;
+    }
+    const row = r.rows?.[0];
+    if (!row?.admin_totp_enabled || !row?.admin_totp_secret) {
+      return res.status(400).json({ error: 'ยังไม่ได้เปิดใช้ Authenticator' });
+    }
+    if (!verifyTotpToken(row.admin_totp_secret, code)) {
+      return res.status(401).json({ error: 'รหัส Authenticator ไม่ถูกต้อง' });
+    }
+    await pool.query(
+      `UPDATE users SET admin_totp_secret = NULL, admin_totp_enabled = false, admin_totp_pending_secret = NULL WHERE id::text = $1`,
+      [String(req.adminUser.id)],
+    );
+    res.json({ success: true, enabled: false });
+  } catch (e) {
+    console.error('POST /api/admin/totp/disable:', e?.message || e);
+    res.status(500).json({ error: 'ปิดการใช้ไม่สำเร็จ' });
   }
 });
 
@@ -9146,7 +12522,7 @@ app.patch('/api/admin/auth/change-password', adminAuthMiddleware, async (req, re
       [hash, newPassword, adminId]
     );
     const ip = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
-    setImmediate(() => recordIdentityChange(pool, adminId, 'password_change', ip || null).catch(() => {}));
+    setImmediate(() => recordIdentityChange(pool, adminId, 'password_change', ip || null).catch(() => { }));
     res.json({ success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จ' });
   } catch (err) {
     console.error('Admin change-password error:', err);
@@ -9220,6 +12596,7 @@ app.get('/api/admin/gateway-status', adminAuthMiddleware, async (req, res) => {
       { name: 'Payments (ปล่อย)', path: '/api/payments/release', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Wallet', path: '/api/wallet/:userId/summary', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'KYC (ส่ง)', path: '/api/kyc/submit', method: 'POST', status: dbOk && cloudOk ? 'operational' : 'degraded' },
+      { name: 'KYC (ล่าสุดของฉัน)', path: '/api/kyc/my-latest', method: 'GET', status: dbOk && cloudOk ? 'operational' : 'degraded' },
       { name: 'KYC (สถานะ)', path: '/api/kyc/status/:userId', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'KYC (ยืนยันใหม่)', path: '/api/kyc/re-verify', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'KYC (อัปเดตสถานะ)', path: '/api/kyc/update-status', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
@@ -9249,6 +12626,7 @@ app.get('/api/admin/gateway-status', adminAuthMiddleware, async (req, res) => {
       { name: 'Support (message async + Redis session)', path: '/api/support/message', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Insurance (อัตรา)', path: '/api/settings/insurance-rate', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Transport pricing (สูตรเหมา)', path: '/api/settings/transport-pricing', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Transport distance (local)', path: '/api/settings/pricing', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Provider Onboarding (สถานะ)', path: '/api/provider-onboarding/status', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Provider Onboarding (ส่งข้อสอบ)', path: '/api/provider-onboarding/submit-exam', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Nexus Exam (ข้อสอบ)', path: '/api/nexus-exam/questions', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
@@ -9274,6 +12652,9 @@ app.get('/api/admin/gateway-status', adminAuthMiddleware, async (req, res) => {
       { name: 'Admin Financial (Commission)', path: '/api/admin/financial/commission', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Financial (VIP Admin Fund)', path: '/api/admin/financial/vip-admin-fund', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Financial (Revenue by Source)', path: '/api/admin/financial/revenue-by-source', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Admin Financial (Revenue four bumps)', path: '/api/admin/financial/revenue-four-bumps', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Personal settlement (บัญชีชั่วคราว)', path: '/api/admin/personal-settlement/account', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
+      { name: 'Personal settlement (รายการ)', path: '/api/admin/personal-settlement/records', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Financial (Expenses)', path: '/api/admin/financial/expenses', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Financial (Market Cap)', path: '/api/admin/financial/market-cap', method: 'GET', status: dbOk ? 'operational' : 'degraded' },
       { name: 'Admin Refund', path: '/api/admin/payments/refund', method: 'POST', status: dbOk ? 'operational' : 'degraded' },
@@ -9373,13 +12754,13 @@ app.get('/api/admin/cluster-health', adminAuthMiddleware, async (req, res) => {
           `SELECT COUNT(*)::int AS c FROM users WHERE is_deleted = FALSE AND role != 'admin'`
         );
         activeUsers = usersRes.rows?.[0]?.c ?? 0;
-      } catch {}
+      } catch { }
       try {
         const connRes = await pool.query(
           `SELECT count(*)::int AS c FROM pg_stat_activity WHERE datname = current_database() AND state = 'active'`
         );
         dbConnections = connRes.rows?.[0]?.c ?? 0;
-      } catch {}
+      } catch { }
       try {
         const replRes = await pool.query(
           `SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) * 1000 AS lag_ms`
@@ -9388,7 +12769,7 @@ app.get('/api/admin/cluster-health', adminAuthMiddleware, async (req, res) => {
         if (lag != null && !isNaN(parseFloat(lag)) && parseFloat(lag) >= 0 && parseFloat(lag) < 86400000) {
           dbReplicationLagMs = parseFloat(lag);
         }
-      } catch {}
+      } catch { }
     }
 
     const mem = process.memoryUsage();
@@ -9403,7 +12784,7 @@ app.get('/api/admin/cluster-health', adminAuthMiddleware, async (req, res) => {
       if (loadavg && loadavg[0] != null && loadavg[0] > 0 && cpus > 0) {
         cpuUsagePct = Math.min(100, Math.round((loadavg[0] / cpus) * 100));
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const region = process.env.RENDER_REGION || process.env.AWS_REGION || 'Asia-SE1';
     const nodeStatus = (s) => (s === 'healthy' ? 'Healthy' : s === 'not_configured' ? 'Healthy' : 'Critical');
@@ -9497,7 +12878,7 @@ app.get('/api/admin/sharding/stats', adminAuthMiddleware, async (req, res) => {
       `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, state_after)
        VALUES ('admin', $1, 'SHARDING_STATS_ACCESS', 'sharding', $2)`,
       [adminId, JSON.stringify({ endpoint: '/api/admin/sharding/stats', at: new Date().toISOString() })]
-    ).catch(() => {});
+    ).catch(() => { });
 
     // Partition list + size + row count for transactions (Migration 002: PARTITION BY RANGE(created_at))
     const partitionsRes = await pool.query(`
@@ -9563,7 +12944,7 @@ app.get('/api/admin/sharding/stats', adminAuthMiddleware, async (req, res) => {
           AND status = 'completed'
       `);
       tpmEstimate = Math.round((tpmRes.rows?.[0]?.cnt || 0) / 60);
-    } catch (_) {}
+    } catch (_) { }
 
     // Ledger integrity (Migration 069/073): payment_ledger_audit is NOT partitioned — chain is single-table
     let ledgerIntegrity = { valid: true, totalRows: 0, note: 'payment_ledger_audit is single table (no partitions)' };
@@ -9617,7 +12998,7 @@ async function logDrEvent(actorId, action, stateAfter, reason = null) {
        VALUES ('admin', $1, $2, 'DR_CENTER', $3, $4)`,
       [actorId, action, JSON.stringify(stateAfter || {}), reason]
     );
-  } catch (_) {}
+  } catch (_) { }
 }
 
 // ✅ POST /api/admin/dr/log-view — Log DR_MONITOR_VIEW when dashboard is opened
@@ -9663,7 +13044,7 @@ app.get('/api/admin/dr/stats', adminAuthMiddleware, async (req, res) => {
       const result = await listS3Files('uploads/statements/', 10);
       storageFileCount = result?.resources?.length ?? 0;
       storageSyncOk = true;
-    } catch (_) {}
+    } catch (_) { }
 
     const preFlight = {
       resourcePrep: stats.standbyHealthy,
@@ -9731,7 +13112,7 @@ app.get('/api/admin/dr/status', adminAuthMiddleware, async (req, res) => {
       const result = await listS3Files('uploads/statements/', 10);
       storageFileCount = result?.resources?.length ?? 0;
       storageSyncOk = true;
-    } catch (_) {}
+    } catch (_) { }
 
     const preFlight = {
       resourcePrep: stats.standbyHealthy,
@@ -9800,7 +13181,7 @@ app.post('/api/admin/dr/simulate-failover', adminAuthMiddleware, async (req, res
       });
       ledgerOk = healthRes.ok;
       taxDocsOk = healthRes.ok;
-    } catch (_) {}
+    } catch (_) { }
 
     res.json({
       success: true,
@@ -9943,6 +13324,68 @@ app.post('/api/rate-limit/clear', async (req, res) => {
   res.json({ cleared, message: `Cleared ${cleared} rate-limit entries` });
 });
 
+// POST /api/rate-limit/self-unlock — user self-service unlock, max 3/day/user
+app.post('/api/rate-limit/self-unlock', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id ? await resolveUserIdToUuid(req.user.id).catch(() => null) : null;
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนปลดล็อก Rate Limit' });
+    const status = consumeSelfRateLimitUnlock(userId);
+    const cleared = await clearRateLimitBucketsForUser(userId, { includeIp: getClientIp(req) });
+    auditService.log(String(userId), 'RATE_LIMIT_SELF_UNLOCK', {
+      entityName: 'rate_limit',
+      entityId: String(userId),
+      cleared,
+      unlock_status: status,
+    }, { status: 'Success', ipAddress: getClientIp(req) });
+    res.json({
+      ok: true,
+      message: 'ปลดล็อก Rate Limit แล้ว กรุณาลองทำรายการอีกครั้ง',
+      cleared,
+      unlock: status,
+    });
+  } catch (e) {
+    const status = Number(e?.status || 500);
+    if (e?.code === 'SELF_RATE_LIMIT_UNLOCK_DAILY_LIMIT' && req.user?.id) {
+      const now = new Date().toISOString();
+      const ticketId = `TCK-RL-${Date.now()}`;
+      const userId = String(req.user.id);
+      const ticket = {
+        id: ticketId,
+        userId,
+        email: null,
+        full_name: null,
+        phone: null,
+        subject: 'Rate Limit self-unlock daily limit reached',
+        status: 'OPEN',
+        priority: 'HIGH',
+        category: 'Technical',
+        source: 'rate_limit_self_unlock',
+        jobId: null,
+        ai_mode_enabled: true,
+        invited_provider_id: null,
+        invited_provider_name: null,
+        attachments: [],
+        ai_summary: 'User reached 3 self-unlocks/day. Admin review required.',
+        lastUpdated: now,
+        createdAt: now,
+      };
+      supportTicketsStore.unshift(ticket);
+      if (supportTicketsStore.length > SUPPORT_TICKETS_MAX) supportTicketsStore.pop();
+      addSupportMessage(ticketId, 'USER', 'ใช้สิทธิ์ปลดล็อก Rate Limit ครบ 3 ครั้งของวันนี้');
+      addSupportMessage(ticketId, 'BOT', 'คุณใช้สิทธิ์ปลดล็อก Rate Limit ครบ 3 ครั้งของวันนี้แล้วค่ะ เราส่งเรื่องให้เจ้าหน้าที่ตรวจสอบต่อแล้ว', {
+        source: 'self_unlock_limit_escalation',
+        ai_actions: ['self_unlock_daily_limit_reached', 'escalate_to_admin'],
+        escalation: { level: 'admin_review', reason: 'self_unlock_daily_limit_reached' },
+      });
+    }
+    res.status(status).json({
+      error: e?.code || 'rate_limit_unlock_failed',
+      message: e?.message || 'ปลดล็อก Rate Limit ไม่สำเร็จ',
+      escalated: e?.code === 'SELF_RATE_LIMIT_UNLOCK_DAILY_LIMIT',
+    });
+  }
+});
+
 // ✅ POST /api/admin/jobs/clear-cache — เคลียร์ Memory Cache + Redis rate limit
 app.post('/api/admin/jobs/clear-cache', adminAuthMiddleware, async (req, res) => {
   let cleared = 0;
@@ -9967,7 +13410,7 @@ app.post('/api/admin/jobs/clear-cache', adminAuthMiddleware, async (req, res) =>
     try {
       global.gc();
       console.log('🧹 [Admin] Manual GC triggered');
-    } catch (e) {}
+    } catch (e) { }
   }
   console.log(`🧹 [Admin] Cleared ${cleared} cache entries`);
   res.json({ cleared, message: `Cleared ${cleared} cache entries` });
@@ -10048,7 +13491,7 @@ app.get('/api/admin/resource-cost', adminAuthMiddleware, async (req, res) => {
     let scalingPolicy = null;
     try {
       scalingPolicy = settings.resource_scaling_policy ? JSON.parse(settings.resource_scaling_policy) : null;
-    } catch (_) {}
+    } catch (_) { }
 
     const dKey = (v) => {
       if (!v) return '';
@@ -10105,11 +13548,13 @@ app.patch('/api/admin/resource-cost', adminAuthMiddleware, async (req, res) => {
         scaleUpCooldown: typeof scalingPolicy.scaleUpCooldown === 'number' ? scalingPolicy.scaleUpCooldown : undefined,
         scaleDownCooldown: typeof scalingPolicy.scaleDownCooldown === 'number' ? scalingPolicy.scaleDownCooldown : undefined,
       };
-      const merged = { ...(await pool.query(`SELECT value FROM system_settings WHERE key = 'resource_scaling_policy'`).then((r) => {
-        try {
-          return r.rows?.[0]?.value ? JSON.parse(r.rows[0].value) : {};
-        } catch (_) { return {}; }
-      })), ...valid };
+      const merged = {
+        ...(await pool.query(`SELECT value FROM system_settings WHERE key = 'resource_scaling_policy'`).then((r) => {
+          try {
+            return r.rows?.[0]?.value ? JSON.parse(r.rows[0].value) : {};
+          } catch (_) { return {}; }
+        })), ...valid
+      };
       const filtered = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined));
       await pool.query(
         `INSERT INTO system_settings (key, value, updated_at) VALUES ('resource_scaling_policy', $1, NOW())
@@ -10131,31 +13576,238 @@ app.patch('/api/admin/resource-cost', adminAuthMiddleware, async (req, res) => {
 });
 
 // ============ Mobile App Config (Admin + Public for App) ============
+/** remote.socialProofOnlineFloor — จำนวนขั้นต่ำที่แอดมินกำหนด (persist). GET /api/app/config ใส่ remote.homeDisplayedOnlineUsers = max(floor, activeUsers15m) ให้แอปเท่านั้น — ไม่บันทึกตัวเลขรวม */
+const DEFAULT_MOBILE_REMOTE = {
+  paymentNoticeTh: '',
+  paymentNoticeEn: '',
+  transportNoticeTh: '',
+  transportNoticeEn: '',
+  promoNoticeTh: '',
+  promoNoticeEn: '',
+  showPromoFundBalance: false,
+  complianceSupportEmail: '',
+  /** จำนวนโชว์หน้าแรก (social proof) — แก้ในแอดมินหรือ PATCH remote; ใส่ 0 เพื่อไม่ใช้ค่าจากแอดมิน */
+  homeDisplayedOnlineUsers: 1240,
+  jobBoardCopy: {
+    experimentId: '',
+    variant: 'control',
+    smartMatchTitle: 'งานที่เหมาะกับคุณ',
+    smartMatchTooltip: 'เลือกจากหมวดงาน จังหวัดโปรไฟล์ และการตั้งค่าระบบของคุณ',
+    emptyAllBullets: [
+      'ลองปรับตัวกรองหมวดหรือจังหวัด',
+      'ขยายช่วงงบประมาณเล็กน้อย',
+      'หรือโพสต์งานแรกของคุณเป็นนายจ้าง',
+    ],
+    emptyMyJobsBullets: [
+      'โพสต์งานพร้อมหัวข้อและงบที่ชัดเจน',
+      'เลือกหมวดให้ตรงกับงานจริง',
+      'แชร์ลิงก์งานหลังโพสต์เพื่อหาผู้สนใจเร็วขึ้น',
+    ],
+    emptyApplicationsBullets: [
+      'เลือกหมวดที่ถนัดจากตัวกรอง',
+      'สมัครงานที่งบและระยะเวลาเหมาะกับคุณ',
+      'เพิ่มใบเสนอราคาสั้น ๆ ช่วยให้นายจ้างตัดสินใจเร็วขึ้น',
+    ],
+    emptySavedBullets: [
+      'กดไอคอนบันทึกบนการ์ดงานที่สนใจ',
+      'กลับมาเปรียบเทียบก่อนสมัคร',
+      'งานที่บันทึกจะอยู่แท็บนี้เสมอ',
+    ],
+    appliedModalBody: 'แนะนำทักนายจ้างเพื่อแนะนำตัวและถามรายละเอียดเพิ่ม',
+    manageNoApplicantsBullets: [
+      'แชร์ลิงก์งานให้เครือข่ายหรือโซเชียล',
+      'ปรับงบให้สูงขึ้นเล็กน้อยถ้าเป็นตลาดแข่งขันสูง',
+      'ตรวจหัวข้องานและคำอธิบายให้ชัดเจนขึ้น',
+    ],
+    createJobDescPlaceholder: 'เช่น ต้องการออกแบบโลโก้คาเฟ่ สไตล์มินิมอล ส่งไฟล์ AI/PDF',
+    hireSummarySteps: [
+      'โอนเงินเข้าระบบค้ำตามงบที่ตกลง',
+      'ยืนยันขอบเขตงานกับผู้รับจ้างในแท็บขอบเขต',
+      'รอรับงานส่งมอบเมื่อโอนเงินแล้ว',
+    ],
+    smartMatchProvinces: [],
+    smartMatchReasonLabels: {
+      saved: 'งานที่คุณบันทึก',
+      applied: 'หมวดที่คุณเคยดู/สมัคร',
+      profileProvince: 'จังหวัดโปรไฟล์ของคุณ',
+      nearProvince: 'ใกล้จังหวัดที่คุณเลือก',
+      routing: 'แนะนำโดยระบบ',
+      categoryHistory: 'หมวดที่คุณสนใจ',
+    },
+  },
+};
+
 const DEFAULT_MOBILE_CONFIG = {
   iosMinVersion: '1.2.0',
   androidMinVersion: '1.4.5',
   welcomeMessage: 'ยินดีต้อนรับสู่ aqond! โปรโมชั่นใหม่รอคุณอยู่',
+  forceUpdateMessage:
+    'แอปเวอร์ชันนี้ไม่รองรับแล้ว กรุณาอัปเดตจาก App Store / Play Store เพื่อใช้งานต่อ',
+  iosStoreUrl: '',
+  playStoreUrl: '',
   pushNotificationEnabled: true,
+  remote: { ...DEFAULT_MOBILE_REMOTE },
   featureFlags: {
     enableSignups: true,
     enablePayments: true,
     enableJobPosting: true,
     enableChat: true,
+    enablePromoVouchers: true,
     maintenanceMode: false
   }
 };
 
-async function getMobileAppConfig() {
+function parsePositiveIntForRemote(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.floor(v);
+  if (typeof v === 'string' && String(v).trim() !== '') {
+    const n = Number(String(v).trim());
+    if (Number.isFinite(n)) return Math.floor(n);
+  }
+  return null;
+}
+
+/** ทำความสะอาด remote ก่อนบันทึก DB — homeDisplayedOnlineUsers เป็นค่าคำนวณให้แอปเท่านั้น ไม่ persist */
+function sanitizeMobileRemote(remote) {
+  const out = { ...remote };
+  const floorRaw = out.socialProofOnlineFloor ?? out.homeDisplayedOnlineUsers;
+  const floor = parsePositiveIntForRemote(floorRaw);
+  delete out.homeDisplayedOnlineUsers;
+  delete out.socialProofOnlineFloor;
+  if (floor != null && floor >= 1) {
+    out.socialProofOnlineFloor = Math.min(floor, 99999999);
+  }
+  return out;
+}
+
+/** นับผู้ใช้ที่มีกิจกรรมล่าสุด (หน้าต่างเวลาเดียวกับ Community Challenge) */
+async function countRecentlyActiveUsersForPublicBanner(windowMinutes = 15) {
+  const wm = Math.min(120, Math.max(1, parseInt(String(windowMinutes), 10) || 15));
   try {
-    const r = await pool.query(`SELECT value FROM system_settings WHERE key = 'mobile_app_config'`).catch(() => ({ rows: [] }));
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM users
+       WHERE COALESCE(last_active_at, last_login, updated_at) > NOW() - ($1::int * INTERVAL '1 minute')`,
+      [wm],
+    );
+    return parseInt(r.rows?.[0]?.c ?? 0, 10) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/** ใส่ homeDisplayedOnlineUsers สำหรับแอป = max(พื้นที่แอดมิน, ผู้ใช้ active จริง) และซ่อน socialProofOnlineFloor */
+async function augmentMobileConfigForPublicClients(config) {
+  const live = await countRecentlyActiveUsersForPublicBanner(15);
+  const floorRaw = config?.remote?.socialProofOnlineFloor;
+  const floor =
+    typeof floorRaw === 'number' && Number.isFinite(floorRaw) && floorRaw >= 1
+      ? Math.floor(floorRaw)
+      : null;
+  const merged = Math.max(floor ?? 0, live);
+  const remote = { ...(config.remote || {}) };
+  delete remote.socialProofOnlineFloor;
+  if (merged >= 1) {
+    remote.homeDisplayedOnlineUsers = merged;
+  } else {
+    /** แอปใช้แยกจากกรณี remote ไม่ส่งฟิลด์นี้ (bootstrap บางทางขาดคีย์ — mobile จะใช้ fallback) */
+    remote.homeDisplayedOnlineUsers = 0;
+  }
+  return { ...config, remote };
+}
+
+/** ผสานข้อความจาก DB กับ default — กัน PATCH เก่าที่ตัด nested `remote` ทำให้แอป/แอดมินคрэช */
+function normalizeStoredMobileAppConfig(parsed) {
+  const p =
+    parsed && typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  const remoteIn = p.remote && typeof p.remote === 'object' && !Array.isArray(p.remote) ? p.remote : {};
+  const flagsIn =
+    p.featureFlags && typeof p.featureFlags === 'object' && !Array.isArray(p.featureFlags)
+      ? p.featureFlags
+      : {};
+  return {
+    ...DEFAULT_MOBILE_CONFIG,
+    ...p,
+    remote: sanitizeMobileRemote({
+      ...DEFAULT_MOBILE_CONFIG.remote,
+      ...remoteIn,
+    }),
+    featureFlags: {
+      ...DEFAULT_MOBILE_CONFIG.featureFlags,
+      ...flagsIn
+    }
+  };
+}
+
+/** แคช mobile_app_config — ลด round-trip DB บน hot path (เช่น POST /api/auth/register) */
+let _mobileAppConfigCache = { cfg: null, fetchedAt: 0 };
+let _mobileAppConfigRefreshInFlight = null;
+const MOBILE_APP_CONFIG_TTL_MS = Math.max(
+  5000,
+  parseInt(process.env.MOBILE_APP_CONFIG_CACHE_TTL_MS || '120000', 10) || 120000,
+);
+const MOBILE_APP_CONFIG_BACKGROUND_REFRESH_MS = Math.max(
+  30000,
+  parseInt(process.env.MOBILE_APP_CONFIG_BACKGROUND_REFRESH_MS || '60000', 10) || 60000,
+);
+
+async function refreshMobileAppConfigCacheFromDb() {
+  try {
+    const r = await pool
+      .query(`SELECT value FROM system_settings WHERE key = 'mobile_app_config'`)
+      .catch(() => ({ rows: [] }));
     const raw = r?.rows?.[0]?.value;
     if (raw) {
       try {
-        return { ...DEFAULT_MOBILE_CONFIG, ...JSON.parse(raw) };
-      } catch (_) {}
+        const cfg = normalizeStoredMobileAppConfig(JSON.parse(raw));
+        _mobileAppConfigCache = { cfg, fetchedAt: Date.now() };
+        return;
+      } catch (_) {
+        /* fall through */
+      }
     }
-  } catch (_) {}
-  return DEFAULT_MOBILE_CONFIG;
+  } catch (_) {
+    /* fall through */
+  }
+  if (!_mobileAppConfigCache.cfg) {
+    _mobileAppConfigCache = {
+      cfg: normalizeStoredMobileAppConfig({}),
+      fetchedAt: Date.now(),
+    };
+  }
+}
+
+/** หลังแอดมิน PATCH — บังคับให้แคชตรงกับค่าที่บันทึก */
+function assignMobileAppConfigCacheFromAdmin(config) {
+  _mobileAppConfigCache = { cfg: config, fetchedAt: Date.now() };
+}
+
+/**
+ * ดึง mobile config — ใช้แคช TTL; ถ้าหมดอายุแต่ยังมีค่าเก่า คืนค่าเก่าแล้วรีเฟรชพื้นหลัง
+ * @param {{ forceFresh?: boolean }} opts
+ */
+async function getMobileAppConfig(opts = {}) {
+  if (opts.forceFresh === true) {
+    await refreshMobileAppConfigCacheFromDb();
+    return _mobileAppConfigCache.cfg || normalizeStoredMobileAppConfig({});
+  }
+  const now = Date.now();
+  const { cfg, fetchedAt } = _mobileAppConfigCache;
+  if (cfg != null && now - fetchedAt <= MOBILE_APP_CONFIG_TTL_MS) {
+    return cfg;
+  }
+  if (cfg != null && now - fetchedAt > MOBILE_APP_CONFIG_TTL_MS) {
+    if (!_mobileAppConfigRefreshInFlight) {
+      _mobileAppConfigRefreshInFlight = refreshMobileAppConfigCacheFromDb()
+        .catch(() => { })
+        .finally(() => {
+          _mobileAppConfigRefreshInFlight = null;
+        });
+    }
+    return cfg;
+  }
+  await refreshMobileAppConfigCacheFromDb();
+  return _mobileAppConfigCache.cfg || normalizeStoredMobileAppConfig({});
 }
 
 // GET /api/admin/mobile-config — Admin only
@@ -10166,16 +13818,19 @@ app.get('/api/admin/mobile-config', adminAuthMiddleware, async (req, res) => {
     ).catch(() => ({ rows: [] }));
     const raw = r?.rows?.[0]?.value;
     const updatedAt = r?.rows?.[0]?.updated_at ? new Date(r.rows[0].updated_at).toISOString() : null;
-    let config = DEFAULT_MOBILE_CONFIG;
+    let parsed = {};
     if (raw) {
       try {
-        config = { ...DEFAULT_MOBILE_CONFIG, ...JSON.parse(raw) };
-      } catch (_) {}
+        parsed = JSON.parse(raw);
+      } catch (_) {
+        parsed = {};
+      }
     }
+    const config = normalizeStoredMobileAppConfig(parsed);
     res.json({ config, updatedAt });
   } catch (e) {
     console.warn('GET /api/admin/mobile-config:', e?.message);
-    res.json({ config: DEFAULT_MOBILE_CONFIG, updatedAt: null });
+    res.json({ config: normalizeStoredMobileAppConfig({}), updatedAt: null });
   }
 });
 
@@ -10183,25 +13838,14 @@ app.get('/api/admin/mobile-config', adminAuthMiddleware, async (req, res) => {
 app.patch('/api/admin/mobile-config', adminAuthMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    const config = {
-      iosMinVersion: body.iosMinVersion ?? DEFAULT_MOBILE_CONFIG.iosMinVersion,
-      androidMinVersion: body.androidMinVersion ?? DEFAULT_MOBILE_CONFIG.androidMinVersion,
-      welcomeMessage: body.welcomeMessage ?? DEFAULT_MOBILE_CONFIG.welcomeMessage,
-      pushNotificationEnabled: body.pushNotificationEnabled ?? DEFAULT_MOBILE_CONFIG.pushNotificationEnabled,
-      featureFlags: {
-        enableSignups: body.featureFlags?.enableSignups ?? DEFAULT_MOBILE_CONFIG.featureFlags.enableSignups,
-        enablePayments: body.featureFlags?.enablePayments ?? DEFAULT_MOBILE_CONFIG.featureFlags.enablePayments,
-        enableJobPosting: body.featureFlags?.enableJobPosting ?? DEFAULT_MOBILE_CONFIG.featureFlags.enableJobPosting,
-        enableChat: body.featureFlags?.enableChat ?? DEFAULT_MOBILE_CONFIG.featureFlags.enableChat,
-        maintenanceMode: body.featureFlags?.maintenanceMode ?? DEFAULT_MOBILE_CONFIG.featureFlags.maintenanceMode
-      }
-    };
+    const config = normalizeStoredMobileAppConfig(body);
     const value = JSON.stringify(config);
     await pool.query(
       `INSERT INTO system_settings (key, value, updated_at) VALUES ('mobile_app_config', $1, NOW())
        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
       [value]
     );
+    assignMobileAppConfigCacheFromAdmin(config);
     auditService.log(req.adminUser?.id || 'admin', 'MOBILE_CONFIG_UPDATED', { entityName: 'system_settings', entityId: 'mobile_app_config', new: config }, { actorRole: 'Admin', ipAddress: getClientIp(req) });
     res.json({ config, updatedAt: new Date().toISOString() });
   } catch (e) {
@@ -10217,16 +13861,46 @@ app.get('/api/app/config', async (req, res) => {
       `SELECT value, updated_at FROM system_settings WHERE key = 'mobile_app_config'`
     ).catch(() => ({ rows: [] }));
     const raw = r?.rows?.[0]?.value;
-    let config = DEFAULT_MOBILE_CONFIG;
+    let parsed = {};
     if (raw) {
       try {
-        config = { ...DEFAULT_MOBILE_CONFIG, ...JSON.parse(raw) };
-      } catch (_) {}
+        parsed = JSON.parse(raw);
+      } catch (_) {
+        parsed = {};
+      }
     }
+    let config = normalizeStoredMobileAppConfig(parsed);
+    config = await augmentMobileConfigForPublicClients(config);
     const updatedAt = r?.rows?.[0]?.updated_at ? new Date(r.rows[0].updated_at).toISOString() : null;
     res.json({ config, updatedAt });
   } catch (e) {
-    res.json({ config: DEFAULT_MOBILE_CONFIG, updatedAt: null });
+    let cfg = normalizeStoredMobileAppConfig({});
+    try {
+      cfg = await augmentMobileConfigForPublicClients(cfg);
+    } catch (_) { }
+    res.json({ config: cfg, updatedAt: null });
+  }
+});
+
+// POST /api/app/presence — อัปเดต last_active_at สำหรับผู้ล็อกอิน (นับเข้ากลุ่มออนไลน์ ~15 นาที); throttle เล็กน้อยลดภาระ DB
+app.post('/api/app/presence', async (req, res) => {
+  try {
+    const logicalId = resolveUserIdFromBearerAuthHeader(req.headers.authorization);
+    if (!logicalId) return res.json({ ok: true, tracked: false });
+    const userUuid = await resolveUserIdToUuid(logicalId).catch(() => null);
+    if (!userUuid) return res.json({ ok: true, tracked: false });
+    await pool.query(
+      `UPDATE users SET last_active_at = NOW()
+       WHERE id = $1
+       AND (
+         last_active_at IS NULL
+         OR last_active_at < NOW() - INTERVAL '45 seconds'
+       )`,
+      [userUuid],
+    ).catch(() => { });
+    return res.json({ ok: true, tracked: true });
+  } catch (_) {
+    return res.json({ ok: true, tracked: false });
   }
 });
 
@@ -10513,7 +14187,7 @@ app.post('/api/admin/ai/dashboard-insight', adminAuthMiddleware, async (req, res
     console.error('POST /api/admin/ai/dashboard-insight error:', err);
     try {
       res.status(500).json({ error: err?.message || 'เกิดข้อผิดพลาด' });
-    } catch (_) {}
+    } catch (_) { }
   }
 });
 
@@ -10631,6 +14305,7 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
   try {
     const jobType = (req.query.job_type || 'all').toLowerCase();
     const category = (req.query.category || '').trim() || null;
+    const focusJobId = (req.query.job_id || '').trim() || null;
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
 
@@ -10642,7 +14317,7 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
       let jWhere = 'status = $1';
       if (category) { jParams.push(`%${category}%`); jWhere += ' AND (category ILIKE $2 OR subcategory ILIKE $2)'; }
       const jRows = await pool.query(
-        `SELECT id, title, category, subcategory, budget_amount, created_at, 'jobs' AS job_type,
+        `SELECT id, title, category, subcategory, budget_amount, created_at, status, 'jobs' AS job_type,
                 payment_details->'transport_contract'->>'job_kind' AS transport_job_kind
          FROM jobs WHERE ${jWhere}
          ORDER BY created_at DESC LIMIT $${jParams.length + 1} OFFSET $${jParams.length + 2}`,
@@ -10656,7 +14331,7 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
       let aWhere = 'status = $1';
       if (category) { aParams.push(`%${category}%`); aWhere += ' AND category ILIKE $2'; }
       const aRows = await pool.query(
-        `SELECT id, title, category, min_budget, max_budget, created_at, 'advance_jobs' AS job_type
+        `SELECT id, title, category, min_budget, max_budget, created_at, status, 'advance_jobs' AS job_type
          FROM advance_jobs WHERE ${aWhere}
          ORDER BY created_at DESC LIMIT $${aParams.length + 1} OFFSET $${aParams.length + 2}`,
         [...aParams, limit, offset]
@@ -10674,9 +14349,39 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
         job_type: r.job_type,
         transport_job_kind: r.transport_job_kind || null,
         created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
+        status: r.status || 'open',
       }))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, limit);
+
+    if (focusJobId && !items.some((i) => String(i.id) === focusJobId)) {
+      const focusRes = await pool.query(
+        `SELECT id, title, category, subcategory, budget_amount, created_at, status, 'jobs' AS job_type,
+                payment_details->'transport_contract'->>'job_kind' AS transport_job_kind
+         FROM jobs WHERE id::text = $1
+         UNION ALL
+         SELECT id, title, category, NULL AS subcategory, min_budget AS budget_amount, created_at, status, 'advance_jobs' AS job_type,
+                NULL AS transport_job_kind
+         FROM advance_jobs WHERE id::text = $1
+         LIMIT 1`,
+        [focusJobId],
+      ).catch(() => ({ rows: [] }));
+      const fr = focusRes.rows?.[0];
+      if (fr) {
+        items.unshift({
+          id: fr.id,
+          title: fr.title,
+          category: fr.category,
+          subcategory: fr.subcategory || null,
+          budget: fr.budget_amount ?? null,
+          job_type: fr.job_type,
+          transport_job_kind: fr.transport_job_kind || null,
+          created_at: fr.created_at ? new Date(fr.created_at).toISOString() : null,
+          status: fr.status || null,
+          focused: true,
+        });
+      }
+    }
 
     const countParams = [];
     const countConds = [];
@@ -10692,7 +14397,7 @@ app.get('/api/admin/job-operations/queue-backlog', adminAuthMiddleware, async (r
     const countResult = await pool.query(`SELECT (${totalExpr})::int AS total`, countParams);
     const total = countResult.rows[0]?.total || 0;
 
-    res.json({ items, total, limit, offset, filters: { job_type: jobType, category } });
+    res.json({ items, total, limit, offset, filters: { job_type: jobType, category, job_id: focusJobId || null } });
   } catch (error) {
     console.error('GET /api/admin/job-operations/queue-backlog error:', error);
     res.status(500).json({ error: error.message });
@@ -10817,7 +14522,7 @@ app.get('/api/admin/worker-queues', adminAuthMiddleware, async (req, res) => {
           if (val) scaleConfig[q] = parseInt(val, 10) || 1;
           const p = await redisClient.get(WORKER_QUEUE_PAUSED_KEY + q);
           pausedState[q] = p === '1';
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
@@ -10850,7 +14555,7 @@ app.get('/api/admin/worker-queues', adminAuthMiddleware, async (req, res) => {
           isBull: true,
         });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const allQueues = [...queues, ...bullQueues];
 
@@ -10947,7 +14652,7 @@ app.post('/api/admin/worker-queues/payment-failed/retry', adminAuthMiddleware, a
           added++;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     res.json({ added, total: toRetry.length, message: added > 0 ? 'Added to retry queue' : 'Retry queue not available (Redis+Bull required)' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -11014,7 +14719,7 @@ app.get('/api/admin/worker-queues/alerts', adminAuthMiddleware, async (req, res)
       try {
         const t = await redisClient.get(WORKER_QUEUE_ALERT_KEY + 'thresholds');
         if (t) Object.assign(thresholds, JSON.parse(t));
-      } catch (_) {}
+      } catch (_) { }
     }
     const congestedLimit = thresholds.congested || 50;
     const stalledLimit = thresholds.stalled || 10;
@@ -11359,6 +15064,7 @@ app.get('/api/admin/reports/list', adminAuthMiddleware, async (req, res) => {
       { id: 'RPT-002', name: 'ยอดผู้ใช้งานใหม่ (User Growth)', type: 'USER_GROWTH', format: 'CSV', frequency: 'WEEKLY', lastGenerated: now },
       { id: 'RPT-003', name: 'System Health Audit', type: 'SYSTEM_HEALTH', format: 'CSV', frequency: 'MANUAL', lastGenerated: now },
       { id: 'RPT-004', name: 'System Audit Log', type: 'AUDIT_LOG', format: 'CSV', frequency: 'MONTHLY', lastGenerated: now },
+      { id: 'RPT-005', name: 'Executive Daily Financial CSV (Email)', type: 'EXECUTIVE_DAILY', format: 'CSV', frequency: 'DAILY', lastGenerated: now },
     ],
   });
 });
@@ -11379,7 +15085,7 @@ app.get('/api/admin/incidents/pending-count', adminAuthMiddleware, async (req, r
 app.get('/api/admin/incidents', adminAuthMiddleware, async (req, res) => {
   try {
     const status = req.query.status || 'pending';
-    const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const offset = parseInt(req.query.offset) || 0;
 
     const whereClause = status === 'all' ? '' : `WHERE i.resolution_status = $3`;
@@ -11404,7 +15110,7 @@ app.get('/api/admin/incidents', adminAuthMiddleware, async (req, res) => {
       FROM incidents i
       LEFT JOIN jobs  j ON j.id::text = i.job_id
       LEFT JOIN users w ON w.id = i.worker_id
-      LEFT JOIN users c ON c.id::text = COALESCE(j.client_id::text, j.created_by)
+      LEFT JOIN users c ON c.id = COALESCE(j.client_id, j.created_by)
       ${whereClause}
       ORDER BY i.reported_at DESC
       LIMIT $1 OFFSET $2
@@ -11415,7 +15121,7 @@ app.get('/api/admin/incidents', adminAuthMiddleware, async (req, res) => {
     ).catch(() => ({ rows: [{ count: 0 }] }));
 
     res.json({
-      incidents:     result.rows,
+      incidents: result.rows,
       pending_count: parseInt(total.rows[0]?.count) || 0,
     });
   } catch (err) {
@@ -11495,15 +15201,15 @@ app.patch('/api/admin/incidents/:id/resolve', adminAuthMiddleware, async (req, r
         const j = jobForPayout.rows[0];
         const pd = typeof j.payment_details === 'string' ? JSON.parse(j.payment_details || '{}') : (j.payment_details || {});
         const insuranceAmt = parseFloat(j.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(j.price) || 0;
-        const originalPrice     = insuranceAmt;
+        const originalPrice = insuranceAmt;
         const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
-        const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
+        const reserveAmount = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
         await pool.query(
           `UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
           [replacementPayout, replacement_worker_id]
         );
-        const payId = (tag) => `RPL-${inc.job_id.slice(0,8)}-${tag}-${Date.now()}`;
+        const payId = (tag) => `RPL-${inc.job_id.slice(0, 8)}-${tag}-${Date.now()}`;
         await pool.query(`
           INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
           VALUES ($1, 'insurance_replacement_payout', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)
@@ -11536,7 +15242,7 @@ app.patch('/api/admin/incidents/:id/resolve', adminAuthMiddleware, async (req, r
       );
       await pool.query(
         `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`, [inc.worker_id]
-      ).catch(() => {});
+      ).catch(() => { });
       await pool.query(
         `UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [inc.job_id]
       );
@@ -11626,8 +15332,8 @@ app.post('/api/admin/staff', adminAuthMiddleware, async (req, res) => {
             [hash, plainPass, name, existingUser.rows[0].id]
           );
           await pool.query(
-            `INSERT INTO user_roles (user_id, role, created_at, updated_at) VALUES ($1, 'ADMIN', NOW(), NOW())
-             ON CONFLICT (user_id) DO UPDATE SET role = 'ADMIN', updated_at = NOW()`,
+            `INSERT INTO user_roles (user_id, role, created_at, updated_at) VALUES ($1, 'SUPER_ADMIN', NOW(), NOW())
+             ON CONFLICT (user_id) DO UPDATE SET role = 'SUPER_ADMIN', updated_at = NOW()`,
             [String(existingUser.rows[0].id)]
           );
         } else {
@@ -11637,8 +15343,8 @@ app.post('/api/admin/staff', adminAuthMiddleware, async (req, res) => {
             [userId, mail, name, hash, plainPass]
           );
           await pool.query(
-            `INSERT INTO user_roles (user_id, role, created_at, updated_at) VALUES ($1, 'ADMIN', NOW(), NOW())
-             ON CONFLICT (user_id) DO UPDATE SET role = 'ADMIN', updated_at = NOW()`,
+            `INSERT INTO user_roles (user_id, role, created_at, updated_at) VALUES ($1, 'SUPER_ADMIN', NOW(), NOW())
+             ON CONFLICT (user_id) DO UPDATE SET role = 'SUPER_ADMIN', updated_at = NOW()`,
             [userId]
           );
         }
@@ -11728,77 +15434,39 @@ app.patch('/api/admin/staff/:id/permissions', adminAuthMiddleware, async (req, r
   }
 });
 
-// ✅ GET /api/admin/users (list users — no password/token/firebase_uid)
+// ✅ GET /api/admin/users/ops-queue/export.csv (Tier 5 — ops queue CSV)
+app.get('/api/admin/users/ops-queue/export.csv', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { exportOpsQueueCsv } = await import('./lib/adminUsersListService.js');
+    const csv = await exportOpsQueueCsv(pool, { limit: req.query.limit });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ops-queue-${stamp}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('GET /api/admin/users/ops-queue/export.csv error:', error);
+    res.status(500).json({ error: 'Failed to export ops queue' });
+  }
+});
+
+// ✅ GET /api/admin/users (list users — reconcile trend + ops attention, Tier 4/5)
 app.get('/api/admin/users', adminAuthMiddleware, async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-    const offset = parseInt(req.query.offset, 10) || 0;
-    const search = (req.query.search || '').trim();
-    const roleFilter = (req.query.role || '').trim().toUpperCase();
-    const statusFilter = (req.query.status || '').trim().toLowerCase();
-    const kycFilter = (req.query.kyc_status || '').trim().toLowerCase();
-    const vipFilter = (req.query.vip || '').trim().toLowerCase();
-
-    const conditions = [];
-    const params = [];
-    let idx = 1;
-    if (search) {
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-      conditions.push(`(email ILIKE $${idx} OR full_name ILIKE $${idx + 1} OR phone ILIKE $${idx + 2} OR id::text ILIKE $${idx + 3})`);
-      idx += 4;
-    }
-    if (roleFilter && ['USER', 'ADMIN', 'AUDITOR', 'PROVIDER', 'user', 'provider'].includes(roleFilter)) {
-      params.push(roleFilter);
-      conditions.push(`(role = $${idx} OR (role IS NULL AND $${idx} = 'USER'))`);
-      idx += 1;
-    }
-    if (statusFilter && ['active', 'suspended', 'banned'].includes(statusFilter)) {
-      params.push(statusFilter);
-      conditions.push(`(COALESCE(account_status, 'active') = $${idx})`);
-      idx += 1;
-    }
-    if (kycFilter && ['not_submitted', 'pending', 'approved', 'rejected'].includes(kycFilter)) {
-      if (kycFilter === 'not_submitted') {
-        conditions.push(`(kyc_level IS NULL OR kyc_level = '')`);
-      } else {
-        params.push(kycFilter);
-        conditions.push(`(kyc_level = $${idx})`);
-        idx += 1;
-      }
-    }
-    if (vipFilter === '1' || vipFilter === 'true' || vipFilter === 'yes') {
-      conditions.push('(is_vip = TRUE)');
-    }
-    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM users ${where}`,
-      params
-    );
-    const total = countResult.rows[0]?.total ?? 0;
-
-    params.push(limit, offset);
-    const limitOffset = `LIMIT $${idx} OFFSET $${idx + 1}`;
-    const order = 'ORDER BY created_at DESC NULLS LAST';
-    const result = await pool.query(
-      `SELECT id, email, phone, full_name, name, kyc_level, role, created_at, last_login, account_status, is_vip
-       FROM users ${where} ${order} ${limitOffset}`,
-      params
-    );
-
-    const rows = result.rows.map((r) => ({
-      id: String(r.id),
-      email: r.email || '',
-      phone: r.phone || undefined,
-      full_name: r.full_name || r.name || undefined,
-      kyc_status: mapKycLevelToStatus(r.kyc_level),
-      account_status: r.account_status || 'active',
-      created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-      last_login_at: r.last_login ? new Date(r.last_login).toISOString() : undefined,
-      role: r.role || 'USER',
-      is_vip: !!r.is_vip
-    }));
-
-    res.json({ users: rows, pagination: { limit, offset, total } });
+    const { fetchAdminUsersList } = await import('./lib/adminUsersListService.js');
+    const result = await fetchAdminUsersList(pool, {
+      limit: req.query.limit,
+      offset: req.query.offset,
+      search: req.query.search,
+      role: req.query.role,
+      status: req.query.status,
+      kyc_status: req.query.kyc_status,
+      vip: req.query.vip,
+      reconcile_repeat: req.query.reconcile_repeat,
+      ops_attention: req.query.ops_attention,
+      sort: req.query.sort,
+      include_reconcile: req.query.include_reconcile,
+    });
+    res.json(result);
   } catch (error) {
     console.error('GET /api/admin/users error:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
@@ -11895,14 +15563,25 @@ app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
     } catch (roleErr) {
       if (process.env.NODE_ENV !== 'production') console.warn('user_roles query skipped:', roleErr.message);
     }
+    let kycStatusRaw = null;
+    let kycResubmitTrigger = null;
+    try {
+      const kycR = await pool.query(
+        `SELECT kyc_status, kyc_resubmit_trigger FROM users WHERE id::text = $1 LIMIT 1`,
+        [String(r.id)],
+      );
+      kycStatusRaw = kycR.rows[0]?.kyc_status ?? null;
+      kycResubmitTrigger = kycR.rows[0]?.kyc_resubmit_trigger ?? null;
+    } catch (_) { /* noop */ }
     const user = {
       id: String(r.id),
       email: r.email || '',
       phone: r.phone || undefined,
       full_name: r.full_name || r.name || undefined,
-      kyc_status: mapKycLevelToStatus(r.kyc_level),
+      kyc_status: kycStatusRaw || mapKycLevelToStatus(r.kyc_level),
       kyc_level: r.kyc_level || undefined,
       kyc_rejection_reason: r.kyc_rejection_reason || undefined,
+      kyc_resubmit_trigger: kycResubmitTrigger || undefined,
       account_status: r.account_status || 'active',
       role: r.role || 'USER',
       backend_role: backendRole,
@@ -12033,6 +15712,37 @@ app.post('/api/admin/users/:id/reactivate', adminAuthMiddleware, adminAccountAct
   }
 });
 
+// ✅ POST /api/admin/users/:id/rate-limit/unlock — ปลดล็อก rate limit ของ user จาก User Management
+app.post('/api/admin/users/:id/rate-limit/unlock', adminAuthMiddleware, adminAccountAction, async (req, res) => {
+  try {
+    const userId = String(req.params.id || '').trim();
+    if (!userId) return res.status(400).json({ error: 'user id required' });
+    const exists = await pool
+      .query('SELECT id FROM users WHERE id::text = $1 LIMIT 1', [userId])
+      .then((r) => r.rows?.[0])
+      .catch(() => null);
+    if (!exists) return res.status(404).json({ error: 'User not found' });
+    const unlock = grantRateLimitUnlock(userId, { source: 'admin' });
+    const cleared = await clearRateLimitBucketsForUser(userId, { includeIp: req.body?.ip || null });
+    auditService.log(req.adminUser?.id || 'admin', 'RATE_LIMIT_ADMIN_UNLOCK', {
+      entityName: 'rate_limit',
+      entityId: userId,
+      reason: req.body?.reason || 'Admin rate-limit unlock',
+      cleared,
+      unlock_status: unlock,
+    }, { status: 'Success', ipAddress: getClientIp(req) });
+    res.json({
+      ok: true,
+      message: 'Rate limit unlocked for user',
+      cleared,
+      unlock,
+    });
+  } catch (e) {
+    console.error('POST /api/admin/users/:id/rate-limit/unlock error:', e);
+    res.status(500).json({ error: 'Failed to unlock rate limit' });
+  }
+});
+
 // ✅ Brand Adviser — มอบสิทธิ์ / ถอดสิทธิ์ (ADMIN only; audit)
 app.post('/api/admin/users/:id/brand-adviser/grant', adminAuthMiddleware, adminAccountAction, async (req, res) => {
   try {
@@ -12141,6 +15851,154 @@ app.get('/api/admin/brand-adviser/audit-log', adminAuthMiddleware, async (req, r
   }
 });
 
+/** Brand Adviser — ใบสมัครจาก landing (migration 160) */
+function mapBrandAdviserApplicationRow(row) {
+  const r = row || {};
+  return {
+    id: String(r.id),
+    created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+    full_name: r.full_name,
+    contact: r.contact,
+    primary_platform: r.primary_platform,
+    primary_profile_url: r.primary_profile_url,
+    link_youtube: r.link_youtube ?? null,
+    link_tiktok: r.link_tiktok ?? null,
+    link_instagram: r.link_instagram ?? null,
+    link_facebook: r.link_facebook ?? null,
+    follower_count_declared:
+      r.follower_count_declared != null ? parseInt(r.follower_count_declared, 10) : null,
+    motivation: r.motivation ?? null,
+    read_rules_accepted: !!r.read_rules_accepted,
+    status: r.status,
+    admin_notes: r.admin_notes ?? null,
+    reviewed_at: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
+    reviewed_by: r.reviewed_by ?? null,
+    linked_user_id: r.linked_user_id ? String(r.linked_user_id) : null,
+  };
+}
+
+app.get('/api/admin/brand-adviser-applications', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const stRaw = (req.query.status || '').toString().trim().toLowerCase();
+    const allowed = ['pending', 'under_review', 'approved', 'rejected'];
+    const statusFilter = allowed.includes(stRaw) ? stRaw : null;
+
+    const params = [];
+    let where = '';
+    if (statusFilter) {
+      where = 'WHERE status = $1';
+      params.push(statusFilter);
+    }
+    const countIdx = params.length + 1;
+    params.push(limit);
+    const cnt = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM brand_adviser_applications ${where}`,
+      statusFilter ? [statusFilter] : []
+    );
+    const rows = await pool.query(
+      `SELECT id, created_at, full_name, contact, primary_platform, primary_profile_url,
+              link_youtube, link_tiktok, link_instagram, link_facebook,
+              follower_count_declared, motivation, read_rules_accepted,
+              status, admin_notes, reviewed_at, reviewed_by, linked_user_id
+       FROM brand_adviser_applications
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${countIdx}`,
+      params
+    );
+    return res.json({
+      applications: (rows.rows || []).map(mapBrandAdviserApplicationRow),
+      pagination: { total: parseInt(cnt.rows?.[0]?.c ?? 0, 10) || 0 },
+    });
+  } catch (e) {
+    if (String(e?.code || '') === '42P01') {
+      return res.status(503).json({
+        applications: [],
+        pagination: { total: 0 },
+        warning:
+          'ยังไม่มีตาราง brand_adviser_applications — รัน migration 160 บน DB ที่ API ชี้อยู่',
+      });
+    }
+    console.error('GET /api/admin/brand-adviser-applications:', e);
+    return res.status(500).json({ error: e.message || 'Failed to load applications' });
+  }
+});
+
+app.patch('/api/admin/brand-adviser-applications/:id', adminAuthMiddleware, async (req, res) => {
+  try {
+    const actorRole = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN หรือ SUPER_ADMIN เพื่ออัปเดตใบสมัคร' });
+    }
+    const id = String(req.params.id || '').trim();
+    const body = req.body || {};
+    const newStatus = String(body.status || '').trim().toLowerCase();
+    const allowed = ['pending', 'under_review', 'approved', 'rejected'];
+    if (!id || !allowed.includes(newStatus)) {
+      return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+    }
+    let adminNotes = undefined;
+    if (Object.prototype.hasOwnProperty.call(body, 'admin_notes')) {
+      const raw = body.admin_notes;
+      const s = raw == null ? '' : String(raw).trim();
+      adminNotes = s.length ? s.slice(0, 4000) : null;
+    }
+    let linkedUuid = undefined;
+    if (Object.prototype.hasOwnProperty.call(body, 'linked_user_id')) {
+      const raw = body.linked_user_id;
+      if (raw === null || raw === '') {
+        linkedUuid = null;
+      } else {
+        const s = String(raw).trim();
+        const uchk = await pool.query(
+          'SELECT id FROM users WHERE id::text = $1 OR id = $1::uuid LIMIT 1',
+          [s]
+        );
+        if (!uchk.rows?.length) {
+          return res.status(400).json({ error: 'linked_user_id ไม่พบในระบบ' });
+        }
+        linkedUuid = uchk.rows[0].id;
+      }
+    }
+    const reviewer = String(req.adminUser?.email || req.adminUser?.id || 'admin');
+
+    let setParts = ['status = $2', 'reviewed_at = NOW()', 'reviewed_by = $3'];
+    const qParams = [id, newStatus, reviewer];
+    let pi = 4;
+    if (adminNotes !== undefined) {
+      setParts.push(`admin_notes = $${pi}`);
+      qParams.push(adminNotes);
+      pi++;
+    }
+    if (linkedUuid !== undefined) {
+      setParts.push(`linked_user_id = $${pi}`);
+      qParams.push(linkedUuid);
+      pi++;
+    }
+    const upd = await pool.query(
+      `UPDATE brand_adviser_applications
+       SET ${setParts.join(', ')}
+       WHERE id::text = $1 OR id = $1::uuid
+       RETURNING id, created_at, full_name, contact, primary_platform, primary_profile_url,
+                 link_youtube, link_tiktok, link_instagram, link_facebook,
+                 follower_count_declared, motivation, read_rules_accepted,
+                 status, admin_notes, reviewed_at, reviewed_by, linked_user_id`,
+      qParams
+    );
+    if (!upd.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    res.json(mapBrandAdviserApplicationRow(upd.rows[0]));
+  } catch (e) {
+    if (String(e?.code || '') === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่มีตาราง — รัน migration 160' });
+    }
+    console.error('PATCH /api/admin/brand-adviser-applications/:id:', e);
+    return res.status(500).json({ error: e.message || 'อัปเดตไม่สำเร็จ' });
+  }
+});
+
 // ============ ADMIN JOB MODERATION (Platform Moderation System) ============
 // POST /api/admin/jobs/:id/reject — ปฏิเสธงาน
 app.post('/api/admin/jobs/:id/reject', adminAuthMiddleware, async (req, res) => {
@@ -12173,6 +16031,55 @@ app.post('/api/admin/jobs/:id/suspend', adminAuthMiddleware, async (req, res) =>
   } catch (e) {
     console.error('admin job suspend:', e);
     res.status(500).json({ error: e.message });
+  }
+});
+// POST /api/admin/jobs/:id/release-escrow — ปล่อย escrow เฉพาะ job (admin)
+app.post('/api/admin/jobs/:id/release-escrow', adminAuthMiddleware, async (req, res) => {
+  try {
+    const jobId = String(req.params.id || '').trim();
+    const force = !!req.body?.force;
+    const { adminReleaseJobEscrow } = await import('./lib/adminJobEscrowRelease.js');
+    const result = await adminReleaseJobEscrow(pool, jobId, {
+      skipTimer: true,
+      forceOpenDispute: force,
+      actorId: req.adminUser?.id,
+      actorEmail: req.adminUser?.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error,
+        message: result.message,
+        retry_after_seconds: result.retry_after_seconds,
+      });
+    }
+    auditService.log(req.adminUser?.id, 'admin_job_escrow_released', {
+      entityName: 'jobs',
+      entityId: jobId,
+      amount: result.amount,
+      provider_id: result.provider_id,
+    }, { actorRole: 'Admin' });
+    return res.json({
+      success: true,
+      job_id: result.job_id,
+      amount: result.amount,
+      wht_withheld: result.wht_withheld,
+      net_available: result.net_available,
+      provider_id: result.provider_id,
+    });
+  } catch (e) {
+    console.error('admin job release-escrow:', e);
+    return res.status(500).json({ error: e.message || 'Release failed' });
+  }
+});
+// GET /api/admin/jobs/:id/release-escrow/preview
+app.get('/api/admin/jobs/:id/release-escrow/preview', adminAuthMiddleware, async (req, res) => {
+  try {
+    const jobId = String(req.params.id || '').trim();
+    const { previewAdminJobEscrowRelease } = await import('./lib/adminJobEscrowRelease.js');
+    const preview = await previewAdminJobEscrowRelease(pool, jobId);
+    return res.json({ preview });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 // POST /api/admin/jobs/:id/delete — ลบงาน (soft: set status cancelled + moderation rejected)
@@ -12245,21 +16152,49 @@ app.patch('/api/admin/users/:id/app-role', adminAuthMiddleware, adminAccountActi
 app.post('/api/admin/users/:id/approve-provider', adminAuthMiddleware, adminAccountAction, async (req, res) => {
   try {
     const userId = req.params.id;
-    await pool.query(
+    const upd = await pool.query(
       `UPDATE users SET provider_status = 'VERIFIED_PROVIDER', provider_verified_at = NOW(), provider_test_passed_at = NOW(),
        provider_test_next_retry_at = NULL, updated_at = NOW()
-       WHERE id = $1::uuid`,
+       WHERE id = $1::uuid
+       RETURNING id, provider_status, provider_verified_at`,
       [userId]
     );
+    if (!upd.rowCount) return res.status(404).json({ error: 'User not found' });
+
     auditService.log(req.adminUser.id, 'approve_provider', { entityName: 'users', entityId: userId, new: { provider_status: 'VERIFIED_PROVIDER' } }, { actorRole: req.adminUser.role, ipAddress: req.ip });
-    res.json({ success: true, user_id: userId, provider_status: 'VERIFIED_PROVIDER' });
+
+    let notifyWarning = null;
+    if (req.body?.notify !== false) {
+      try {
+        const title = (req.body?.notify_title || 'ยินดีด้วย! ระบบเปิดรับงานแล้ว').slice(0, 200);
+        const message = (req.body?.notify_message
+          || 'ยินดีด้วย ระบบได้เปิดรับให้คุณรับงานแล้ว โปรดไปที่ Training Dashboard เพื่อเพิ่มทักษะที่คุณต้องการจะเป็นผู้รับงาน').slice(0, 4000);
+        const { insertAdminUserNotification } = await import('./lib/adminUserCompetency.js');
+        await insertAdminUserNotification(pool, userId, title, message, req.adminUser.id, { template: 'provider_approved' });
+        await pushUserNotificationIfNotPeaceMode(userId, title, message);
+      } catch (notifyErr) {
+        notifyWarning = notifyErr?.message || 'notification failed';
+        console.warn('approve-provider notify:', notifyWarning);
+      }
+    }
+
+    res.json({
+      success: true,
+      user_id: userId,
+      provider_status: 'VERIFIED_PROVIDER',
+      provider_verified_at: upd.rows[0]?.provider_verified_at,
+      notify_warning: notifyWarning,
+    });
   } catch (e) {
     console.error('approve-provider error:', e);
-    res.status(500).json({ error: 'Failed to approve provider' });
+    const hint = e.code === '42703'
+      ? 'Missing provider column. Run migration 231_provider_test_passed_at.sql'
+      : (e.detail || e.message || '');
+    res.status(500).json({ error: 'Failed to approve provider', details: hint });
   }
 });
 
-// ✅ PATCH /api/admin/users/:id/vip — ตั้ง/ยกเลิก VIP
+// ✅ PATCH /api/admin/users/:id/vip — ตั้ง/ยกเลิก VIP (manual override)
 app.patch('/api/admin/users/:id/vip', adminAuthMiddleware, adminAccountAction, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -12275,6 +16210,18 @@ app.patch('/api/admin/users/:id/vip', adminAuthMiddleware, adminAccountAction, a
     console.error('vip error:', e);
     const errMsg = e.code === '42703' ? 'Column is_vip does not exist. Run migration 036.' : (e.message || String(e));
     res.status(500).json({ error: errMsg });
+  }
+});
+
+// GET /api/admin/users/:id/vip-membership — สถานะ VIP + ประวัติซื้อรายเดือน
+app.get('/api/admin/users/:id/vip-membership', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { getAdminVipMembership } = await import('./lib/vipSubscriptionService.js');
+    const data = await getAdminVipMembership(pool, req.params.id);
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    console.error('vip-membership error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to fetch VIP membership' });
   }
 });
 
@@ -12444,6 +16391,98 @@ app.get('/api/admin/users/:id/lms-summary', adminAuthMiddleware, async (req, res
   } catch (e) {
     console.error('lms-summary error:', e);
     res.status(500).json({ error: 'Failed to fetch LMS summary' });
+  }
+});
+
+// GET /api/admin/users/:id/competency — skills + exam scores + KYC public transport
+app.get('/api/admin/users/:id/competency', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { getAdminUserCompetency } = await import('./lib/adminUserCompetency.js');
+    const data = await getAdminUserCompetency(pool, req.params.id);
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    console.error('competency error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to fetch competency' });
+  }
+});
+
+// PATCH /api/admin/users/:id/skills/:skillName — enable/disable skill + optional notify
+app.patch('/api/admin/users/:id/skills/:skillName', adminAuthMiddleware, adminAccountAction, async (req, res) => {
+  try {
+    const { upsertAdminUserSkill, insertAdminUserNotification, PUBLIC_TRANSPORT_SKILL } = await import('./lib/adminUserCompetency.js');
+    const userId = req.params.id;
+    const skillName = decodeURIComponent(req.params.skillName || '').trim();
+    const adminId = req.adminUser?.id || 'admin';
+    const enabled = req.body?.admin_enabled !== false;
+    const reason = (req.body?.reason || '').trim() || null;
+
+    if (skillName === PUBLIC_TRANSPORT_SKILL && enabled) {
+      const kyc = await pool.query(
+        `SELECT wants_public_transport, yellow_plate_photo_url, public_transport_license_front_url
+         FROM kyc_submissions WHERE user_id = $1::uuid ORDER BY submitted_at DESC NULLS LAST LIMIT 1`,
+        [userId],
+      );
+      const row = kyc.rows?.[0];
+      if (!row?.wants_public_transport || !row?.yellow_plate_photo_url || !row?.public_transport_license_front_url) {
+        return res.status(400).json({
+          error: 'ต้องมี KYC รถสาธารณะ (ป้ายเหลือง + ใบขับขี่สาธารณะ) ก่อนเปิดสกิลนี้',
+        });
+      }
+    }
+
+    const skill = await upsertAdminUserSkill(pool, userId, skillName, {
+      admin_enabled: enabled,
+      reason,
+      mark_certified: enabled,
+      skill_category: skillName === PUBLIC_TRANSPORT_SKILL ? 'Transport' : undefined,
+    }, adminId);
+
+    auditService.log(adminId, enabled ? 'SKILL_ENABLED' : 'SKILL_DISABLED', {
+      entityId: userId,
+      entityName: 'user_skills',
+      skill_name: skillName,
+      reason,
+    }, { actorRole: req.adminUser?.role || 'Admin', ipAddress: getClientIp(req) });
+
+    if (req.body?.notify === true) {
+      const title = (req.body?.notify_title || (enabled ? 'เปิดสกิลแล้ว' : 'สกิลถูกระงับชั่วคราว')).slice(0, 200);
+      const message = (req.body?.notify_message || reason || (enabled
+        ? `สกิล "${skillName}" เปิดใช้งานแล้ว`
+        : `สกิล "${skillName}" ถูกระงับชั่วคราว`)).slice(0, 4000);
+      const uid = await insertAdminUserNotification(pool, userId, title, message, adminId, { reason, template: req.body?.template });
+      await pushUserNotificationIfNotPeaceMode(uid, title, message);
+    }
+
+    res.json({ ok: true, skill });
+  } catch (e) {
+    console.error('PATCH skill error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to update skill' });
+  }
+});
+
+// POST /api/admin/notifications/user — แจ้งเตือนตรงถึง user รายคน
+app.post('/api/admin/notifications/user', adminAuthMiddleware, adminAccountAction, async (req, res) => {
+  try {
+    const { user_id: userId, title, message, reason, template } = req.body || {};
+    if (!userId || !title || !message) {
+      return res.status(400).json({ error: 'user_id, title, message required' });
+    }
+    const adminId = req.adminUser?.id || 'admin';
+    const { insertAdminUserNotification } = await import('./lib/adminUserCompetency.js');
+    const uid = await insertAdminUserNotification(pool, userId, title, message, adminId, { reason, template });
+    await pushUserNotificationIfNotPeaceMode(uid, String(title), String(message));
+
+    auditService.log(adminId, 'ADMIN_USER_NOTIFY', {
+      entityId: uid,
+      entityName: 'notifications',
+      title,
+      reason: reason || null,
+    }, { actorRole: req.adminUser?.role || 'Admin', ipAddress: getClientIp(req) });
+
+    res.json({ ok: true, user_id: uid });
+  } catch (e) {
+    console.error('POST admin notifications/user error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to send notification' });
   }
 });
 
@@ -13084,14 +17123,14 @@ app.get('/api/admin/financial/expenses', adminAuthMiddleware, async (req, res) =
     const hasRegion = ['TH', 'ID', 'VN', 'MY', 'LA'].includes(region);
     const result = hasRegion
       ? await pool.query(
-          `SELECT id, category, label, amount, budget, cost_type, currency, region, updated_at
+        `SELECT id, category, label, amount, budget, cost_type, currency, region, updated_at
            FROM financial_expenses WHERE COALESCE(region, 'TH') = $1 ORDER BY category`,
-          [region]
-        ).catch(() => ({ rows: [] }))
+        [region]
+      ).catch(() => ({ rows: [] }))
       : await pool.query(
-          `SELECT id, category, label, amount, budget, cost_type, currency, region, updated_at
+        `SELECT id, category, label, amount, budget, cost_type, currency, region, updated_at
            FROM financial_expenses ORDER BY COALESCE(region, 'TH'), category`
-        ).catch(() => ({ rows: [] }));
+      ).catch(() => ({ rows: [] }));
     const expenses = (result.rows || []).map((r) => ({
       id: r.id,
       category: r.category,
@@ -13316,17 +17355,34 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
     const rows = await pool.query(
       `SELECT key, value_json, updated_at FROM payout_config WHERE key IN (
         'withdrawal_min_jobs', 'withdrawal_min_balance_thb', 'fee_rates',
-        'withdrawal_fee_standard_thb', 'withdrawal_fee_instant_thb', 'brand_adviser_rules'
-      )`
+        'withdrawal_fee_standard_thb', 'withdrawal_fee_instant_thb', 'brand_adviser_rules',
+        'withdrawal_fee_policy'
+      )`,
     );
     const map = {};
     for (const r of rows.rows || []) {
       let v = r.value_json;
-      if (typeof v === 'string' && (r.key === 'withdrawal_min_jobs' || r.key === 'withdrawal_min_balance_thb' || r.key === 'withdrawal_fee_standard_thb' || r.key === 'withdrawal_fee_instant_thb')) {
+      if (
+        typeof v === 'string' &&
+        (r.key === 'withdrawal_min_jobs' ||
+          r.key === 'withdrawal_min_balance_thb' ||
+          r.key === 'withdrawal_fee_standard_thb' ||
+          r.key === 'withdrawal_fee_instant_thb')
+      ) {
         v = parseFloat(v) || parseInt(v, 10) || v;
       }
       if (r.key === 'fee_rates' && typeof v === 'object') {
         map.fee_rates = v;
+      } else if (r.key === 'withdrawal_fee_policy') {
+        let rawPolicy = v;
+        if (typeof rawPolicy === 'string') {
+          try {
+            rawPolicy = JSON.parse(rawPolicy);
+          } catch (_) {
+            rawPolicy = {};
+          }
+        }
+        map.withdrawal_fee_policy_raw = rawPolicy;
       } else {
         map[r.key] = v;
       }
@@ -13335,28 +17391,42 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
     const withdrawal_min_balance_thb = parseFloat(map.withdrawal_min_balance_thb) || 650;
     const withdrawal_fee_standard_thb = parseFloat(map.withdrawal_fee_standard_thb) || 35;
     const withdrawal_fee_instant_thb = parseFloat(map.withdrawal_fee_instant_thb) || 50;
-    const fee_rates = map.fee_rates || {
-      platform_fee: { none: 8, silver: 6, gold: 5, platinum: 4 },
-      commission_match_board: { none: 24, silver: 18, gold: 15, platinum: 12 },
-      commission_booking: { none: 32, silver: 18, gold: 15, platinum: 12 },
-      handling_fee_percent: 8,
-      payment_markup_percent: 5,
+    const rawRates = map.fee_rates && typeof map.fee_rates === 'object' ? map.fee_rates : {};
+    const slotNormalized = normalizeSlotFeeRates(rawRates);
+    const fee_rates = {
+      ...slotNormalized,
+      commission_match_board: {
+        none: 24,
+        silver: 18,
+        gold: 15,
+        platinum: 12,
+        ...(rawRates.commission_match_board && typeof rawRates.commission_match_board === 'object'
+          ? rawRates.commission_match_board
+          : {}),
+      },
+      handling_fee_percent: Number(rawRates.handling_fee_percent ?? 8),
+      payment_markup_percent: Number(rawRates.payment_markup_percent ?? 5),
     };
     const brand_adviser_rules = map.brand_adviser_rules && typeof map.brand_adviser_rules === 'object'
       ? map.brand_adviser_rules
       : {
-          program_enabled: false,
-          inactivity_days: 30,
-          warn_days_before_suspend: 3,
-          admin_alert_days_before_suspend: 5,
-          activity_requires_closed_job: true,
-          referral_reputation_multiplier: 1,
-        };
+        program_enabled: false,
+        inactivity_days: 30,
+        warn_days_before_suspend: 3,
+        admin_alert_days_before_suspend: 5,
+        activity_requires_closed_job: true,
+        referral_reputation_multiplier: 1,
+      };
+    const withdrawal_fee_policy = normalizeWithdrawalFeePolicy(map.withdrawal_fee_policy_raw || null, {
+      withdrawal_fee_standard_thb,
+      withdrawal_fee_instant_thb,
+    });
     res.json({
       withdrawal_min_jobs,
       withdrawal_min_balance_thb,
       withdrawal_fee_standard_thb,
       withdrawal_fee_instant_thb,
+      withdrawal_fee_policy,
       fee_rates,
       brand_adviser_rules,
       brand_adviser_rules_help: {
@@ -13374,11 +17444,87 @@ app.get('/api/admin/financial/control-settings', adminAuthMiddleware, async (req
   }
 });
 
+// POST /api/admin/financial/withdrawal-fee-preview — draft policy quote (ไม่เขียน DB)
+app.post('/api/admin/financial/withdrawal-fee-preview', adminAuthMiddleware, async (req, res) => {
+  try {
+    const {
+      payout_amount_thb: payoutAmountRaw,
+      channel,
+      is_provider: isProviderBody,
+      instant_payout: instantBody,
+      withdrawal_fee_policy_draft: policyDraft,
+    } = req.body || {};
+    const amt = Math.round(Number(payoutAmountRaw) * 100) / 100;
+    if (!Number.isFinite(amt) || amt < 0) {
+      return res.status(400).json({ error: 'payout_amount_thb must be a number ≥ 0' });
+    }
+    const thresholds = await loadPayoutWithdrawalThresholdsResolved(pool);
+    const legacy = {
+      withdrawal_fee_standard_thb: thresholds.withdrawal_fee_standard_thb,
+      withdrawal_fee_instant_thb: thresholds.withdrawal_fee_instant_thb,
+    };
+    let dbRaw = null;
+    try {
+      const r = await pool.query(`SELECT value_json FROM payout_config WHERE key = 'withdrawal_fee_policy'`);
+      dbRaw = r.rows?.[0]?.value_json ?? null;
+      if (typeof dbRaw === 'string') {
+        try {
+          dbRaw = JSON.parse(dbRaw);
+        } catch (_) {
+          dbRaw = {};
+        }
+      }
+    } catch (_) {
+      dbRaw = null;
+    }
+    let policy;
+    try {
+      if (policyDraft && typeof policyDraft === 'object' && !Array.isArray(policyDraft)) {
+        policy = mergeAndValidateWithdrawalFeePolicyForPersistence(dbRaw, legacy, policyDraft);
+      } else {
+        policy = thresholds.withdrawal_fee_policy;
+      }
+    } catch (e) {
+      if (e instanceof WithdrawalFeePolicyValidationError) {
+        return res.status(400).json({ ok: false, error: e.message, code: e.code });
+      }
+      throw e;
+    }
+    const ch = typeof channel === 'string' ? channel.trim().toLowerCase() : '';
+    const channelRaw = ['bank_transfer', 'promptpay', 'truemoney'].includes(ch) ? ch : 'promptpay';
+    const quote = computeWithdrawalFeeQuote({
+      payoutAmountThb: amt,
+      channelRaw,
+      isProvider: !!isProviderBody,
+      instantPayout: !!instantBody,
+      policy,
+      feeStandardThb: thresholds.withdrawal_fee_standard_thb,
+      feeInstantThb: thresholds.withdrawal_fee_instant_thb,
+    });
+    return res.json({
+      ok: true,
+      ...quote,
+      preview_used_draft_policy: !!(policyDraft && typeof policyDraft === 'object'),
+    });
+  } catch (err) {
+    console.error('POST /api/admin/financial/withdrawal-fee-preview error:', err);
+    return res.status(500).json({ error: err.message || 'Preview failed' });
+  }
+});
+
 // ✅ PATCH /api/admin/financial/control-settings — Update thresholds + fees (audit on change)
 app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (req, res) => {
   try {
     const adminId = req.adminUser?.id || 'unknown';
-    const { withdrawal_min_jobs, withdrawal_min_balance_thb, fee_rates, withdrawal_fee_standard_thb, withdrawal_fee_instant_thb, brand_adviser_rules } = req.body || {};
+    const {
+      withdrawal_min_jobs,
+      withdrawal_min_balance_thb,
+      fee_rates,
+      withdrawal_fee_standard_thb,
+      withdrawal_fee_instant_thb,
+      brand_adviser_rules,
+      withdrawal_fee_policy,
+    } = req.body || {};
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -13456,13 +17602,18 @@ app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (r
           handling_fee_percent: 8,
           payment_markup_percent: 5,
         };
-        const final = {
+        const final = normalizeSlotFeeRates({
           platform_fee: { ...defaults.platform_fee, ...merged.platform_fee },
           commission_match_board: { ...defaults.commission_match_board, ...merged.commission_match_board },
           commission_booking: { ...defaults.commission_booking, ...merged.commission_booking },
           handling_fee_percent: typeof fee_rates.handling_fee_percent === 'number' ? fee_rates.handling_fee_percent : (oldVal.handling_fee_percent ?? defaults.handling_fee_percent),
           payment_markup_percent: typeof fee_rates.payment_markup_percent === 'number' ? fee_rates.payment_markup_percent : (oldVal.payment_markup_percent ?? defaults.payment_markup_percent),
-        };
+          booking_sourcing_percent: typeof fee_rates.booking_sourcing_percent === 'number' ? fee_rates.booking_sourcing_percent : (oldVal.booking_sourcing_percent ?? 8),
+          bidding_fee_percent: typeof fee_rates.bidding_fee_percent === 'number' ? fee_rates.bidding_fee_percent : (oldVal.bidding_fee_percent ?? 9.3),
+        });
+        final.commission_match_board = { ...defaults.commission_match_board, ...merged.commission_match_board };
+        final.handling_fee_percent = typeof fee_rates.handling_fee_percent === 'number' ? fee_rates.handling_fee_percent : (oldVal.handling_fee_percent ?? defaults.handling_fee_percent);
+        final.payment_markup_percent = typeof fee_rates.payment_markup_percent === 'number' ? fee_rates.payment_markup_percent : (oldVal.payment_markup_percent ?? defaults.payment_markup_percent);
         await client.query(
           `INSERT INTO payout_config (key, value_json, updated_at) VALUES ('fee_rates', $1::jsonb, NOW())
            ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()`,
@@ -13496,30 +17647,91 @@ app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (r
           [adminId, JSON.stringify(oldBa), JSON.stringify(mergedBa)]
         );
       }
+      if (
+        withdrawal_fee_policy !== undefined &&
+        withdrawal_fee_policy !== null &&
+        typeof withdrawal_fee_policy === 'object' &&
+        !Array.isArray(withdrawal_fee_policy)
+      ) {
+        const prevWp = await client.query(`SELECT value_json FROM payout_config WHERE key = 'withdrawal_fee_policy'`);
+        let oldWp = prevWp.rows?.[0]?.value_json ?? {};
+        if (typeof oldWp === 'string') {
+          try {
+            oldWp = JSON.parse(oldWp);
+          } catch (_) {
+            oldWp = {};
+          }
+        }
+        if (oldWp == null || typeof oldWp !== 'object') oldWp = {};
+        const sr = await client.query(
+          `SELECT key, value_json FROM payout_config WHERE key IN ('withdrawal_fee_standard_thb','withdrawal_fee_instant_thb')`,
+        );
+        const sm = {};
+        for (const row of sr.rows || []) sm[row.key] = row.value_json;
+        const effStd = parseFloat(sm.withdrawal_fee_standard_thb) || 35;
+        const effInst = parseFloat(sm.withdrawal_fee_instant_thb) || 50;
+        const mergedWp = mergeAndValidateWithdrawalFeePolicyForPersistence(oldWp, {
+          withdrawal_fee_standard_thb: effStd,
+          withdrawal_fee_instant_thb: effInst,
+        }, withdrawal_fee_policy);
+        await client.query(
+          `INSERT INTO payout_config (key, value_json, updated_at) VALUES ('withdrawal_fee_policy', $1::jsonb, NOW())
+           ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()`,
+          [JSON.stringify(mergedWp)],
+        );
+        await client.query(
+          `INSERT INTO financial_audit_log (actor_type, actor_id, action, entity_type, entity_id, state_before, state_after, reason)
+           VALUES ('admin', $1, 'SETTING_CHANGE', 'payout_config', 'withdrawal_fee_policy', $2, $3, 'Admin withdrawal fee policy update')`,
+          [adminId, JSON.stringify(oldWp), JSON.stringify(mergedWp)],
+        );
+      }
       await client.query('COMMIT');
       const out = await pool.query(
-        `SELECT key, value_json FROM payout_config WHERE key IN ('withdrawal_min_jobs','withdrawal_min_balance_thb','fee_rates','withdrawal_fee_standard_thb','withdrawal_fee_instant_thb','brand_adviser_rules')`
+        `SELECT key, value_json FROM payout_config WHERE key IN (
+          'withdrawal_min_jobs','withdrawal_min_balance_thb','fee_rates',
+          'withdrawal_fee_standard_thb','withdrawal_fee_instant_thb','brand_adviser_rules',
+          'withdrawal_fee_policy'
+        )`,
       );
       const m = {};
       for (const r of out.rows || []) {
         if (r.key === 'fee_rates') m.fee_rates = r.value_json;
-        else m[r.key] = r.value_json;
+        else if (r.key === 'withdrawal_fee_policy') {
+          let rawPolicy = r.value_json;
+          if (typeof rawPolicy === 'string') {
+            try {
+              rawPolicy = JSON.parse(rawPolicy);
+            } catch (_) {
+              rawPolicy = {};
+            }
+          }
+          m.withdrawal_fee_policy_raw = rawPolicy || {};
+        } else {
+          m[r.key] = r.value_json;
+        }
       }
       const baOut = m.brand_adviser_rules && typeof m.brand_adviser_rules === 'object'
         ? m.brand_adviser_rules
         : {
-            program_enabled: false,
-            inactivity_days: 30,
-            warn_days_before_suspend: 3,
-            admin_alert_days_before_suspend: 5,
-            activity_requires_closed_job: true,
-            referral_reputation_multiplier: 1,
-          };
+          program_enabled: false,
+          inactivity_days: 30,
+          warn_days_before_suspend: 3,
+          admin_alert_days_before_suspend: 5,
+          activity_requires_closed_job: true,
+          referral_reputation_multiplier: 1,
+        };
+      const stdOut = parseFloat(m.withdrawal_fee_standard_thb) || 35;
+      const instOut = parseFloat(m.withdrawal_fee_instant_thb) || 50;
+      const withdrawal_fee_policy_out = normalizeWithdrawalFeePolicy(m.withdrawal_fee_policy_raw || null, {
+        withdrawal_fee_standard_thb: stdOut,
+        withdrawal_fee_instant_thb: instOut,
+      });
       res.json({
         withdrawal_min_jobs: parseInt(m.withdrawal_min_jobs, 10) || 10,
         withdrawal_min_balance_thb: parseFloat(m.withdrawal_min_balance_thb) || 650,
-        withdrawal_fee_standard_thb: parseFloat(m.withdrawal_fee_standard_thb) || 35,
-        withdrawal_fee_instant_thb: parseFloat(m.withdrawal_fee_instant_thb) || 50,
+        withdrawal_fee_standard_thb: stdOut,
+        withdrawal_fee_instant_thb: instOut,
+        withdrawal_fee_policy: withdrawal_fee_policy_out,
         fee_rates: m.fee_rates || { platform_fee: {}, commission_match_board: {}, commission_booking: {} },
         brand_adviser_rules: baOut,
         brand_adviser_rules_help: {
@@ -13532,12 +17744,15 @@ app.patch('/api/admin/financial/control-settings', adminAuthMiddleware, async (r
         message: 'Control settings updated',
       });
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       throw e;
     } finally {
       client.release();
     }
   } catch (err) {
+    if (err instanceof WithdrawalFeePolicyValidationError) {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
     console.error('PATCH /api/admin/financial/control-settings error:', err);
     res.status(500).json({ error: err.message });
   }
@@ -13883,23 +18098,30 @@ app.post('/api/admin/bank-accounts', adminAuthMiddleware, async (req, res) => {
 app.get('/api/admin/payouts', adminAuthMiddleware, async (req, res) => {
   try {
     const statusFilter = req.query.status;
+    const userIdFilter = String(req.query.user_id || '').trim();
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
-    let q = `
-      SELECT p.id, p.user_id, p.amount, p.bank_details, p.status, p.admin_notes, p.transaction_id, p.created_at, p.processed_at, p.processed_by,
-             u.full_name AS user_name, u.phone AS user_phone, u.email AS user_email, u.membership_tier, u.kyc_status, u.rating
-      FROM payout_requests p
-      LEFT JOIN users u ON u.id = p.user_id
-      ORDER BY p.created_at DESC LIMIT $1`;
-    const params = [limit];
+    const where = [];
+    const params = [];
+    let idx = 1;
     if (statusFilter && ['pending', 'approved', 'rejected', 'cancelled'].includes(String(statusFilter))) {
-      q = `
+      where.push(`p.status = $${idx}`);
+      params.push(statusFilter);
+      idx += 1;
+    }
+    if (userIdFilter) {
+      where.push(`p.user_id = $${idx}::uuid`);
+      params.push(userIdFilter);
+      idx += 1;
+    }
+    params.push(limit);
+    const limitParam = idx;
+    const q = `
       SELECT p.id, p.user_id, p.amount, p.bank_details, p.status, p.admin_notes, p.transaction_id, p.created_at, p.processed_at, p.processed_by,
              u.full_name AS user_name, u.phone AS user_phone, u.email AS user_email, u.membership_tier, u.kyc_status, u.rating
       FROM payout_requests p
       LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.status = $2 ORDER BY p.created_at DESC LIMIT $1`;
-      params.push(statusFilter);
-    }
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY p.created_at DESC LIMIT $${limitParam}`;
     const result = await pool.query(q, params).catch(() => ({ rows: [] }));
     const list = (result.rows || []).map((r) => ({
       id: String(r.id),
@@ -13926,15 +18148,195 @@ app.get('/api/admin/payouts', adminAuthMiddleware, async (req, res) => {
   }
 });
 
+/** Payout Reconciliation UI (Tier A) — migrations 155/156/157; อย่างน้อยต้องมีคอลัมน์ reconciliation_* (155) และ payso_* (157) */
+app.get('/api/admin/payouts/reconciliation/overview', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 300, 500);
+    const rst = String(req.query.reconciliation_status || '').trim().toUpperCase();
+    const allowed = ['PENDING', 'PASS', 'WARN', 'FAIL'];
+    const params = [];
+    let whereClause = '';
+    if (rst && allowed.includes(rst)) {
+      whereClause = 'WHERE p.reconciliation_status = $1';
+      params.push(rst);
+    }
+    const limIdx = params.length + 1;
+    params.push(limit);
+    const result = await pool.query(
+      `SELECT p.id, p.user_id, p.amount, p.status, p.bank_details,
+              p.reconciliation_status, p.reconciliation_details, p.slip_hash,
+              p.reconciled_at, p.created_at, p.processed_at,
+              p.payso_transaction_id, p.payso_reference_id,
+              COALESCE(u.full_name, u.name) AS user_name_joined
+       FROM payout_requests p
+       LEFT JOIN users u ON u.id = p.user_id
+       ${whereClause}
+       ORDER BY p.created_at DESC
+       LIMIT $${limIdx}`,
+      params
+    );
+    const items = (result.rows || []).map((r) => {
+      const bd = r.bank_details || {};
+      const slipUrl = String(bd.slip_url || bd.slipUrl || '').trim() || null;
+      let detailsObj = {};
+      if (r.reconciliation_details != null && typeof r.reconciliation_details === 'object') {
+        detailsObj = r.reconciliation_details;
+      } else if (typeof r.reconciliation_details === 'string' && String(r.reconciliation_details).trim()) {
+        try {
+          detailsObj = JSON.parse(r.reconciliation_details);
+        } catch (_) {
+          detailsObj = {};
+        }
+      }
+      return {
+        id: String(r.id),
+        user_id: String(r.user_id),
+        user_name: r.user_name_joined || null,
+        amount: parseFloat(r.amount),
+        status: r.status,
+        reconciliation_status: r.reconciliation_status || 'PENDING',
+        reconciliation_details: detailsObj,
+        slip_hash: r.slip_hash || null,
+        slip_url: slipUrl,
+        reconciled_at: r.reconciled_at ? new Date(r.reconciled_at).toISOString() : null,
+        created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
+        processed_at: r.processed_at ? new Date(r.processed_at).toISOString() : null,
+        payso_transaction_id: r.payso_transaction_id ?? null,
+        payso_reference_id: r.payso_reference_id ?? null,
+      };
+    });
+    return res.json({ items });
+  } catch (err) {
+    const code = String(err?.code || '');
+    console.error('GET /api/admin/payouts/reconciliation/overview error:', err?.message || err);
+    if (code === '42P01' || code === '42703') {
+      return res.status(503).json({
+        error:
+          'สกีมา payout reconciliation ยังไม่ครบใน DB — รัน migration 155 (คอลัมน์ reconciliation_*), 157 (payso_* references)',
+        code: 'PAYOUT_RECON_SCHEMA_MISSING',
+      });
+    }
+    return res.status(500).json({ error: err?.message || 'payout_recon_overview_failed' });
+  }
+});
+
+app.get('/api/admin/payouts/reconciliation/summary', adminAuthMiddleware, async (req, res) => {
+  try {
+    const dateRaw = String(req.query.date || '').slice(0, 10).trim();
+    const date =
+      dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)
+        ? dateRaw
+        : new Date().toISOString().slice(0, 10);
+    const summary = await buildReconciliationSummary(pool, { date });
+    return res.json(summary);
+  } catch (err) {
+    const code = String(err?.code || '');
+    console.error('GET /api/admin/payouts/reconciliation/summary error:', err?.message || err);
+    if (code === '42P01' || code === '42703') {
+      return res.status(503).json({
+        error: 'ตาราง/คอลัมน์ reconciliation ไม่พร้อม — รัน migration 155+',
+        code: 'PAYOUT_RECON_SCHEMA_MISSING',
+      });
+    }
+    return res.status(500).json({ error: err?.message || 'payout_recon_summary_failed' });
+  }
+});
+
+app.get('/api/admin/payouts/reconciliation/daily-report', adminAuthMiddleware, async (req, res) => {
+  try {
+    const dateRaw = String(req.query.date || '').slice(0, 10);
+    const format = String(req.query.format || 'csv').toLowerCase();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+      return res.status(400).json({ error: 'พารามิเตอร์ date ต้องเป็นรูปแบบ YYYY-MM-DD' });
+    }
+    const data = await buildDailyReconciliationReportData(pool, { date: dateRaw });
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="payout-reconciliation-${dateRaw}.pdf"`);
+      const buf = await buildDailyReconciliationPdfBuffer(data);
+      return res.send(buf);
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="payout-reconciliation-${dateRaw}.csv"`);
+    return res.send(dailyReportToCsv(data));
+  } catch (err) {
+    const code = String(err?.code || '');
+    console.error('GET /api/admin/payouts/reconciliation/daily-report error:', err?.message || err);
+    if (code === '42P01' || code === '42703') {
+      return res.status(503).json({
+        error: 'สกีมา reconciliation ไม่พร้อม',
+        code: 'PAYOUT_RECON_SCHEMA_MISSING',
+      });
+    }
+    return res.status(500).json({ error: err?.message || 'daily_report_failed' });
+  }
+});
+
+app.post('/api/admin/payouts/:id/reconcile', adminAuthMiddleware, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const reason = String(req.body?.reason || '').trim();
+    if (!id) return res.status(400).json({ error: 'missing id' });
+    if (reason.length < 5) {
+      return res.status(400).json({ error: 'reason ต้องอย่างน้อย 5 ตัวอักษร' });
+    }
+    const prev = await pool.query(
+      `SELECT id, reconciliation_status FROM payout_requests WHERE id::text = $1 OR id = $1::uuid LIMIT 1`,
+      [id]
+    );
+    if (!prev.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบคำขอถอน' });
+    }
+    const oldSt = prev.rows[0].reconciliation_status ?? null;
+    const out = await runPayoutReconciliation(pool, id);
+    try {
+      await insertPayoutReconciliationAuditLog(pool, {
+        payout_request_id: prev.rows[0].id,
+        actor_admin_id: String(req.adminUser?.id || req.adminUser?.email || 'admin'),
+        actor_role: req.adminUser?.role || null,
+        action: 'manual_rerun_reconciliation',
+        old_reconciliation_status: oldSt,
+        new_reconciliation_status: out.status,
+        reason,
+        ip_address: getClientIp(req),
+        metadata: {},
+      });
+    } catch (auditErr) {
+      console.warn('insertPayoutReconciliationAuditLog skipped:', auditErr?.message);
+    }
+    return res.json({
+      success: true,
+      status: out.status,
+      details: out.details,
+      slip_hash: out.slip_hash,
+    });
+  } catch (err) {
+    console.error('POST /api/admin/payouts/:id/reconcile error:', err?.message || err);
+    if (String(err?.message || '').includes('payout_request_not_found')) {
+      return res.status(404).json({ error: 'ไม่พบคำขอถอน' });
+    }
+    return res.status(500).json({ error: err?.message || 'reconcile_failed' });
+  }
+});
+
+/** Disbursement ผ่าน Payso None-UI ยังไม่ได้ผูก — ให้ชัดว่าเป็น 501 ไม่ใช่ 404 HTML */
+app.post('/api/admin/payouts/:id/payso-promptpay', adminAuthMiddleware, async (req, res) => {
+  return res.status(501).json({
+    error:
+      'Payso PromptPay จ่ายออกผู้ใช้ยังไม่ได้ implement ใน API — ใช้อนุมัติมือ (PATCH /api/admin/payouts/:id) หรือ auto-payout cron ผ่าน gateway ที่ตั้งค่าไว้',
+    code: 'PAYSO_DISBURSE_NOT_IMPLEMENTED',
+  });
+});
+
 // GET /api/admin/payments/gateway-balance — available balance at configured payment processor (cash-flow)
 app.get('/api/admin/payments/gateway-balance', adminAuthMiddleware, async (req, res) => {
   try {
     const secretKey = getPaymentGatewaySecretKey();
     if (!secretKey) {
-      return res.json({ 
-        available: 0, 
-        pending: 0, 
-        total: 0, 
+      return res.json({
+        available: 0,
+        pending: 0,
+        total: 0,
         currency: 'THB',
         error: 'Payment gateway secret key not configured',
       });
@@ -13947,13 +18349,13 @@ app.get('/api/admin/payments/gateway-balance', adminAuthMiddleware, async (req, 
     const availableTHB = Math.round(availableSatang) / 100;
     const totalTHB = Math.round(totalSatang) / 100;
     const pendingTHB = totalTHB - availableTHB;
-    
+
     // ดึงยอดรวม Pending Payout Requests จาก Database
     const pendingPayoutsResult = await pool.query(
       `SELECT COALESCE(SUM(amount), 0) as total_pending FROM payout_requests WHERE status = 'pending'`
     );
     const totalPendingPayouts = parseFloat(pendingPayoutsResult.rows[0]?.total_pending || 0);
-    
+
     return res.json({
       available: availableTHB,
       pending: pendingTHB,
@@ -13983,7 +18385,7 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
     from.setDate(from.getDate() - days);
     from.setHours(0, 0, 0, 0);
 
-    const [summary, recent, commissionRow] = await Promise.all([
+    const [summary, recent, commissionRow, dailyTrend] = await Promise.all([
       pool.query(
         `SELECT source_type, COALESCE(SUM(amount), 0) AS total
          FROM platform_revenues WHERE created_at >= $1 GROUP BY source_type`,
@@ -13998,7 +18400,49 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
          COALESCE(SUM(CASE WHEN L.event_type IN ('booking_fee', 'vip_subscription', 'post_job_fee', 'branding_package_payout') THEN L.amount ELSE 0 END), 0) AS total
          FROM payment_ledger_audit L WHERE L.created_at >= $1`,
         [from]
-      ).catch(() => ({ rows: [{ total: 0 }] }))
+      ).catch(() => ({ rows: [{ total: 0 }] })),
+      pool.query(
+        `WITH days AS (
+           SELECT d::date AS day
+           FROM generate_series(
+             (NOW() AT TIME ZONE 'Asia/Bangkok')::date - (($1::int - 1) * INTERVAL '1 day'),
+             (NOW() AT TIME ZONE 'Asia/Bangkok')::date,
+             INTERVAL '1 day'
+           ) d
+         ),
+         pr AS (
+           SELECT
+             (created_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+             COALESCE(SUM(CASE WHEN source_type IN ('deposit_margin_truemoney', 'deposit_margin_card') THEN amount ELSE 0 END), 0)::float8 AS revenue_b,
+             COALESCE(SUM(CASE WHEN source_type = 'withdrawal_fee_margin' THEN amount ELSE 0 END), 0)::float8 AS revenue_c
+           FROM platform_revenues
+           WHERE created_at >= $2
+           GROUP BY (created_at AT TIME ZONE 'Asia/Bangkok')::date
+         ),
+         ledger AS (
+           SELECT
+             (created_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+             COALESCE(SUM(CASE
+               WHEN event_type = 'escrow_held' AND metadata->>'leg' = 'commission' THEN amount
+               WHEN event_type = 'escrow_refunded' AND metadata->>'leg' = 'commission_reversed' THEN -amount
+               WHEN event_type IN ('booking_fee', 'vip_subscription', 'post_job_fee', 'branding_package_payout') THEN amount
+               ELSE 0
+             END), 0)::float8 AS revenue_a
+           FROM payment_ledger_audit
+           WHERE created_at >= $2
+           GROUP BY (created_at AT TIME ZONE 'Asia/Bangkok')::date
+         )
+         SELECT
+           days.day,
+           COALESCE(ledger.revenue_a, 0)::float8 AS revenue_a_commission,
+           COALESCE(pr.revenue_b, 0)::float8 AS revenue_b_deposit_margin,
+           COALESCE(pr.revenue_c, 0)::float8 AS revenue_c_withdrawal_margin
+         FROM days
+         LEFT JOIN pr ON pr.day = days.day
+         LEFT JOIN ledger ON ledger.day = days.day
+         ORDER BY days.day ASC`,
+        [days, from]
+      ).catch(() => ({ rows: [] })),
     ]);
 
     const bySource = (summary.rows || []).reduce((acc, r) => {
@@ -14010,6 +18454,20 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
     const revenueInsurance = bySource.insurance_premium || 0;
     const totalMargin = revenueB + revenueC + revenueInsurance;
     const revenueA = parseFloat(commissionRow.rows?.[0]?.total || 0);
+    const dailyTrendRows = (dailyTrend.rows || []).map((r) => {
+      const revenueACommission = parseFloat(r.revenue_a_commission || 0);
+      const revenueBDepositMargin = parseFloat(r.revenue_b_deposit_margin || 0);
+      const revenueCWithdrawalMargin = parseFloat(r.revenue_c_withdrawal_margin || 0);
+      return {
+        date: r.day,
+        revenue_a_commission: revenueACommission,
+        revenue_b_deposit_margin: revenueBDepositMargin,
+        revenue_c_withdrawal_margin: revenueCWithdrawalMargin,
+        total_margin_thb: revenueBDepositMargin + revenueCWithdrawalMargin,
+        total_with_commission_thb:
+          revenueACommission + revenueBDepositMargin + revenueCWithdrawalMargin,
+      };
+    });
 
     return res.json({
       total_margin_thb: Math.round(totalMargin * 100) / 100,
@@ -14018,6 +18476,7 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
       revenue_c_withdrawal_margin: Math.round(revenueC * 100) / 100,
       revenue_insurance_premium: Math.round(revenueInsurance * 100) / 100,
       by_source: bySource,
+      daily_trend: dailyTrendRows,
       recent: (recent.rows || []).map((r) => ({
         id: String(r.id),
         transaction_id: r.transaction_id,
@@ -14031,6 +18490,454 @@ app.get('/api/admin/financial/platform-revenues', adminAuthMiddleware, async (re
   } catch (err) {
     console.error('GET /api/admin/financial/platform-revenues error:', err);
     return res.status(500).json({ error: err.message || 'Failed to fetch platform revenues' });
+  }
+});
+
+/** ภาพรวมสะสมการ์ด “รายได้แยก 4 เด้ง” — financialService.getRevenueFourBumps() → FinancialDashboardView */
+app.get('/api/admin/financial/revenue-four-bumps', adminAuthMiddleware, async (req, res) => {
+  try {
+    const ledgerRow = await pool.query(`
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN (metadata->>'payment_markup') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+          THEN (metadata->>'payment_markup')::numeric ELSE 0 END), 0)::numeric AS markup_meta,
+        COALESCE(SUM(CASE WHEN event_type IN ('booking_fee', 'post_job_fee', 'vip_subscription', 'branding_package_payout')
+          THEN COALESCE(platform_margin_amount, 0) ELSE 0 END), 0)::numeric AS markup_platform_col,
+        COALESCE(SUM(CASE
+          WHEN (metadata->>'handling_fee') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+          THEN ABS((metadata->>'handling_fee')::numeric) ELSE 0 END), 0)::numeric AS handling_fee,
+        COALESCE(SUM(CASE WHEN event_type = 'escrow_held' AND (metadata->>'leg') = 'commission'
+          THEN COALESCE(amount, 0) ELSE 0 END), 0)::numeric AS commission_leg,
+        COALESCE(SUM(CASE WHEN event_type = 'user_payout_withdrawal'
+          THEN COALESCE(platform_margin_amount, 0) ELSE 0 END), 0)::numeric AS wd_margin_ledger
+      FROM payment_ledger_audit
+      WHERE LOWER(COALESCE(status, 'completed')) NOT IN ('failed', 'reversed', 'cancelled')
+    `).catch(() => ({
+      rows: [{
+        markup_meta: 0,
+        markup_platform_col: 0,
+        handling_fee: 0,
+        commission_leg: 0,
+        wd_margin_ledger: 0,
+      }]
+    }));
+
+    let wdMarginRev = 0;
+    try {
+      const pr = await pool.query(
+        `SELECT COALESCE(SUM(amount), 0)::numeric AS t FROM platform_revenues WHERE source_type = 'withdrawal_fee_margin'`
+      );
+      wdMarginRev = parseFloat(pr.rows?.[0]?.t || 0);
+    } catch (_) {
+      wdMarginRev = 0;
+    }
+
+    const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+    const row = ledgerRow.rows?.[0] || {};
+    const markup_payment_employer = round2(
+      (parseFloat(row.markup_meta) || 0) + (parseFloat(row.markup_platform_col) || 0),
+    );
+    const handling_fee_from_job = round2(parseFloat(row.handling_fee) || 0);
+    const commission_vip_tier = round2(parseFloat(row.commission_leg) || 0);
+    const wdLedger = round2(parseFloat(row.wd_margin_ledger) || 0);
+    const withdrawal_fees = wdMarginRev > 0 ? round2(wdMarginRev) : wdLedger;
+
+    const total_platform_fee_components = round2(
+      markup_payment_employer + handling_fee_from_job + commission_vip_tier + withdrawal_fees,
+    );
+
+    return res.json({
+      currency: 'THB',
+      markup_payment_employer,
+      handling_fee_from_job,
+      commission_vip_tier,
+      withdrawal_fees,
+      total_platform_fee_components,
+      mapping_note:
+        'สะสมจาก payment_ledger_audit (ยกเว้นสถานะ failed/reversed/cancelled). Markup ≈ metadata.payment_markup + platform_margin_amount จาก booking_fee/vip/branding/subscription · Handling ≈ Σ|handling_fee| จาก metadata · Commission = escrow_held leg=commission · ค่าถอน = SUM withdrawal_fee_margin ใน platform_revenues ถ้ามี ไม่งั้น platform_margin_amount จาก user_payout_withdrawal เพื่อหลีกเลี่ยงนับซ้ำ',
+    });
+  } catch (err) {
+    console.error('GET /api/admin/financial/revenue-four-bumps error:', err);
+    return res.status(500).json({
+      currency: 'THB',
+      markup_payment_employer: 0,
+      handling_fee_from_job: 0,
+      commission_vip_tier: 0,
+      withdrawal_fees: 0,
+      total_platform_fee_components: 0,
+      mapping_note: 'มีข้อผิดพลาดขณะโหลดสรุป 4 เด้ง — ดู backend log',
+      error: err.message || 'revenue_four_bumps_failed',
+    });
+  }
+});
+
+// ============ Personal settlement (บัญชีรับชั่วคราว — migration 153) ============
+const PS_CHANNELS = new Set(['QR_PROMPTPAY', 'QR_BANK_STATIC', 'MOBILE_BANKING_TRANSFER', 'OTHER']);
+const PS_STATUSES = new Set(['PENDING_RECONCILE', 'MATCHED', 'FLAGGED']);
+const PS_DIRECTIONS = new Set(['INBOUND', 'OUTBOUND']);
+
+function psFinanceMutateRole(role) {
+  const r = String(role || '').toUpperCase();
+  return r === 'ADMIN' || r === 'SUPER_ADMIN' || r === 'ACCOUNTANT';
+}
+
+function mapPersonalSettlementAccountRow(row) {
+  return {
+    id: row.singleton_key || 'default',
+    label: row.label,
+    bankName: row.bank_name,
+    accountHolderName: row.account_holder_name,
+    accountNumber: row.account_number,
+    promptPayId: row.prompt_pay_id || undefined,
+    preferredMobileBankApps: row.preferred_mobile_bank_apps || undefined,
+    notes: row.notes || undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+  };
+}
+
+function mapPersonalSettlementRecordRow(r) {
+  return {
+    id: String(r.id),
+    direction: r.direction,
+    channel: r.channel,
+    amount: parseFloat(r.amount),
+    currency: r.currency || 'THB',
+    referenceLabel: r.reference_label,
+    bankReference: r.bank_reference || undefined,
+    transferAt: r.transfer_at ? new Date(r.transfer_at).toISOString() : undefined,
+    status: r.status,
+    notes: r.notes || undefined,
+    slipUrl: r.slip_url || undefined,
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+    createdBy: r.created_by || undefined,
+  };
+}
+
+async function personalSettlementAudit(pool, actor, action, entityName, entityId, oldSnap, newSnap, ip) {
+  try {
+    await pool.query(
+      `INSERT INTO audit_log (actor_id, actor_role, action, entity_name, entity_id, changes, status, ip_address)
+       VALUES ($1, 'Admin', $2, $3, $4, $5::jsonb, 'Success', $6)`,
+      [
+        String(actor?.id ?? 'unknown'),
+        action,
+        entityName,
+        String(entityId),
+        JSON.stringify({ old: oldSnap || {}, new: newSnap || {} }),
+        ip || null,
+      ]
+    );
+  } catch (_) { /* noop */ }
+}
+
+app.get('/api/admin/personal-settlement/account', adminAuthMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT * FROM personal_settlement_account WHERE singleton_key = 'default' LIMIT 1`);
+    const row = r.rows?.[0];
+    return res.json({ account: row ? mapPersonalSettlementAccountRow(row) : null });
+  } catch (err) {
+    if (String(err.code) === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่ได้รัน migration 153 — personal_settlement_account', code: 'PS_SCHEMA_MISSING' });
+    }
+    console.error('GET /api/admin/personal-settlement/account error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to load account' });
+  }
+});
+
+app.put('/api/admin/personal-settlement/account', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!psFinanceMutateRole(req.adminUser?.role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    const body = req.body || {};
+    const adminId = String(req.adminUser?.id ?? req.adminUser?.email ?? 'admin');
+    const label = String(body.label || 'บัญชีรับชั่วคราว').slice(0, 500);
+    const bankName = String(body.bankName || '').slice(0, 200);
+    const accountHolderName = String(body.accountHolderName || '').slice(0, 200);
+    const accountNumber = String(body.accountNumber || '').slice(0, 100);
+    const promptPayId = body.promptPayId != null ? String(body.promptPayId).slice(0, 80) : null;
+    const preferredMobileBankApps = body.preferredMobileBankApps != null ? String(body.preferredMobileBankApps).slice(0, 500) : null;
+    const notes = body.notes != null ? String(body.notes).slice(0, 2000) : null;
+
+    const prev = await pool.query(`SELECT * FROM personal_settlement_account WHERE singleton_key = 'default' LIMIT 1`).catch(() => ({ rows: [] }));
+    const before = prev.rows?.[0];
+
+    const ins = await pool.query(
+      `INSERT INTO personal_settlement_account (
+        singleton_key, label, bank_name, account_holder_name, account_number,
+        prompt_pay_id, preferred_mobile_bank_apps, notes, updated_at, updated_by
+      ) VALUES ('default', $1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+      ON CONFLICT (singleton_key) DO UPDATE SET
+        label = EXCLUDED.label,
+        bank_name = EXCLUDED.bank_name,
+        account_holder_name = EXCLUDED.account_holder_name,
+        account_number = EXCLUDED.account_number,
+        prompt_pay_id = EXCLUDED.prompt_pay_id,
+        preferred_mobile_bank_apps = EXCLUDED.preferred_mobile_bank_apps,
+        notes = EXCLUDED.notes,
+        updated_at = NOW(),
+        updated_by = EXCLUDED.updated_by
+      RETURNING *`,
+      [
+        label,
+        bankName,
+        accountHolderName,
+        accountNumber,
+        promptPayId || null,
+        preferredMobileBankApps || null,
+        notes || null,
+        adminId,
+      ]
+    );
+
+    const row = ins.rows[0];
+    await personalSettlementAudit(
+      pool,
+      req.adminUser,
+      'personal_settlement_account_upsert',
+      'personal_settlement_account',
+      'default',
+      before ? mapPersonalSettlementAccountRow(before) : {},
+      mapPersonalSettlementAccountRow(row),
+      req.ip || req.headers['x-forwarded-for']
+    );
+
+    return res.json({ account: mapPersonalSettlementAccountRow(row) });
+  } catch (err) {
+    if (String(err.code) === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่ได้รัน migration 153 — personal_settlement_account', code: 'PS_SCHEMA_MISSING' });
+    }
+    console.error('PUT /api/admin/personal-settlement/account error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to save account' });
+  }
+});
+
+app.get('/api/admin/personal-settlement/records', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 2000);
+    const directionRaw = req.query.direction ? String(req.query.direction).toUpperCase().trim() : null;
+    const params = [];
+    let sql = 'SELECT * FROM personal_settlement_record';
+    let n = 1;
+    if (directionRaw && PS_DIRECTIONS.has(directionRaw)) {
+      sql += ` WHERE direction = $${n}`;
+      params.push(directionRaw);
+      n++;
+    }
+    sql += ` ORDER BY created_at DESC LIMIT $${n}`;
+    params.push(limit);
+
+    const result = await pool.query(sql, params);
+    const records = (result.rows || []).map(mapPersonalSettlementRecordRow);
+    return res.json({ records });
+  } catch (err) {
+    if (String(err.code) === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่ได้รัน migration 153 — personal_settlement_record', code: 'PS_SCHEMA_MISSING' });
+    }
+    console.error('GET /api/admin/personal-settlement/records error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to load records' });
+  }
+});
+
+app.post('/api/admin/personal-settlement/records', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!psFinanceMutateRole(req.adminUser?.role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    const body = req.body || {};
+    const direction = String(body.direction || '').toUpperCase().trim();
+    const channel = String(body.channel || '').trim();
+    const amount = parseFloat(body.amount);
+    const currency = (body.currency && String(body.currency).toUpperCase()) || 'THB';
+    if (!PS_DIRECTIONS.has(direction)) {
+      return res.status(400).json({ error: 'direction ต้องเป็น INBOUND หรือ OUTBOUND' });
+    }
+    if (!PS_CHANNELS.has(channel)) {
+      return res.status(400).json({ error: 'channel ไม่ถูกต้อง' });
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'จำนวนเงินต้องมากกว่า 0' });
+    }
+    if (currency !== 'THB') {
+      return res.status(400).json({ error: 'รองรับเฉพาะ THB' });
+    }
+    const referenceLabel = String(body.referenceLabel || '').trim().slice(0, 500);
+    if (!referenceLabel) {
+      return res.status(400).json({ error: 'referenceLabel จำเป็น' });
+    }
+    let bankReference = body.bankReference != null ? String(body.bankReference).trim().slice(0, 120) : '';
+    bankReference = bankReference || null;
+    const transferAtRaw = body.transferAt ? new Date(body.transferAt) : null;
+    const transferAt = transferAtRaw && !Number.isNaN(transferAtRaw.getTime()) ? transferAtRaw : null;
+    let status = String(body.status || 'PENDING_RECONCILE').toUpperCase().trim();
+    if (!PS_STATUSES.has(status)) status = 'PENDING_RECONCILE';
+    const notes = body.notes != null ? String(body.notes).slice(0, 2000) : null;
+    const slipUrl = body.slipUrl != null ? String(body.slipUrl).slice(0, 2000) : null;
+    const idempotencyKey = body.idempotencyKey != null ? String(body.idempotencyKey).slice(0, 200) : null;
+    const createdBy = body.createdBy != null ? String(body.createdBy).slice(0, 200)
+      : String(req.adminUser?.name || req.adminUser?.email || req.adminUser?.id || 'admin');
+
+    const ins = await pool.query(
+      `INSERT INTO personal_settlement_record (
+        direction, channel, amount, currency, reference_label, bank_reference,
+        transfer_at, status, notes, slip_url, idempotency_key, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING *`,
+      [
+        direction,
+        channel,
+        amount,
+        currency,
+        referenceLabel,
+        bankReference,
+        transferAt,
+        status,
+        notes,
+        slipUrl,
+        idempotencyKey,
+        createdBy,
+      ]
+    );
+    const row = ins.rows[0];
+    const snap = mapPersonalSettlementRecordRow(row);
+    await personalSettlementAudit(
+      pool,
+      req.adminUser,
+      'personal_settlement_record_create',
+      'personal_settlement_record',
+      row.id,
+      {},
+      snap,
+      req.ip || req.headers['x-forwarded-for']
+    );
+    return res.status(201).json({ record: snap });
+  } catch (err) {
+    if (String(err.code) === '23505') {
+      return res.status(409).json({ error: 'เลขอ้างอิงธนาคารหรือ idempotency ซ้ำ' });
+    }
+    if (String(err.code) === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่ได้รัน migration 153 — personal_settlement_record', code: 'PS_SCHEMA_MISSING' });
+    }
+    console.error('POST /api/admin/personal-settlement/records error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to create record' });
+  }
+});
+
+app.patch('/api/admin/personal-settlement/records/:id', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!psFinanceMutateRole(req.adminUser?.role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'missing id' });
+    const body = req.body || {};
+    const prev = await pool.query(
+      `SELECT * FROM personal_settlement_record WHERE id::text = $1 LIMIT 1`,
+      [id]
+    );
+    if (!prev.rows?.length) {
+      return res.status(404).json({ error: 'ไม่พบรายการ' });
+    }
+    const p = prev.rows[0];
+
+    const sets = [];
+    const vals = [];
+    let idx = 1;
+    if (body.status !== undefined && body.status !== null) {
+      const st = String(body.status).toUpperCase().trim();
+      if (!PS_STATUSES.has(st)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+      sets.push(`status = $${idx}`);
+      vals.push(st);
+      idx++;
+    }
+    if (body.notes !== undefined) {
+      sets.push(`notes = $${idx}`);
+      vals.push(body.notes != null ? String(body.notes).slice(0, 2000) : null);
+      idx++;
+    }
+    if (body.slipUrl !== undefined) {
+      sets.push(`slip_url = $${idx}`);
+      vals.push(body.slipUrl != null ? String(body.slipUrl).slice(0, 2000) : null);
+      idx++;
+    }
+    if (body.bankReference !== undefined) {
+      const br = body.bankReference != null ? String(body.bankReference).trim().slice(0, 120) : '';
+      sets.push(`bank_reference = $${idx}`);
+      vals.push(br || null);
+      idx++;
+    }
+    if (!sets.length) {
+      return res.status(400).json({ error: 'ไม่มีฟิลด์ที่จะแก้' });
+    }
+    const adminId = String(req.adminUser?.id ?? req.adminUser?.email ?? 'admin');
+    sets.push(`updated_at = NOW()`);
+    sets.push(`updated_by = $${idx}`);
+    vals.push(adminId);
+    idx++;
+    vals.push(id);
+
+    await pool.query(
+      `UPDATE personal_settlement_record SET ${sets.join(', ')} WHERE id::text = $${idx}`,
+      vals
+    );
+
+    const aft = await pool.query(
+      `SELECT * FROM personal_settlement_record WHERE id::text = $1`,
+      [id]
+    );
+    const row = aft.rows?.[0];
+    if (!row) return res.status(404).json({ error: 'ไม่พบรายการหลังอัปเดต' });
+    const snap = mapPersonalSettlementRecordRow(row);
+    await personalSettlementAudit(
+      pool,
+      req.adminUser,
+      'personal_settlement_record_patch',
+      'personal_settlement_record',
+      row.id,
+      mapPersonalSettlementRecordRow(p),
+      snap,
+      req.ip || req.headers['x-forwarded-for']
+    );
+    return res.json({ record: snap });
+  } catch (err) {
+    if (String(err.code) === '23505') {
+      return res.status(409).json({ error: 'เลขอ้างอิงธนาคารซ้ำ' });
+    }
+    if (String(err.code) === '42P01') {
+      return res.status(503).json({ error: 'ยังไม่ได้รัน migration 153', code: 'PS_SCHEMA_MISSING' });
+    }
+    console.error('PATCH /api/admin/personal-settlement/records/:id error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to update record' });
+  }
+});
+
+app.post('/api/admin/personal-settlement/upload-slip', adminAuthMiddleware, uploadMulterDocument.single('file'), async (req, res) => {
+  try {
+    if (!psFinanceMutateRole(req.adminUser?.role)) {
+      return res.status(403).json({ error: 'ต้องเป็น ADMIN / SUPER_ADMIN / ACCOUNTANT' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'ไม่มีไฟล์' });
+    const ext = req.file.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0] || '';
+    const result = await uploadToS3(req.file.buffer, {
+      folder: 'personal_settlement_slips',
+      key: `personal_settlement_slips/ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}${ext}`,
+      contentType: req.file.mimetype || 'application/octet-stream',
+      resourceType: 'auto',
+    });
+    await personalSettlementAudit(
+      pool,
+      req.adminUser,
+      'personal_settlement_slip_upload',
+      'personal_settlement_account',
+      'default',
+      {},
+      { key_prefix: 'personal_settlement_slips/', bytes: req.file.size || null },
+      req.ip || req.headers['x-forwarded-for']
+    );
+    return res.json({ url: result.secure_url, key: result.public_id });
+  } catch (err) {
+    console.error('POST /api/admin/personal-settlement/upload-slip error:', err);
+    return res.status(500).json({ error: err.message || 'upload failed' });
   }
 });
 
@@ -14106,7 +19013,16 @@ app.patch('/api/admin/payouts/:id', adminAuthMiddleware, async (req, res) => {
     if (status === 'approved') {
       const userFrozen = await isWalletFrozen(userId);
       if (userFrozen) return res.status(403).json({ error: 'วอลเล็ตผู้ใช้ถูกระงับ — ไม่สามารถอนุมัติถอนได้' });
-      const withdrawalFee = parseFloat(reqRow.withdrawal_fee || 0) || WITHDRAWAL_FEE_STANDARD;
+      let payoutCfg;
+      try {
+        payoutCfg = await getPayoutWithdrawalThresholds(pool);
+      } catch {
+        payoutCfg = null;
+      }
+      const withdrawalFeeFallback = payoutCfg?.withdrawal_fee_standard_thb ?? WITHDRAWAL_FEE_STANDARD;
+      const withdrawalFee = parseFloat(reqRow.withdrawal_fee || 0) || withdrawalFeeFallback;
+      const processorCostEstimate =
+        Number(payoutCfg?.withdrawal_fee_policy?.processor_cost_estimate_thb) || 30;
       const totalDeduct = amount + withdrawalFee;
       const client = await pool.connect();
       try {
@@ -14129,19 +19045,40 @@ app.patch('/api/admin/payouts/:id', adminAuthMiddleware, async (req, res) => {
         const ledgerId = `L-payout-${payoutIdStr}-${Date.now()}`;
         const billNo = `PAYOUT-${payoutIdStr}`;
         const txnNo = `T-PAYOUT-${payoutIdStr}-${Date.now()}`;
+        const feeMargin = Math.round((withdrawalFee - processorCostEstimate) * 100) / 100;
         await client.query(
-          `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
-           VALUES ($1, 'user_payout_withdrawal', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7)`,
-          [ledgerId, payoutIdStr, amount, billNo, txnNo, userId, JSON.stringify({ leg: 'user_payout_withdrawal', payout_request_id: payoutIdStr, admin_id: adminId, transaction_id: transaction_id || null, withdrawal_fee: withdrawalFee, net_transfer: amount })]
+          `INSERT INTO payment_ledger_audit
+             (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, gateway_fee_amount, platform_margin_amount, net_amount, metadata)
+           VALUES ($1, 'user_payout_withdrawal', $2, 'wallet', $2, $3, 'THB', 'completed', $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            ledgerId,
+            payoutIdStr,
+            amount,
+            billNo,
+            txnNo,
+            userId,
+            processorCostEstimate,
+            feeMargin > 0 ? feeMargin : 0,
+            amount,
+            JSON.stringify({
+              leg: 'user_payout_withdrawal',
+              payout_request_id: payoutIdStr,
+              admin_id: adminId,
+              transaction_id: transaction_id || null,
+              withdrawal_fee: withdrawalFee,
+              processor_cost_estimate: processorCostEstimate,
+              platform_margin_amount: feeMargin > 0 ? feeMargin : 0,
+              net_transfer: amount,
+            }),
+          ]
         );
         if (withdrawalFee > 0) {
-          const feeMargin = Math.round((withdrawalFee - 30) * 100) / 100;
           if (feeMargin > 0) {
             try {
               await client.query(
                 `INSERT INTO platform_revenues (transaction_id, source_type, amount, gross_amount, metadata)
                  VALUES ($1, 'withdrawal_fee_margin', $2, $3, $4)`,
-                [ledgerId, feeMargin, amount, JSON.stringify({ payout_request_id: payoutIdStr, withdrawal_fee: withdrawalFee, processor_cost_estimate: 30 })]
+                [ledgerId, feeMargin, amount, JSON.stringify({ payout_request_id: payoutIdStr, withdrawal_fee: withdrawalFee, processor_cost_estimate: processorCostEstimate })]
               );
             } catch (e) { /* platform_revenues might not exist yet */ }
           }
@@ -14151,8 +19088,15 @@ app.patch('/api/admin/payouts/:id', adminAuthMiddleware, async (req, res) => {
           [adminId, admin_notes || null, transaction_id || null, reqRow.id]
         );
         await client.query('COMMIT');
+        scheduleCommerceEmitFromLedger(pool, ledgerId);
+        await tryGenerateWalletFiscalDocumentDraft(pool, {
+          ledgerId,
+          actorType: 'system',
+          actorId: adminId || 'admin_payout_approval',
+          reason: 'wallet_withdrawal_approved_tax_draft',
+        });
       } catch (e) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch(() => { });
         throw e;
       } finally {
         client.release();
@@ -14290,7 +19234,7 @@ function pushUserNotification(targetUserId, title, message) {
 }
 
 /** Push only if target user is NOT in Peace Mode (job-related notifications) */
-async function pushUserNotificationIfNotPeaceMode(targetUserId, title, message) {
+async function pushUserNotificationIfNotPeaceMode(targetUserId, title, message, options = {}) {
   if (!targetUserId) return;
   const idStr = String(targetUserId);
   const r = await pool.query('SELECT is_peace_mode FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1', [idStr]).catch(() => ({ rows: [] }));
@@ -14299,12 +19243,43 @@ async function pushUserNotificationIfNotPeaceMode(targetUserId, title, message) 
   const uuid = await resolveUserIdToUuid(idStr).catch(() => null);
   const targetForStore = uuid ? String(uuid) : idStr;
   pushUserNotification(targetForStore, title, message);
+  if (options.skipFcm) return;
   // ส่ง FCM Push ถ้ามี token (Applicant alert, Deal reminder ฯลฯ)
-  sendFcmToUser(targetForStore, title, message).catch((e) => console.warn('[FCM User]', e?.message));
+  sendFcmToUser(targetForStore, title, message, options.fcm || {}).catch((e) => console.warn('[FCM User]', e?.message));
+}
+
+/** Brand Adviser Grand Prize — record buyer purchase + optional push on qualify */
+function hookBrandAdviserCampaignPurchase(buyerId, sourceType, sourceId, gross, completedAt) {
+  const g = parseFloat(gross);
+  if (!buyerId || !sourceType || !sourceId || !(g > 0)) return;
+  setImmediate(async () => {
+    try {
+      const r = await recordCampaignBuyerPurchase(pool, {
+        buyerId,
+        sourceType,
+        sourceId,
+        grossAmount: g,
+        completedAt: completedAt || new Date(),
+      });
+      if (!r?.newlyQualified || !r?.referrerId) return;
+      const cfg = await loadBrandAdviserCampaignConfig(pool);
+      const stats = await getCampaignStatsForReferrer(pool, r.referrerId, cfg);
+      const n = stats.qualifyingUsers || 0;
+      if (n === 1 || n % 100 === 0) {
+        await pushUserNotificationIfNotPeaceMode(
+          r.referrerId,
+          'Brand Adviser Grand Prize',
+          `คุณมี user ที่เข้าเงื่อนไข ${n.toLocaleString('th-TH')} คนแล้ว — ดูอันดับที่หน้าแนะนำเพื่อน`,
+        );
+      }
+    } catch (e) {
+      console.warn('[BrandAdviserCampaign] hook:', e?.message);
+    }
+  });
 }
 
 /** ส่ง FCM ไปยัง user ที่มี token ลงทะเบียน */
-async function sendFcmToUser(userId, title, body) {
+async function sendFcmToUser(userId, title, body, options = {}) {
   if (!userId) return { success: 0, failed: 0 };
   const r = await pool.query(
     `SELECT token FROM fcm_tokens WHERE user_id = $1::uuid AND token IS NOT NULL AND token != ''`,
@@ -14312,7 +19287,12 @@ async function sendFcmToUser(userId, title, body) {
   ).catch(() => ({ rows: [] }));
   const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
   if (tokens.length === 0) return { success: 0, failed: 0 };
-  return sendFcmMulticast(tokens, { title, body, icon: '/logo.png' });
+  return sendFcmMulticast(tokens, {
+    title,
+    body,
+    icon: '/logo.png',
+    ...(options || {}),
+  });
 }
 
 app.post('/api/admin/notifications/broadcast', adminAuthMiddleware, async (req, res) => {
@@ -14328,8 +19308,18 @@ app.post('/api/admin/notifications/broadcast', adminAuthMiddleware, async (req, 
     broadcastNotificationsStore.unshift(item);
     if (broadcastNotificationsStore.length > BROADCAST_STORE_MAX) broadcastNotificationsStore.length = BROADCAST_STORE_MAX;
 
-    // ส่ง FCM Web Push ไป Landing subscribers (เมื่อ target = All หรือ Landing)
-    let fcmResult = { success: 0, failed: 0 };
+    const fcmPayload = {
+      title: String(title),
+      body: String(message),
+      icon: '/logo.png',
+      channelId: AQOND_FCM_CHANNEL_APP_NEWS,
+      sound: AQOND_NOTIFICATION_SOUND_APP_NEWS,
+      data: { broadcastId: id, notification_type: 'app_news' },
+    };
+
+    let fcmLanding = { success: 0, failed: 0 };
+    let fcmMobile = { success: 0, failed: 0 };
+
     if (t === 'All' || t === 'Landing') {
       try {
         const r = await pool.query(
@@ -14337,16 +19327,53 @@ app.post('/api/admin/notifications/broadcast', adminAuthMiddleware, async (req, 
         ).catch(() => ({ rows: [] }));
         const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
         if (tokens.length > 0) {
-          fcmResult = await sendFcmMulticast(tokens, {
-            title: String(title),
-            body: String(message),
-            icon: '/logo.png',
-            data: { broadcastId: id },
-          });
-          console.log(`[FCM Broadcast] target=${t} sent=${fcmResult.success} failed=${fcmResult.failed} tokens=${tokens.length}`);
+          fcmLanding = await sendFcmMulticast(tokens, fcmPayload);
+          console.log(
+            `[FCM Broadcast] landing target=${t} sent=${fcmLanding.success} failed=${fcmLanding.failed} tokens=${tokens.length}`,
+          );
         }
       } catch (fcmErr) {
-        console.warn('[FCM Broadcast]', fcmErr?.message);
+        console.warn('[FCM Broadcast] landing:', fcmErr?.message);
+      }
+    }
+
+    if (t === 'All' || t === 'Mobile') {
+      try {
+        const r = await pool.query(
+          `SELECT token FROM fcm_tokens
+           WHERE source = 'mobile' AND token IS NOT NULL AND token != ''`
+        ).catch(() => ({ rows: [] }));
+        const tokens = (r.rows || []).map((x) => x.token).filter(Boolean);
+        if (tokens.length > 0) {
+          fcmMobile = await sendFcmMulticast(tokens, fcmPayload);
+          console.log(
+            `[FCM Broadcast] mobile target=${t} sent=${fcmMobile.success} failed=${fcmMobile.failed} tokens=${tokens.length} channel=${AQOND_FCM_CHANNEL_APP_NEWS}`,
+          );
+        }
+      } catch (fcmErr) {
+        console.warn('[FCM Broadcast] mobile:', fcmErr?.message);
+      }
+    }
+
+    const fcmResult = {
+      success: fcmLanding.success + fcmMobile.success,
+      failed: fcmLanding.failed + fcmMobile.failed,
+      landing: fcmLanding,
+      mobile: fcmMobile,
+    };
+
+    try {
+      await insertAdminBroadcast(pool, {
+        id,
+        title: item.title,
+        message: item.message,
+        target: t,
+        fcmSuccess: fcmResult.success,
+        fcmFailed: fcmResult.failed,
+      });
+    } catch (dbErr) {
+      if (String(dbErr?.code) !== '42P01') {
+        console.warn('[FCM Broadcast] DB history:', dbErr?.message || dbErr);
       }
     }
 
@@ -14404,10 +19431,34 @@ app.post('/api/admin/test-notification', adminAuthMiddleware, async (req, res) =
   }
 });
 
-app.get('/api/admin/notifications', adminAuthMiddleware, (req, res) => {
+// GET /api/admin/live-events?since=ISO — poll เหตุการณ์ใหม่ (VIP ซื้อ ฯลฯ) สำหรับเสียงแจ้งเตือน
+app.get('/api/admin/live-events', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { ensureAdminLiveEventsSchema, listAdminLiveEventsSince } = await import('./lib/adminLiveEvents.js');
+    await ensureAdminLiveEventsSchema(pool);
+    const since = req.query.since ? String(req.query.since) : null;
+    const events = await listAdminLiveEventsSince(pool, since);
+    res.json({ ok: true, events, server_time: new Date().toISOString() });
+  } catch (e) {
+    console.error('GET /api/admin/live-events error:', e);
+    res.status(500).json({ error: e?.message || 'Failed to fetch live events' });
+  }
+});
+
+app.get('/api/admin/notifications', adminAuthMiddleware, async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
-    const list = broadcastNotificationsStore.slice(0, limit);
+    let list;
+    try {
+      list = await listAdminBroadcasts(pool, limit);
+    } catch (dbErr) {
+      if (String(dbErr?.code) === '42P01') {
+        list = broadcastNotificationsStore.slice(0, limit);
+      } else {
+        throw dbErr;
+      }
+    }
+    if (!list?.length) list = broadcastNotificationsStore.slice(0, limit);
     res.json({ notifications: list });
   } catch (e) {
     console.error('GET /api/admin/notifications error:', e);
@@ -14421,97 +19472,154 @@ const userVouchersStore = [];
 const BANNERS_MAX = 50;
 const USER_VOUCHERS_MAX = 10000;
 
-// GET /api/banners — public, สำหรับหน้า Home (แบนเนอร์ที่ active และอยู่ในช่วงวันแสดง)
-app.get('/api/banners', (req, res) => {
+// POST /api/admin/banners/upload-image — admin; upload banner image to S3 (public/banners/*)
+app.post(
+  "/api/admin/banners/upload-image",
+  adminAuthMiddleware,
+  uploadMulterDocument.single("file"),
+  async (req, res) => {
+    try {
+      const f = req.file;
+      if (!f) return res.status(400).json({ error: "file_required" });
+      const mime = String(f.mimetype || "").toLowerCase();
+      if (!mime.startsWith("image/")) {
+        return res
+          .status(400)
+          .json({ error: "invalid_file_type", message: "รองรับเฉพาะไฟล์รูปภาพ" });
+      }
+      const ext = (() => {
+        if (mime === "image/png") return ".png";
+        if (mime === "image/jpeg" || mime === "image/jpg") return ".jpg";
+        if (mime === "image/webp") return ".webp";
+        if (mime === "image/gif") return ".gif";
+        return "";
+      })();
+      const safeBase = String(f.originalname || "banner")
+        .replace(/\.[a-z0-9]+$/i, "")
+        .replace(/[^a-z0-9_-]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 64) || "banner";
+      const key = `public/banners/${Date.now()}_${safeBase}_${Math.random()
+        .toString(36)
+        .slice(2, 10)}${ext}`;
+      const uploaded = await uploadToS3(f.buffer, {
+        key,
+        folder: "public/banners",
+        extension: ext,
+        contentType: mime || "application/octet-stream",
+        resourceType: "image",
+      });
+      res.json({ url: uploaded.secure_url || uploaded.url, key: uploaded.key, bytes: uploaded.bytes });
+    } catch (e) {
+      console.error("POST /api/admin/banners/upload-image error:", e);
+      res.status(500).json({ error: "upload_failed" });
+    }
+  },
+);
+
+// GET /api/banners — public; โหลดจาก home_banners (DB) และกรอง placement + ช่วงวันที่ Bangkok
+app.get('/api/banners', async (req, res) => {
   try {
-    const now = new Date().toISOString().slice(0, 10);
-    const list = bannersStore
-      .filter((b) => b.isActive && (!b.startDate || b.startDate <= now) && (!b.endDate || b.endDate >= now))
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-    res.json({ banners: list });
+    const placementRaw = req.query?.placement;
+    const placement =
+      typeof placementRaw === 'string' && placementRaw.trim()
+        ? String(placementRaw).trim().toLowerCase()
+        : undefined;
+    const today = todayDateYmdBangkok();
+
+    try {
+      const all = await listHomeBannersPublic(pool);
+      const active = filterBannersPublicDisplayWindow(all, today);
+      const out =
+        placement && ['home', 'welcome', 'job_detail'].includes(placement)
+          ? filterBannersByPlacement(active, placement)
+          : active;
+      res.json({ banners: out });
+    } catch (dbErr) {
+      console.warn('[GET /api/banners] DB unavailable, fallback in-memory:', dbErr?.message || dbErr);
+      const list = bannersStore
+        .filter((b) => {
+          const active = b.isActive !== false;
+          if (!active) return false;
+          if (b.startDate && String(b.startDate) > today) return false;
+          if (b.endDate && String(b.endDate) < today) return false;
+          return true;
+        })
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const out =
+        placement && ['home', 'welcome', 'job_detail'].includes(placement)
+          ? filterBannersByPlacement(list, placement)
+          : list;
+      res.json({ banners: out });
+    }
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch banners' });
   }
 });
 
-// GET /api/admin/banners
-app.get('/api/admin/banners', adminAuthMiddleware, (req, res) => {
+// GET /api/admin/banners — admin; full list from DB (home_banners)
+app.get('/api/admin/banners', adminAuthMiddleware, async (req, res) => {
   try {
-    const list = [...bannersStore].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const list = await listHomeBannersAdmin(pool);
     res.json({ banners: list });
   } catch (e) {
+    console.error('GET /api/admin/banners error:', e);
     res.status(500).json({ error: 'Failed to fetch' });
   }
 });
 
-// POST /api/admin/banners
-app.post('/api/admin/banners', adminAuthMiddleware, (req, res) => {
+// POST /api/admin/banners — create DB row
+app.post('/api/admin/banners', adminAuthMiddleware, async (req, res) => {
   try {
-    const { title, imageUrl, actionUrl, order, startDate, endDate, isActive, promoCode, discountMaxBaht, discountDescription } = req.body || {};
-    if (!title || !imageUrl) return res.status(400).json({ error: 'title and imageUrl required' });
-    const id = `B${Date.now()}`;
-    const banner = {
-      id,
-      title: String(title),
-      imageUrl: String(imageUrl),
-      actionUrl: actionUrl ? String(actionUrl) : '',
-      order: parseInt(order, 10) || 0,
-      startDate: startDate || null,
-      endDate: endDate || null,
-      isActive: isActive !== false,
-      clicks: 0,
-      promoCode: promoCode ? String(promoCode).trim().toUpperCase() : null,
-      discountMaxBaht: discountMaxBaht != null ? Math.max(0, parseInt(discountMaxBaht, 10)) : null,
-      discountDescription: discountDescription ? String(discountDescription) : null,
-      createdAt: new Date().toISOString(),
-    };
-    bannersStore.push(banner);
-    if (bannersStore.length > BANNERS_MAX) bannersStore.shift();
+    const { title, imageUrl } = req.body || {};
+    if (!title || !imageUrl) {
+      return res.status(400).json({ error: 'title and imageUrl required' });
+    }
+    const banner = await createHomeBanner(pool, req.body || {});
     res.status(201).json({ banner });
   } catch (e) {
+    const msg = e?.message || 'Failed to create banner';
+    if (String(msg).startsWith('VALIDATION:')) {
+      return res.status(400).json({ error: 'validation_failed', message: msg.replace(/^VALIDATION:\s*/i, '') });
+    }
+    console.error('POST /api/admin/banners error:', e);
     res.status(500).json({ error: 'Failed to create banner' });
   }
 });
 
-// PATCH /api/admin/banners/:id
-app.patch('/api/admin/banners/:id', adminAuthMiddleware, (req, res) => {
+// PATCH /api/admin/banners/:id — update DB row
+app.patch('/api/admin/banners/:id', adminAuthMiddleware, async (req, res) => {
   try {
-    const banner = bannersStore.find((b) => b.id === req.params.id);
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id_required' });
+    const banner = await updateHomeBanner(pool, id, req.body || {});
     if (!banner) return res.status(404).json({ error: 'Banner not found' });
-    const { title, imageUrl, actionUrl, order, startDate, endDate, isActive, promoCode, discountMaxBaht, discountDescription } = req.body || {};
-    if (title !== undefined) banner.title = String(title);
-    if (imageUrl !== undefined) banner.imageUrl = String(imageUrl);
-    if (actionUrl !== undefined) banner.actionUrl = String(actionUrl);
-    if (order !== undefined) banner.order = parseInt(order, 10) || 0;
-    if (startDate !== undefined) banner.startDate = startDate || null;
-    if (endDate !== undefined) banner.endDate = endDate || null;
-    if (isActive !== undefined) banner.isActive = isActive !== false;
-    if (promoCode !== undefined) banner.promoCode = promoCode ? String(promoCode).trim().toUpperCase() : null;
-    if (discountMaxBaht !== undefined) banner.discountMaxBaht = discountMaxBaht != null ? Math.max(0, parseInt(discountMaxBaht, 10)) : null;
-    if (discountDescription !== undefined) banner.discountDescription = discountDescription ? String(discountDescription) : null;
     res.json({ banner });
   } catch (e) {
+    const msg = e?.message || 'Failed to update banner';
+    if (String(msg).startsWith('VALIDATION:')) {
+      return res.status(400).json({ error: 'validation_failed', message: msg.replace(/^VALIDATION:\s*/i, '') });
+    }
+    console.error('PATCH /api/admin/banners/:id error:', e);
     res.status(500).json({ error: 'Failed to update banner' });
   }
 });
 
-// DELETE /api/admin/banners/:id
-app.delete('/api/admin/banners/:id', adminAuthMiddleware, (req, res) => {
+// DELETE /api/admin/banners/:id — delete from DB
+app.delete('/api/admin/banners/:id', adminAuthMiddleware, async (req, res) => {
   try {
-    const idx = bannersStore.findIndex((b) => b.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: 'Banner not found' });
-    bannersStore.splice(idx, 1);
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id_required' });
+    const ok = await deleteHomeBanner(pool, id);
+    if (!ok) return res.status(404).json({ error: 'Banner not found' });
     res.status(204).send();
   } catch (e) {
+    console.error('DELETE /api/admin/banners/:id error:', e);
     res.status(500).json({ error: 'Failed to delete banner' });
   }
 });
 
-// POST /api/vip/subscribe — AQOND VIP สมัครแผน
-// (1) Auth ใน handler: Bearer token → verify ด้วย process.env.JWT_SECRET (ตัวเดียวกับ /api/auth/login)
-// (2) Frontend: POST BACKEND_URL/api/vip/subscribe + Header Authorization: Bearer <aqond_token>
-// (3) DB: UPDATE users SET vip_tier, vip_expiry, vip_quota_balance WHERE id (PostgreSQL)
-// (4) Success: res.json({ success: true, message: 'VIP Updated', tier, vip_expiry, vip_quota_balance })
+// POST /api/vip/subscribe — AQOND VIP สมัครแผน (บันทึก order + auto-activate เมื่อชำระสำเร็จ)
 app.post('/api/vip/subscribe', async (req, res) => {
   const hasAuth = !!req.headers.authorization;
   const authVal = req.headers.authorization || '';
@@ -14519,110 +19627,108 @@ app.post('/api/vip/subscribe', async (req, res) => {
   try {
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
-      console.log('[VIP subscribe] 401: No Authorization header or not Bearer');
       return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนสมัคร VIP' });
     }
     const token = auth.slice(7).trim();
     let userId;
 
-    // Demo: รองรับ mock-jwt-token-<userId>-<timestamp>
     if (token.startsWith('mock-jwt-token-')) {
       const rest = token.slice('mock-jwt-token-'.length);
       const lastDash = rest.lastIndexOf('-');
       userId = lastDash > 0 ? rest.slice(0, lastDash) : rest;
-      if (userId) console.log('[VIP subscribe] Mock token OK, userId=', userId);
     }
-
-    // OTP flow: token จาก jwtService.browser = "mock_" + base64(JSON.stringify({ user_id, ... }))
     if (!userId && token.startsWith('mock_')) {
       try {
         const raw = Buffer.from(token.slice(5), 'base64').toString('utf8');
         const payload = JSON.parse(raw);
         userId = payload.user_id ? String(payload.user_id) : null;
-        if (userId) console.log('[VIP subscribe] mock_ (OTP) token OK, userId=', userId);
-      } catch (e) {
-        console.log('[VIP subscribe] mock_ decode failed:', e.message);
-      }
+      } catch (_) { /* ignore */ }
     }
-
     if (!userId) {
       const JWT_SECRET = process.env.JWT_SECRET;
       if (!JWT_SECRET) {
-        console.error('[VIP subscribe] 500: JWT_SECRET not set');
         return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required' });
       }
       try {
         const payload = jwt.verify(token, JWT_SECRET);
         userId = String(payload.sub);
-        console.log('[VIP subscribe] JWT OK, sub=', userId);
       } catch (err) {
-        console.error('[VIP subscribe] JWT verify failed:', err.message);
         return res.status(401).json({ error: 'Token ไม่ถูกต้องหรือหมดอายุ' });
       }
     }
 
-    const { tier } = req.body || {};
+    const { tier, await_payment: awaitPayment } = req.body || {};
     const t = (tier || '').toLowerCase();
     if (!['silver', 'gold', 'platinum'].includes(t)) {
       return res.status(400).json({ error: 'tier ต้องเป็น silver, gold หรือ platinum' });
     }
-    const config = VIP_TIERS[t] || VIP_TIERS.none;
-    const amount = config.priceMonthly || 0;
-    const quotaBalance = config.quotaPerMonth === -1 ? 999 : config.quotaPerMonth;
-    const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // ตรวจสอบว่า user มีใน PostgreSQL ก่อน (ถ้า login ผ่าน OTP อาจได้ user_id ที่ไม่มีใน DB)
     let dbUserId = null;
-    const userCheck = await pool.query(
-      'SELECT id FROM users WHERE id::text = $1 LIMIT 1',
-      [userId]
-    );
-    if (userCheck.rows?.length) {
-      dbUserId = String(userCheck.rows[0].id);
-    }
-    // Fallback: ถ้าส่ง phone มา (เช่น จาก OTP flow) ให้หา user ใน DB ด้วยเบอร์โทร
+    const userCheck = await pool.query('SELECT id FROM users WHERE id::text = $1 LIMIT 1', [userId]);
+    if (userCheck.rows?.length) dbUserId = String(userCheck.rows[0].id);
     if (!dbUserId && req.body?.phone) {
-      const phoneCheck = await pool.query(
-        'SELECT id FROM users WHERE phone = $1 LIMIT 1',
-        [String(req.body.phone).trim()]
-      );
-      if (phoneCheck.rows?.length) {
-        dbUserId = String(phoneCheck.rows[0].id);
-        console.log('[VIP subscribe] Resolved user by phone, dbUserId=', dbUserId);
-      }
+      const phoneCheck = await pool.query('SELECT id FROM users WHERE phone = $1 LIMIT 1', [String(req.body.phone).trim()]);
+      if (phoneCheck.rows?.length) dbUserId = String(phoneCheck.rows[0].id);
     }
     if (!dbUserId) {
-      console.log('[VIP subscribe] 404: User not in DB, userId=', userId);
       return res.status(404).json({
         error: 'ไม่พบผู้ใช้ในระบบ',
-        hint: 'ถ้าสมัครด้วย OTP อาจต้องเข้าสู่ระบบด้วยเบอร์โทรและรหัสผ่านก่อนสมัคร VIP'
+        hint: 'ถ้าสมัครด้วย OTP อาจต้องเข้าสู่ระบบด้วยเบอร์โทรและรหัสผ่านก่อนสมัคร VIP',
       });
     }
 
-    const updateResult = await pool.query(
-      `UPDATE users SET
-        vip_tier = $1,
-        vip_expiry = $2,
-        vip_quota_balance = $3,
-        firebase_uid = COALESCE(NULLIF(TRIM(firebase_uid), ''), $5),
-        updated_at = NOW()
-       WHERE id::text = $4`,
-      [t, expiryDate, quotaBalance, dbUserId, userId]
-    );
+    const {
+      ensureVipSubscriptionSchema,
+      createVipSubscriptionOrder,
+      activateVipSubscriptionOrder,
+      VIP_TIER_CONFIG,
+    } = await import('./lib/vipSubscriptionService.js');
+    await ensureVipSubscriptionSchema(pool);
 
-    if (!updateResult.rowCount || updateResult.rowCount === 0) {
-      console.log('[VIP subscribe] No row updated for dbUserId=', dbUserId);
-      return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+    const config = VIP_TIER_CONFIG[t];
+    const amount = config.priceMonthly || 0;
+    const paymentMethod = req.body?.payment_method || 'instant';
+
+    const order = await createVipSubscriptionOrder(pool, dbUserId, t, {
+      status: awaitPayment ? 'pending' : 'processing',
+      payment_method: paymentMethod,
+    });
+
+    if (awaitPayment) {
+      return res.json({
+        success: false,
+        status: 'pending',
+        order_id: order.id,
+        tier: t,
+        amount,
+        message: 'รอชำระเงิน — สิทธิ์จะเปิดอัตโนมัติเมื่อชำระสำเร็จ',
+      });
     }
 
-    console.log('[VIP subscribe] OK', { userId: dbUserId, tier: t, quotaBalance, expiryDate });
+    const activated = await activateVipSubscriptionOrder(pool, order.id, {
+      payment_method: paymentMethod,
+      payment_ref: req.body?.payment_ref || `vip-${order.id}`,
+    });
+    const activeOrder = activated.order;
+
+    const tierLabel = t.charAt(0).toUpperCase() + t.slice(1);
+    pushUserNotificationIfNotPeaceMode(
+      dbUserId,
+      `VIP ${tierLabel} เปิดใช้งานแล้ว`,
+      `สิทธิ์เริ่ม ${new Date(activeOrder.started_at).toLocaleString('th-TH')} ถึง ${new Date(activeOrder.expires_at).toLocaleString('th-TH')}`,
+    ).catch(() => { });
+
+    console.log('[VIP subscribe] OK', { userId: dbUserId, tier: t, orderId: order.id });
     return res.json({
       success: true,
+      status: 'active',
       message: 'VIP Updated',
+      order_id: order.id,
       tier: t,
       amount,
-      vip_expiry: expiryDate,
-      vip_quota_balance: quotaBalance
+      vip_started_at: activeOrder.started_at,
+      vip_expiry: activeOrder.expires_at,
+      vip_quota_balance: activated.quotaBalance,
     });
   } catch (e) {
     console.error('[VIP subscribe] Error:', e);
@@ -14630,50 +19736,230 @@ app.post('/api/vip/subscribe', async (req, res) => {
   }
 });
 
-// POST /api/vouchers/claim — user กดรับโค้ดส่วนลดจากแบนเนอร์ (วงเงินจำกัด)
-app.post('/api/vouchers/claim', (req, res) => {
+// POST /api/vip/orders/:orderId/activate — ยืนยันชำระสำเร็จ (webhook / QR / admin)
+app.post('/api/vip/orders/:orderId/activate', async (req, res) => {
   try {
-    const { code, userId } = req.body || {};
-    const uid = userId || req.headers['x-user-id'] || null;
-    if (!code || !uid) return res.status(400).json({ error: 'code and userId required' });
-    const banner = bannersStore.find(
-      (b) => b.promoCode && b.promoCode === String(code).trim().toUpperCase() && b.isActive
-    );
-    if (!banner) return res.status(404).json({ error: 'โค้ดส่วนลดไม่ถูกต้องหรือหมดอายุ' });
-    const now = new Date().toISOString().slice(0, 10);
-    if (banner.startDate && banner.startDate > now) return res.status(400).json({ error: 'ยังไม่ถึงช่วงเวลาใช้โค้ด' });
-    if (banner.endDate && banner.endDate < now) return res.status(400).json({ error: 'โค้ดส่วนลดหมดอายุแล้ว' });
-    const maxBaht = banner.discountMaxBaht || 0;
-    if (maxBaht <= 0) return res.status(400).json({ error: 'แคมเปญนี้ไม่มีวงเงินส่วนลด' });
-    const existing = userVouchersStore.find((v) => v.userId === uid && v.promoCode === banner.promoCode);
-    if (existing) return res.status(400).json({ error: 'คุณรับโค้ดนี้ไปแล้ว', voucher: existing });
-    const id = `V${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const voucher = {
-      id,
-      userId: uid,
-      bannerId: banner.id,
-      promoCode: banner.promoCode,
-      maxDiscountBaht: maxBaht,
-      remainingBaht: maxBaht,
-      claimedAt: new Date().toISOString(),
-      expiresAt: banner.endDate ? `${banner.endDate}T23:59:59.000Z` : null,
-    };
-    userVouchersStore.push(voucher);
-    if (userVouchersStore.length > USER_VOUCHERS_MAX) userVouchersStore.shift();
-    res.status(201).json({ voucher, message: 'รับโค้ดส่วนลดสำเร็จ ใช้ได้เมื่อจ้างงาน (วงเงินจำกัด)' });
+    const orderId = req.params.orderId;
+    const { activateVipSubscriptionOrder, ensureVipSubscriptionSchema } = await import('./lib/vipSubscriptionService.js');
+    await ensureVipSubscriptionSchema(pool);
+    const activated = await activateVipSubscriptionOrder(pool, orderId, {
+      payment_ref: req.body?.payment_ref,
+      payment_method: req.body?.payment_method || 'external',
+    });
+    res.json({
+      success: true,
+      status: 'active',
+      order_id: orderId,
+      tier: activated.order.tier,
+      vip_started_at: activated.order.started_at,
+      vip_expiry: activated.order.expires_at,
+      vip_quota_balance: activated.quotaBalance,
+    });
+  } catch (e) {
+    console.error('[VIP activate]', e);
+    res.status(500).json({ error: e.message || 'Failed to activate VIP order' });
+  }
+});
+
+// GET /api/vip/status — สถานะ VIP ของ user ปัจจุบัน (รวมกำลังชำระ)
+app.get('/api/vip/status', async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = auth.slice(7).trim();
+    let userId = null;
+    if (token.startsWith('mock-jwt-token-')) {
+      const rest = token.slice('mock-jwt-token-'.length);
+      const lastDash = rest.lastIndexOf('-');
+      userId = lastDash > 0 ? rest.slice(0, lastDash) : rest;
+    } else if (process.env.JWT_SECRET) {
+      try {
+        userId = String(jwt.verify(token, process.env.JWT_SECRET).sub);
+      } catch (_) { /* ignore */ }
+    }
+    if (!userId && req.query.userId) userId = String(req.query.userId);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const row = await pool.query('SELECT id FROM users WHERE id::text = $1 LIMIT 1', [userId]);
+    if (!row.rows?.length) return res.status(404).json({ error: 'User not found' });
+
+    const { getUserVipStatus, ensureVipSubscriptionSchema } = await import('./lib/vipSubscriptionService.js');
+    await ensureVipSubscriptionSchema(pool);
+    const status = await getUserVipStatus(pool, row.rows[0].id);
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to get VIP status' });
+  }
+});
+
+async function resolveVoucherUserUuidForApi(req, { fallbackQueryUserId } = {}) {
+  const bearer = resolveUserIdFromBearerAuthHeader(req.headers.authorization);
+  let raw =
+    bearer ||
+    (req.body?.userId != null ? String(req.body.userId).trim() : '') ||
+    (req.headers['x-user-id'] != null ? String(req.headers['x-user-id']).trim() : '');
+  if (!raw && fallbackQueryUserId && req.query?.userId != null) {
+    raw = String(req.query.userId).trim();
+  }
+  if (!raw) return null;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)) {
+    return raw;
+  }
+  try {
+    const u = await resolveUserIdToUuid(raw);
+    return u ? String(u) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function isPromoVouchersFeatureEnabledSafe() {
+  try {
+    const c = await getMobileAppConfig();
+    return c?.featureFlags?.enablePromoVouchers !== false;
+  } catch (_) {
+    return true;
+  }
+}
+
+// POST /api/vouchers/claim — user กดรับโค้ดส่วนลดจากแบนเนอร์ (วงเงินจำกัด)
+app.post('/api/vouchers/claim', async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim();
+    const uid = await resolveVoucherUserUuidForApi(req, { fallbackQueryUserId: false });
+    if (!code) {
+      return res.status(400).json({ error: 'code and userId required' });
+    }
+    if (!uid) {
+      return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนรับโค้ดส่วนลด' });
+    }
+
+    const promoEnabled = await isPromoVouchersFeatureEnabledSafe();
+
+    let result;
+    try {
+      result = await claimPromoVoucher(pool, { userId: uid, code, promoEnabled });
+    } catch (e) {
+      if (String(e?.code || '') === 'PROMO_DISABLED') {
+        return res.status(503).json({ error: 'ระบบโค้ดส่วนลดถูกปิดชั่วคราวโดยผู้ดูแลระบบ' });
+      }
+      console.warn('[POST /api/vouchers/claim]', e?.message || e);
+      return res.status(500).json({ error: 'รับโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+
+    if (result.ok === true && result.voucher) {
+      return res.status(201).json({
+        voucher: result.voucher,
+        message: 'รับโค้ดส่วนลดสำเร็จ ใช้ได้เมื่อจ้างงาน (วงเงินจำกัด)',
+      });
+    }
+
+    const errKey = String(result?.error || 'unknown');
+
+    if (errKey === 'not_found') {
+      const banner = bannersStore.find(
+        (b) => b.promoCode && b.promoCode === String(code).trim().toUpperCase() && b.isActive
+      );
+      if (!banner) return res.status(404).json({ error: 'โค้ดส่วนลดไม่ถูกต้องหรือหมดอายุ' });
+      const now = new Date().toISOString().slice(0, 10);
+      if (banner.startDate && banner.startDate > now) {
+        return res.status(400).json({ error: 'ยังไม่ถึงช่วงเวลาใช้โค้ด' });
+      }
+      if (banner.endDate && banner.endDate < now) {
+        return res.status(400).json({ error: 'โค้ดส่วนลดหมดอายุแล้ว' });
+      }
+      const maxBaht = banner.discountMaxBaht || 0;
+      if (maxBaht <= 0) return res.status(400).json({ error: 'แคมเปญนี้ไม่มีวงเงินส่วนลด' });
+      const existing = userVouchersStore.find((v) => String(v.userId) === uid && v.promoCode === banner.promoCode);
+      if (existing) {
+        return res.status(400).json({
+          error: 'คุณรับโค้ดนี้ไปแล้ว',
+          voucher: existing,
+        });
+      }
+      const idMem = `V${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const voucher = {
+        id: idMem,
+        userId: uid,
+        bannerId: banner.id,
+        promoCode: banner.promoCode,
+        maxDiscountBaht: maxBaht,
+        remainingBaht: maxBaht,
+        claimedAt: new Date().toISOString(),
+        expiresAt: banner.endDate ? `${banner.endDate}T23:59:59.000Z` : null,
+      };
+      userVouchersStore.push(voucher);
+      if (userVouchersStore.length > USER_VOUCHERS_MAX) userVouchersStore.shift();
+      return res.status(201).json({
+        voucher,
+        message: 'รับโค้ดส่วนลดสำเร็จ ใช้ได้เมื่อจ้างงาน (วงเงินจำกัด)',
+      });
+    }
+
+    if (errKey === 'promo_claims_paused') {
+      return res.status(400).json({ error: 'แคมเปญนี้ระงับรับโค้ดชั่วคราว' });
+    }
+    if (errKey === 'not_started') {
+      return res.status(400).json({ error: 'ยังไม่ถึงช่วงเวลาใช้โค้ด' });
+    }
+    if (errKey === 'expired') {
+      return res.status(400).json({ error: 'โค้ดส่วนลดหมดอายุแล้ว' });
+    }
+    if (errKey === 'no_discount') {
+      return res.status(400).json({ error: 'แคมเปญนี้ไม่มีวงเงินส่วนลด' });
+    }
+    if (errKey === 'min_topup_not_met') {
+      return res.status(400).json({
+        error:
+          typeof result.required_thb === 'number'
+            ? `ต้องเติมเงินสะสมอย่างน้อย ${result.required_thb} บาทจึงจะรับโค้ดนี้ได้ (ขณะนี้สะสม ${result.current_thb ?? 0} บาท)`
+            : 'ยังไม่ถึงเงื่อนไขเติมเงินขั้นต่ำของแคมเปญ',
+        required_thb: result.required_thb,
+        current_thb: result.current_thb,
+      });
+    }
+    if (errKey === 'insufficient_promo_budget') {
+      return res.status(503).json({
+        error: 'โค้ดถูกหยุดชั่วคราว — งบประมาณส่วนลดจากแพลตฟอร์มไม่เพียงพอในขณะนี้',
+        balance_thb: result.balance_thb,
+      });
+    }
+    if (errKey === 'already_claimed') {
+      return res.status(400).json({
+        error: 'คุณรับโค้ดนี้ไปแล้ว',
+        voucher: result.voucher || null,
+      });
+    }
+
+    return res.status(400).json({ error: 'รับโค้ดไม่ได้' });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to claim voucher' });
   }
 });
 
-// GET /api/vouchers/my — รายการโค้ดที่ user รับไว้ (ยังใช้ได้)
-app.get('/api/vouchers/my', (req, res) => {
+// GET /api/vouchers/my — DB (Bearer เป็นมาตรฐานของแอป)
+app.get('/api/vouchers/my', async (req, res) => {
   try {
-    const userId = req.query.userId || req.headers['x-user-id'];
-    if (!userId) return res.json({ vouchers: [] });
+    const uid = await resolveVoucherUserUuidForApi(req, { fallbackQueryUserId: true });
+    if (!uid) return res.json({ vouchers: [] });
+
+    let vouchers = [];
+    try {
+      vouchers = await listUserPromoVouchers(pool, uid);
+    } catch (e) {
+      console.warn('[GET /api/vouchers/my] DB:', e?.message || e);
+      vouchers = [];
+    }
+
     const now = new Date().toISOString();
+    if (vouchers.length > 0) {
+      return res.json({ vouchers });
+    }
+
     const list = userVouchersStore.filter(
-      (v) => v.userId === userId && v.remainingBaht > 0 && (!v.expiresAt || v.expiresAt > now)
+      (v) => String(v.userId) === uid && v.remainingBaht > 0 && (!v.expiresAt || v.expiresAt > now)
     );
     res.json({ vouchers: list });
   } catch (e) {
@@ -14681,18 +19967,83 @@ app.get('/api/vouchers/my', (req, res) => {
   }
 });
 
-// POST /api/vouchers/use — ใช้โค้ดส่วนลดเมื่อชำระเงิน (หัก remainingBaht ตามวงเงินจำกัด)
-app.post('/api/vouchers/use', (req, res) => {
+// POST /api/vouchers/use — หลังชำระเงิน (แอปส่ง Bearer — ไม่บังคับ userId ใน body)
+app.post('/api/vouchers/use', async (req, res) => {
   try {
-    const { userId, voucherId, amount } = req.body || {};
-    if (!userId || !voucherId || amount == null) return res.status(400).json({ error: 'userId, voucherId, amount required' });
-    const voucher = userVouchersStore.find((v) => v.id === voucherId && v.userId === userId);
+    const uuid = await resolveVoucherUserUuidForApi(req, { fallbackQueryUserId: false });
+    const { voucherId, amount, jobId, userId: bodyUserId } = req.body || {};
+    let effectiveUser = uuid;
+    if (!effectiveUser && bodyUserId != null) {
+      effectiveUser = await resolveVoucherUserUuidForApi(
+        { headers: {}, body: { userId: bodyUserId }, query: {} },
+        { fallbackQueryUserId: false }
+      );
+    }
+    if (!effectiveUser) {
+      return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนใช้โค้ดส่วนลด' });
+    }
+    if (!voucherId || jobId == null || String(jobId).trim() === '') {
+      return res.status(400).json({ error: 'voucherId and jobId required' });
+    }
+
+    const promoEnabled = await isPromoVouchersFeatureEnabledSafe();
+    let r;
+    try {
+      r = await usePromoVoucher(pool, {
+        userId: effectiveUser,
+        voucherId: String(voucherId).trim(),
+        amount,
+        jobId: String(jobId).trim(),
+        promoEnabled,
+      });
+    } catch (e) {
+      if (String(e?.code || '') === 'PROMO_DISABLED') {
+        return res.status(503).json({ error: 'ระบบโค้ดส่วนลดถูกปิดชั่วคราวโดยผู้ดูแลระบบ' });
+      }
+      console.warn('[POST /api/vouchers/use] DB:', e?.message || e);
+      r = null;
+    }
+
+    if (r?.ok === true) {
+      return res.json({
+        used: r.used,
+        remainingBaht: r.remainingBaht,
+        ledger_id: r.ledger_id,
+      });
+    }
+
+    if (r?.ok === false) {
+      const memUser = bodyUserId ? String(bodyUserId).trim() : effectiveUser;
+      const voucher = userVouchersStore.find((v) => v.id === voucherId && String(v.userId) === String(memUser));
+      if (
+        (String(r.error || '') === 'not_found' ||
+          String(r.error || '') === 'not_job_employer') &&
+        voucher &&
+        Number.isFinite(parseFloat(amount))
+      ) {
+        const useAmount = Math.min(Math.max(0, parseFloat(amount)), voucher.remainingBaht);
+        voucher.remainingBaht -= useAmount;
+        return res.json({ used: useAmount, remainingBaht: voucher.remainingBaht });
+      }
+      return res.status(400).json({
+        error: r.error || 'use_failed',
+        remainingBaht: r.remainingBaht,
+      });
+    }
+
+    /** in-memory เดิม */
+    const uMem = bodyUserId != null ? String(bodyUserId).trim() : effectiveUser;
+    const voucher = userVouchersStore.find((v) => v.id === voucherId && String(v.userId) === String(uMem));
     if (!voucher) return res.status(404).json({ error: 'Voucher not found' });
-    const useAmount = Math.min(Math.max(0, parseInt(amount, 10)), voucher.remainingBaht);
+    const amtIn = parseFloat(amount);
+    if (!Number.isFinite(amtIn)) {
+      return res.status(400).json({ error: 'amount required' });
+    }
+    const useAmount = Math.min(Math.max(0, amtIn), voucher.remainingBaht);
     voucher.remainingBaht -= useAmount;
     res.json({ used: useAmount, remainingBaht: voucher.remainingBaht });
   } catch (e) {
-    res.status(500).json({ error: 'Failed to use voucher' });
+    res.status(500).json({ error: e.message || 'Failed to use voucher' });
   }
 });
 
@@ -14702,6 +20053,159 @@ const supportMessagesStore = [];
 const SUPPORT_TICKETS_MAX = 500;
 const SUPPORT_MESSAGES_MAX = 5000;
 const SUPPORT_SESSION_KEY = 'support:sess:';
+const supportCarePushAuditStore = [];
+const SUPPORT_CARE_PUSH_AUDIT_MAX = 20000;
+
+async function persistSupportCarePushAudit(entry = {}) {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO support_care_push_audit (
+       ticket_id, invitation_id, job_id, provider_id, provider_name, source,
+       push_sent_at, tokens_success, tokens_failed, opened_at, opened_source, accepted_at, push_to_accept_ms, updated_at
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+     ON CONFLICT (ticket_id, invitation_id, provider_id)
+     DO UPDATE SET
+       provider_name = COALESCE(EXCLUDED.provider_name, support_care_push_audit.provider_name),
+       source = COALESCE(EXCLUDED.source, support_care_push_audit.source),
+       tokens_success = GREATEST(COALESCE(support_care_push_audit.tokens_success, 0), COALESCE(EXCLUDED.tokens_success, 0)),
+       tokens_failed = GREATEST(COALESCE(support_care_push_audit.tokens_failed, 0), COALESCE(EXCLUDED.tokens_failed, 0)),
+       opened_at = COALESCE(support_care_push_audit.opened_at, EXCLUDED.opened_at),
+       opened_source = COALESCE(support_care_push_audit.opened_source, EXCLUDED.opened_source),
+       accepted_at = COALESCE(support_care_push_audit.accepted_at, EXCLUDED.accepted_at),
+       push_to_accept_ms = COALESCE(support_care_push_audit.push_to_accept_ms, EXCLUDED.push_to_accept_ms),
+       updated_at = NOW()`,
+    [
+      entry.ticket_id || null,
+      entry.invitation_id || null,
+      entry.job_id || null,
+      entry.provider_id || null,
+      entry.provider_name || null,
+      entry.source || 'care_reroute_fcm',
+      entry.push_sent_at || new Date().toISOString(),
+      Number(entry.tokens_success || 0),
+      Number(entry.tokens_failed || 0),
+      entry.opened_at || null,
+      entry.opened_source || null,
+      entry.accepted_at || null,
+      entry.push_to_accept_ms ?? null,
+    ]
+  ).catch((e) => {
+    console.warn('[care-audit] persist failed:', e?.message);
+  });
+}
+
+async function updateProviderRankingSignal(providerId, patch = {}) {
+  if (!pool || !providerId) return;
+  await pool.query(
+    `INSERT INTO support_provider_ranking_signals (
+       provider_id, reliability_score, fast_accept_boost, manual_penalty, last_signal_reason, last_push_to_accept_ms, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+     ON CONFLICT (provider_id)
+     DO UPDATE SET
+       reliability_score = support_provider_ranking_signals.reliability_score + EXCLUDED.reliability_score,
+       fast_accept_boost = support_provider_ranking_signals.fast_accept_boost + EXCLUDED.fast_accept_boost,
+       manual_penalty = support_provider_ranking_signals.manual_penalty + EXCLUDED.manual_penalty,
+       last_signal_reason = COALESCE(EXCLUDED.last_signal_reason, support_provider_ranking_signals.last_signal_reason),
+       last_push_to_accept_ms = COALESCE(EXCLUDED.last_push_to_accept_ms, support_provider_ranking_signals.last_push_to_accept_ms),
+       updated_at = NOW()`,
+    [
+      String(providerId),
+      Number(patch.reliability_score_delta || 0),
+      Number(patch.fast_accept_boost_delta || 0),
+      Number(patch.manual_penalty_delta || 0),
+      patch.reason || null,
+      patch.last_push_to_accept_ms ?? null,
+    ]
+  ).catch((e) => {
+    console.warn('[care-ranking] signal update failed:', e?.message);
+  });
+}
+
+function recordSupportCarePushAudit(entry = {}) {
+  const item = {
+    id: `cpush-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ticket_id: entry.ticket_id || null,
+    invitation_id: entry.invitation_id || null,
+    job_id: entry.job_id || null,
+    provider_id: entry.provider_id || null,
+    provider_name: entry.provider_name || null,
+    source: entry.source || 'care_reroute_fcm',
+    push_sent_at: entry.push_sent_at || new Date().toISOString(),
+    tokens_success: Number(entry.tokens_success || 0),
+    tokens_failed: Number(entry.tokens_failed || 0),
+    opened_at: entry.opened_at || null,
+    opened_source: entry.opened_source || null,
+    accepted_at: entry.accepted_at || null,
+    push_to_accept_ms: entry.push_to_accept_ms ?? null,
+  };
+  supportCarePushAuditStore.unshift(item);
+  if (supportCarePushAuditStore.length > SUPPORT_CARE_PUSH_AUDIT_MAX) {
+    supportCarePushAuditStore.splice(
+      SUPPORT_CARE_PUSH_AUDIT_MAX,
+      supportCarePushAuditStore.length - SUPPORT_CARE_PUSH_AUDIT_MAX
+    );
+  }
+  setImmediate(() => persistSupportCarePushAudit(item));
+  return item;
+}
+
+function findSupportCarePushAuditRecord(ticketId, invitationId, providerId) {
+  return supportCarePushAuditStore.find((r) =>
+    String(r.ticket_id || '') === String(ticketId || '') &&
+    String(r.invitation_id || '') === String(invitationId || '') &&
+    String(r.provider_id || '') === String(providerId || '')
+  );
+}
+
+function markSupportCarePushOpened(ticketId, invitationId, providerId, openedSource = 'app_opened') {
+  const row = findSupportCarePushAuditRecord(ticketId, invitationId, providerId);
+  if (!row) {
+    const synthetic = {
+      ticket_id: String(ticketId || ''),
+      invitation_id: String(invitationId || ''),
+      provider_id: providerId ? String(providerId) : null,
+      opened_at: new Date().toISOString(),
+      opened_source: openedSource || 'app_opened',
+    };
+    setImmediate(() => persistSupportCarePushAudit(synthetic));
+    return synthetic;
+  }
+  if (!row.opened_at) {
+    row.opened_at = new Date().toISOString();
+    row.opened_source = openedSource || 'app_opened';
+    setImmediate(() => persistSupportCarePushAudit(row));
+  }
+  return row;
+}
+
+function markSupportCarePushAccepted(ticketId, invitationId, providerId, acceptedAtIso = null) {
+  const row = findSupportCarePushAuditRecord(ticketId, invitationId, providerId);
+  if (!row) {
+    const acceptedAt = acceptedAtIso || new Date().toISOString();
+    const synthetic = {
+      ticket_id: String(ticketId || ''),
+      invitation_id: String(invitationId || ''),
+      provider_id: providerId ? String(providerId) : null,
+      accepted_at: acceptedAt,
+      push_to_accept_ms: null,
+    };
+    setImmediate(() => persistSupportCarePushAudit(synthetic));
+    return synthetic;
+  }
+  if (!row.accepted_at) {
+    const acceptedAt = acceptedAtIso || new Date().toISOString();
+    row.accepted_at = acceptedAt;
+    const sentMs = row.push_sent_at ? new Date(row.push_sent_at).getTime() : NaN;
+    const acceptMs = acceptedAt ? new Date(acceptedAt).getTime() : NaN;
+    row.push_to_accept_ms = Number.isFinite(sentMs) && Number.isFinite(acceptMs)
+      ? Math.max(0, acceptMs - sentMs)
+      : null;
+    setImmediate(() => persistSupportCarePushAudit(row));
+  }
+  return row;
+}
 
 /** Heuristic sentiment for queue ordering (0 = very negative, 1 = positive) */
 function computeSupportSentimentFromText(text) {
@@ -14725,7 +20229,7 @@ function applySentimentToTicket(ticket, text) {
   if (s.sentiment_score < 0.38 && ticket.priority === 'MEDIUM') ticket.priority = 'HIGH';
   try {
     recordSentimentSample(s.sentiment_score);
-  } catch (_) {}
+  } catch (_) { }
   return s;
 }
 
@@ -14739,18 +20243,673 @@ function addSupportMessage(ticketId, sender, message, meta = {}) {
     timestamp: new Date().toISOString(),
     ...(meta.source && { source: meta.source }),
     ...(meta.score != null && { faqScore: meta.score }),
+    ...(Array.isArray(meta.ai_actions) && { ai_actions: meta.ai_actions }),
+    ...(Array.isArray(meta.quick_actions) && { quick_actions: meta.quick_actions }),
+    ...(meta.diagnostic_summary && { diagnostic_summary: meta.diagnostic_summary }),
+    ...(meta.escalation && { escalation: meta.escalation }),
+    ...(meta.feedback && { feedback: meta.feedback }),
+    ...(Array.isArray(meta.care_timeline) && { care_timeline: meta.care_timeline }),
+    ...(Array.isArray(meta.situation_cards) && { situation_cards: meta.situation_cards }),
+    ...(meta.reroute_sla && { reroute_sla: meta.reroute_sla }),
   };
   supportMessagesStore.push(item);
   if (supportMessagesStore.length > SUPPORT_MESSAGES_MAX) supportMessagesStore.splice(0, supportMessagesStore.length - SUPPORT_MESSAGES_MAX);
   return item;
 }
 
+function emitSupportTicketRefresh(ticketId) {
+  try {
+    io.to(`support-ticket:${ticketId}`).emit('support_messages_refresh', { ticketId });
+    io.to('admin').emit('support_event', { ticketId, type: 'support_ticket_update' });
+  } catch (_) { }
+}
+
+function supportAiMeta(ruk) {
+  if (!ruk || typeof ruk !== 'object') return {};
+  return {
+    source: ruk.source,
+    score: ruk.score,
+    ai_actions: Array.isArray(ruk.ai_actions) ? ruk.ai_actions : [],
+    quick_actions: Array.isArray(ruk.quick_actions) ? ruk.quick_actions : [],
+    diagnostic_summary: ruk.diagnostic_summary || null,
+    escalation: ruk.escalation || null,
+    care_timeline: Array.isArray(ruk.care_timeline) ? ruk.care_timeline : undefined,
+    situation_cards: Array.isArray(ruk.situation_cards) ? ruk.situation_cards : undefined,
+    reroute_sla: ruk.reroute_sla || null,
+  };
+}
+
+function careStageLabel(stage) {
+  const labels = {
+    received: 'รับเรื่องแล้ว',
+    searching_replacement: 'กำลังหาคนแทน',
+    candidates_found: 'พบผู้รับงานที่พร้อมรับงาน',
+    invitations_sent: 'ส่งคำเชิญให้ผู้รับงานแล้ว',
+    provider_accepted: 'ผู้รับงานตอบรับแล้ว',
+    fallback_options: 'เสนอทางเลือกสำรอง',
+    confirmed: 'ยืนยันผู้รับงานใหม่แล้ว',
+    outcome_recorded: 'บันทึกผลลัพธ์เคสแล้ว',
+  };
+  return labels[stage] || stage;
+}
+
+function addCareTimelineEvent(ticket, stage, detail = {}) {
+  if (!ticket) return null;
+  const event = {
+    id: `care-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    stage,
+    label: careStageLabel(stage),
+    status: detail.status || 'done',
+    detail: detail.message || null,
+    candidate_count: detail.candidate_count ?? null,
+    provider_id: detail.provider_id || null,
+    provider_name: detail.provider_name || null,
+    action: detail.action || null,
+    at: new Date().toISOString(),
+  };
+  ticket.care_timeline = Array.isArray(ticket.care_timeline) ? ticket.care_timeline : [];
+  ticket.care_timeline.push(event);
+  ticket.lastUpdated = new Date().toISOString();
+  return event;
+}
+
+function buildSituationCards(ticket, reason = 'urgent_reroute') {
+  const cards = [
+    {
+      id: 'urgent_reroute',
+      title: 'หาคนแทนด่วน',
+      description: 'ระบบจะเริ่มหาผู้รับงานที่ว่างอยู่และเหมาะกับงานนี้',
+      action_type: 'open_ticket',
+      recommended: true,
+    },
+    {
+      id: 'use_insurance',
+      title: 'ใช้สิทธิประกัน',
+      description: ticket?.use_insurance_claim || ticket?.source === 'dispute'
+        ? 'แนบสิทธิประกันไว้ในเคสนี้แล้ว'
+        : 'ถ้างานมีประกัน สามารถใช้ประกอบการหาคนแทนหรือพิจารณาชดเชย',
+      action_type: 'open_ticket',
+    },
+    {
+      id: 'refund_or_coupon',
+      title: 'ยกเลิกพร้อมชดเชย',
+      description: 'ถ้าหาคนแทนไม่ทัน ระบบจะเสนอ refund/coupon ตามเงื่อนไข',
+      action_type: 'open_ticket',
+    },
+    {
+      id: 'notify_new_provider',
+      title: 'แจ้งผู้รับงานใหม่',
+      description: 'เมื่อยืนยันคนใหม่แล้ว ระบบควรแจ้งรายละเอียดงานและเวลาเร่งด่วนทันที',
+      action_type: 'open_ticket',
+    },
+  ];
+  return cards.map((card) => ({ ...card, reason }));
+}
+
+async function estimateReplacementCandidateCount(ticket) {
+  if (!pool || !ticket?.jobId) return null;
+  try {
+    const q = await pool.query(
+      `SELECT COUNT(*)::int AS c
+       FROM users u
+       WHERE LOWER(COALESCE(u.role, '')) IN ('provider','worker','driver','captain')
+         AND COALESCE(u.account_status, 'active') = 'active'
+         AND u.shadow_banned_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs j2
+           WHERE j2.accepted_by = u.id
+             AND LOWER(COALESCE(j2.status, '')) IN ('accepted','in_progress','emergency_pending')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs j0
+           WHERE j0.id::text = $1 AND j0.accepted_by::text = u.id::text
+         )`,
+      [String(ticket.jobId)]
+    );
+    return q.rows?.[0]?.c ?? 0;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function findReplacementCandidatesForTicket(ticket, limit = 10) {
+  if (!pool || !ticket?.jobId) return [];
+  try {
+    const result = await pool.query(
+      `SELECT
+         u.id::text AS id,
+         COALESCE(u.full_name, u.name, 'ผู้รับงาน') AS full_name,
+         u.avatar_url AS profile_image_url,
+         COALESCE(u.worker_grade, wg.grade, 'C') AS worker_grade,
+         wg.avg_rating,
+         wg.total_jobs,
+         wg.success_rate,
+         COALESCE(wg.is_vvip_eligible, false) AS is_vvip_eligible,
+         COALESCE(pa.accept_count, 0) AS reroute_accept_count,
+         pa.avg_push_to_accept_ms,
+         COALESCE(rs.reliability_score, 0) AS reliability_score,
+         COALESCE(rs.fast_accept_boost, 0) AS fast_accept_boost,
+         COALESCE(rs.manual_penalty, 0) AS manual_penalty,
+         (
+           (CASE WHEN COALESCE(wg.is_vvip_eligible, false) THEN 0.25 ELSE 0 END) +
+           (COALESCE(wg.avg_rating, 0) / 10.0) +
+           (COALESCE(wg.success_rate, 0) / 200.0) +
+           LEAST(COALESCE(wg.total_jobs, 0) / 500.0, 0.20) +
+           (CASE
+             WHEN pa.avg_push_to_accept_ms IS NULL THEN 0
+             WHEN pa.avg_push_to_accept_ms <= 30000 THEN 0.30
+             WHEN pa.avg_push_to_accept_ms <= 60000 THEN 0.22
+             WHEN pa.avg_push_to_accept_ms <= 120000 THEN 0.14
+             WHEN pa.avg_push_to_accept_ms <= 300000 THEN 0.06
+             ELSE -0.04
+           END) +
+           LEAST(COALESCE(pa.accept_count, 0) * 0.01, 0.10) +
+           COALESCE(rs.reliability_score, 0) +
+           COALESCE(rs.fast_accept_boost, 0) -
+           COALESCE(rs.manual_penalty, 0)
+         ) AS ranking_score
+       FROM users u
+       LEFT JOIN worker_grades wg ON wg.user_id = u.id
+       LEFT JOIN (
+         SELECT
+           provider_id,
+           COUNT(*)::int AS accept_count,
+           AVG(push_to_accept_ms)::bigint AS avg_push_to_accept_ms
+         FROM support_care_push_audit
+         WHERE accepted_at IS NOT NULL AND push_to_accept_ms IS NOT NULL
+         GROUP BY provider_id
+       ) pa ON pa.provider_id = u.id::text
+       LEFT JOIN support_provider_ranking_signals rs ON rs.provider_id = u.id::text
+       WHERE LOWER(COALESCE(u.role, '')) IN ('provider','worker','driver','captain')
+         AND COALESCE(u.account_status, 'active') = 'active'
+         AND u.shadow_banned_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs j2
+           WHERE j2.accepted_by = u.id
+             AND LOWER(COALESCE(j2.status, '')) IN ('accepted','in_progress','emergency_pending')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs j0
+           WHERE j0.id::text = $1 AND j0.accepted_by::text = u.id::text
+         )
+       ORDER BY COALESCE(wg.is_vvip_eligible, false) DESC,
+                ranking_score DESC NULLS LAST,
+                wg.avg_rating DESC NULLS LAST
+       LIMIT $2`,
+      [String(ticket.jobId), Math.min(Math.max(Number(limit) || 10, 1), 25)]
+    );
+    return result.rows || [];
+  } catch (e) {
+    console.warn('[care-reroute] candidate search failed:', e?.message);
+    return [];
+  }
+}
+
+function getCareAcceptWindowMs() {
+  const configured = Number(process.env.SUPPORT_REROUTE_ACCEPT_WINDOW_MS || 90000);
+  return Number.isFinite(configured) && configured >= 10000 ? configured : 90000;
+}
+
+function publicCandidate(candidate) {
+  if (!candidate) return null;
+  return {
+    id: String(candidate.id),
+    full_name: candidate.full_name || 'ผู้รับงาน',
+    worker_grade: candidate.worker_grade || 'C',
+    avg_rating: candidate.avg_rating ?? null,
+    total_jobs: candidate.total_jobs ?? null,
+    success_rate: candidate.success_rate ?? null,
+    is_vvip_eligible: !!candidate.is_vvip_eligible,
+  };
+}
+
+function scheduleProviderAcceptWindow(ticket, invitationId, delayMs) {
+  setTimeout(() => {
+    const live = supportTicketsStore.find((t) => t.id === ticket.id);
+    if (!live || live.status === 'RESOLVED' || live.status === 'CLOSED') return;
+    const invitation = (live.reroute_invitations || []).find((i) => i.id === invitationId);
+    if (!invitation || invitation.status !== 'pending') return;
+    invitation.status = 'expired';
+    invitation.expired_at = new Date().toISOString();
+    live.reroute_sla = {
+      ...(live.reroute_sla || {}),
+      status: 'accept_window_expired',
+      stage: 'fallback_options',
+      updated_at: new Date().toISOString(),
+      active_invitation_id: invitationId,
+    };
+    addCareTimelineEvent(live, 'fallback_options', {
+      message: `ครบเวลา ${Math.round(delayMs / 1000)} วินาทีแล้วยังไม่มีผู้รับงานตอบรับ ระบบควรข้ามไป candidate ถัดไปหรือเสนอทางเลือกสำรอง`,
+    });
+    addSupportMessage(live.id, 'BOT', 'ครบเวลารอผู้รับงานตอบรับแล้วค่ะ หากยังไม่มีคนรับ ระบบจะให้ทีมเลือก candidate ถัดไปหรือเสนอทางเลือกชดเชยทันที', {
+      source: 'care_accept_window',
+      ai_actions: ['provider_accept_window_expired', 'care_timeline_update'],
+      care_timeline: live.care_timeline,
+      situation_cards: live.situation_cards,
+      reroute_sla: live.reroute_sla,
+    });
+    emitSupportTicketRefresh(live.id);
+  }, delayMs);
+}
+
+async function sendProviderRerouteInvitationPush(ticket, invitation, candidate) {
+  if (!ticket || !invitation || !candidate?.id) return;
+  try {
+    const jobLabel = ticket.jobId ? `งาน #${ticket.jobId}` : 'งานด่วน';
+    const deepLink = `aqond://provider/reroute?ticketId=${encodeURIComponent(ticket.id)}&invitationId=${encodeURIComponent(invitation.id)}&jobId=${encodeURIComponent(ticket.jobId || '')}`;
+    const appBase = String(process.env.VITE_APP_URL || process.env.APP_URL || 'https://aqond.com').replace(/\/$/, '');
+    const webLink = `${appBase}/#/provider/dashboard?focus=reroute_invites&ticketId=${encodeURIComponent(ticket.id)}&invitationId=${encodeURIComponent(invitation.id)}&jobId=${encodeURIComponent(ticket.jobId || '')}`;
+    const result = await sendFcmToUser(
+      candidate.id,
+      'มีงานด่วนรอรับแทน',
+      `${jobLabel} ต้องการผู้รับงานแทน กดเพื่อดูรายละเอียดและรับงาน`,
+      {
+        data: {
+          notification_type: 'provider_reroute_invitation',
+          ticket_id: ticket.id,
+          ticketId: ticket.id,
+          invitation_id: invitation.id,
+          invitationId: invitation.id,
+          job_id: ticket.jobId || '',
+          jobId: ticket.jobId || '',
+          deep_link: deepLink,
+          route: '/provider/dashboard',
+          focus: 'reroute_invites',
+        },
+        link: webLink,
+      }
+    );
+    recordSupportCarePushAudit({
+      ticket_id: ticket.id,
+      invitation_id: invitation.id,
+      job_id: ticket.jobId || null,
+      provider_id: String(candidate.id),
+      provider_name: candidate.full_name || null,
+      push_sent_at: new Date().toISOString(),
+      tokens_success: Number(result?.success || 0),
+      tokens_failed: Number(result?.failed || 0),
+      source: 'provider_reroute_invitation',
+    });
+    if ((result.success || 0) > 0) {
+      console.log(`[FCM CareReroute] provider=${candidate.id} ticket=${ticket.id} sent=${result.success}`);
+    }
+  } catch (e) {
+    console.warn('[FCM CareReroute] send failed:', e?.message);
+  }
+}
+
+function createRerouteInvitationBatch(ticket, candidates, actor = 'system') {
+  const now = new Date();
+  const acceptWindowMs = getCareAcceptWindowMs();
+  const expiresAt = new Date(now.getTime() + acceptWindowMs).toISOString();
+  const invited = candidates.slice(0, 3).map(publicCandidate).filter(Boolean);
+  const invitation = {
+    id: `rinv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    status: invited.length > 0 ? 'pending' : 'no_candidates',
+    actor,
+    candidates: invited,
+    invited_provider_ids: invited.map((c) => c.id),
+    sent_at: now.toISOString(),
+    expires_at: invited.length > 0 ? expiresAt : null,
+    accept_window_ms: invited.length > 0 ? acceptWindowMs : 0,
+  };
+  ticket.reroute_invitations = Array.isArray(ticket.reroute_invitations) ? ticket.reroute_invitations : [];
+  ticket.reroute_invitations.unshift(invitation);
+  ticket.reroute_sla = {
+    ...(ticket.reroute_sla || {}),
+    status: invitation.status === 'pending' ? 'waiting_provider_accept' : 'fallback_required',
+    stage: invitation.status === 'pending' ? 'invitations_sent' : 'fallback_options',
+    updated_at: now.toISOString(),
+    active_invitation_id: invitation.id,
+    invited_count: invited.length,
+    accept_window_ms: invitation.accept_window_ms,
+    accept_deadline_at: invitation.expires_at,
+  };
+  if (invited.length > 0) {
+    addCareTimelineEvent(ticket, 'invitations_sent', {
+      candidate_count: invited.length,
+      message: `ส่งคำเชิญให้ผู้รับงาน ${invited.length} คนแล้ว รอตอบรับภายใน ${Math.round(acceptWindowMs / 1000)} วินาที`,
+    });
+    for (const candidate of invited) {
+      try {
+        io.to(`provider:${candidate.id}`).to(`user:${candidate.id}`).emit('provider_reroute_invitation', {
+          ticket_id: ticket.id,
+          invitation_id: invitation.id,
+          job_id: ticket.jobId || null,
+          expires_at: invitation.expires_at,
+        });
+      } catch (_) { }
+      setImmediate(() => sendProviderRerouteInvitationPush(ticket, invitation, candidate));
+    }
+    scheduleProviderAcceptWindow(ticket, invitation.id, acceptWindowMs);
+  }
+  return invitation;
+}
+
+function recordCareOutcome(ticket, outcome) {
+  if (!ticket) return null;
+  const item = {
+    id: `cout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: outcome.type,
+    label: outcome.label || outcome.type,
+    provider_id: outcome.provider_id || null,
+    provider_name: outcome.provider_name || null,
+    job_id: ticket.jobId || null,
+    note: outcome.note || null,
+    actor: outcome.actor || 'system',
+    at: new Date().toISOString(),
+  };
+  ticket.care_outcomes = Array.isArray(ticket.care_outcomes) ? ticket.care_outcomes : [];
+  ticket.care_outcomes.unshift(item);
+  ticket.last_care_outcome = item;
+  addCareTimelineEvent(ticket, 'outcome_recorded', {
+    action: item.type,
+    provider_id: item.provider_id,
+    provider_name: item.provider_name,
+    message: item.label,
+  });
+  return item;
+}
+
+async function persistCareOutcomeLearning(ticket, outcome) {
+  if (!ticket || !outcome) return null;
+  const question = `เคสงานด่วน jobId ${ticket.jobId || 'unknown'} มีผลลัพธ์ ${outcome.type} ระบบควรดำเนินการอย่างไร`;
+  const answer = [
+    `ผลลัพธ์ล่าสุด: ${outcome.label}`,
+    ticket.reroute_sla?.candidate_count != null ? `จำนวน candidate ที่ตรวจพบ: ${ticket.reroute_sla.candidate_count}` : null,
+    ticket.reroute_sla?.invited_count != null ? `จำนวนผู้รับงานที่ส่งคำเชิญ: ${ticket.reroute_sla.invited_count}` : null,
+    outcome.provider_name ? `ผู้รับงานที่เกี่ยวข้อง: ${outcome.provider_name}` : null,
+    'แนวทางครั้งต่อไป: ใช้ jobId เพื่อเปิด Care Reroute จริง, แสดง timeline ให้ user เห็น, และให้ admin เลือก confirm/refund/coupon/insurance/review จาก Owner Control Room',
+  ].filter(Boolean).join('\n');
+  return maybeAutoSaveSupportKnowledge({
+    ticket,
+    question,
+    answer,
+    category: 'care_operations',
+    source: 'care_outcome_learning',
+  });
+}
+
+function addProviderReliabilitySignal(ticket, reason) {
+  if (!ticket) return;
+  ticket.provider_reliability_signal = {
+    reason,
+    severity: reason === 'provider_emergency_reroute' ? 'excused_emergency' : 'late_cancellation_risk',
+    ranking_effect: reason === 'provider_emergency_reroute' ? 'neutral_until_reviewed' : 'review_required',
+    captured_at: new Date().toISOString(),
+  };
+}
+
+function scheduleCareTimelineStep(ticket, delayMs, stage, detailFactory) {
+  setTimeout(async () => {
+    const live = supportTicketsStore.find((t) => t.id === ticket.id);
+    if (!live || live.status === 'RESOLVED' || live.status === 'CLOSED') return;
+    const detail = typeof detailFactory === 'function' ? await detailFactory(live) : detailFactory;
+    addCareTimelineEvent(live, stage, detail || {});
+    live.reroute_sla = {
+      ...(live.reroute_sla || {}),
+      stage,
+      updated_at: new Date().toISOString(),
+    };
+    addSupportMessage(live.id, 'BOT', careStageLabel(stage), {
+      source: 'care_timeline',
+      ai_actions: ['care_timeline_update'],
+      care_timeline: live.care_timeline,
+      situation_cards: live.situation_cards,
+      reroute_sla: live.reroute_sla,
+    });
+    emitSupportTicketRefresh(live.id);
+  }, delayMs);
+}
+
+async function startCareOperation(ticket, reason = 'urgent_reroute') {
+  if (!ticket || ticket.care_operation_started) return;
+  ticket.care_operation_started = true;
+  ticket.priority = 'URGENT';
+  ticket.isEmergency = true;
+  ticket.emergencyKind = 'urgent_reroute';
+  ticket.situation_cards = buildSituationCards(ticket, reason);
+  ticket.reroute_sla = {
+    status: 'running',
+    stage: 'received',
+    started_at: new Date().toISOString(),
+    first_candidate_check_ms: 30000,
+    expanded_search_ms: 120000,
+    fallback_options_ms: 300000,
+  };
+  addProviderReliabilitySignal(ticket, reason);
+  addCareTimelineEvent(ticket, 'received', { message: 'Care Timeline เปิดแล้ว ระบบรับเรื่องและเริ่มดูแลแบบเร่งด่วน' });
+  addCareTimelineEvent(ticket, 'searching_replacement', { status: 'active', message: 'กำลังหาผู้รับงานที่ว่างและเหมาะสมกับงานนี้' });
+  addSupportMessage(ticket.id, 'BOT', 'Care Timeline เปิดแล้ว: รับเรื่องแล้ว → กำลังหาคนแทน', {
+    source: 'care_timeline',
+    ai_actions: ['care_timeline_started', 'auto_reroute_sla_started'],
+    quick_actions: [
+      { id: 'urgent_reroute', label: 'ต้องการจับคู่ใหม่ด่วน', type: 'open_ticket' },
+      { id: 'use_insurance', label: 'ใช้สิทธิประกัน', type: 'open_ticket' },
+      { id: 'refund_or_coupon', label: 'ดูตัวเลือกชดเชย', type: 'open_ticket' },
+    ],
+    care_timeline: ticket.care_timeline,
+    situation_cards: ticket.situation_cards,
+    reroute_sla: ticket.reroute_sla,
+  });
+  emitSupportTicketRefresh(ticket.id);
+  scheduleCareTimelineStep(ticket, 30000, 'candidates_found', async (live) => {
+    const count = await estimateReplacementCandidateCount(live);
+    return {
+      candidate_count: count,
+      message: count != null ? `พบผู้รับงานที่อาจพร้อมรับงาน ${count} คน` : 'กำลังตรวจหาผู้รับงานที่พร้อมรับงาน',
+    };
+  });
+  scheduleCareTimelineStep(ticket, 120000, 'invitations_sent', { message: 'ขยายการค้นหาและเตรียมส่งคำเชิญให้ผู้รับงานที่เหมาะสม' });
+  scheduleCareTimelineStep(ticket, 300000, 'fallback_options', { message: 'หากยังไม่ได้คนแทน ระบบควรเสนอ refund/coupon/insurance option ให้ลูกค้า' });
+}
+
+async function runCareRerouteNow(ticket, actor = 'user') {
+  if (!ticket) return { ok: false, error: 'Ticket not found' };
+  if (!ticket.jobId) {
+    addCareTimelineEvent(ticket, 'fallback_options', {
+      message: 'ยังไม่มี jobId ในเคสนี้ จึงยังจับคู่งานจริงไม่ได้ กรุณาเปิด support จากหน้ารายละเอียดงาน',
+    });
+    emitSupportTicketRefresh(ticket.id);
+    return { ok: false, error: 'Ticket has no jobId', ticket };
+  }
+  if (!ticket.care_operation_started) await startCareOperation(ticket, 'manual_urgent_reroute');
+  const candidates = await findReplacementCandidatesForTicket(ticket, 10);
+  ticket.replacement_candidates = candidates.map((c) => ({
+    id: c.id,
+    full_name: c.full_name,
+    worker_grade: c.worker_grade,
+    avg_rating: c.avg_rating,
+    total_jobs: c.total_jobs,
+    success_rate: c.success_rate,
+    is_vvip_eligible: c.is_vvip_eligible,
+  }));
+  ticket.reroute_sla = {
+    ...(ticket.reroute_sla || {}),
+    status: candidates.length > 0 ? 'candidates_found' : 'fallback_required',
+    stage: candidates.length > 0 ? 'candidates_found' : 'fallback_options',
+    updated_at: new Date().toISOString(),
+    job_id: ticket.jobId,
+    candidate_count: candidates.length,
+  };
+  addCareTimelineEvent(ticket, candidates.length > 0 ? 'candidates_found' : 'fallback_options', {
+    candidate_count: candidates.length,
+    message: candidates.length > 0
+      ? `พบผู้รับงานที่พร้อมพิจารณางานนี้ ${candidates.length} คนจาก jobId ${ticket.jobId}`
+      : `ยังไม่พบผู้รับงานว่างสำหรับ jobId ${ticket.jobId} ระบบควรเสนอ refund/coupon/insurance option`,
+  });
+  const invitation = candidates.length > 0
+    ? createRerouteInvitationBatch(ticket, candidates, actor)
+    : null;
+  addSupportMessage(ticket.id, 'BOT', candidates.length > 0
+    ? `ระบบกำลังตรวจผู้รับงานที่ว่างจริงจากงาน #${ticket.jobId} และส่งคำเชิญให้ผู้รับงาน ${invitation?.candidates?.length || 0} คนแล้วค่ะ เราจะอัปเดตทุกขั้นตอนในหน้านี้จนกว่าจะยืนยันคนใหม่หรือเสนอทางเลือกชดเชย`
+    : `ระบบตรวจจากงาน #${ticket.jobId} แล้ว ยังไม่พบผู้รับงานว่างทันที จะแสดงตัวเลือกชดเชย/ประกัน/คืนเงินให้พิจารณาค่ะ`, {
+    source: 'care_reroute_engine',
+    ai_actions: candidates.length > 0
+      ? ['real_job_reroute_checked', 'provider_invitations_sent', 'care_timeline_update']
+      : ['real_job_reroute_checked', 'fallback_options_ready', 'care_timeline_update'],
+    care_timeline: ticket.care_timeline,
+    situation_cards: ticket.situation_cards,
+    reroute_sla: ticket.reroute_sla,
+    diagnostic_summary: `Real reroute checked with jobId=${ticket.jobId}, candidates=${candidates.length}, invited=${invitation?.candidates?.length || 0}, actor=${actor}`,
+  });
+  ticket.lastUpdated = new Date().toISOString();
+  emitSupportTicketRefresh(ticket.id);
+  return { ok: true, ticket, candidates, invitation };
+}
+
+async function maybeCreateKnowledgeDraftFromSupport({ ticket, userText, draftAnswer, source }) {
+  const q = String(userText || '').trim();
+  if (!q || q.length < 4) return null;
+  const answer = String(draftAnswer || 'รอเจ้าหน้าที่เพิ่มคำตอบที่ผ่านการตรวจสอบ').trim();
+  const row = await insertKnowledgeDraft(pool, {
+    ticket_id: ticket?.id || null,
+    question: q,
+    draft_answer: answer,
+    category: ticket?.category || 'general',
+    created_by: source || 'support_ai_auto_draft',
+  }).catch((e) => {
+    console.warn('[support-kb] auto draft failed:', e?.message);
+    return null;
+  });
+  if (row && ticket) {
+    ticket.ai_summary = [
+      ticket.ai_summary,
+      `KB draft created for unanswered question: ${q.slice(0, 120)}`,
+    ].filter(Boolean).join('\n');
+    ticket.lastUpdated = new Date().toISOString();
+  }
+  return row;
+}
+
+async function maybeAutoSaveSupportKnowledge({ ticket, question, answer, category, source }) {
+  const q = String(question || '').trim();
+  const a = String(answer || '').trim();
+  if (!q || !a || q.length < 4) return null;
+  try {
+    const existing = await searchFaq(pool, q, { minScore: 0.85 });
+    if (existing) return existing;
+    const row = await saveFaq(pool, {
+      question: q,
+      best_answer: a,
+      category: category || ticket?.category || 'general',
+      ticket_id: ticket?.id || null,
+      created_by: source || 'system_support_ai',
+    });
+    if (row && ticket) {
+      ticket.ai_summary = [
+        ticket.ai_summary,
+        `KB auto-saved from system knowledge: ${q.slice(0, 120)}`,
+      ].filter(Boolean).join('\n');
+      ticket.lastUpdated = new Date().toISOString();
+    }
+    return row;
+  } catch (e) {
+    console.warn('[support-kb] auto save failed:', e?.message);
+    return null;
+  }
+}
+
+async function persistKnowledgeLearningFromRuk({ ticket, userText, ruk }) {
+  if (!ruk || typeof ruk !== 'object') return;
+  if (ruk.auto_save_knowledge) {
+    await maybeAutoSaveSupportKnowledge({
+      ticket,
+      question: ruk.draft_question || userText,
+      answer: ruk.draft_answer || ruk.text,
+      category: ruk.draft_category || ticket?.category || 'general',
+      source: 'system_support_ai',
+    });
+  }
+  if (ruk.needs_knowledge_draft) {
+    await maybeCreateKnowledgeDraftFromSupport({
+      ticket,
+      userText: userText,
+      draftAnswer: ruk.draft_answer,
+      source: 'support_ai_no_answer',
+    });
+  }
+}
+
+async function maybeStartCareOperationFromMeta(ticket, meta = {}) {
+  if (!ticket) return;
+  const actions = Array.isArray(meta.ai_actions) ? meta.ai_actions : Array.isArray(meta.actions) ? meta.actions : [];
+  const reason = meta.escalation?.reason || meta.escalation?.level || actions.find((a) => String(a).includes('reroute')) || '';
+  const shouldStart =
+    meta.escalation?.level === 'urgent_reroute' ||
+    actions.includes('urgent_reroute_guidance') ||
+    actions.includes('auto_reroute_sla_started') ||
+    String(reason || '').includes('reroute');
+  if (shouldStart) await startCareOperation(ticket, String(reason || 'urgent_reroute'));
+}
+
+async function canManageSupportKnowledge(req) {
+  const admin = req.adminUser || {};
+  const role = String(admin.role || '').toUpperCase();
+  if (['OWNER', 'SUPER_ADMIN', 'FOUNDER'].includes(role)) return true;
+  if (role === 'ADMIN' && String(process.env.SUPPORT_KB_ALLOW_ADMIN_APPROVERS || '').toLowerCase() === 'true') return true;
+  const tokenPermissions = Array.isArray(admin.permissions) ? admin.permissions.map((p) => String(p).toLowerCase()) : [];
+  if (tokenPermissions.includes('support_knowledge:approve')) return true;
+  const allowed = String(process.env.SUPPORT_KB_APPROVER_IDS || '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  const id = String(admin.id || '').toLowerCase();
+  const email = String(admin.email || '').toLowerCase();
+  if (allowed.includes(id) || allowed.includes(email)) return true;
+  if (email && pool) {
+    try {
+      const r = await pool.query(`SELECT permissions FROM staff WHERE LOWER(email) = $1 LIMIT 1`, [email]);
+      const raw = r.rows?.[0]?.permissions;
+      const permissions = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+      return permissions.map((p) => String(p).toLowerCase()).includes('support_knowledge:approve');
+    } catch (_) {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function requireSupportKnowledgeManager(req, res) {
+  if (await canManageSupportKnowledge(req)) return true;
+  res.status(403).json({ error: 'Support knowledge base approval requires owner, super admin, or delegated approver' });
+  return false;
+}
+
 
 // POST /api/support/tickets — สร้าง ticket จาก Help & Support (Settings / Mobile App)
 app.post('/api/support/tickets', async (req, res) => {
   try {
-    const { userId, subject, message, category = 'General', email, full_name, phone } = req.body || {};
+    const {
+      userId,
+      subject,
+      message,
+      category = 'General',
+      email,
+      full_name,
+      phone,
+      jobId,
+      is_emergency,
+      emergency_kind,
+      source: bodySource,
+      order_id,
+      merchant_id,
+      shop_id,
+    } = req.body || {};
     if (!subject && !message) return res.status(400).json({ error: 'subject or message required' });
+    const allowedSources = new Set([
+      'help_support',
+      'dispute',
+      'MKP',
+      'FMC',
+      'RID',
+      'MCH',
+      'SYS',
+      'DSP',
+      'marketplace_shop_chat',
+    ]);
+    const source =
+      bodySource && allowedSources.has(String(bodySource)) ? String(bodySource) : 'help_support';
     const id = `TCK-${Date.now()}`;
     const now = new Date().toISOString();
     const ticket = {
@@ -14763,13 +20922,18 @@ app.post('/api/support/tickets', async (req, res) => {
       status: 'OPEN',
       priority: 'MEDIUM',
       category: ['Billing', 'Technical', 'Account', 'General'].includes(category) ? category : 'General',
-      source: 'help_support',
-      jobId: null,
+      source,
+      jobId: jobId ? String(jobId) : null,
+      order_id: order_id ? String(order_id) : null,
+      merchant_id: merchant_id ? String(merchant_id) : null,
+      shop_id: shop_id ? String(shop_id) : null,
       ai_mode_enabled: false,
       invited_provider_id: null,
       invited_provider_name: null,
       attachments: [],
       ai_summary: null,
+      isEmergency: !!is_emergency,
+      emergencyKind: emergency_kind || null,
       lastUpdated: now,
       createdAt: now,
     };
@@ -14781,7 +20945,9 @@ app.post('/api/support/tickets', async (req, res) => {
     const subj = subject || (message ? message.slice(0, 80) : 'คำถามจาก Help & Support');
     const ruk = await getRukReply(pool, message || subject, [], null, subj);
     const botReply = typeof ruk === 'object' ? ruk.text : ruk;
-    if (botReply) addSupportMessage(id, 'BOT', botReply, typeof ruk === 'object' ? { source: ruk.source, score: ruk.score } : {});
+    if (botReply) addSupportMessage(id, 'BOT', botReply, supportAiMeta(ruk));
+    await persistKnowledgeLearningFromRuk({ ticket, userText: message || subject, ruk });
+    await maybeStartCareOperationFromMeta(ticket, supportAiMeta(ruk));
     res.status(201).json({ ticket, message: userMsg });
   } catch (e) {
     console.error('POST /api/support/tickets error:', e);
@@ -14895,16 +21061,587 @@ app.post('/api/support/tickets/:id/messages', async (req, res) => {
             const ar = await pool.query(`SELECT id, title, category, status FROM advance_jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
             if (ar.rows?.[0]) jobInfo = ar.rows[0];
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       const ruk = await getRukReply(pool, message, last5, jobInfo, ticket.subject);
       const botReply = typeof ruk === 'object' ? ruk.text : ruk;
-      if (botReply) addSupportMessage(ticket.id, 'BOT', botReply, typeof ruk === 'object' ? { source: ruk.source, score: ruk.score } : {});
+      if (botReply) addSupportMessage(ticket.id, 'BOT', botReply, supportAiMeta(ruk));
+      await persistKnowledgeLearningFromRuk({ ticket, userText: message, ruk });
+      await maybeStartCareOperationFromMeta(ticket, supportAiMeta(ruk));
     }
 
     res.status(201).json({ message: userMsg });
   } catch (e) {
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// POST /api/support/tickets/:id/ai-replies — sync isolated Support AI answer into the admin-visible ticket timeline
+app.post('/api/support/tickets/:id/ai-replies', async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const {
+      message,
+      source = 'support_ai_bridge',
+      score = null,
+      ai_actions = [],
+      quick_actions = [],
+      diagnostic_summary = null,
+      escalation = null,
+      job_id = null,
+    } = req.body || {};
+    const text = String(message || '').trim();
+    if (!text) return res.status(400).json({ error: 'message required' });
+    if (job_id && !ticket.jobId) ticket.jobId = String(job_id);
+    ticket.lastUpdated = new Date().toISOString();
+    const msg = addSupportMessage(ticket.id, 'BOT', text, {
+      source,
+      score,
+      ai_actions,
+      quick_actions,
+      diagnostic_summary,
+      escalation,
+    });
+    const shouldAutoSaveKnowledge =
+      source === 'system_knowledge' ||
+      (Array.isArray(ai_actions) && ai_actions.includes('auto_save_safe_knowledge'));
+    if (shouldAutoSaveKnowledge) {
+      const previousUser = supportMessagesStore
+        .filter((m) => m.ticketId === ticket.id && String(m.sender || '').toUpperCase() === 'USER')
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+      await maybeAutoSaveSupportKnowledge({
+        ticket,
+        question: previousUser?.message || ticket.subject,
+        answer: text,
+        category: ticket.category || 'general',
+        source: 'system_support_ai_bridge',
+      });
+    }
+    await maybeStartCareOperationFromMeta(ticket, { source, ai_actions, escalation });
+    res.status(201).json({ message: msg });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to sync AI reply' });
+  }
+});
+
+// POST /api/support/tickets/:id/care-reroute — เริ่มจับคู่ใหม่จาก ticket ที่ผูก jobId จริง
+app.post('/api/support/tickets/:id/care-reroute', async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const { job_id } = req.body || {};
+    if (job_id && !ticket.jobId) ticket.jobId = String(job_id);
+    const result = await runCareRerouteNow(ticket, 'support_chat_user');
+    if (!result.ok) return res.status(400).json(result);
+    res.json({
+      ok: true,
+      ticket: result.ticket,
+      candidates: result.candidates,
+      invitation: result.invitation || null,
+      candidate_count: result.candidates.length,
+    });
+  } catch (e) {
+    console.error('POST care-reroute:', e);
+    res.status(500).json({ error: 'Failed to start care reroute' });
+  }
+});
+
+async function confirmCareReplacement(ticket, providerId, actor = 'admin', invitationIdHint = null) {
+  if (!ticket?.jobId) return { ok: false, error: 'Ticket has no jobId' };
+  const provider = (ticket.replacement_candidates || []).find((c) => String(c.id) === String(providerId))
+    || (ticket.reroute_invitations || []).flatMap((i) => i.candidates || []).find((c) => String(c.id) === String(providerId));
+  if (!provider) return { ok: false, error: 'Provider is not in replacement candidate list' };
+  await pool.query(
+    `UPDATE jobs
+     SET accepted_by = $1, accepted_by_name = $2, status = 'accepted', updated_at = NOW()
+     WHERE id::text = $3`,
+    [String(providerId), provider.full_name || 'ผู้รับงาน', String(ticket.jobId)]
+  );
+  const now = new Date().toISOString();
+  let acceptedInvitationId = invitationIdHint ? String(invitationIdHint) : null;
+  for (const invitation of ticket.reroute_invitations || []) {
+    if ((invitation.candidates || []).some((c) => String(c.id) === String(providerId))) {
+      invitation.status = 'accepted';
+      invitation.accepted_provider_id = String(providerId);
+      invitation.accepted_at = now;
+      if (!acceptedInvitationId) acceptedInvitationId = String(invitation.id);
+    }
+  }
+  let acceptedAudit = null;
+  if (acceptedInvitationId) {
+    acceptedAudit = markSupportCarePushAccepted(ticket.id, acceptedInvitationId, String(providerId), now);
+  }
+  const acceptMs = Number(acceptedAudit?.push_to_accept_ms);
+  const speedBoost = Number.isFinite(acceptMs)
+    ? acceptMs <= 60000
+      ? 0.12
+      : acceptMs <= 120000
+        ? 0.08
+        : acceptMs <= 300000
+          ? 0.04
+          : 0.01
+    : 0.03;
+  setImmediate(() => {
+    updateProviderRankingSignal(String(providerId), {
+      reliability_score_delta: 0.04,
+      fast_accept_boost_delta: speedBoost,
+      reason: 'reroute_confirmed',
+      last_push_to_accept_ms: Number.isFinite(acceptMs) ? acceptMs : null,
+    });
+  });
+  ticket.invited_provider_id = String(providerId);
+  ticket.invited_provider_name = provider.full_name || 'ผู้รับงาน';
+  ticket.reroute_sla = {
+    ...(ticket.reroute_sla || {}),
+    status: 'confirmed',
+    stage: 'confirmed',
+    confirmed_provider_id: String(providerId),
+    confirmed_at: now,
+    updated_at: now,
+  };
+  addCareTimelineEvent(ticket, 'provider_accepted', {
+    provider_id: String(providerId),
+    provider_name: provider.full_name,
+    message: `${provider.full_name || 'ผู้รับงาน'} ตอบรับงานแทนแล้ว`,
+  });
+  addCareTimelineEvent(ticket, 'confirmed', {
+    provider_id: String(providerId),
+    provider_name: provider.full_name,
+    message: `ยืนยันผู้รับงานใหม่ให้ jobId ${ticket.jobId} แล้ว`,
+  });
+  const outcome = recordCareOutcome(ticket, {
+    type: 'reroute_confirmed',
+    label: `Reroute สำเร็จ: ยืนยัน ${provider.full_name || providerId} เป็นผู้รับงานใหม่`,
+    provider_id: String(providerId),
+    provider_name: provider.full_name,
+    actor,
+  });
+  await persistCareOutcomeLearning(ticket, outcome);
+  addSupportMessage(ticket.id, 'BOT', `ยืนยันผู้รับงานใหม่แล้วค่ะ งาน #${ticket.jobId} ถูกส่งต่อให้ ${provider.full_name || 'ผู้รับงานใหม่'} เรียบร้อยแล้ว ระบบจะใช้ผลลัพธ์นี้ปรับปรุงการจัดอันดับและความรู้ของ AI ต่อไป`, {
+    source: 'care_reroute_confirmation',
+    ai_actions: ['provider_accepted', 'replacement_confirmed', 'care_outcome_recorded'],
+    care_timeline: ticket.care_timeline,
+    situation_cards: ticket.situation_cards,
+    reroute_sla: ticket.reroute_sla,
+    diagnostic_summary: `Replacement confirmed with jobId=${ticket.jobId}, provider=${providerId}, actor=${actor}`,
+  });
+  ticket.status = 'IN_PROGRESS';
+  ticket.lastUpdated = now;
+  emitSupportTicketRefresh(ticket.id);
+  return { ok: true, ticket, provider, outcome };
+}
+
+async function applyCareFallbackAction(ticket, action, actor = 'admin') {
+  const labels = {
+    refund: 'เสนอคืนเงินให้ผู้ใช้ตามเงื่อนไขเคสนี้',
+    coupon: 'เสนอคูปองชดเชยให้ผู้ใช้',
+    insurance: 'ส่งต่อเข้ากระบวนการใช้สิทธิประกันงาน',
+    review_provider: 'บันทึกให้ตรวจสอบพฤติกรรม provider เดิมก่อนปรับ ranking/ban',
+  };
+  const label = labels[action];
+  if (!label) return { ok: false, error: 'Unsupported care action' };
+  const outcome = recordCareOutcome(ticket, {
+    type: action,
+    label,
+    actor,
+  });
+  await persistCareOutcomeLearning(ticket, outcome);
+  ticket.reroute_sla = {
+    ...(ticket.reroute_sla || {}),
+    status: `${action}_selected`,
+    stage: 'fallback_options',
+    updated_at: new Date().toISOString(),
+  };
+  if (action === 'review_provider') {
+    ticket.provider_reliability_signal = {
+      ...(ticket.provider_reliability_signal || {}),
+      ranking_effect: 'admin_review_requested',
+      reviewed_at: new Date().toISOString(),
+    };
+    const reviewTargetProviderId = ticket.invited_provider_id || null;
+    if (reviewTargetProviderId) {
+      setImmediate(() => {
+        updateProviderRankingSignal(String(reviewTargetProviderId), {
+          manual_penalty_delta: 0.18,
+          reliability_score_delta: -0.12,
+          reason: 'admin_review_provider',
+        });
+      });
+    }
+  }
+  addSupportMessage(ticket.id, 'BOT', `${label} แล้วค่ะ ทีมงานเห็น action นี้ใน Owner Control Room และระบบบันทึกผลลัพธ์ไว้เพื่อปรับปรุงการช่วยเหลือครั้งถัดไป`, {
+    source: 'care_one_click_resolution',
+    ai_actions: ['one_click_resolution', 'care_outcome_recorded', action],
+    care_timeline: ticket.care_timeline,
+    situation_cards: ticket.situation_cards,
+    reroute_sla: ticket.reroute_sla,
+    diagnostic_summary: `Care fallback action=${action}, jobId=${ticket.jobId || 'missing'}, actor=${actor}`,
+  });
+  ticket.lastUpdated = new Date().toISOString();
+  emitSupportTicketRefresh(ticket.id);
+  return { ok: true, ticket, outcome };
+}
+
+// POST /api/support/tickets/:id/care-actions — Owner Control Room one-click operations
+app.post('/api/support/tickets/:id/care-actions', adminAuthMiddleware, async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const action = String(req.body?.action || '').trim();
+    if (action === 'confirm_replacement') {
+      const providerId = String(req.body?.provider_id || '').trim();
+      if (!providerId) return res.status(400).json({ error: 'provider_id required' });
+      const result = await confirmCareReplacement(ticket, providerId, req.body?.actor || 'admin');
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    }
+    const result = await applyCareFallbackAction(ticket, action, req.body?.actor || 'admin');
+    if (!result.ok) return res.status(400).json(result);
+    return res.json(result);
+  } catch (e) {
+    console.error('POST care-actions:', e);
+    res.status(500).json({ error: 'Failed to apply care action' });
+  }
+});
+
+// GET /api/support/provider/reroute-invitations — provider เห็นงานด่วนที่ระบบเชิญให้รับแทน
+app.get('/api/support/provider/reroute-invitations', authenticateToken, async (req, res) => {
+  try {
+    const providerId = String(req.user?.id || '').trim();
+    if (!providerId) return res.status(401).json({ error: 'Provider auth required' });
+    const now = Date.now();
+    const invitations = [];
+    for (const ticket of supportTicketsStore) {
+      for (const invitation of ticket.reroute_invitations || []) {
+        const candidates = invitation.candidates || [];
+        const isInvited = candidates.some((c) => String(c.id) === providerId);
+        if (!isInvited || invitation.status !== 'pending') continue;
+        const expiresAtMs = invitation.expires_at ? new Date(invitation.expires_at).getTime() : 0;
+        if (expiresAtMs && expiresAtMs < now) continue;
+        let job = null;
+        if (ticket.jobId && pool) {
+          const r = await pool.query(
+            `SELECT id::text, title, category, subcategory, price, datetime, location, status
+             FROM jobs
+             WHERE id::text = $1
+             LIMIT 1`,
+            [String(ticket.jobId)]
+          ).catch(() => ({ rows: [] }));
+          job = r.rows?.[0] || null;
+        }
+        invitations.push({
+          ticket_id: ticket.id,
+          invitation_id: invitation.id,
+          job_id: ticket.jobId || null,
+          status: invitation.status,
+          sent_at: invitation.sent_at,
+          expires_at: invitation.expires_at,
+          accept_window_ms: invitation.accept_window_ms,
+          candidate: candidates.find((c) => String(c.id) === providerId) || null,
+          job,
+          care_stage: ticket.reroute_sla?.stage || null,
+        });
+      }
+    }
+    res.json({ invitations });
+  } catch (e) {
+    console.error('GET provider reroute-invitations:', e);
+    res.status(500).json({ error: 'Failed to load reroute invitations' });
+  }
+});
+
+// POST /api/support/provider/reroute-invitations/opened — บันทึกว่า provider เปิด push/deep-link แล้ว
+app.post('/api/support/provider/reroute-invitations/opened', authenticateToken, async (req, res) => {
+  try {
+    const providerId = String(req.user?.id || '').trim();
+    const ticketId = String(req.body?.ticketId || req.body?.ticket_id || '').trim();
+    const invitationId = String(req.body?.invitationId || req.body?.invitation_id || '').trim();
+    const source = String(req.body?.source || 'push_open').trim();
+    if (!providerId || !ticketId || !invitationId) {
+      return res.status(400).json({ error: 'ticketId and invitationId required' });
+    }
+    const ticket = supportTicketsStore.find((t) => t.id === ticketId);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const invitation = (ticket.reroute_invitations || []).find((i) => String(i.id) === invitationId);
+    if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
+    const isInvited = (invitation.candidates || []).some((c) => String(c.id) === providerId);
+    if (!isInvited) return res.status(403).json({ error: 'Provider is not invited for this invitation' });
+    const row = markSupportCarePushOpened(ticketId, invitationId, providerId, source);
+    if (row) {
+      invitation.opened_provider_ids = Array.isArray(invitation.opened_provider_ids)
+        ? invitation.opened_provider_ids
+        : [];
+      if (!invitation.opened_provider_ids.includes(providerId)) {
+        invitation.opened_provider_ids.push(providerId);
+      }
+      if (!invitation.first_opened_at) invitation.first_opened_at = row.opened_at;
+    }
+    res.json({ ok: true, opened_at: row?.opened_at || null });
+  } catch (e) {
+    console.error('POST provider reroute opened:', e);
+    res.status(500).json({ error: 'Failed to mark reroute invitation opened' });
+  }
+});
+
+// POST /api/support/provider/reroute-invitations/:ticketId/:invitationId/accept — provider กดรับงานแทนเอง
+app.post('/api/support/provider/reroute-invitations/:ticketId/:invitationId/accept', authenticateToken, async (req, res) => {
+  try {
+    const providerId = String(req.user?.id || '').trim();
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.ticketId);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const invitation = (ticket.reroute_invitations || []).find((i) => i.id === req.params.invitationId);
+    if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
+    if (invitation.status !== 'pending') return res.status(409).json({ error: `Invitation is ${invitation.status}` });
+    const expiresAtMs = invitation.expires_at ? new Date(invitation.expires_at).getTime() : 0;
+    if (expiresAtMs && expiresAtMs < Date.now()) return res.status(409).json({ error: 'Invitation expired' });
+    const isInvited = (invitation.candidates || []).some((c) => String(c.id) === providerId);
+    if (!isInvited) return res.status(403).json({ error: 'Provider is not invited for this reroute' });
+    const result = await confirmCareReplacement(ticket, providerId, 'provider', req.params.invitationId);
+    if (!result.ok) return res.status(400).json(result);
+    res.json({ ok: true, ticket: result.ticket, provider: result.provider, outcome: result.outcome });
+  } catch (e) {
+    console.error('POST provider reroute accept:', e);
+    res.status(500).json({ error: 'Failed to accept reroute invitation' });
+  }
+});
+
+async function loadSupportCareAuditRows(hours = 24) {
+  const boundedHours = Math.min(Math.max(Number(hours || 24), 1), 24 * 30);
+  const since = new Date(Date.now() - boundedHours * 60 * 60 * 1000).toISOString();
+  if (pool) {
+    const dbRows = await pool.query(
+      `SELECT
+         id, ticket_id, invitation_id, job_id, provider_id, provider_name, source,
+         push_sent_at, tokens_success, tokens_failed, opened_at, opened_source, accepted_at, push_to_accept_ms
+       FROM support_care_push_audit
+       WHERE push_sent_at >= $1::timestamptz
+       ORDER BY push_sent_at DESC
+       LIMIT 50000`,
+      [since]
+    ).then((r) => r.rows || []).catch((e) => {
+      console.warn('[care-audit] load DB rows failed:', e?.message);
+      return [];
+    });
+    if (dbRows.length > 0) return { rows: dbRows, hours: boundedHours };
+  }
+  const sinceMs = Date.now() - boundedHours * 60 * 60 * 1000;
+  const memRows = supportCarePushAuditStore.filter((r) => {
+    const ts = r.push_sent_at ? new Date(r.push_sent_at).getTime() : 0;
+    return ts >= sinceMs;
+  });
+  return { rows: memRows, hours: boundedHours };
+}
+
+function buildSupportCareAnalytics(rows = [], hours = 24) {
+  const pushes = rows.length;
+  const successTokens = rows.reduce((sum, r) => sum + Number(r.tokens_success || 0), 0);
+  const failedTokens = rows.reduce((sum, r) => sum + Number(r.tokens_failed || 0), 0);
+  const opened = rows.filter((r) => !!r.opened_at).length;
+  const accepted = rows.filter((r) => !!r.accepted_at).length;
+  const openRate = pushes > 0 ? (opened / pushes) * 100 : 0;
+  const acceptRate = pushes > 0 ? (accepted / pushes) * 100 : 0;
+  const acceptLatencies = rows
+    .map((r) => Number(r.push_to_accept_ms))
+    .filter((n) => Number.isFinite(n) && n >= 0)
+    .sort((a, b) => a - b);
+  const avgAcceptMs = acceptLatencies.length
+    ? Math.round(acceptLatencies.reduce((a, b) => a + b, 0) / acceptLatencies.length)
+    : null;
+  const p50AcceptMs = acceptLatencies.length
+    ? acceptLatencies[Math.floor((acceptLatencies.length - 1) * 0.5)]
+    : null;
+  const p90AcceptMs = acceptLatencies.length
+    ? acceptLatencies[Math.floor((acceptLatencies.length - 1) * 0.9)]
+    : null;
+  const providerAgg = new Map();
+  for (const row of rows) {
+    if (!row.provider_id || !Number.isFinite(Number(row.push_to_accept_ms))) continue;
+    const key = String(row.provider_id);
+    if (!providerAgg.has(key)) {
+      providerAgg.set(key, {
+        provider_id: key,
+        provider_name: row.provider_name || null,
+        accepts: 0,
+        total_ms: 0,
+        best_ms: Number(row.push_to_accept_ms),
+      });
+    }
+    const agg = providerAgg.get(key);
+    agg.accepts += 1;
+    agg.total_ms += Number(row.push_to_accept_ms);
+    agg.best_ms = Math.min(agg.best_ms, Number(row.push_to_accept_ms));
+  }
+  const fastestProviders = Array.from(providerAgg.values())
+    .map((r) => ({
+      provider_id: r.provider_id,
+      provider_name: r.provider_name,
+      accepts: r.accepts,
+      avg_accept_ms: Math.round(r.total_ms / Math.max(r.accepts, 1)),
+      best_accept_ms: r.best_ms,
+    }))
+    .sort((a, b) => a.avg_accept_ms - b.avg_accept_ms)
+    .slice(0, 10);
+
+  return {
+    hours,
+    summary: {
+      pushes,
+      success_tokens: successTokens,
+      failed_tokens: failedTokens,
+      opened,
+      open_rate_pct: Number(openRate.toFixed(2)),
+      accepted,
+      accept_rate_pct: Number(acceptRate.toFixed(2)),
+      avg_accept_ms: avgAcceptMs,
+      p50_accept_ms: p50AcceptMs,
+      p90_accept_ms: p90AcceptMs,
+    },
+    fastest_providers: fastestProviders,
+    recent_events: rows.slice(0, 30),
+  };
+}
+
+// GET /api/admin/support/care-analytics — dashboard สำหรับ FCM delivery audit + provider accept analytics
+app.get('/api/admin/support/care-analytics', adminAuthMiddleware, async (req, res) => {
+  try {
+    const loaded = await loadSupportCareAuditRows(req.query.hours || 24);
+    res.json(buildSupportCareAnalytics(loaded.rows, loaded.hours));
+  } catch (e) {
+    console.error('GET /api/admin/support/care-analytics:', e);
+    res.status(500).json({ error: 'Failed to load care analytics' });
+  }
+});
+
+// GET /api/admin/support/care-analytics/trend?days=7|30
+app.get('/api/admin/support/care-analytics/trend', adminAuthMiddleware, async (req, res) => {
+  try {
+    const days = [7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const loaded = await loadSupportCareAuditRows(days * 24);
+    const byDay = new Map();
+    for (const row of loaded.rows) {
+      const day = String((row.push_sent_at || '').slice(0, 10));
+      if (!day) continue;
+      if (!byDay.has(day)) {
+        byDay.set(day, { day, pushes: 0, opened: 0, accepted: 0, success_tokens: 0, failed_tokens: 0 });
+      }
+      const d = byDay.get(day);
+      d.pushes += 1;
+      d.success_tokens += Number(row.tokens_success || 0);
+      d.failed_tokens += Number(row.tokens_failed || 0);
+      if (row.opened_at) d.opened += 1;
+      if (row.accepted_at) d.accepted += 1;
+    }
+    const points = Array.from(byDay.values())
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((p) => ({
+        ...p,
+        open_rate_pct: p.pushes > 0 ? Number(((p.opened / p.pushes) * 100).toFixed(2)) : 0,
+        accept_rate_pct: p.pushes > 0 ? Number(((p.accepted / p.pushes) * 100).toFixed(2)) : 0,
+      }));
+    res.json({ days, points });
+  } catch (e) {
+    console.error('GET /api/admin/support/care-analytics/trend:', e);
+    res.status(500).json({ error: 'Failed to load care analytics trend' });
+  }
+});
+
+// GET /api/admin/support/care-analytics/export.csv
+app.get('/api/admin/support/care-analytics/export.csv', adminAuthMiddleware, async (req, res) => {
+  try {
+    const loaded = await loadSupportCareAuditRows(req.query.hours || 24 * 7);
+    const rows = loaded.rows || [];
+    const header = [
+      'push_sent_at',
+      'ticket_id',
+      'invitation_id',
+      'job_id',
+      'provider_id',
+      'provider_name',
+      'tokens_success',
+      'tokens_failed',
+      'opened_at',
+      'opened_source',
+      'accepted_at',
+      'push_to_accept_ms',
+    ];
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.push_sent_at,
+        r.ticket_id,
+        r.invitation_id,
+        r.job_id,
+        r.provider_id,
+        r.provider_name,
+        r.tokens_success,
+        r.tokens_failed,
+        r.opened_at,
+        r.opened_source,
+        r.accepted_at,
+        r.push_to_accept_ms,
+      ].map(esc).join(','));
+    }
+    const filename = `care-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(`\uFEFF${lines.join('\n')}`);
+  } catch (e) {
+    console.error('GET /api/admin/support/care-analytics/export.csv:', e);
+    res.status(500).json({ error: 'Failed to export care analytics csv' });
+  }
+});
+
+// POST /api/support/tickets/:id/feedback — user feedback on AI answer; not-helpful escalates the ticket
+app.post('/api/support/tickets/:id/feedback', async (req, res) => {
+  try {
+    const ticket = supportTicketsStore.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const helpful = req.body?.helpful === true;
+    const messageId = req.body?.message_id ? String(req.body.message_id) : null;
+    const reason = String(req.body?.reason || '').slice(0, 300);
+    const target = messageId
+      ? supportMessagesStore.find((m) => m.ticketId === ticket.id && m.id === messageId)
+      : null;
+    const feedback = {
+      helpful,
+      reason: reason || null,
+      at: new Date().toISOString(),
+    };
+    if (target) target.feedback = feedback;
+    if (!helpful) {
+      const ticketMessages = supportMessagesStore
+        .filter((m) => m.ticketId === ticket.id)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const targetIndex = target ? ticketMessages.findIndex((m) => m.id === target.id) : ticketMessages.length;
+      const previousUser = ticketMessages
+        .slice(0, targetIndex >= 0 ? targetIndex : ticketMessages.length)
+        .reverse()
+        .find((m) => String(m.sender || '').toUpperCase() === 'USER');
+      if (previousUser?.message) {
+        await maybeCreateKnowledgeDraftFromSupport({
+          ticket,
+          userText: previousUser.message,
+          draftAnswer: target?.message || 'รอเจ้าหน้าที่เพิ่มคำตอบที่ถูกต้องหลังผู้ใช้แจ้งว่า AI ยังไม่ช่วยแก้ปัญหา',
+          source: 'support_feedback_not_helpful',
+        });
+      }
+      ticket.priority = ticket.priority === 'HIGH' ? 'HIGH' : 'HIGH';
+      ticket.ai_summary = [
+        ticket.ai_summary,
+        `AI feedback: user marked not helpful${reason ? ` — ${reason}` : ''}`,
+      ].filter(Boolean).join('\n');
+      addSupportMessage(ticket.id, 'BOT', 'รับทราบค่ะ เราจะส่งต่อให้เจ้าหน้าที่ตรวจสอบต่อ พร้อมแนบประวัติคำตอบของ AI ให้แล้วค่ะ', {
+        source: 'ai_feedback_escalation',
+        ai_actions: ['feedback_not_helpful', 'escalate_to_admin'],
+        escalation: { level: 'admin_review', reason: reason || 'user_marked_not_helpful' },
+      });
+    }
+    ticket.lastUpdated = new Date().toISOString();
+    res.json({ ok: true, escalated: !helpful, feedback });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to record feedback' });
   }
 });
 
@@ -14956,11 +21693,13 @@ app.post('/api/support/message', async (req, res) => {
               const ar = await pool.query(`SELECT id, title, category, status FROM advance_jobs WHERE id = $1::uuid`, [String(ticket.jobId)]);
               if (ar.rows?.[0]) jobInfo = ar.rows[0];
             }
-          } catch (_) {}
+          } catch (_) { }
         }
         const ruk = await getRukReply(pool, message, last5, jobInfo, ticket.subject);
         const botReply = typeof ruk === 'object' ? ruk.text : ruk;
-        if (botReply) addSupportMessage(ticket.id, 'BOT', botReply, typeof ruk === 'object' ? { source: ruk.source, score: ruk.score } : {});
+        if (botReply) addSupportMessage(ticket.id, 'BOT', botReply, supportAiMeta(ruk));
+        await persistKnowledgeLearningFromRuk({ ticket, userText: message, ruk });
+        await maybeStartCareOperationFromMeta(ticket, supportAiMeta(ruk));
         ticket.lastUpdated = new Date().toISOString();
       } catch (e) {
         console.error('async /api/support/message bot reply:', e);
@@ -15035,7 +21774,7 @@ app.post('/api/admin/support/tickets/:id/invite-provider', adminAuthMiddleware, 
         providerId = String(r.rows[0].ab);
         providerName = r.rows[0].accepted_by_name || providerName;
       }
-    } catch (_) {}
+    } catch (_) { }
     if (!providerId) {
       try {
         const ar = await pool.query(
@@ -15050,7 +21789,7 @@ app.post('/api/admin/support/tickets/:id/invite-provider', adminAuthMiddleware, 
           providerId = String(ar.rows[0].uid);
           providerName = ar.rows[0].fn || 'Verified Pro (Advance Job)';
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!providerId) return res.status(404).json({ error: 'No assigned provider found for this job' });
     ticket.invited_provider_id = providerId;
@@ -15120,7 +21859,7 @@ app.post('/api/admin/support/tickets/:id/generate-faq-draft', adminAuthMiddlewar
 app.get('/api/admin/support/knowledge-drafts', adminAuthMiddleware, async (req, res) => {
   try {
     const rows = await listKnowledgeDrafts(pool, Math.min(parseInt(req.query.limit, 10) || 50, 100));
-    res.json({ items: rows });
+    res.json({ items: rows, can_manage_knowledge: await canManageSupportKnowledge(req) });
   } catch (e) {
     res.status(500).json({ error: 'Failed to list knowledge drafts' });
   }
@@ -15129,6 +21868,7 @@ app.get('/api/admin/support/knowledge-drafts', adminAuthMiddleware, async (req, 
 // POST /api/admin/support/knowledge-drafts/:id/promote — One-Click Promote → faq_knowledge
 app.post('/api/admin/support/knowledge-drafts/:id/promote', adminAuthMiddleware, async (req, res) => {
   try {
+    if (!(await requireSupportKnowledgeManager(req, res))) return;
     const draft = await getKnowledgeDraftById(pool, req.params.id);
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
     if (draft.status && draft.status !== 'draft') {
@@ -15179,7 +21919,7 @@ app.post('/api/admin/support/tickets/:id/attachments', adminAuthMiddleware, asyn
           ticket.ai_summary = [ticket.ai_summary, summary].filter(Boolean).join('\n\n');
           ticket.lastUpdated = new Date().toISOString();
         }
-      } catch (_) {}
+      } catch (_) { }
     });
     res.json({ ticket });
   } catch (e) {
@@ -15209,6 +21949,7 @@ app.post('/api/admin/support/learning-feedback', adminAuthMiddleware, async (req
 // POST /api/admin/support/save-best-answer — บันทึกคำตอบ Admin เป็น Best Answer ใน FAQ Knowledge Base
 app.post('/api/admin/support/save-best-answer', adminAuthMiddleware, async (req, res) => {
   try {
+    if (!(await requireSupportKnowledgeManager(req, res))) return;
     const { question, best_answer, category, ticket_id } = req.body || {};
     if (!question || !best_answer) return res.status(400).json({ error: 'question and best_answer required' });
     const row = await saveFaq(pool, {
@@ -15242,6 +21983,7 @@ app.get('/api/admin/support/faq-knowledge', adminAuthMiddleware, async (req, res
 // DELETE /api/admin/support/faq-knowledge/:id — ลบรายการจากคลังความรู้
 app.delete('/api/admin/support/faq-knowledge/:id', adminAuthMiddleware, async (req, res) => {
   try {
+    if (!(await requireSupportKnowledgeManager(req, res))) return;
     const deleted = await deleteFaq(pool, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'FAQ entry not found' });
     res.json({ success: true, message: 'ลบรายการแล้ว' });
@@ -15313,7 +22055,7 @@ app.post('/api/admin/support/ai-suggest', adminAuthMiddleware, async (req, res) 
           );
           if (ar.rows?.[0]) jobInfo = ar.rows[0];
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const ruk = await getRukReply(pool, text, last5, jobInfo, ticket?.subject);
@@ -15386,7 +22128,20 @@ app.get('/api/notifications/latest', async (req, res) => {
       const matchIds = new Set([userIdRaw]);
       if (userUuid) matchIds.add(String(userUuid));
       const userItems = userNotificationsStore.filter((n) => matchIds.has(String(n.targetUserId))).slice(0, limit);
-      const broadcastItems = broadcastNotificationsStore.filter((n) => !n.target || n.target === 'All').slice(0, Math.min(10, limit));
+      let broadcastItems = [];
+      try {
+        broadcastItems = await listBroadcastsForMobileUserMerge(pool, Math.min(10, limit));
+      } catch (dbErr) {
+        if (String(dbErr?.code) !== '42P01') console.warn('[notifications/latest] broadcast DB:', dbErr?.message);
+        broadcastItems = broadcastNotificationsStore
+          .filter((n) => ['All', 'Mobile'].includes(String(n.target || 'All')))
+          .slice(0, Math.min(10, limit));
+      }
+      if (!broadcastItems.length) {
+        broadcastItems = broadcastNotificationsStore
+          .filter((n) => ['All', 'Mobile'].includes(String(n.target || 'All')))
+          .slice(0, Math.min(10, limit));
+      }
       let dbItems = [];
       if (userUuid) {
         const dbRows = await pool.query(
@@ -15426,7 +22181,19 @@ app.get('/api/notifications/latest', async (req, res) => {
         .sort((a, b) => new Date(b.sentAt || b.created_at) - new Date(a.sentAt || a.created_at))
         .slice(0, limit);
     } else {
-      list = broadcastNotificationsStore.slice(0, limit);
+      try {
+        list = await listBroadcastsForAnonymousMerge(pool, limit);
+      } catch (dbErr) {
+        if (String(dbErr?.code) !== '42P01') console.warn('[notifications/latest] anon broadcast:', dbErr?.message);
+        list = broadcastNotificationsStore
+          .filter((n) => ['All', 'Landing'].includes(String(n.target || 'All')))
+          .slice(0, limit);
+      }
+      if (!list?.length) {
+        list = broadcastNotificationsStore
+          .filter((n) => ['All', 'Landing'].includes(String(n.target || 'All')))
+          .slice(0, limit);
+      }
     }
     res.json({ notifications: list });
   } catch (e) {
@@ -15946,6 +22713,109 @@ app.get('/api/settings/transport-pricing', async (req, res) => {
   }
 });
 
+// Public: ราคา local on-demand ตามระยะทาง — เดียวกับ mobile fetchDistancePricingSettings() → GET /api/settings/pricing
+app.get('/api/settings/pricing', async (req, res) => {
+  try {
+    const d = await getDistancePricingFromPool(pool);
+    let mr = null;
+    try {
+      mr = getTransportMatchMarkupRate();
+    } catch (_) {
+      mr = null;
+    }
+    res.json({
+      base_fare_thb: d.base_fare_thb,
+      price_per_km_thb: d.price_per_km_thb,
+      minimum_fare_thb: d.minimum_fare_thb,
+      updated_at: d.updated_at ?? null,
+      markup_rate: mr != null && Number.isFinite(mr) ? mr : undefined,
+      markup_percent: mr != null && Number.isFinite(mr) ? Math.round(mr * 10000) / 100 : undefined,
+    });
+  } catch (e) {
+    console.error('GET /api/settings/pricing:', e?.message || e);
+    let mr = 0.05;
+    try {
+      mr = getTransportMatchMarkupRate();
+    } catch (_) {
+      mr = 0.05;
+    }
+    res.json({
+      ...DISTANCE_PRICING_DEFAULTS,
+      updated_at: null,
+      markup_rate: mr,
+      markup_percent: Math.round(mr * 10000) / 100,
+    });
+  }
+});
+
+// Admin: Transport Hub local distance pricing (system_settings key transport_distance_pricing)
+// — ลงทะเบียน 2 path: .../settings/pricing (ชื่อเดิมใน adminApi) + .../wallet/distance-pricing (ร่วม prefix กับ
+//   /api/admin/wallet/* ที่ reverse proxy บางจุดให้ผ่านเป็นชุดเดียวกับ wallet liquidity)
+async function handleAdminDistancePricingGet(req, res) {
+  try {
+    const d = await getDistancePricingFromPool(pool);
+    let mr = null;
+    try {
+      mr = getTransportMatchMarkupRate();
+    } catch (_) {
+      mr = null;
+    }
+    res.json({
+      ...d,
+      markup_rate: mr != null && Number.isFinite(mr) ? mr : undefined,
+      markup_percent: mr != null && Number.isFinite(mr) ? Math.round(mr * 10000) / 100 : undefined,
+    });
+  } catch (e) {
+    console.error('GET admin distance pricing:', e?.message || e);
+    res.status(500).json({ error: 'pricing_load_failed' });
+  }
+}
+
+async function handleAdminDistancePricingPatch(req, res) {
+  try {
+    const role = req.adminUser?.role;
+    if (!['ADMIN', 'SUPER_ADMIN', 'DEVELOPER'].includes(role)) {
+      return res.status(403).json({ error: 'ไม่มีสิทธิแก้ราคา' });
+    }
+    const body = req.body || {};
+    const merged = await mergeDistancePricingPatch(pool, {
+      base_fare_thb: body.base_fare_thb,
+      price_per_km_thb: body.price_per_km_thb,
+      minimum_fare_thb: body.minimum_fare_thb,
+    });
+    let mr = null;
+    try {
+      mr = getTransportMatchMarkupRate();
+    } catch (_) {
+      mr = null;
+    }
+    try {
+      auditService.log(String(req.adminUser.id), 'distance_pricing_update', {
+        entityName: 'system_settings',
+        entityId: 'transport_distance_pricing',
+      }, { state_after: merged, actorRole: role, ipAddress: req.ip });
+    } catch (_) {
+      /* optional */
+    }
+    res.json({
+      ...merged,
+      markup_rate: mr != null && Number.isFinite(mr) ? mr : undefined,
+      markup_percent: mr != null && Number.isFinite(mr) ? Math.round(mr * 10000) / 100 : undefined,
+    });
+  } catch (e) {
+    console.error('PATCH admin distance pricing:', e?.message || e);
+    res.status(500).json({ error: 'pricing_update_failed' });
+  }
+}
+
+app.get('/api/admin/settings/pricing', adminAuthMiddleware, handleAdminDistancePricingGet);
+app.get('/api/admin/wallet/distance-pricing', adminAuthMiddleware, handleAdminDistancePricingGet);
+/** บาง bundle เรียกผิดโดยไม่มี segment `wallet` — รองรับให้ตรงกับ Network ที่เห็นเป็น /api/admin/distance-pricing */
+app.get('/api/admin/distance-pricing', adminAuthMiddleware, handleAdminDistancePricingGet);
+app.patch('/api/admin/settings/pricing', adminAuthMiddleware, handleAdminDistancePricingPatch);
+app.patch('/api/admin/wallet/distance-pricing', adminAuthMiddleware, handleAdminDistancePricingPatch);
+app.patch('/api/admin/distance-pricing', adminAuthMiddleware, handleAdminDistancePricingPatch);
+
 // รายการหมวดงาน — ตรงกับ NEXUS_MODULE2_CATEGORIES / คอร์สข้อสอบที่ปรับปรุงแล้ว
 const JOB_CATEGORY_KEYS = [
   'Cleaning', 'Gardening', 'Moving', 'Repair', 'AC Technician', 'Construction', 'Plumber', 'Electrician',
@@ -16080,35 +22950,35 @@ app.get('/api/admin/insurance/summary', adminAuthMiddleware, async (req, res) =>
         .catch(() => ({ rows: [{ total: 0 }] })),
     ]);
 
-    const totalLiability     = parseFloat(vaultRow.rows[0]?.total)         || 0;
-    const alreadyWithdrawn   = parseFloat(withdrawnRow.rows[0]?.total)      || 0;
-    const TIC                = parseFloat(ticRow.rows[0]?.total)            || 0;
-    const TIPO               = parseFloat(tipoRow.rows[0]?.total)           || 0;
-    const pendingClaimsCount = parseInt(pendingClaimsRow.rows[0]?.count)    || 0;
-    const approvedClaimsAmt  = parseFloat(approvedClaimsRow.rows[0]?.total) || 0;
-    const pendingClaimsAmt   = parseFloat(pendingAmountRow.rows[0]?.total)  || 0;
+    const totalLiability = parseFloat(vaultRow.rows[0]?.total) || 0;
+    const alreadyWithdrawn = parseFloat(withdrawnRow.rows[0]?.total) || 0;
+    const TIC = parseFloat(ticRow.rows[0]?.total) || 0;
+    const TIPO = parseFloat(tipoRow.rows[0]?.total) || 0;
+    const pendingClaimsCount = parseInt(pendingClaimsRow.rows[0]?.count) || 0;
+    const approvedClaimsAmt = parseFloat(approvedClaimsRow.rows[0]?.total) || 0;
+    const pendingClaimsAmt = parseFloat(pendingAmountRow.rows[0]?.total) || 0;
 
     // ── Reserve ที่แท้จริง: 60% ของ Liability − ยอดที่จ่ายเคลมออกไปแล้ว ──
     const gross_reserve_60 = round2(totalLiability * 0.6);
-    const locked_60        = round2(Math.max(0, gross_reserve_60 - TIPO));  // หักเคลมที่จ่ายแล้ว
-    const manageable_40    = round2(totalLiability * 0.4);
+    const locked_60 = round2(Math.max(0, gross_reserve_60 - TIPO));  // หักเคลมที่จ่ายแล้ว
+    const manageable_40 = round2(totalLiability * 0.4);
     const allowedToWithdraw = Math.max(0, manageable_40 - alreadyWithdrawn);
 
     res.json({
       // Vault core
-      total_insurance_collected:       TIC,
-      total_insurance_paid_out:        TIPO,          // = sum ของ liability_debit (รวม claim payouts)
-      current_insurance_balance:       round2(totalLiability),
-      reserve_60:                      locked_60,     // หัก TIPO แล้ว
+      total_insurance_collected: TIC,
+      total_insurance_paid_out: TIPO,          // = sum ของ liability_debit (รวม claim payouts)
+      current_insurance_balance: round2(totalLiability),
+      reserve_60: locked_60,     // หัก TIPO แล้ว
       gross_reserve_60,                               // ก่อนหัก
       manageable_40,
       already_withdrawn_for_investment: alreadyWithdrawn,
-      allowed_to_withdraw:             allowedToWithdraw,
-      source:                          'payment_ledger_audit',
+      allowed_to_withdraw: allowedToWithdraw,
+      source: 'payment_ledger_audit',
       // ── Claims Stats ──
-      pending_claims_count:            pendingClaimsCount,
-      total_claims_approved_amount:    round2(approvedClaimsAmt),
-      pending_claims_exposure:         round2(pendingClaimsAmt),  // risk exposure จาก pending claims
+      pending_claims_count: pendingClaimsCount,
+      total_claims_approved_amount: round2(approvedClaimsAmt),
+      pending_claims_exposure: round2(pendingClaimsAmt),  // risk exposure จาก pending claims
     });
   } catch (e) {
     console.error('Insurance summary error:', e);
@@ -16191,15 +23061,15 @@ app.get('/api/admin/payment-ledger', adminAuthMiddleware, async (req, res) => {
     const jobId = (req.query.job_id || '').trim();
     const q = jobId
       ? await pool.query(
-          `SELECT id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at
+        `SELECT id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at
            FROM payment_ledger_audit WHERE job_id = $1 ORDER BY id LIMIT $2`,
-          [jobId, limit]
-        )
+        [jobId, limit]
+      )
       : await pool.query(
-          `SELECT id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at
+        `SELECT id, event_type, payment_id, job_id, amount, currency, status, metadata, created_at
            FROM payment_ledger_audit ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $1`,
-          [limit]
-        );
+        [limit]
+      );
     const rows = (q.rows || []).map((r) => ({
       id: r.id,
       event_type: r.event_type,
@@ -16218,14 +23088,142 @@ app.get('/api/admin/payment-ledger', adminAuthMiddleware, async (req, res) => {
   }
 });
 
-// ✅ 2. Register
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+function registrationStableBodyHash({ phoneNorm, firebase_uid, normalizedRole, name }) {
+  return crypto.createHash('sha256').update(
+    `${phoneNorm}|${String(firebase_uid || '').trim()}|${normalizedRole}|${String(name || '').trim()}`,
+    'utf8'
+  ).digest('hex');
+}
+
+function uaLooksLikeEmbeddedSocialWebViewRegistration(req) {
+  const ua = String(req.headers['user-agent'] || '');
+  return /FBAN|FBAV|FB_IAB|Instagram|LINE\/|; wv\b|TikTok|Messenger\b|\bwv\b\)|\bwv\b\)/i.test(ua);
+}
+
+function registrationMetricsPhase2Log(payload) {
   try {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), schema: 'v2', event: 'registration_metrics', ...payload }));
+  } catch (_) { /* noop */ }
+}
+
+function auditRegistrationEvent(req, action, { actorId, phoneNorm, detail } = {}) {
+  try {
+    const entityId =
+      phoneNorm ||
+      normalizePhoneForStorage(String(req.body?.phone || '').trim()) ||
+      'unknown';
+    auditService.log(
+      String(actorId || 'unknown'),
+      action,
+      { entityName: 'auth', entityId },
+      {
+        status: action === 'register_success' ? 'Success' : 'Failed',
+        ipAddress: getClientIp(req),
+        detail: detail || undefined,
+      }
+    );
+  } catch (_) { /* noop */ }
+}
+
+async function fetchUserRowForRegistrationByPhone(pool, phoneNorm, phoneAlt) {
+  const r = await pool.query(
+    `SELECT id, phone, email, full_name, name, firebase_uid, role, kyc_level, wallet_balance,
+            avatar_url, created_at, password, password_hash, account_status, banned_until
+       FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL)` ,
+    [phoneNorm, phoneAlt]
+  );
+  return r.rows[0] || null;
+}
+
+function mapRegisteredUserPayloadFromRow(existing) {
+  const displayName = existing.full_name || existing.name || existing.phone || '';
+  return {
+    id: String(existing.id),
+    firebase_uid: existing.firebase_uid,
+    phone: existing.phone,
+    email: existing.email || `${existing.phone}@aqond.com`,
+    full_name: existing.full_name,
+    name: displayName,
+    role: existing.role,
+    kyc_level: existing.kyc_level,
+    wallet_balance: parseFloat(existing.wallet_balance) || 0,
+    avatar_url: existing.avatar_url,
+    created_at: existing.created_at ? new Date(existing.created_at).toISOString() : new Date().toISOString(),
+  };
+}
+
+async function insertRegistrationIdempotencyRowQuiet(pool, { idempotencyKey, phoneNorm, firebase_uid, userId, bodyHash }) {
+  if (!idempotencyKey) return;
+  try {
+    await pool.query(
+      `INSERT INTO registration_idempotency (idempotency_key, phone_norm, firebase_uid, user_id, body_hash, expires_at)
+       VALUES ($1, $2, $3, $4::uuid, $5, NOW() + INTERVAL '72 hours')
+       ON CONFLICT (idempotency_key) DO NOTHING` ,
+      [String(idempotencyKey).slice(0, 160), phoneNorm, String(firebase_uid || '').trim(), String(userId), bodyHash]
+    );
+  } catch (e) {
+    console.warn('[POST /api/auth/register] registration_idempotency insert:', e?.message || e);
+  }
+}
+
+async function pruneExpiredRegistrationIdempotencyQuiet() {
+  try {
+    const r = await pool.query(`DELETE FROM registration_idempotency WHERE expires_at < NOW() RETURNING 1`).catch(() => ({ rowCount: 0 }));
+    if (r.rowCount > 0) console.log('[registration_idempotency] pruned expired rows:', r.rowCount);
+  } catch (_) { /* noop */ }
+}
+
+/** Phase 3.2 — minimal header reader for shadow tap (does not touch V1 logic) */
+function headerOne_shadowSafe(req, name) {
+  try { const v = req?.headers?.[name]; return typeof v === 'string' ? v.trim().slice(0, 60) : ''; } catch (_) { return ''; }
+}
+
+// ✅ 2. Register — hot path: cached feature flags + bcrypt worker pool + Idempotency-Key replay + safe duplicate recovery
+// ไม่มีคำขอ compliance ใน route นี้ — เซิร์ฟเวอร์ไม่ขวาง UX จากนโยบาย (เหลือเป็นงานพื้นหลังฝั่ง client)
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  console.log('📥 REGISTER endpoint hit! phone:', req.body?.phone, 'name:', req.body?.name, 'has_password:', !!req.body?.password, 'has_firebase_uid:', !!req.body?.firebase_uid);
+  /** Phase 1 orchestration — fail-open; exits early ONLY for guarded internal V2-dark probe */
+  try {
+    if (signupRegisterEntryOrchestration(req, res)) return;
+  } catch (_) {
+    /* deliberate fail-open to legacy V1 register body */
+  }
+  const pNow = typeof performance.now === 'function' ? performance.now.bind(performance) : () => Date.now();
+  let cfgReadMs = 0;
+  let bcryptMs = 0;
+  let existingLookupMs = 0;
+  let insertMs = 0;
+  let jwtMs = 0;
+  const uaRaw = req.headers['user-agent'] || '';
+
+  try {
+    const tCfg = pNow();
     const appConfig = await getMobileAppConfig();
+    cfgReadMs = pNow() - tCfg;
     if (appConfig.featureFlags.maintenanceMode) {
+      console.log('🚫 REGISTER blocked: maintenanceMode=true');
+      registrationMetricsPhase2Log({
+        outcome: 'blocked_maintenance',
+        cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+        ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+      });
+      auditRegistrationEvent(req, 'register_failed', {
+        phoneNorm: normalizePhoneForStorage(String(req.body?.phone || '').trim()) || 'unknown',
+        detail: 'blocked_maintenance',
+      });
       return res.status(503).json({ error: 'System is under maintenance. Please try again later.' });
     }
     if (!appConfig.featureFlags.enableSignups) {
+      console.log('🚫 REGISTER blocked: enableSignups=false');
+      registrationMetricsPhase2Log({
+        outcome: 'blocked_signups_disabled',
+        cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+        ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+      });
+      auditRegistrationEvent(req, 'register_failed', {
+        phoneNorm: normalizePhoneForStorage(String(req.body?.phone || '').trim()) || 'unknown',
+        detail: 'blocked_signups_disabled',
+      });
       return res.status(403).json({ error: 'New user signups are currently disabled.' });
     }
 
@@ -16238,111 +23236,423 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const referral_code = raw.referral_code ?? raw.ref ?? raw.referralCode ?? null;
 
     if (!phone || !password || !name) {
-      return res.status(400).json({
-        error: 'Phone, password, and name required'
+      auditRegistrationEvent(req, 'register_failed', {
+        phoneNorm: phone ? normalizePhoneForStorage(phone) : 'unknown',
+        detail: 'missing_required_fields',
       });
+      return res.status(400).json({ error: 'Phone, password, and name required' });
     }
-    
     if (!firebase_uid) {
-      return res.status(400).json({
-        error: 'Firebase UID required for registration'
+      auditRegistrationEvent(req, 'register_failed', {
+        phoneNorm: normalizePhoneForStorage(phone),
+        detail: 'missing_firebase_uid',
       });
+      return res.status(400).json({ error: 'Firebase UID required for registration' });
     }
-    
-    // ✅ Normalize role เป็นตัวเล็กตาม Database constraint
-    const normalizedRole = String(role).toLowerCase(); // 'PROVIDER' → 'provider', 'USER' → 'user'
 
+    const normalizedRole = String(role).toLowerCase();
     const phoneNorm = normalizePhoneForStorage(phone);
+    // #region agent log
+    agentDebugLog('H2', 'server.js:register', 'register_attempt', {
+      phoneLast4: String(phoneNorm || '').slice(-4),
+      hasFirebaseUid: !!firebase_uid,
+      platform: String(req.headers['x-client-platform'] || '').slice(0, 20),
+    });
+    // #endregion
+    const phoneAlt =
+      phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
+    const bodyHashStable = registrationStableBodyHash({
+      phoneNorm,
+      firebase_uid,
+      normalizedRole,
+      name,
+    });
+
+    const idempoRaw =
+      typeof req.headers['idempotency-key'] === 'string'
+        ? req.headers['idempotency-key'].trim()
+        : typeof req.headers['x-idempotency-key'] === 'string'
+          ? req.headers['x-idempotency-key'].trim()
+          : '';
+    const idempotencyKey =
+      idempoRaw.length > 0 ? idempoRaw.slice(0, 160) : '';
+    let clientAttempt = parseInt(req.headers['x-registration-client-attempt'] || '', 10);
+    if (!Number.isFinite(clientAttempt)) clientAttempt = undefined;
+
+    if (idempotencyKey) {
+      const idRow = await pool
+        .query(
+          `SELECT user_id::text AS user_id, body_hash FROM registration_idempotency WHERE idempotency_key = $1 AND expires_at > NOW()`,
+          [idempotencyKey]
+        )
+        .catch(() => ({ rows: [] }));
+      if (idRow.rows?.[0]) {
+        if (String(idRow.rows[0].body_hash) !== bodyHashStable) {
+          registrationMetricsPhase2Log({
+            outcome: 'idempotency_key_conflict',
+            idempotency_replay_block: true,
+          });
+          auditRegistrationEvent(req, 'register_failed', {
+            phoneNorm,
+            detail: 'idempotency_key_conflict',
+          });
+          return res.status(409).json({ error: 'Idempotency-Key already used with a different payload' });
+        }
+        const u = await pool.query(
+          `SELECT id, phone, email, full_name, name, firebase_uid, role, kyc_level, wallet_balance,
+                  avatar_url, created_at FROM users WHERE id = $1::uuid LIMIT 1`,
+          [idRow.rows[0].user_id]
+        );
+        if (u.rows[0]) {
+          const JWT_SECRET = process.env.JWT_SECRET;
+          if (!JWT_SECRET) {
+            return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required' });
+          }
+          const tJwt = pNow();
+          const apiUser = mapRegisteredUserPayloadFromRow(u.rows[0]);
+          const token = jwt.sign(
+            { sub: String(apiUser.id), role: apiUser.role || 'USER', phone: apiUser.phone },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+          );
+          jwtMs += pNow() - tJwt;
+          registrationMetricsPhase2Log({
+            outcome: 'idempotent_replay',
+            idempotent_replay: true,
+            cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+            bcrypt_ms: 0,
+            existing_lookup_ms: Math.round(existingLookupMs * 100) / 100,
+            insert_ms: 0,
+            jwt_ms: Math.round(jwtMs * 100) / 100,
+            ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+            client_registration_attempt: clientAttempt,
+          });
+          auditRegistrationEvent(req, 'register_success', {
+            actorId: apiUser.id,
+            phoneNorm: apiUser.phone || phoneNorm,
+            detail: 'idempotent_replay',
+          });
+          res.json({
+            success: true,
+            token,
+            user: apiUser,
+            message: 'Registration successful',
+            idempotent_replay: true,
+          });
+          // Phase 3.2 — response-tail shadow tap (V1 response already committed above)
+          try { runSignupShadowExecutionSafe({ phoneLast4: phoneNorm.slice(-4), platform: headerOne_shadowSafe(req, 'x-client-platform'), embeddedBrowser: uaLooksLikeEmbeddedSocialWebViewRegistration(req), registrationOutcome: 'idempotent_replay', clientAttempt }, { pool }); } catch (_) { /* fail-open */ }
+          return;
+        }
+      }
+    }
+
     console.log(`📝 Registration: ${phoneNorm} (${name})`);
     console.log(`🔥 Firebase UID: ${firebase_uid}`);
     console.log(`👤 Role (normalized): ${normalizedRole}`);
 
-    // ตรวจสอบว่ามีผู้ใช้แล้วหรือไม่ (รองรับทั้ง 0812345678 และ 66812345678)
-    const phoneAlt = phoneNorm.startsWith('0') ? '66' + phoneNorm.slice(1) : phoneNorm.startsWith('66') ? '0' + phoneNorm.slice(2) : null;
-    const existingUser = await pool.query(
-      `SELECT id FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL)`,
-      [phoneNorm, phoneAlt]
-    );
-
-    if (existingUser.rows.length > 0) {
-      return res.status(409).json({
-        error: 'Phone number already registered'
-      });
+    const JWT_SECRET_CORE = process.env.JWT_SECRET;
+    if (!JWT_SECRET_CORE) {
+      return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required' });
     }
 
-    // สร้าง UUID (ใช้ PostgreSQL gen_random_uuid)
+    const tExisting = pNow();
+    let existingFull = await fetchUserRowForRegistrationByPhone(pool, phoneNorm, phoneAlt);
+    existingLookupMs += pNow() - tExisting;
+
+    if (existingFull) {
+      const pwdOk = await checkPassword(password, existingFull);
+      if (!pwdOk) {
+        registrationMetricsPhase2Log({
+          outcome: 'reject_duplicate_phone',
+          duplicate_phone_conflict: true,
+          cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+          existing_lookup_ms: Math.round(existingLookupMs * 100) / 100,
+          ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+          client_registration_attempt: clientAttempt,
+        });
+        auditRegistrationEvent(req, 'register_failed', {
+          actorId: existingFull.id,
+          phoneNorm,
+          detail: 'duplicate_phone_wrong_password',
+        });
+        return res.status(409).json({ error: 'Phone number already registered' });
+      }
+
+      const status = existingFull.account_status || 'active';
+      if (status === 'suspended') {
+        registrationMetricsPhase2Log({ outcome: 'reject_suspended_duplicate', ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req) });
+        return res.status(403).json({
+          error: 'บัญชีถูกระงับชั่วคราว กรุณาติดต่อฝ่ายสนับสนุน',
+          code: 'ACCOUNT_SUSPENDED',
+        });
+      }
+      if (status === 'banned') {
+        registrationMetricsPhase2Log({ outcome: 'reject_banned_duplicate', ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req) });
+        return res.status(403).json({
+          error: 'บัญชีถูกแบน กรุณาติดต่อฝ่ายสนับสนุน',
+          code: 'ACCOUNT_BANNED',
+        });
+      }
+
+      const reqFb = String(firebase_uid || '').trim();
+      const dbFb = String(existingFull.firebase_uid || '').trim();
+      if (dbFb && reqFb && dbFb !== reqFb) {
+        registrationMetricsPhase2Log({
+          outcome: 'reject_firebase_uid_mismatch',
+          cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+          ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+        });
+        return res.status(409).json({ error: 'Phone number already registered' });
+      }
+
+      if (!dbFb && reqFb) {
+        await pool
+          .query(`UPDATE users SET firebase_uid = $1, updated_at = NOW() WHERE id = $2::uuid`, [reqFb, existingFull.id])
+          .catch(() => { });
+      }
+
+      const apiUserRec = mapRegisteredUserPayloadFromRow({
+        ...existingFull,
+        firebase_uid: reqFb || existingFull.firebase_uid,
+      });
+      const tJwtRec = pNow();
+      const tokenRec = jwt.sign(
+        {
+          sub: String(apiUserRec.id),
+          role: apiUserRec.role || 'USER',
+          phone: apiUserRec.phone,
+        },
+        JWT_SECRET_CORE,
+        { expiresIn: '7d' }
+      );
+      jwtMs += pNow() - tJwtRec;
+      registrationMetricsPhase2Log({
+        outcome: 'registration_recovery_existing_session',
+        registration_recovery: true,
+        cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+        bcrypt_ms: 0,
+        existing_lookup_ms: Math.round(existingLookupMs * 100) / 100,
+        insert_ms: 0,
+        jwt_ms: Math.round(jwtMs * 100) / 100,
+        ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+        client_registration_attempt: clientAttempt,
+      });
+      auditRegistrationEvent(req, 'register_success', {
+        actorId: apiUserRec.id,
+        phoneNorm: apiUserRec.phone || phoneNorm,
+        detail: 'registration_recovery_existing',
+      });
+
+      insertRegistrationIdempotencyRowQuiet(pool, {
+        idempotencyKey,
+        phoneNorm,
+        firebase_uid,
+        userId: apiUserRec.id,
+        bodyHash: bodyHashStable,
+      });
+
+      res.json({
+        success: true,
+        token: tokenRec,
+        user: apiUserRec,
+        message: 'Registration successful',
+        registration_recovery: true,
+      });
+      // Phase 3.2 — response-tail shadow tap (V1 response already committed above)
+      try { runSignupShadowExecutionSafe({ phoneLast4: phoneNorm.slice(-4), platform: headerOne_shadowSafe(req, 'x-client-platform'), embeddedBrowser: uaLooksLikeEmbeddedSocialWebViewRegistration(req), registrationOutcome: 'registration_recovery', clientAttempt }, { pool }); } catch (_) { /* fail-open */ }
+      return;
+    }
+
     const userIdResult = await pool.query('SELECT gen_random_uuid() as id');
     const userId = userIdResult.rows[0].id;
-    
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
 
-    console.log('📦 PAYLOAD SENDING TO DB:', { 
-      userId, 
-      phone, 
-      name, 
-      role: normalizedRole, // ✅ แสดง role ที่ normalize แล้ว
-      firebase_uid,
-      hashedPassword: hashedPassword.substring(0, 20) + '...' 
-    });
+    const tBcrypt = pNow();
+    const hashedPassword = await bcryptHashRegistration(password, 10);
+    bcryptMs += pNow() - tBcrypt;
 
-    // สร้างข้อมูลผู้ใช้ใหม่ (เก็บเบอร์ในรูปแบบ 0Xxxxxxxxx)
+    console.log(
+      '📦 PAYLOAD SENDING TO DB (hash prefix):',
+      userId,
+      hashedPassword.slice(0, 12) + '…'
+    );
+
     const newUser = {
       id: userId,
       firebase_uid: firebase_uid,
       phone: phoneNorm,
       email: `${phoneNorm}@aqond.com`,
-      full_name: name, // ✅ รับ name จาก req.body แล้วใส่ใน full_name
-      role: normalizedRole, // ✅ ใช้ role ที่ normalize เป็นตัวเล็กแล้ว
+      full_name: name,
+      role: normalizedRole,
       kyc_level: 'level_1',
       wallet_balance: 0,
       avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
 
-    // บันทึกลง PostgreSQL
-    await pool.query(
-      `INSERT INTO users (id, firebase_uid, phone, email, full_name, password_hash, role, kyc_level, wallet_balance, avatar_url, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
-      [
-        newUser.id, newUser.firebase_uid, newUser.phone, newUser.email, newUser.full_name, hashedPassword,
-        newUser.role, newUser.kyc_level, newUser.wallet_balance, newUser.avatar_url
-      ]
-    );
+    const tIns = pNow();
+    try {
+      console.log(`📝 INSERT user: id=${newUser.id}, phone=${newUser.phone}, role=${newUser.role}, firebase_uid=${newUser.firebase_uid?.slice(0, 10)}...`);
+      await pool.query(
+        `INSERT INTO users (id, firebase_uid, phone, email, full_name, password_hash, role, kyc_level, wallet_balance, avatar_url, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+        [
+          newUser.id,
+          newUser.firebase_uid,
+          newUser.phone,
+          newUser.email,
+          newUser.full_name,
+          hashedPassword,
+          newUser.role,
+          newUser.kyc_level,
+          newUser.wallet_balance,
+          newUser.avatar_url,
+        ]
+      );
+      console.log(`✅ INSERT user SUCCESS: id=${newUser.id}, phone=${newUser.phone}`);
+    } catch (insErr) {
+      console.error(`❌ INSERT user FAILED: phone=${newUser.phone}, code=${insErr?.code}, msg=${insErr?.message?.slice(0, 100)}`);
+      if (insErr && insErr.code === '23505') {
+        const tRace = pNow();
+        existingFull = await fetchUserRowForRegistrationByPhone(pool, phoneNorm, phoneAlt);
+        existingLookupMs += pNow() - tRace;
+        if (existingFull && (await checkPassword(password, existingFull))) {
+          const reqFb2 = String(firebase_uid || '').trim();
+          const dbFb2 = String(existingFull.firebase_uid || '').trim();
+          if (!dbFb2 || !reqFb2 || dbFb2 === reqFb2) {
+            if (!dbFb2 && reqFb2) {
+              await pool.query(`UPDATE users SET firebase_uid = $1 WHERE id = $2::uuid`, [reqFb2, existingFull.id]).catch(() => { });
+            }
+            const apiRace = mapRegisteredUserPayloadFromRow({ ...existingFull, firebase_uid: reqFb2 || existingFull.firebase_uid });
+            const tJwtRace = pNow();
+            const tokRace = jwt.sign(
+              { sub: String(apiRace.id), role: apiRace.role || 'USER', phone: apiRace.phone },
+              JWT_SECRET_CORE,
+              { expiresIn: '7d' }
+            );
+            jwtMs += pNow() - tJwtRace;
+            insertRegistrationIdempotencyRowQuiet(pool, {
+              idempotencyKey,
+              phoneNorm,
+              firebase_uid,
+              userId: apiRace.id,
+              bodyHash: bodyHashStable,
+            });
+            registrationMetricsPhase2Log({
+              outcome: 'recovery_after_unique_violation',
+              cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+              bcrypt_ms: Math.round(bcryptMs * 100) / 100,
+              insert_ms: Math.round(insertMs * 100) / 100,
+              ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+              race_unique_conflict: true,
+            });
+            auditRegistrationEvent(req, 'register_success', {
+              actorId: apiRace.id,
+              phoneNorm: apiRace.phone || phoneNorm,
+              detail: 'recovery_after_unique_violation',
+            });
+            res.json({
+              success: true,
+              token: tokRace,
+              user: apiRace,
+              message: 'Registration successful',
+              registration_recovery: true,
+            });
+            // Phase 3.2 — response-tail shadow tap (V1 response already committed above)
+            try { runSignupShadowExecutionSafe({ phoneLast4: phoneNorm.slice(-4), platform: headerOne_shadowSafe(req, 'x-client-platform'), embeddedBrowser: uaLooksLikeEmbeddedSocialWebViewRegistration(req), registrationOutcome: 'race_recovery', clientAttempt }, { pool }); } catch (_) { /* fail-open */ }
+            return;
+          }
+        }
+      }
+      insertMs += pNow() - tIns;
+      throw insErr;
+    }
+    insertMs += pNow() - tIns;
 
     if (referral_code && String(referral_code).trim()) {
-      setImmediate(() => recordReferralOnSignup(pool, newUser.id, referral_code).catch(() => {}));
+      setImmediate(() => {
+        recordReferralOnSignup(pool, newUser.id, referral_code).catch((err) => {
+          console.error('[Referral] async recordReferralOnSignup after register failed', {
+            refereeId: newUser.id,
+            message: err?.message,
+            code: err?.code,
+          });
+        });
+      });
     }
 
-    // Generate real JWT (ให้ jwt.verify ใน /api/vip/subscribe, PATCH /api/users/:id ฯลฯ ทำงานได้)
-    const JWT_SECRET = process.env.JWT_SECRET;
-    if (!JWT_SECRET) {
-      return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET required' });
-    }
+    insertRegistrationIdempotencyRowQuiet(pool, {
+      idempotencyKey,
+      phoneNorm,
+      firebase_uid,
+      userId: newUser.id,
+      bodyHash: bodyHashStable,
+    });
+
+    const tJwtFinal = pNow();
     const token = jwt.sign(
       { sub: String(newUser.id), role: newUser.role || 'USER', phone: newUser.phone },
-      JWT_SECRET,
+      JWT_SECRET_CORE,
       { expiresIn: '7d' }
     );
+    jwtMs += pNow() - tJwtFinal;
+
+    registrationMetricsPhase2Log({
+      outcome: 'new_user_created',
+      cfg_read_ms: Math.round(cfgReadMs * 100) / 100,
+      bcrypt_ms: Math.round(bcryptMs * 100) / 100,
+      existing_lookup_ms: Math.round(existingLookupMs * 100) / 100,
+      insert_ms: Math.round(insertMs * 100) / 100,
+      jwt_ms: Math.round(jwtMs * 100) / 100,
+      ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+      client_registration_attempt: clientAttempt,
+    });
+    auditRegistrationEvent(req, 'register_success', {
+      actorId: newUser.id,
+      phoneNorm: newUser.phone,
+      detail: 'new_user_created',
+    });
+    // #region agent log
+    agentDebugLog('H2', 'server.js:register', 'register_success', {
+      userId: String(newUser.id).slice(0, 8),
+      phoneLast4: String(newUser.phone || '').slice(-4),
+    });
+    // #endregion
 
     res.json({
       success: true,
       token: token,
       user: newUser,
-      message: 'Registration successful'
+      message: 'Registration successful',
     });
 
+    // Phase 3.2 — response-tail shadow tap (fire-and-forget; V1 response already committed above)
+    try { runSignupShadowExecutionSafe({ phoneLast4: phoneNorm.slice(-4), platform: headerOne_shadowSafe(req, 'x-client-platform'), embeddedBrowser: uaLooksLikeEmbeddedSocialWebViewRegistration(req), registrationOutcome: 'new_user_created', clientAttempt }, { pool }); } catch (_) { /* fail-open */ }
   } catch (error) {
+    registrationMetricsPhase2Log({
+      outcome: 'exception',
+      error_code: error?.code,
+      message_redacted_len: typeof error?.message === 'string' ? error.message.length : 0,
+      ua_preview: uaRaw.slice(0, 60),
+      ua_embedded_social_hint: uaLooksLikeEmbeddedSocialWebViewRegistration(req),
+    });
+    auditRegistrationEvent(req, 'register_failed', {
+      phoneNorm: normalizePhoneForStorage(String(req.body?.phone || '').trim()) || 'unknown',
+      detail: error?.code || 'exception',
+    });
     console.error('🔴 DATABASE ERROR:', error);
     console.error('🔴 Error Code:', error.code);
     console.error('🔴 Error Message:', error.message);
     console.error('🔴 Error Detail:', error.detail);
     res.status(500).json({
       error: 'Registration failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });
+
+// Phase 2 — signup intents (V2-only APIs; ENABLE_SIGNUP_INTENTS default off; no V1 traffic coupling)
+mountSignupIntentRoutes(app, { pool });
+
 // ============ JOB ENDPOINTS ============
 
 // ✅ 1. Get All Jobs
@@ -16455,12 +23765,12 @@ app.post('/api/jobs/match', async (req, res) => {
         try {
           const sj = row.skills_json;
           skills = Array.isArray(sj) ? sj : (sj ? JSON.parse(sj) : []);
-        } catch (_) {}
+        } catch (_) { }
         return skills.some(s => {
           const sc = (s?.skill_category || '').toLowerCase();
           const sn = (s?.skill_name || '').toLowerCase();
           return (sc && (sc === jobCategory || sc.includes(jobCategory) || jobCategory.includes(sc))) ||
-                 (sn && (sn.includes(jobCategory) || jobCategory.includes(sn)));
+            (sn && (sn.includes(jobCategory) || jobCategory.includes(sn)));
         });
       };
 
@@ -16476,8 +23786,8 @@ app.post('/api/jobs/match', async (req, res) => {
             const R = 6371;
             const dLat = (jobLat - lat) * Math.PI / 180;
             const dLng = (jobLng - lng) * Math.PI / 180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180)*Math.cos(jobLat*Math.PI/180)*Math.sin(dLng/2)**2;
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(jobLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             distance = R * c;
           }
 
@@ -16550,13 +23860,13 @@ function resolveAdvanceJobUserId(req) {
       const raw = Buffer.from(token.slice(5), 'base64').toString('utf8');
       const payload = JSON.parse(raw);
       userId = payload.user_id ? String(payload.user_id) : null;
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!userId && process.env.JWT_SECRET) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       userId = String(payload.sub);
-    } catch (_) {}
+    } catch (_) { }
   }
   return userId;
 }
@@ -16565,6 +23875,37 @@ async function resolveUserIdToUuid(userId) {
   if (!userId) return null;
   const r = await pool.query('SELECT id FROM users WHERE id::text = $1 OR firebase_uid = $1 OR phone = $1 LIMIT 1', [userId]);
   return r.rows?.[0]?.id ?? null;
+}
+
+/** ผูก Bearer จาก authenticateToken → users.id (UUID); ถ้า sub ไม่เจอแถว ลองโทรศัพท์ใน JWT payload (Apple Review / บางบัญชี firebase) */
+async function resolveAuthenticatedUserUuid(req) {
+  const logical = req?.user?.id ? String(req.user.id) : '';
+  const userUuid = await resolveUserIdToUuid(logical || null);
+  if (userUuid || !logical) return userUuid;
+  const auth = req.headers?.authorization;
+  if (!auth || !auth.startsWith('Bearer ') || !process.env.JWT_SECRET) return null;
+  const token = auth.slice(7).trim();
+  if (token.startsWith('mock-jwt-token-') || token.startsWith('mock_')) return null;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const phone = payload.phone;
+    if (!phone) return null;
+    const phoneNorm = String(phone).trim().replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+    const p =
+      phoneNorm.startsWith('66') && phoneNorm.length >= 10
+        ? '0' + phoneNorm.slice(2)
+        : phoneNorm.startsWith('0')
+          ? phoneNorm
+          : '0' + phoneNorm;
+    const phoneAlt = p.startsWith('0') ? '66' + p.slice(1) : null;
+    const r = await pool.query(
+      'SELECT id FROM users WHERE phone = $1 OR (phone = $2 AND $2 IS NOT NULL) LIMIT 1',
+      [p, phoneAlt],
+    );
+    return r.rows?.[0]?.id ?? null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /** Platform Safety Authority: ตรวจสอบว่าวอลเล็ตถูกระงับหรือไม่ (wallet_frozen หรือ account suspended/banned) */
@@ -16596,7 +23937,7 @@ async function expireStalePendingIntercityBids(db, jobId) {
      WHERE job_id::text = $1 AND status = 'pending'
        AND bid_expires_at IS NOT NULL AND bid_expires_at < NOW()`,
     [q]
-  ).catch(() => {});
+  ).catch(() => { });
 }
 
 /**
@@ -16676,8 +24017,35 @@ async function assertProviderCanBidIntercityCharter(userId) {
 }
 
 // POST /api/advance-jobs — สร้างงาน (เช็ก JWT, tier ถ้า is_platinum_priority)
+let advanceJobTaxonomyColumnsEnsured = false;
+async function ensureAdvanceJobTaxonomyColumns(poolRef) {
+  if (advanceJobTaxonomyColumnsEnsured) return;
+  await poolRef.query(
+    `ALTER TABLE advance_jobs
+       ADD COLUMN IF NOT EXISTS target_province VARCHAR(120)`,
+  ).catch(() => {});
+  await poolRef.query(
+    `ALTER TABLE advance_jobs
+       ADD COLUMN IF NOT EXISTS employment_type VARCHAR(40)`,
+  ).catch(() => {});
+  await poolRef.query(
+    `ALTER TABLE advance_jobs
+       ADD COLUMN IF NOT EXISTS work_surface VARCHAR(40)`,
+  ).catch(() => {});
+  await poolRef.query(
+    `CREATE INDEX IF NOT EXISTS idx_advance_jobs_target_province
+       ON advance_jobs(target_province)`,
+  ).catch(() => {});
+  await poolRef.query(
+    `CREATE INDEX IF NOT EXISTS idx_advance_jobs_employment_type
+       ON advance_jobs(employment_type)`,
+  ).catch(() => {});
+  advanceJobTaxonomyColumnsEnsured = true;
+}
+
 app.post('/api/advance-jobs', async (req, res) => {
   try {
+    await ensureAdvanceJobTaxonomyColumns(pool);
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) {
       return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบก่อนโพสต์งาน' });
@@ -16696,7 +24064,10 @@ app.post('/api/advance-jobs', async (req, res) => {
       max_budget,
       duration_days,
       status = 'open',
-      is_platinum_priority = false
+      is_platinum_priority = false,
+      target_province = null,
+      employment_type = null,
+      work_surface = 'jobboard',
     } = req.body;
 
     if (!title || !description || !scope || !category || min_budget == null || max_budget == null || !duration_days) {
@@ -16709,6 +24080,9 @@ app.post('/api/advance-jobs', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid budget or duration_days' });
     }
     const jobStatus = ['draft', 'open'].includes(String(status)) ? status : 'open';
+    const provinceValue = String(target_province || '').trim().slice(0, 120) || null;
+    const employmentValue = String(employment_type || '').trim().slice(0, 40) || null;
+    const surfaceValue = String(work_surface || 'jobboard').trim().slice(0, 40) || 'jobboard';
 
     if (is_platinum_priority) {
       const tierRow = await pool.query(
@@ -16731,8 +24105,9 @@ app.post('/api/advance-jobs', async (req, res) => {
       `INSERT INTO advance_jobs (
         employer_id, title, description, scope, category,
         min_budget, max_budget, duration_days, status, is_platinum_priority,
+        target_province, employment_type, work_surface,
         applicant_count, created_at, updated_at, published_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, NOW(), NOW(), $11)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, NOW(), NOW(), $14)
       RETURNING *`,
       [
         employerUuid,
@@ -16745,6 +24120,9 @@ app.post('/api/advance-jobs', async (req, res) => {
         days,
         jobStatus,
         !!is_platinum_priority,
+        provinceValue,
+        employmentValue,
+        surfaceValue,
         jobStatus === 'open' ? new Date() : null
       ]
     );
@@ -16758,6 +24136,9 @@ app.post('/api/advance-jobs', async (req, res) => {
       description: row.description,
       scope: row.scope,
       category: row.category,
+      target_province: row.target_province || null,
+      employment_type: row.employment_type || null,
+      work_surface: row.work_surface || null,
       min_budget: Number(row.min_budget),
       max_budget: Number(row.max_budget),
       duration_days: row.duration_days,
@@ -16779,11 +24160,13 @@ app.post('/api/advance-jobs', async (req, res) => {
 // GET /api/advance-jobs — list + filter + search
 app.get('/api/advance-jobs', async (req, res) => {
   try {
-    const { status, category, min_budget, max_budget, min_duration, max_duration, q, page = 1, limit = 50, sort = 'newest' } = req.query;
+    await ensureAdvanceJobTaxonomyColumns(pool);
+    const { status, category, target_province, employment_type, min_budget, max_budget, min_duration, max_duration, q, page = 1, limit = 50, sort = 'newest' } = req.query;
     const hasViewsTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
     const viewCountSelect = hasViewsTable ? ', (SELECT COUNT(*)::INT FROM advance_job_views v WHERE v.job_id = j.id) AS view_count' : '';
     let query = `
       SELECT j.id, j.employer_id, j.title, j.description, j.scope, j.category,
+             j.target_province, j.employment_type, j.work_surface,
              j.min_budget, j.max_budget, j.duration_days, j.status, j.applicant_count,
              j.is_platinum_priority, j.created_at, j.updated_at, j.published_at, j.closed_at,
              u.full_name AS employer_name,
@@ -16802,6 +24185,16 @@ app.get('/api/advance-jobs', async (req, res) => {
     if (category) {
       query += ` AND j.category = $${idx}`;
       params.push(category);
+      idx++;
+    }
+    if (target_province) {
+      query += ` AND COALESCE(j.target_province, '') = $${idx}`;
+      params.push(String(target_province).trim());
+      idx++;
+    }
+    if (employment_type) {
+      query += ` AND COALESCE(j.employment_type, '') = $${idx}`;
+      params.push(String(employment_type).trim());
       idx++;
     }
     if (min_budget != null && min_budget !== '') {
@@ -16826,7 +24219,7 @@ app.get('/api/advance-jobs', async (req, res) => {
     }
     if (q && String(q).trim()) {
       const term = '%' + String(q).trim().replace(/%/g, '\\%') + '%';
-      query += ` AND (j.title ILIKE $${idx} OR j.description ILIKE $${idx} OR j.scope ILIKE $${idx})`;
+      query += ` AND (j.title ILIKE $${idx} OR j.description ILIKE $${idx} OR j.scope ILIKE $${idx} OR COALESCE(j.target_province, '') ILIKE $${idx})`;
       params.push(term);
       idx++;
     }
@@ -16837,11 +24230,13 @@ app.get('/api/advance-jobs', async (req, res) => {
     let ci = 1;
     if (status && String(status) !== 'all') { countQuery += ` AND j.status = $${ci}`; countParams.push(status); ci++; }
     if (category) { countQuery += ` AND j.category = $${ci}`; countParams.push(category); ci++; }
+    if (target_province) { countQuery += ` AND COALESCE(j.target_province, '') = $${ci}`; countParams.push(String(target_province).trim()); ci++; }
+    if (employment_type) { countQuery += ` AND COALESCE(j.employment_type, '') = $${ci}`; countParams.push(String(employment_type).trim()); ci++; }
     if (min_budget != null && min_budget !== '') { countQuery += ` AND j.max_budget >= $${ci}`; countParams.push(Number(min_budget)); ci++; }
     if (max_budget != null && max_budget !== '') { countQuery += ` AND j.min_budget <= $${ci}`; countParams.push(Number(max_budget)); ci++; }
     if (min_duration != null && min_duration !== '') { countQuery += ` AND j.duration_days >= $${ci}`; countParams.push(parseInt(min_duration, 10)); ci++; }
     if (max_duration != null && max_duration !== '') { countQuery += ` AND j.duration_days <= $${ci}`; countParams.push(parseInt(max_duration, 10)); ci++; }
-    if (q && String(q).trim()) { const term = '%' + String(q).trim().replace(/%/g, '\\%') + '%'; countQuery += ` AND (j.title ILIKE $${ci} OR j.description ILIKE $${ci} OR j.scope ILIKE $${ci})`; countParams.push(term); ci++; }
+    if (q && String(q).trim()) { const term = '%' + String(q).trim().replace(/%/g, '\\%') + '%'; countQuery += ` AND (j.title ILIKE $${ci} OR j.description ILIKE $${ci} OR j.scope ILIKE $${ci} OR COALESCE(j.target_province, '') ILIKE $${ci})`; countParams.push(term); ci++; }
     const countResult = await pool.query(countQuery, countParams);
     const total = parseInt(countResult.rows?.[0]?.count, 10) || 0;
     const pageNum = Math.max(1, parseInt(page, 10));
@@ -16858,6 +24253,9 @@ app.get('/api/advance-jobs', async (req, res) => {
       description: row.description,
       scope: row.scope,
       category: row.category,
+      target_province: row.target_province || null,
+      employment_type: row.employment_type || null,
+      work_surface: row.work_surface || null,
       min_budget: Number(row.min_budget),
       max_budget: Number(row.max_budget),
       duration_days: row.duration_days,
@@ -16944,17 +24342,40 @@ app.get('/api/advance-jobs/saved', async (req, res) => {
 // GET /api/advance-jobs/my-applications — งานที่ฉันสมัคร (Talent) — MUST be before /:id
 app.get('/api/advance-jobs/my-applications', async (req, res) => {
   try {
+    await ensureAdvanceQuotationColumns(pool);
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', applications: [] });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.json({ success: true, applications: [] });
+    const hasProfileViews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'applicant_profile_views'`).then(r => r.rows?.length > 0);
+    const hasReviews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_reviews'`).then(r => r.rows?.length > 0);
+    const viewJoin = hasProfileViews
+      ? `LEFT JOIN applicant_profile_views apv ON apv.job_id = a.job_id AND apv.talent_id = a.user_id`
+      : '';
+    const viewSelect = hasProfileViews ? ', apv.viewed_at AS viewed_at' : ', NULL::timestamptz AS viewed_at';
+    const hasWorkSubCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_jobs' AND column_name = 'work_submission_status'`).then(r => r.rows?.length > 0);
+    const workSubSelect = hasWorkSubCol ? ', j.work_submission_status' : '';
+    const reviewSelect = hasReviews
+      ? `, CASE
+           WHEN j.status = 'completed' AND a.status = 'hired'
+             THEN NOT EXISTS (
+               SELECT 1 FROM advance_job_reviews r
+               WHERE r.job_id = a.job_id AND r.reviewer_id = $1
+             )
+           ELSE FALSE
+         END AS review_pending`
+      : ', FALSE AS review_pending';
     const result = await pool.query(
       `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at,
+              a.quote_theme, a.quote_total_amount, a.quote_currency, a.quote_valid_until,
+              a.quote_version_count, a.quote_expires_at, a.quote_status,
               j.title, j.category, j.min_budget, j.max_budget, j.duration_days, j.status AS job_status,
-              j.hired_user_id, u.full_name AS employer_name
+              j.hired_user_id, j.escrow_status${workSubSelect}${viewSelect}${reviewSelect},
+              u.full_name AS employer_name
        FROM advance_job_applicants a
        JOIN advance_jobs j ON j.id = a.job_id
        LEFT JOIN users u ON u.id = j.employer_id
+       ${viewJoin}
        WHERE a.user_id = $1
        ORDER BY a.created_at DESC`,
       [userUuid]
@@ -16973,6 +24394,17 @@ app.get('/api/advance-jobs/my-applications', async (req, res) => {
       job_status: r.job_status,
       hired_user_id: r.hired_user_id ? String(r.hired_user_id) : null,
       employer_name: r.employer_name || 'ผู้จ้าง',
+      escrow_status: r.escrow_status || 'none',
+      work_submission_status: r.work_submission_status || 'none',
+      review_pending: Boolean(r.review_pending),
+      viewed_at: r.viewed_at || null,
+      quote_theme: r.quote_theme || null,
+      quote_total_amount: r.quote_total_amount != null ? Number(r.quote_total_amount) : null,
+      quote_currency: r.quote_currency || null,
+      quote_valid_until: r.quote_valid_until || null,
+      quote_version_count: parseInt(r.quote_version_count, 10) || 0,
+      quote_expires_at: r.quote_expires_at || null,
+      quote_status: r.quote_status || null,
     }));
     return res.json({ success: true, applications });
   } catch (err) {
@@ -16988,11 +24420,26 @@ app.get('/api/advance-jobs/my-jobs', async (req, res) => {
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', jobs: [] });
     const employerUuid = await resolveUserIdToUuid(userId);
     if (!employerUuid) return res.json({ success: true, jobs: [] });
+    const hasViewsTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_views'`).then(r => r.rows?.length > 0);
+    const viewCountSelect = hasViewsTable ? ', (SELECT COUNT(*)::INT FROM advance_job_views v WHERE v.job_id = j.id) AS view_count' : '';
+    const hasWorkSubCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_jobs' AND column_name = 'work_submission_status'`).then(r => r.rows?.length > 0);
+    const workSubSelect = hasWorkSubCol ? ', j.work_submission_status' : '';
+    const hasReviews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_reviews'`).then(r => r.rows?.length > 0);
+    const reviewSelect = hasReviews
+      ? `, CASE
+           WHEN j.status = 'completed'
+             THEN NOT EXISTS (
+               SELECT 1 FROM advance_job_reviews r
+               WHERE r.job_id = j.id AND r.reviewer_id = $1
+             )
+           ELSE FALSE
+         END AS review_pending`
+      : ', FALSE AS review_pending';
     const result = await pool.query(
       `SELECT j.id, j.employer_id, j.title, j.description, j.scope, j.category,
               j.min_budget, j.max_budget, j.duration_days, j.status, j.applicant_count,
               j.hired_user_id, j.hired_at, j.agreed_amount, j.escrow_amount, j.escrow_status,
-              j.created_at, j.updated_at
+              j.created_at, j.updated_at${workSubSelect}${viewCountSelect}${reviewSelect}
        FROM advance_jobs j
        WHERE j.employer_id = $1
        ORDER BY j.updated_at DESC`,
@@ -17015,6 +24462,9 @@ app.get('/api/advance-jobs/my-jobs', async (req, res) => {
       agreed_amount: row.agreed_amount != null ? Number(row.agreed_amount) : null,
       escrow_amount: Number(row.escrow_amount || 0),
       escrow_status: row.escrow_status || 'none',
+      work_submission_status: row.work_submission_status || 'none',
+      view_count: row.view_count ?? 0,
+      review_pending: Boolean(row.review_pending),
       created_at: row.created_at,
       updated_at: row.updated_at
     }));
@@ -17022,6 +24472,149 @@ app.get('/api/advance-jobs/my-jobs', async (req, res) => {
   } catch (err) {
     console.error('GET /api/advance-jobs/my-jobs error:', err);
     return res.status(500).json({ success: false, error: 'โหลดไม่สำเร็จ', jobs: [] });
+  }
+});
+
+// GET /api/advance-jobs/board-badges — แจ้งเตือนจริงสำหรับแท็บ Job Board
+app.get('/api/advance-jobs/board-badges', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) {
+      return res.json({
+        success: true,
+        my_jobs: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+        applications: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+      });
+    }
+
+    const hasThreads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_chat_threads'`).then(r => r.rows?.length > 0);
+    const hasReads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_message_reads'`).then(r => r.rows?.length > 0);
+    const hasReviews = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_reviews'`).then(r => r.rows?.length > 0);
+
+    let unreadEmployer = 0;
+    let unreadTalent = 0;
+    if (hasThreads && hasReads) {
+      const unreadRow = await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE t.employer_id = $1)::int AS employer_unread,
+           COUNT(*) FILTER (WHERE t.talent_id = $1)::int AS talent_unread
+         FROM advance_job_messages m
+         JOIN advance_job_chat_threads t ON t.id = m.thread_id
+         LEFT JOIN advance_job_message_reads mr ON mr.message_id = m.id AND mr.reader_id = $1
+         WHERE m.sender_id != $1 AND mr.message_id IS NULL
+           AND (t.employer_id = $1 OR t.talent_id = $1)`,
+        [userUuid]
+      );
+      unreadEmployer = parseInt(unreadRow.rows?.[0]?.employer_unread, 10) || 0;
+      unreadTalent = parseInt(unreadRow.rows?.[0]?.talent_unread, 10) || 0;
+    }
+
+    const escrowEmployerRow = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM advance_jobs
+       WHERE employer_id = $1 AND hired_user_id IS NOT NULL
+         AND COALESCE(escrow_status, 'none') NOT IN ('held', 'released')
+         AND status != 'completed'`,
+      [userUuid]
+    );
+    const pendingEscrowEmployer = parseInt(escrowEmployerRow.rows?.[0]?.c, 10) || 0;
+
+    const escrowTalentRow = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM advance_job_applicants a
+       JOIN advance_jobs j ON j.id = a.job_id
+       WHERE a.user_id = $1 AND a.status = 'hired'
+         AND COALESCE(j.escrow_status, 'none') NOT IN ('held', 'released')
+         AND j.status != 'completed'`,
+      [userUuid]
+    );
+    const pendingEscrowTalent = parseInt(escrowTalentRow.rows?.[0]?.c, 10) || 0;
+
+    let pendingReviewEmployer = 0;
+    let pendingReviewTalent = 0;
+    if (hasReviews) {
+      const reviewEmployerRow = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM advance_jobs j
+         WHERE j.employer_id = $1 AND j.status = 'completed'
+           AND NOT EXISTS (
+             SELECT 1 FROM advance_job_reviews r
+             WHERE r.job_id = j.id AND r.reviewer_id = $1
+           )`,
+        [userUuid]
+      );
+      pendingReviewEmployer = parseInt(reviewEmployerRow.rows?.[0]?.c, 10) || 0;
+
+      const reviewTalentRow = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM advance_job_applicants a
+         JOIN advance_jobs j ON j.id = a.job_id
+         WHERE a.user_id = $1 AND a.status = 'hired' AND j.status = 'completed'
+           AND NOT EXISTS (
+             SELECT 1 FROM advance_job_reviews r
+             WHERE r.job_id = j.id AND r.reviewer_id = $1
+           )`,
+        [userUuid]
+      );
+      pendingReviewTalent = parseInt(reviewTalentRow.rows?.[0]?.c, 10) || 0;
+    }
+
+    const myJobsTotal = unreadEmployer + pendingEscrowEmployer + pendingReviewEmployer;
+    const appsTotal = unreadTalent + pendingEscrowTalent + pendingReviewTalent;
+
+    return res.json({
+      success: true,
+      my_jobs: {
+        unread_messages: unreadEmployer,
+        pending_escrow: pendingEscrowEmployer,
+        pending_review: pendingReviewEmployer,
+        total: myJobsTotal,
+      },
+      applications: {
+        unread_messages: unreadTalent,
+        pending_escrow: pendingEscrowTalent,
+        pending_review: pendingReviewTalent,
+        total: appsTotal,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/board-badges error:', err);
+    return res.status(500).json({
+      success: false,
+      my_jobs: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+      applications: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+    });
+  }
+});
+
+// GET /api/advance-jobs/unread-map — จำนวนข้อความที่ยังไม่อ่านต่อ job สำหรับ user ปัจจุบัน
+app.get('/api/advance-jobs/unread-map', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, unread_by_job: {} });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.json({ success: true, unread_by_job: {} });
+
+    const hasThreads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_chat_threads'`).then(r => r.rows?.length > 0);
+    const hasReads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_message_reads'`).then(r => r.rows?.length > 0);
+    if (!hasThreads || !hasReads) return res.json({ success: true, unread_by_job: {} });
+
+    const unreadRows = await pool.query(
+      `SELECT m.job_id::text AS job_id, COUNT(*)::int AS unread_count
+       FROM advance_job_messages m
+       JOIN advance_job_chat_threads t ON t.id = m.thread_id
+       LEFT JOIN advance_job_message_reads mr ON mr.message_id = m.id AND mr.reader_id = $1
+       WHERE m.sender_id <> $1 AND mr.message_id IS NULL
+         AND (t.employer_id = $1 OR t.talent_id = $1)
+       GROUP BY m.job_id`,
+      [userUuid]
+    );
+    const unread_by_job = {};
+    for (const r of unreadRows.rows || []) {
+      unread_by_job[String(r.job_id)] = r.unread_count || 0;
+    }
+    return res.json({ success: true, unread_by_job });
+  } catch (err) {
+    console.error('GET /api/advance-jobs/unread-map error:', err);
+    return res.status(500).json({ success: false, unread_by_job: {} });
   }
 });
 
@@ -17409,7 +25002,7 @@ app.post('/api/advance-jobs/:id/view', async (req, res) => {
       [jobUuid, viewerId]
     );
     if (viewerId) {
-      await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [viewerId]).catch(() => {});
+      await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [viewerId]).catch(() => { });
     }
     return res.json({ success: true });
   } catch (err) {
@@ -17471,9 +25064,21 @@ app.delete('/api/advance-jobs/:id/save', async (req, res) => {
   }
 });
 
+async function persistAdvanceQuotation(pool, {
+  applicantId, jobId, userId, quotation, proposedBy, editReason, versionNumber,
+}) {
+  const expiresAt = computeQuoteExpiresAt(quotation);
+  await saveQuotationVersion(pool, {
+    applicantId, jobId, userId, versionNumber, proposedBy, quotation, editReason, expiresAt,
+  });
+  await updateApplicantQuotation(pool, applicantId, quotation, versionNumber, expiresAt);
+  return { versionNumber, expiresAt };
+}
+
 // POST /api/advance-jobs/:id/apply — สนใจงาน (insert applicant, อัปเดต applicant_count)
 app.post('/api/advance-jobs/:id/apply', async (req, res) => {
   try {
+    await ensureQuotationVersionsTable(pool);
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) {
       return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบก่อนส่งข้อเสนอ' });
@@ -17494,27 +25099,93 @@ app.post('/api/advance-jobs/:id/apply', async (req, res) => {
     if (jobRow.status !== 'open') {
       return res.status(400).json({ success: false, error: 'งานนี้ปิดรับข้อเสนอแล้ว' });
     }
+    const editReason = String(req.body?.edit_reason || req.body?.quotation?.edit_reason || '').trim().slice(0, 500) || null;
+    const quotation = normalizeAdvanceQuotationInput(req.body?.quotation || req.body || null);
+    if (quotation) {
+      const bypass = await validateQuotationAntiBypass(pool, quotation, { userId: userUuid, jobId });
+      if (!bypass.ok) {
+        return res.status(400).json({ success: false, error: bypass.error, code: bypass.code, reasons: bypass.reasons });
+      }
+    }
     const existing = await pool.query(
-      'SELECT id FROM advance_job_applicants WHERE job_id = (SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1) AND user_id = $2 LIMIT 1',
+      `SELECT id, quote_version_count, quote_status FROM advance_job_applicants
+       WHERE job_id = (SELECT id FROM advance_jobs WHERE id::text = $1 LIMIT 1) AND user_id = $2 LIMIT 1`,
       [jobId, userUuid]
     );
     if (existing.rows?.length) {
+      if (quotation) {
+        const app = existing.rows[0];
+        const currentVersion = parseInt(app.quote_version_count, 10) || 0;
+        if (currentVersion >= MAX_QUOTE_VERSIONS) {
+          return res.status(400).json({
+            success: false,
+            error: `ถึงขีดจำกัด counter-offer แล้ว (สูงสุด v${MAX_QUOTE_VERSIONS}) — ใช้แชทหรือ Deal เพื่อเจรจาต่อ`,
+            max_versions: MAX_QUOTE_VERSIONS,
+          });
+        }
+        const versionNumber = currentVersion + 1;
+        await persistAdvanceQuotation(pool, {
+          applicantId: app.id,
+          jobId: jobRow.id,
+          userId: userUuid,
+          quotation,
+          proposedBy: 'talent',
+          editReason: editReason || (versionNumber > 1 ? 'Talent อัปเดตใบเสนอราคา' : null),
+          versionNumber,
+        });
+        if (jobRow.employer_id) {
+          await pushUserNotificationIfNotPeaceMode(
+            jobRow.employer_id,
+            `Talent ส่งใบเสนอราคา v${versionNumber}`,
+            `มีการอัปเดตใบเสนอราคา ฿${Number(quotation.quote_total_amount).toLocaleString()} — ดูเปรียบเทียบได้ที่หน้าจัดการงาน`,
+          );
+        }
+      }
       const countResult = await pool.query('SELECT applicant_count FROM advance_jobs WHERE id::text = $1 OR id = $1::uuid', [jobId]);
       const count = countResult.rows?.[0]?.applicant_count ?? 0;
-      return res.json({ success: true, applicant_count: count, message: 'คุณสนใจงานนี้แล้ว' });
+      return res.json({
+        success: true,
+        applicant_count: count,
+        message: quotation ? 'อัปเดตใบเสนอราคาแล้ว' : 'คุณสนใจงานนี้แล้ว',
+        version: quotation ? (parseInt(existing.rows[0].quote_version_count, 10) || 0) + 1 : undefined,
+      });
     }
     const jobUuid = jobRow.id;
-    await pool.query(
-      'INSERT INTO advance_job_applicants (job_id, user_id, status) VALUES ($1, $2, $3)',
-      [jobUuid, userUuid, 'interested']
+    const ins = await pool.query(
+      `INSERT INTO advance_job_applicants
+        (job_id, user_id, status, quote_theme, quote_currency, quote_summary, quote_timeline_days, quote_valid_until, quote_items, quote_total_amount, quote_updated_at, quote_version_count, quote_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::jsonb, $10, CASE WHEN $10 > 0 THEN NOW() ELSE NULL END, CASE WHEN $10 > 0 THEN 1 ELSE 0 END, CASE WHEN $10 > 0 THEN 'active' ELSE NULL END)
+       RETURNING id`,
+      [
+        jobUuid,
+        userUuid,
+        'interested',
+        quotation?.quote_theme || null,
+        quotation?.quote_currency || null,
+        quotation?.quote_summary || null,
+        quotation?.quote_timeline_days ?? null,
+        quotation?.quote_valid_until || null,
+        JSON.stringify(quotation?.quote_items || []),
+        quotation?.quote_total_amount || null,
+      ]
     );
-    // สร้าง Private Chat Thread ระหว่าง Employer กับ Talent ทันที
+    if (quotation && ins.rows?.[0]?.id) {
+      await persistAdvanceQuotation(pool, {
+        applicantId: ins.rows[0].id,
+        jobId: jobUuid,
+        userId: userUuid,
+        quotation,
+        proposedBy: 'talent',
+        editReason: editReason || 'ใบเสนอราคาเริ่มต้น (v1)',
+        versionNumber: 1,
+      });
+    }
     const hasThreads = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_chat_threads'`).then(r => r.rows?.length > 0);
     if (hasThreads && jobRow.employer_id) {
       await pool.query(
         `INSERT INTO advance_job_chat_threads (job_id, employer_id, talent_id) VALUES ($1, $2, $3) ON CONFLICT (job_id, talent_id) DO NOTHING`,
         [jobUuid, jobRow.employer_id, userUuid]
-      ).catch(() => {});
+      ).catch(() => { });
     }
     await pool.query(
       'UPDATE advance_jobs SET applicant_count = applicant_count + 1, updated_at = NOW() WHERE id = $1',
@@ -17525,7 +25196,12 @@ app.post('/api/advance-jobs/:id/apply', async (req, res) => {
     if (jobRow.employer_id) {
       await pushUserNotificationIfNotPeaceMode(jobRow.employer_id, 'มี Talent คนใหม่สนใจงานของคุณ!', 'มี Talent คนใหม่สนใจงานของคุณ!');
     }
-    return res.json({ success: true, applicant_count, message: 'ส่งความสนใจแล้ว' });
+    return res.json({
+      success: true,
+      applicant_count,
+      message: quotation ? 'ส่งใบเสนอราคาแล้ว' : 'ส่งความสนใจแล้ว',
+      version: quotation ? 1 : undefined,
+    });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/apply error:', err);
     return res.status(500).json({ success: false, error: 'ส่งข้อเสนอไม่สำเร็จ', message: err.message });
@@ -17535,6 +25211,7 @@ app.post('/api/advance-jobs/:id/apply', async (req, res) => {
 // GET /api/advance-jobs/:id/applicants — รายชื่อผู้สนใจ (เฉพาะนายจ้าง)
 app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
   try {
+    await ensureAdvanceQuotationColumns(pool);
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', applicants: [] });
     const employerUuid = await resolveUserIdToUuid(userId);
@@ -17562,7 +25239,10 @@ app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
       ? `, (SELECT COALESCE(json_agg(json_build_object('skill_category', skill_category, 'skill_name', skill_name)), '[]'::json) FROM user_skills WHERE user_id = u.id) AS skills_json`
       : ", '[]'::json AS skills_json";
     const result = await pool.query(
-      `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at, u.full_name, u.phone, u.email, u.last_active_at${viewSelect}${trustSelect}${ratingSelect}${skillsSub}
+      `SELECT a.id, a.job_id, a.user_id, a.status, a.created_at,
+              a.quote_theme, a.quote_currency, a.quote_summary, a.quote_timeline_days, a.quote_valid_until,
+              a.quote_items, a.quote_total_amount, a.quote_updated_at, a.quote_version_count, a.quote_expires_at, a.quote_status,
+              u.full_name, u.phone, u.email, u.last_active_at${viewSelect}${trustSelect}${ratingSelect}${skillsSub}
        FROM advance_job_applicants a
        JOIN users u ON u.id = a.user_id
        ${viewJoin}
@@ -17576,7 +25256,9 @@ app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
         if (Array.isArray(raw)) skills = raw;
         else if (typeof raw === 'string') skills = raw ? JSON.parse(raw) : [];
         else if (raw && typeof raw === 'object') skills = Array.isArray(raw) ? raw : [];
-      } catch (_) {}
+      } catch (_) { }
+      const quotation = mapQuotationRow(r);
+      const quotation_expired = quotation?.expired ?? false;
       return {
         id: String(r.id),
         job_id: String(r.job_id),
@@ -17592,13 +25274,766 @@ app.get('/api/advance-jobs/:id/applicants', async (req, res) => {
         verified_badge: r.verified_badge || null,
         completed_jobs_count: parseInt(r.completed_jobs_count, 10) || 0,
         rating: parseFloat(r.rating) || 0,
-        skills: (skills || []).map((s) => ({ category: s.skill_category, name: s.skill_name })).filter((s) => s.name || s.category)
+        skills: (skills || []).map((s) => ({ category: s.skill_category, name: s.skill_name })).filter((s) => s.name || s.category),
+        quote_status: r.quote_status || null,
+        quotation_expired,
+        quotation,
       };
     });
-    return res.json({ success: true, applicants });
+    const { badges, winners } = computeQuotationScores(applicants);
+    const scoredApplicants = applicants.map((a) => ({
+      ...a,
+      score_badges: badges[a.user_id] || [],
+      trust_score: computeTrustScore(a),
+    }));
+    return res.json({
+      success: true,
+      applicants: scoredApplicants,
+      quotation_scores: { badges, winners },
+      expiry_rules: {
+        default_hours: 72,
+        max_versions: MAX_QUOTE_VERSIONS,
+        reminder_hours_before: 24,
+      },
+    });
   } catch (err) {
     console.error('GET /api/advance-jobs/:id/applicants error:', err);
     return res.status(500).json({ success: false, applicants: [] });
+  }
+});
+
+// GET /api/advance-jobs/:id/applicants/:talentId/quotation-versions — ประวัติเวอร์ชันใบเสนอราคา
+app.get('/api/advance-jobs/:id/applicants/:talentId/quotation-versions', async (req, res) => {
+  try {
+    await ensureQuotationVersionsTable(pool);
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ', versions: [] });
+    const callerUuid = await resolveUserIdToUuid(userId);
+    if (!callerUuid) return res.status(403).json({ success: false, versions: [] });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = String(req.params.talentId || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, versions: [] });
+    const talentUuid = await resolveUserIdToUuid(talentId);
+    if (!talentUuid) return res.status(400).json({ success: false, versions: [] });
+    const isEmployer = String(jobRow.rows[0].employer_id) === String(callerUuid);
+    const isTalent = String(talentUuid) === String(callerUuid);
+    if (!isEmployer && !isTalent) {
+      return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์ดูประวัติใบเสนอราคา', versions: [] });
+    }
+    const appRow = await pool.query(
+      'SELECT id FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2 LIMIT 1',
+      [jobRow.rows[0].id, talentUuid],
+    );
+    if (!appRow.rows?.length) return res.status(404).json({ success: false, versions: [] });
+    const versions = await getQuotationVersions(pool, appRow.rows[0].id);
+    return res.json({ success: true, versions, max_versions: MAX_QUOTE_VERSIONS });
+  } catch (err) {
+    console.error('GET quotation-versions error:', err);
+    return res.status(500).json({ success: false, versions: [] });
+  }
+});
+
+// POST /api/advance-jobs/:id/applicants/:talentId/counter-offer — Employer counter-offer (v2/v3)
+app.post('/api/advance-jobs/:id/applicants/:talentId/counter-offer', async (req, res) => {
+  try {
+    await ensureQuotationVersionsTable(pool);
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const talentId = String(req.params.talentId || '').trim();
+    const jobRow = await pool.query(
+      'SELECT id, employer_id, title, status FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      [jobId],
+    );
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    if (String(jobRow.rows[0].employer_id) !== String(employerUuid)) {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    }
+    const talentUuid = await resolveUserIdToUuid(talentId);
+    if (!talentUuid) return res.status(400).json({ success: false, error: 'ไม่พบผู้สมัคร' });
+    const appRow = await pool.query(
+      `SELECT id, quote_version_count, quote_status, quote_expires_at FROM advance_job_applicants
+       WHERE job_id = $1 AND user_id = $2 LIMIT 1`,
+      [jobRow.rows[0].id, talentUuid],
+    );
+    if (!appRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบผู้สมัครในงานนี้' });
+    const app = appRow.rows[0];
+    if (app.quote_status === 'expired' || isQuoteExpired(app.quote_expires_at)) {
+      return res.status(400).json({ success: false, error: 'ใบเสนอราคาหมดอายุแล้ว — ขอให้ Talent ส่งใหม่' });
+    }
+    const currentVersion = parseInt(app.quote_version_count, 10) || 0;
+    if (currentVersion >= MAX_QUOTE_VERSIONS) {
+      return res.status(400).json({
+        success: false,
+        error: `ถึงขีดจำกัด counter-offer แล้ว (สูงสุด v${MAX_QUOTE_VERSIONS})`,
+        max_versions: MAX_QUOTE_VERSIONS,
+      });
+    }
+    const editReason = String(req.body?.edit_reason || '').trim().slice(0, 500) || 'นายจ้างเสนอราคา counter-offer';
+    const quotation = normalizeAdvanceQuotationInput(req.body?.quotation || req.body);
+    if (!quotation) {
+      return res.status(400).json({ success: false, error: 'กรุณาระบุราคาและรายละเอียด counter-offer' });
+    }
+    const bypass = await validateQuotationAntiBypass(pool, quotation, { userId: employerUuid, jobId });
+    if (!bypass.ok) {
+      return res.status(400).json({ success: false, error: bypass.error, code: bypass.code });
+    }
+    const versionNumber = currentVersion + 1;
+    const { expiresAt } = await persistAdvanceQuotation(pool, {
+      applicantId: app.id,
+      jobId: jobRow.rows[0].id,
+      userId: talentUuid,
+      quotation,
+      proposedBy: 'employer',
+      editReason,
+      versionNumber,
+    });
+    await pushUserNotificationIfNotPeaceMode(
+      talentUuid,
+      `นายจ้างส่ง counter-offer v${versionNumber}`,
+      `งาน "${(jobRow.rows[0].title || '').slice(0, 40)}" — ฿${Number(quotation.quote_total_amount).toLocaleString()} · ${editReason}`,
+    );
+    return res.json({
+      success: true,
+      version: versionNumber,
+      expires_at: expiresAt,
+      message: `ส่ง counter-offer v${versionNumber} แล้ว`,
+      quotation: {
+        total_amount: quotation.quote_total_amount,
+        timeline_days: quotation.quote_timeline_days,
+        valid_until: quotation.quote_valid_until,
+        edit_reason: editReason,
+      },
+    });
+  } catch (err) {
+    console.error('POST counter-offer error:', err);
+    return res.status(500).json({ success: false, error: 'ส่ง counter-offer ไม่สำเร็จ' });
+  }
+});
+
+// POST /api/advance-jobs/quotations/update-expired — Cron: mark expired quotations
+app.post('/api/advance-jobs/quotations/update-expired', async (req, res) => {
+  try {
+    await ensureQuotationVersionsTable(pool);
+    const result = await pool.query(`
+      UPDATE advance_job_applicants
+      SET quote_status = 'expired'
+      WHERE quote_status = 'active'
+        AND quote_total_amount IS NOT NULL
+        AND quote_expires_at IS NOT NULL
+        AND quote_expires_at <= NOW()
+      RETURNING id, job_id, user_id, quote_total_amount
+    `);
+    const ids = (result.rows || []).map((r) => r.id);
+    if (ids.length) {
+      await pool.query(
+        `UPDATE advance_job_quotation_versions SET status = 'expired'
+         WHERE applicant_id = ANY($1::uuid[]) AND status = 'active'`,
+        [ids],
+      ).catch(() => { });
+    }
+    return res.json({ success: true, expired: result.rows?.length || 0 });
+  } catch (err) {
+    console.error('POST quotations/update-expired error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/advance-jobs/quotations/send-reminders — Cron: reminder 24h before expiry
+app.post('/api/advance-jobs/quotations/send-reminders', async (req, res) => {
+  try {
+    await ensureQuotationVersionsTable(pool);
+    const rows = await pool.query(`
+      SELECT a.id, a.user_id, a.quote_total_amount, a.quote_expires_at, a.quote_version_count,
+             j.id AS job_id, j.title, j.employer_id
+      FROM advance_job_applicants a
+      JOIN advance_jobs j ON j.id = a.job_id
+      WHERE a.quote_status = 'active'
+        AND a.quote_total_amount IS NOT NULL
+        AND a.quote_expires_at IS NOT NULL
+        AND a.quote_reminder_sent_at IS NULL
+        AND a.quote_expires_at > NOW()
+        AND a.quote_expires_at <= NOW() + INTERVAL '24 hours'
+        AND j.status = 'open'
+    `);
+    let sent = 0;
+    for (const row of rows.rows || []) {
+      const amt = Number(row.quote_total_amount || 0).toLocaleString();
+      const jobTitle = (row.title || 'งาน').slice(0, 40);
+      const v = row.quote_version_count || 1;
+      const expStr = row.quote_expires_at ? new Date(row.quote_expires_at).toLocaleString('th-TH') : '';
+      await pushUserNotificationIfNotPeaceMode(
+        row.employer_id,
+        `ใบเสนอราคา v${v} ใกล้หมดอายุ`,
+        `฿${amt} (${jobTitle}) หมดอายุ ${expStr} — ตัดสินใจหรือ counter-offer ได้`,
+      );
+      await pushUserNotificationIfNotPeaceMode(
+        row.user_id,
+        `ใบเสนอราคา v${v} ใกล้หมดอายุ`,
+        `฿${amt} (${jobTitle}) หมดอายุ ${expStr} — อัปเดตหรือยืนยันได้`,
+      );
+      await pool.query(
+        'UPDATE advance_job_applicants SET quote_reminder_sent_at = NOW() WHERE id = $1',
+        [row.id],
+      );
+      sent++;
+    }
+    return res.json({ success: true, sent });
+  } catch (err) {
+    console.error('POST quotations/send-reminders error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+async function loadProcurementSnapshotContext(jobUuid) {
+  const jobRow = await pool.query(
+    `SELECT id, employer_id, title, description, scope, category, min_budget, max_budget, duration_days, status, hired_user_id
+     FROM advance_jobs WHERE id = $1 LIMIT 1`,
+    [jobUuid],
+  );
+  if (!jobRow.rows?.length) return null;
+  const userCols = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_name = 'users'
+       AND column_name IN ('kyc_level', 'verified_badge', 'completed_jobs_count', 'rating')`,
+  ).catch(() => ({ rows: [] }));
+  const colSet = new Set((userCols.rows || []).map((r) => String(r.column_name)));
+  const kycCol = colSet.has('kyc_level') ? 'u.kyc_level' : 'NULL::varchar AS kyc_level';
+  const badgeCol = colSet.has('verified_badge') ? 'u.verified_badge' : 'NULL::varchar AS verified_badge';
+  const completedCol = colSet.has('completed_jobs_count')
+    ? 'COALESCE(u.completed_jobs_count, 0)::int AS completed_jobs_count'
+    : '0::int AS completed_jobs_count';
+  const ratingCol = colSet.has('rating')
+    ? 'COALESCE(u.rating, 0)::numeric AS rating'
+    : '0::numeric AS rating';
+  const qRows = await pool.query(
+    `SELECT a.id AS applicant_id, a.user_id, a.quote_total_amount AS amount, a.quote_total_amount, a.quote_currency,
+            a.quote_timeline_days, a.quote_valid_until, a.quote_updated_at, a.quote_version_count, a.quote_status,
+            u.full_name, ${kycCol}, ${badgeCol}, ${completedCol}, ${ratingCol}
+     FROM advance_job_applicants a
+     JOIN users u ON u.id = a.user_id
+     WHERE a.job_id = $1 AND a.quote_total_amount IS NOT NULL
+     ORDER BY a.quote_total_amount ASC`,
+    [jobUuid],
+  ).catch(() => ({ rows: [] }));
+  const vRows = await pool.query(
+    `SELECT applicant_id, user_id, version_number, proposed_by, quote_total_amount, quote_currency, status, created_at
+     FROM advance_job_quotation_versions
+     WHERE job_id = $1
+     ORDER BY created_at ASC`,
+    [jobUuid],
+  ).catch(() => ({ rows: [] }));
+  return {
+    job: jobRow.rows[0],
+    quotations: qRows.rows || [],
+    quoteVersions: (vRows.rows || []).map((x) => ({
+      applicant_id: String(x.applicant_id || ''),
+      user_id: String(x.user_id || ''),
+      version: Number(x.version_number || 1),
+      proposed_by: x.proposed_by || 'talent',
+      amount: Number(x.quote_total_amount || 0),
+      currency: x.quote_currency || 'THB',
+      status: x.status || 'active',
+      created_at: x.created_at || null,
+    })),
+  };
+}
+
+// POST /api/advance-jobs/:id/procurement/revisions — snapshot TOR/SOW + quotations + winner reason
+app.post('/api/advance-jobs/:id/procurement/revisions', async (req, res) => {
+  try {
+    await ensureAdvanceProcurementTables(pool);
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const employerUuid = await resolveUserIdToUuid(userId);
+    if (!employerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    if (String(jobRow.rows[0].employer_id) !== String(employerUuid)) {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    }
+    const context = await loadProcurementSnapshotContext(jobRow.rows[0].id);
+    if (!context) return res.status(404).json({ success: false, error: 'ไม่พบข้อมูลงาน' });
+
+    const winnerUserIdInput = String(req.body?.winner_user_id || '').trim();
+    const winnerUuid = winnerUserIdInput ? await resolveUserIdToUuid(winnerUserIdInput).catch(() => null) : (context.job.hired_user_id || null);
+    const winner = winnerUuid
+      ? context.quotations.find((x) => String(x.user_id) === String(winnerUuid))
+      : null;
+    const winnerReason = String(req.body?.winner_reason || '').trim().slice(0, 4000);
+    if (winner && !winnerReason) {
+      return res.status(400).json({ success: false, error: 'กรุณาระบุเหตุผลคัดเลือกผู้ชนะ' });
+    }
+
+    const priceBefore = req.body?.price_before_negotiation != null
+      ? Number(req.body.price_before_negotiation)
+      : Number(winner?.quote_total_amount || 0);
+    const priceAfter = req.body?.price_after_negotiation != null
+      ? Number(req.body.price_after_negotiation)
+      : Number(winner?.quote_total_amount || 0);
+    const torSowSnapshot = req.body?.tor_sow_snapshot && typeof req.body.tor_sow_snapshot === 'object'
+      ? req.body.tor_sow_snapshot
+      : {};
+
+    const created = await createProcurementRevision(pool, {
+      job: context.job,
+      quotations: context.quotations,
+      quoteVersions: context.quoteVersions,
+      winner,
+      winnerReason,
+      torSowSnapshot,
+      priceBeforeNegotiation: Number.isFinite(priceBefore) ? priceBefore : null,
+      priceAfterNegotiation: Number.isFinite(priceAfter) ? priceAfter : null,
+      actorId: employerUuid,
+      actorRole: 'employer',
+    });
+    return res.json({
+      success: true,
+      revision: {
+        id: String(created.revision.id),
+        revision_no: created.revision.revision_no,
+        created_at: created.revision.created_at,
+        document_hash: created.revision.document_hash,
+        prev_hash: created.revision.prev_hash || null,
+      },
+      ai: created.ai,
+    });
+  } catch (err) {
+    console.error('POST procurement/revisions error:', err);
+    return res.status(500).json({ success: false, error: 'สร้าง procurement revision ไม่สำเร็จ' });
+  }
+});
+
+// GET /api/advance-jobs/:id/procurement/revisions — revision history
+app.get('/api/advance-jobs/:id/procurement/revisions', async (req, res) => {
+  try {
+    await ensureAdvanceProcurementTables(pool);
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, revisions: [] });
+    const callerUuid = await resolveUserIdToUuid(userId);
+    if (!callerUuid) return res.status(403).json({ success: false, revisions: [] });
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, revisions: [] });
+    if (String(jobRow.rows[0].employer_id) !== String(callerUuid)) {
+      return res.status(403).json({ success: false, revisions: [] });
+    }
+    const rows = await pool.query(
+      `SELECT r.id, r.revision_no, r.created_at, r.document_hash, r.prev_hash, r.winner_user_id, r.winner_reason,
+              r.price_before_negotiation, r.price_after_negotiation, r.ai_price_recommended, r.ai_risk_score, r.fraud_signals,
+              COALESCE((SELECT COUNT(*)::int FROM advance_job_procurement_documents d WHERE d.revision_id = r.id), 0) AS document_count
+       FROM advance_job_procurement_revisions r
+       WHERE r.job_id = $1
+       ORDER BY r.revision_no DESC`,
+      [jobRow.rows[0].id],
+    );
+    return res.json({
+      success: true,
+      revisions: (rows.rows || []).map((r) => ({
+        id: String(r.id),
+        revision_no: Number(r.revision_no || 0),
+        created_at: r.created_at,
+        document_hash: r.document_hash,
+        prev_hash: r.prev_hash || null,
+        winner_user_id: r.winner_user_id ? String(r.winner_user_id) : null,
+        winner_reason: r.winner_reason || null,
+        price_before_negotiation: r.price_before_negotiation != null ? Number(r.price_before_negotiation) : null,
+        price_after_negotiation: r.price_after_negotiation != null ? Number(r.price_after_negotiation) : null,
+        ai_price_recommended: r.ai_price_recommended != null ? Number(r.ai_price_recommended) : null,
+        ai_risk_score: r.ai_risk_score != null ? Number(r.ai_risk_score) : null,
+        fraud_signals: Array.isArray(r.fraud_signals) ? r.fraud_signals : [],
+        document_count: Number(r.document_count || 0),
+      })),
+    });
+  } catch (err) {
+    console.error('GET procurement/revisions error:', err);
+    return res.status(500).json({ success: false, revisions: [] });
+  }
+});
+
+// GET /api/advance-jobs/:id/procurement/ai-insights — AI recommendation + risk/fraud signals
+app.get('/api/advance-jobs/:id/procurement/ai-insights', async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const callerUuid = await resolveUserIdToUuid(userId);
+    if (!callerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id, hired_user_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    if (String(jobRow.rows[0].employer_id) !== String(callerUuid)) {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    }
+    const context = await loadProcurementSnapshotContext(jobRow.rows[0].id);
+    if (!context) return res.status(404).json({ success: false, error: 'ไม่พบข้อมูลงาน' });
+    const winner = context.job.hired_user_id
+      ? context.quotations.find((x) => String(x.user_id) === String(context.job.hired_user_id))
+      : null;
+    const ai = computeProcurementAiInsights({
+      quotations: context.quotations,
+      selectedQuotation: winner || null,
+      negotiationBefore: req.query?.price_before ? Number(req.query.price_before) : Number(winner?.quote_total_amount || 0),
+      negotiationAfter: req.query?.price_after ? Number(req.query.price_after) : Number(winner?.quote_total_amount || 0),
+    });
+    return res.json({ success: true, ai });
+  } catch (err) {
+    console.error('GET procurement/ai-insights error:', err);
+    return res.status(500).json({ success: false, error: 'โหลด AI insights ไม่สำเร็จ' });
+  }
+});
+
+// GET /api/advance-jobs/:id/procurement/export.csv|pdf|json — export package docs per revision
+app.get('/api/advance-jobs/:id/procurement/export.:format', async (req, res) => {
+  try {
+    await ensureAdvanceProcurementTables(pool);
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
+    const callerUuid = await resolveUserIdToUuid(userId);
+    if (!callerUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
+    const format = String(req.params.format || '').toLowerCase();
+    if (!['csv', 'pdf', 'json'].includes(format)) {
+      return res.status(400).json({ success: false, error: 'format ต้องเป็น csv, pdf หรือ json' });
+    }
+    const jobId = String(req.params.id || '').trim();
+    const jobRow = await pool.query('SELECT id, employer_id FROM advance_jobs WHERE id::text = $1 LIMIT 1', [jobId]);
+    if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
+    if (String(jobRow.rows[0].employer_id) !== String(callerUuid)) {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้โพสต์งานเท่านั้น' });
+    }
+    const revisionId = String(req.query?.revision_id || '').trim();
+    const rev = await pool.query(
+      `SELECT id, revision_no, created_at, document_hash, package_payload
+       FROM advance_job_procurement_revisions
+       WHERE job_id = $1
+         AND ($2 = '' OR id::text = $2)
+       ORDER BY revision_no DESC LIMIT 1`,
+      [jobRow.rows[0].id, revisionId],
+    );
+    if (!rev.rows?.length) {
+      return res.status(404).json({ success: false, error: 'ไม่พบ procurement revision' });
+    }
+    const revision = rev.rows[0];
+    const payload = revision.package_payload || {};
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    if (format === 'csv') {
+      const csv = buildProcurementCsv(payload, revision);
+      const fileName = `procurement-${jobId}-rev${revision.revision_no}-${ts}.csv`;
+      await recordProcurementDocument(pool, {
+        revisionId: revision.id,
+        jobId: jobRow.rows[0].id,
+        kind: 'procurement_package',
+        format: 'csv',
+        fileName,
+        content: csv,
+        actorId: callerUuid,
+      });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.send(csv);
+    }
+    if (format === 'json') {
+      const agencyForm = String(req.query?.agency_form || 'th_gov_procurement_v1').trim().toLowerCase();
+      if (!['th_gov_procurement_v1', 'egp_v1'].includes(agencyForm)) {
+        return res.status(400).json({ success: false, error: 'agency_form ต้องเป็น th_gov_procurement_v1 หรือ egp_v1' });
+      }
+      const jsonPayload = buildProcurementAgencyJson(payload, revision, { agencyForm });
+      const jsonOut = `${JSON.stringify(jsonPayload, null, 2)}\n`;
+      const fileName = `procurement-${jobId}-rev${revision.revision_no}-${agencyForm}-${ts}.json`;
+      await recordProcurementDocument(pool, {
+        revisionId: revision.id,
+        jobId: jobRow.rows[0].id,
+        kind: 'procurement_package_agency_json',
+        format: 'json',
+        fileName,
+        content: jsonOut,
+        actorId: callerUuid,
+      });
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.send(jsonOut);
+    }
+    const pdf = await buildProcurementPdfBuffer(payload, revision);
+    const fileName = `procurement-${jobId}-rev${revision.revision_no}-${ts}.pdf`;
+    await recordProcurementDocument(pool, {
+      revisionId: revision.id,
+      jobId: jobRow.rows[0].id,
+      kind: 'procurement_package',
+      format: 'pdf',
+      fileName,
+      content: pdf,
+      actorId: callerUuid,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(pdf);
+  } catch (err) {
+    console.error('GET procurement export error:', err);
+    return res.status(500).json({ success: false, error: 'export ไม่สำเร็จ' });
+  }
+});
+
+function normalizeComplianceStatusFilter(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  if (['has_winner', 'no_winner', 'negotiated'].includes(s)) return s;
+  return '';
+}
+
+// GET /api/admin/procurement/compliance — dashboard list/search/filterย้อนหลัง
+app.get('/api/admin/procurement/compliance', adminAuthMiddleware, async (req, res) => {
+  try {
+    await ensureAdvanceProcurementTables(pool);
+    const role = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN', 'AUDITOR', 'ACCOUNTANT'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์เข้าถึง compliance dashboard' });
+    }
+    const q = String(req.query?.q || '').trim();
+    const from = String(req.query?.from || '').trim();
+    const to = String(req.query?.to || '').trim();
+    const status = normalizeComplianceStatusFilter(req.query?.status);
+    const page = Math.max(1, parseInt(req.query?.page, 10) || 1);
+    const limit = Math.max(1, Math.min(200, parseInt(req.query?.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const params = [];
+    let idx = 1;
+    let where = ' WHERE 1=1 ';
+    if (q) {
+      where += ` AND (j.title ILIKE $${idx} OR r.id::text = $${idx} OR r.document_hash ILIKE $${idx} OR COALESCE(r.winner_reason, '') ILIKE $${idx}) `;
+      params.push(`%${q}%`);
+      idx++;
+    }
+    if (from) {
+      where += ` AND r.created_at >= $${idx}::timestamptz `;
+      params.push(from);
+      idx++;
+    }
+    if (to) {
+      where += ` AND r.created_at <= $${idx}::timestamptz `;
+      params.push(to);
+      idx++;
+    }
+    if (status === 'has_winner') where += ' AND r.winner_user_id IS NOT NULL ';
+    if (status === 'no_winner') where += ' AND r.winner_user_id IS NULL ';
+    if (status === 'negotiated') where += ' AND r.price_before_negotiation IS NOT NULL AND r.price_after_negotiation IS NOT NULL AND r.price_after_negotiation <> r.price_before_negotiation ';
+
+    const countSql = `
+      SELECT COUNT(*)::int AS total
+      FROM advance_job_procurement_revisions r
+      JOIN advance_jobs j ON j.id = r.job_id
+      ${where}
+    `;
+    const totalRow = await pool.query(countSql, params);
+    const listSql = `
+      SELECT r.id, r.job_id, r.revision_no, r.created_at, r.document_hash, r.prev_hash,
+             r.winner_user_id, r.winner_reason, r.price_before_negotiation, r.price_after_negotiation,
+             r.ai_price_recommended, r.ai_risk_score, r.fraud_signals,
+             j.title AS job_title, j.category, j.status AS job_status,
+             u.full_name AS winner_name,
+             COALESCE(d.document_count, 0) AS document_count
+      FROM advance_job_procurement_revisions r
+      JOIN advance_jobs j ON j.id = r.job_id
+      LEFT JOIN users u ON u.id = r.winner_user_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS document_count
+        FROM advance_job_procurement_documents d
+        WHERE d.revision_id = r.id
+      ) d ON true
+      ${where}
+      ORDER BY r.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    const rows = await pool.query(listSql, params);
+    return res.json({
+      success: true,
+      page,
+      limit,
+      total: totalRow.rows?.[0]?.total || 0,
+      items: (rows.rows || []).map((r) => ({
+        id: String(r.id),
+        job_id: String(r.job_id),
+        job_title: r.job_title || '',
+        category: r.category || '',
+        job_status: r.job_status || '',
+        revision_no: Number(r.revision_no || 0),
+        created_at: r.created_at,
+        document_hash: r.document_hash,
+        prev_hash: r.prev_hash || null,
+        winner_user_id: r.winner_user_id ? String(r.winner_user_id) : null,
+        winner_name: r.winner_name || null,
+        winner_reason: r.winner_reason || null,
+        price_before_negotiation: r.price_before_negotiation != null ? Number(r.price_before_negotiation) : null,
+        price_after_negotiation: r.price_after_negotiation != null ? Number(r.price_after_negotiation) : null,
+        ai_price_recommended: r.ai_price_recommended != null ? Number(r.ai_price_recommended) : null,
+        ai_risk_score: r.ai_risk_score != null ? Number(r.ai_risk_score) : null,
+        fraud_signals: Array.isArray(r.fraud_signals) ? r.fraud_signals : [],
+        document_count: Number(r.document_count || 0),
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/admin/procurement/compliance error:', err);
+    return res.status(500).json({ success: false, error: 'โหลด compliance dashboard ไม่สำเร็จ' });
+  }
+});
+
+// GET /api/admin/procurement/compliance/export.csv — export history สำหรับหน่วยงาน/audit
+app.get('/api/admin/procurement/compliance/export.csv', adminAuthMiddleware, async (req, res) => {
+  try {
+    const role = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN', 'AUDITOR', 'ACCOUNTANT'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์ export' });
+    }
+    const q = String(req.query?.q || '').trim();
+    const status = normalizeComplianceStatusFilter(req.query?.status);
+    const params = [];
+    let idx = 1;
+    let where = ' WHERE 1=1 ';
+    if (q) {
+      where += ` AND (j.title ILIKE $${idx} OR r.id::text = $${idx} OR r.document_hash ILIKE $${idx} OR COALESCE(r.winner_reason, '') ILIKE $${idx}) `;
+      params.push(`%${q}%`);
+      idx++;
+    }
+    if (status === 'has_winner') where += ' AND r.winner_user_id IS NOT NULL ';
+    if (status === 'no_winner') where += ' AND r.winner_user_id IS NULL ';
+    if (status === 'negotiated') where += ' AND r.price_before_negotiation IS NOT NULL AND r.price_after_negotiation IS NOT NULL AND r.price_after_negotiation <> r.price_before_negotiation ';
+    const rows = await pool.query(
+      `SELECT r.id, r.job_id, r.revision_no, r.created_at, r.document_hash, r.prev_hash,
+              j.title AS job_title, j.status AS job_status, r.winner_user_id, COALESCE(u.full_name, '') AS winner_name,
+              r.winner_reason, r.price_before_negotiation, r.price_after_negotiation, r.ai_price_recommended, r.ai_risk_score,
+              r.fraud_signals
+       FROM advance_job_procurement_revisions r
+       JOIN advance_jobs j ON j.id = r.job_id
+       LEFT JOIN users u ON u.id = r.winner_user_id
+       ${where}
+       ORDER BY r.created_at DESC
+       LIMIT 5000`,
+      params,
+    );
+    const header = [
+      'revision_id', 'job_id', 'job_title', 'job_status', 'revision_no', 'created_at',
+      'document_hash', 'prev_hash', 'winner_user_id', 'winner_name', 'winner_reason',
+      'price_before_negotiation', 'price_after_negotiation', 'ai_price_recommended', 'ai_risk_score', 'fraud_signals',
+    ];
+    const csvLines = [header.join(',')];
+    for (const r of rows.rows || []) {
+      const row = [
+        r.id,
+        r.job_id,
+        r.job_title || '',
+        r.job_status || '',
+        r.revision_no,
+        r.created_at,
+        r.document_hash,
+        r.prev_hash || '',
+        r.winner_user_id || '',
+        r.winner_name || '',
+        r.winner_reason || '',
+        r.price_before_negotiation ?? '',
+        r.price_after_negotiation ?? '',
+        r.ai_price_recommended ?? '',
+        r.ai_risk_score ?? '',
+        Array.isArray(r.fraud_signals) ? r.fraud_signals.join('|') : '',
+      ].map((x) => {
+        const s = String(x ?? '');
+        if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      });
+      csvLines.push(row.join(','));
+    }
+    const out = csvLines.join('\n');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="procurement-compliance-${stamp}.csv"`);
+    return res.send(out);
+  } catch (err) {
+    console.error('GET /api/admin/procurement/compliance/export.csv error:', err);
+    return res.status(500).json({ success: false, error: 'export compliance ไม่สำเร็จ' });
+  }
+});
+
+// GET /api/admin/procurement/compliance/export.json — export หน่วยงานเฉพาะ (JSON schema)
+app.get('/api/admin/procurement/compliance/export.json', adminAuthMiddleware, async (req, res) => {
+  try {
+    const role = String(req.adminUser?.role || '').toUpperCase();
+    if (!['ADMIN', 'SUPER_ADMIN', 'AUDITOR', 'ACCOUNTANT'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'ไม่มีสิทธิ์ export' });
+    }
+    const agencyForm = String(req.query?.agency_form || 'th_gov_procurement_v1').trim().toLowerCase();
+    if (!['th_gov_procurement_v1', 'egp_v1'].includes(agencyForm)) {
+      return res.status(400).json({ success: false, error: 'agency_form ต้องเป็น th_gov_procurement_v1 หรือ egp_v1' });
+    }
+    const q = String(req.query?.q || '').trim();
+    const status = normalizeComplianceStatusFilter(req.query?.status);
+    const params = [];
+    let idx = 1;
+    let where = ' WHERE 1=1 ';
+    if (q) {
+      where += ` AND (j.title ILIKE $${idx} OR r.id::text = $${idx} OR r.document_hash ILIKE $${idx} OR COALESCE(r.winner_reason, '') ILIKE $${idx}) `;
+      params.push(`%${q}%`);
+      idx++;
+    }
+    if (status === 'has_winner') where += ' AND r.winner_user_id IS NOT NULL ';
+    if (status === 'no_winner') where += ' AND r.winner_user_id IS NULL ';
+    if (status === 'negotiated') where += ' AND r.price_before_negotiation IS NOT NULL AND r.price_after_negotiation IS NOT NULL AND r.price_after_negotiation <> r.price_before_negotiation ';
+    const rows = await pool.query(
+      `SELECT r.id, r.job_id, r.revision_no, r.created_at, r.document_hash, r.prev_hash,
+              j.title AS job_title, j.status AS job_status, j.category, r.winner_user_id, COALESCE(u.full_name, '') AS winner_name,
+              r.winner_reason, r.price_before_negotiation, r.price_after_negotiation, r.ai_price_recommended, r.ai_risk_score,
+              r.fraud_signals
+       FROM advance_job_procurement_revisions r
+       JOIN advance_jobs j ON j.id = r.job_id
+       LEFT JOIN users u ON u.id = r.winner_user_id
+       ${where}
+       ORDER BY r.created_at DESC
+       LIMIT 5000`,
+      params,
+    );
+    const body = {
+      schema_version: agencyForm,
+      generated_at: new Date().toISOString(),
+      count: Number(rows.rows?.length || 0),
+      items: (rows.rows || []).map((r) => ({
+        revision_id: String(r.id || ''),
+        revision_no: Number(r.revision_no || 0),
+        created_at: r.created_at || null,
+        hash_chain: {
+          document_hash: r.document_hash || '',
+          prev_hash: r.prev_hash || null,
+        },
+        project: {
+          job_id: String(r.job_id || ''),
+          title: r.job_title || '',
+          category: r.category || '',
+          status: r.job_status || '',
+        },
+        winner: {
+          user_id: r.winner_user_id ? String(r.winner_user_id) : null,
+          name: r.winner_name || null,
+          reason: r.winner_reason || '',
+        },
+        negotiation: {
+          price_before: r.price_before_negotiation != null ? Number(r.price_before_negotiation) : null,
+          price_after: r.price_after_negotiation != null ? Number(r.price_after_negotiation) : null,
+        },
+        ai_summary: {
+          recommended_price: r.ai_price_recommended != null ? Number(r.ai_price_recommended) : null,
+          risk_score: r.ai_risk_score != null ? Number(r.ai_risk_score) : null,
+          fraud_signals: Array.isArray(r.fraud_signals) ? r.fraud_signals : [],
+        },
+      })),
+    };
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const fileName = `procurement-compliance-${agencyForm}-${stamp}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(`${JSON.stringify(body, null, 2)}\n`);
+  } catch (err) {
+    console.error('GET /api/admin/procurement/compliance/export.json error:', err);
+    return res.status(500).json({ success: false, error: 'export compliance json ไม่สำเร็จ' });
   }
 });
 
@@ -17633,6 +26068,7 @@ app.post('/api/advance-jobs/:id/applicants/:talentId/view', async (req, res) => 
 // PATCH /api/advance-jobs/:id/applicants/:userId — shortlist / hire / reject (เฉพาะนายจ้าง)
 app.patch('/api/advance-jobs/:id/applicants/:applicantUserId', async (req, res) => {
   try {
+    await ensureAdvanceQuotationColumns(pool);
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
     const employerUuid = await resolveUserIdToUuid(userId);
@@ -17655,7 +26091,8 @@ app.patch('/api/advance-jobs/:id/applicants/:applicantUserId', async (req, res) 
     const applicantUuid = await resolveUserIdToUuid(applicantUserId);
     if (!applicantUuid) return res.status(400).json({ success: false, error: 'ไม่พบผู้สมัคร' });
     const appRow = await pool.query(
-      'SELECT id FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2 LIMIT 1',
+      `SELECT id, quote_theme, quote_currency, quote_summary, quote_timeline_days, quote_valid_until, quote_items, quote_total_amount, quote_updated_at
+       FROM advance_job_applicants WHERE job_id = $1 AND user_id = $2 LIMIT 1`,
       [job.id, applicantUuid]
     );
     if (!appRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบผู้สมัครในงานนี้' });
@@ -17698,7 +26135,7 @@ app.patch('/api/advance-jobs/:id/applicants/:applicantUserId', async (req, res) 
         await pool.query(
           `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_after, reason) VALUES ('system', $1, 'COLLISION_24HR_BAN', 'users', $1, $2, 'Conflict ignored on advance job hire')`,
           [applicantUuid, JSON.stringify({ ban_expires_at: banUntil, advance_job_id: jobId, conflicting })]
-        ).catch(() => {});
+        ).catch(() => { });
       }
     }
 
@@ -17707,16 +26144,57 @@ app.patch('/api/advance-jobs/:id/applicants/:applicantUserId', async (req, res) 
       [newStatus, job.id, applicantUuid]
     );
     if (newStatus === 'hired') {
-      await pushUserNotificationIfNotPeaceMode(applicantUuid, 'ยินดีด้วย! คุณได้รับการคัดเลือกในงาน ' + (job.title || 'Advance Job'), 'ยินดีด้วย! คุณได้รับการคัดเลือกในงาน [ ' + (job.title || 'Advance Job') + ' ]');
-      const amount = agreed_amount != null ? Math.max(0, Number(agreed_amount)) : null;
+      await pushUserNotificationIfNotPeaceMode(applicantUuid, 'ยินดีด้วย! คุณได้รับการคัดเลือกในงาน ' + (job.title || 'Advance Job'), 'ยินดีด้วย! คุณได้รับการคัดเลือกในงาน [ ' + (job.title || 'Advance Job') + ' ]', { skipFcm: true });
+      notifyAdvanceJobBoardEvent({
+        recipientUserId: applicantUuid,
+        kind: ADVANCE_JOB_PUSH_KINDS.PENDING_ESCROW,
+        role: 'talent',
+        jobId,
+        talentId: applicantUuid,
+        title: 'คุณได้รับการจ้างแล้ว',
+        body: ('รอนายจ้างโอนเงินค้ำ — ' + (job.title || 'Advance Job')).slice(0, 120),
+        eventType: 'hire_confirmed',
+      });
+      notifyAdvanceJobBoardEvent({
+        recipientUserId: job.employer_id,
+        kind: ADVANCE_JOB_PUSH_KINDS.PENDING_ESCROW,
+        role: 'employer',
+        jobId,
+        talentId: applicantUuid,
+        title: 'จ้าง Talent แล้ว — โอนเงินค้ำ',
+        body: ('โอนเงินเข้า Escrow เพื่อเริ่มงาน: ' + (job.title || '')).slice(0, 120),
+        eventType: 'hire_confirmed',
+      });
+      const applicantQuoteAmount = appRow.rows?.[0]?.quote_total_amount != null ? Math.max(0, Number(appRow.rows[0].quote_total_amount)) : null;
+      const amount = agreed_amount != null ? Math.max(0, Number(agreed_amount)) : applicantQuoteAmount;
+      const selectedQuotation = appRow.rows?.[0]
+        ? {
+          theme: appRow.rows[0].quote_theme || null,
+          currency: appRow.rows[0].quote_currency || 'THB',
+          summary: appRow.rows[0].quote_summary || '',
+          timeline_days: appRow.rows[0].quote_timeline_days != null ? Number(appRow.rows[0].quote_timeline_days) : null,
+          valid_until: appRow.rows[0].quote_valid_until || null,
+          items: Array.isArray(appRow.rows[0].quote_items) ? appRow.rows[0].quote_items : [],
+          total_amount: appRow.rows[0].quote_total_amount != null ? Number(appRow.rows[0].quote_total_amount) : null,
+          quote_updated_at: appRow.rows[0].quote_updated_at || null,
+          hired_at: new Date().toISOString(),
+        }
+        : null;
       await pool.query(
-        `UPDATE advance_jobs SET status = 'in_progress', hired_user_id = $1, hired_at = NOW(), agreed_amount = $2, updated_at = NOW() WHERE id = $3`,
-        [applicantUuid, amount, job.id]
+        `UPDATE advance_jobs
+         SET status = 'in_progress', hired_user_id = $1, hired_at = NOW(), agreed_amount = $2, selected_quotation_json = $3::jsonb, updated_at = NOW()
+         WHERE id = $4`,
+        [applicantUuid, amount, JSON.stringify(selectedQuotation || {}), job.id]
       );
       await pool.query(
         'UPDATE advance_job_applicants SET status = $1 WHERE job_id = $2 AND user_id != $3',
         ['rejected', job.id, applicantUuid]
       );
+      onJobHired(pool, {
+        jobId: String(job.id),
+        employerId: job.employer_id,
+        hiredUserId: applicantUuid,
+      }).catch((e) => console.warn('[ads] job hire outcome attribution:', e?.message));
     }
     return res.json({ success: true, message: newStatus === 'hired' ? 'จ้างแล้ว' : 'อัปเดตสถานะแล้ว' });
   } catch (err) {
@@ -17737,7 +26215,7 @@ app.post('/api/advance-jobs/:id/escrow', async (req, res) => {
     const payAmount = Math.max(0, Number(amount));
     if (!payAmount) return res.status(400).json({ success: false, error: 'กรุณาระบุจำนวนเงิน (amount)' });
     const jobRow = await pool.query(
-      'SELECT id, employer_id, hired_user_id, agreed_amount, escrow_amount, escrow_status FROM advance_jobs WHERE id::text = $1 LIMIT 1',
+      'SELECT id, employer_id, hired_user_id, agreed_amount, escrow_amount, escrow_status, title FROM advance_jobs WHERE id::text = $1 LIMIT 1',
       [jobId]
     );
     if (!jobRow.rows?.length) return res.status(404).json({ success: false, error: 'ไม่พบงานนี้' });
@@ -17782,11 +26260,48 @@ app.post('/api/advance-jobs/:id/escrow', async (req, res) => {
     const totalCompanyFee = round2(totalHandling + totalCommission);
     const advJobIdStr = String(job.id);
     const ledgerId = (s) => `L-adv-escrow-${advJobIdStr}-${s}-${Date.now()}`;
+    const commissionLedgerId = ledgerId('commission');
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'escrow_held', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-      [ledgerId('commission'), advJobIdStr, advJobIdStr, totalCompanyFee, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-f-${Date.now()}`, job.hired_user_id, JSON.stringify({ leg: 'commission', source: 'advance_escrow', handling_fee: totalHandling, commission_fee: totalCommission, commission_rate: commissionRate, brand_adviser_platform_commission_waived: waiveBaAdvance || undefined })]
+      [commissionLedgerId, advJobIdStr, advJobIdStr, totalCompanyFee, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-f-${Date.now()}`, job.hired_user_id, JSON.stringify({ leg: 'commission', source: 'advance_escrow', handling_fee: totalHandling, commission_fee: totalCommission, commission_rate: commissionRate, brand_adviser_platform_commission_waived: waiveBaAdvance || undefined })]
     ).catch((e) => console.warn('Ledger commission insert failed:', e.message));
+    try {
+      const vatConfigRow = await pool.query(`SELECT vat_rate_percent FROM tax_company_settings WHERE id = 'aqond' LIMIT 1`).catch(() => ({ rows: [] }));
+      const vatRatePercent = Number(vatConfigRow.rows?.[0]?.vat_rate_percent ?? 7) || 7;
+      const platformServiceGross = round2(totalCompanyFee + Math.max(0, employerPays - payAmount));
+      const platformServiceVat = splitVatInclusive(platformServiceGross, vatRatePercent);
+      await generateFiscalDocumentDraft(pool, {
+        sourceEventId: commissionLedgerId,
+        documentType: 'tax_invoice',
+        partyRole: 'customer',
+        partyUserId: employerUuid,
+        lines: [
+          calculateLine({
+            description: 'ยอดค่าจ้าง Advance Job (แสดงเพื่ออ้างอิง ไม่ใช่รายได้ AQOND)',
+            taxable_amount: 0,
+            unit_amount: 0,
+            vat_rate_percent: 0,
+            total_amount: payAmount,
+            metadata: { source_event_id: commissionLedgerId, source_job_id: advJobIdStr, component: 'provider_service_principal', informational: true },
+          }),
+          calculateLine({
+            description: 'ค่าบริการแพลตฟอร์ม AQOND จาก Advance Job',
+            taxable_amount: platformServiceVat.vat_base_amount,
+            unit_amount: platformServiceVat.vat_base_amount,
+            vat_rate_percent: vatRatePercent,
+            vat_amount: platformServiceVat.vat_amount,
+            total_amount: platformServiceVat.gross_amount,
+            metadata: { source_event_id: commissionLedgerId, source_job_id: advJobIdStr, component: 'platform_service_fee', taxable_revenue_type: 'platform_fee', vat_inclusive: true, handling_fee: totalHandling, commission_fee: totalCommission, payment_markup: round2(employerPays - payAmount) },
+          }),
+        ],
+        actorType: 'system',
+        actorId: 'advance_job_escrow',
+        reason: 'employer_advance_job_tax_invoice_draft',
+      });
+    } catch (e) {
+      console.warn('Advance employer fiscal draft skipped:', e.message);
+    }
     const hasProposalTable = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'advance_job_milestone_proposals'`).then(r => r.rows?.length > 0);
     let propItems = [];
     if (hasProposalTable) {
@@ -17813,6 +26328,17 @@ app.post('/api/advance-jobs/:id/escrow', async (req, res) => {
         [job.id, totalNet]
       );
     }
+    await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'นายจ้างโอนเงินค้ำแล้ว', 'เงินค้ำพร้อมแล้ว — เปิดส่งงานได้ที่แท็บ Escrow', { skipFcm: true });
+    notifyAdvanceJobBoardEvent({
+      recipientUserId: job.hired_user_id,
+      kind: ADVANCE_JOB_PUSH_KINDS.ESCROW_HELD,
+      role: 'talent',
+      jobId,
+      talentId: job.hired_user_id,
+      title: 'นายจ้างโอนเงินค้ำแล้ว',
+      body: ('เริ่มส่งงานได้ — ' + (job.title || 'Advance Job')).slice(0, 120),
+      eventType: 'escrow_held',
+    });
     return res.json({ success: true, message: 'โอนเงินเข้า Escrow แล้ว', escrow_amount: payAmount, escrow_gross: employerPays, escrow_net: totalNet, escrow_status: 'held' });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/escrow error:', err);
@@ -17865,16 +26391,42 @@ app.post('/api/advance-jobs/:id/release', async (req, res) => {
     );
     const advJobIdStr = String(job.id);
     const ledgerId = (s) => `L-adv-full-${advJobIdStr}-${s}-${Date.now()}`;
+    const providerLedgerId = ledgerId('provider_net');
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'escrow_released', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-      [ledgerId('provider_net'), advJobIdStr, advJobIdStr, amount, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-full-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_full_release', commission_deducted: 0, job_title: job.title || null })]
+      [providerLedgerId, advJobIdStr, advJobIdStr, amount, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-full-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_full_release', commission_deducted: 0, job_title: job.title || null })]
     ).catch((e) => console.warn('Ledger escrow_released (full) insert failed:', e.message));
+    const whtPosting = await postProviderWhtForEarning(pool, {
+      sourceEventId: providerLedgerId,
+      sourceEventType: 'advance_job_full_release',
+      providerUserId: talentId,
+      grossIncomeAmount: amount,
+      platformFeeAmount: 0,
+      sourcePaymentId: advJobIdStr,
+      sourceJobId: advJobIdStr,
+      actorId: 'advance_job_release',
+      applyBalanceMutation: true,
+    });
+    hookBrandAdviserCampaignPurchase(job.employer_id, 'advance_job', advJobIdStr, amount, new Date());
+    await pushUserNotificationIfNotPeaceMode(job.employer_id, 'งานเสร็จแล้ว — ไปให้คะแนนการร่วมงานได้เลย', 'งาน Advance Job เสร็จสมบูรณ์แล้ว ไปให้คะแนนการร่วมงานได้ในหน้า Manage', { skipFcm: true });
+    notifyAdvanceJobBoardEvent({
+      recipientUserId: job.employer_id,
+      kind: ADVANCE_JOB_PUSH_KINDS.PENDING_REVIEW,
+      role: 'employer',
+      jobId,
+      talentId,
+      title: 'งานเสร็จแล้ว — ให้คะแนน',
+      body: 'เปิดให้คะแนนผู้รับจ้างได้ในหน้า Manage',
+      eventType: 'pending_review',
+    });
     return res.json({
       success: true,
       message: 'ปล่อยเงินให้ Talent แล้ว',
       escrow_status: 'released',
-      amount_released: amount
+      amount_released: amount,
+      wht_withheld: Number(whtPosting?.withheldAmount || 0),
+      net_available: round2(amount - Number(whtPosting?.withheldAmount || 0))
     });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/release error:', err);
@@ -18129,7 +26681,17 @@ app.post('/api/advance-jobs/:id/submit-work', async (req, res) => {
       `UPDATE advance_jobs SET work_submission_status = 'submitted', work_submitted_at = NOW(), work_submission_url = $1, work_submission_links = $2, updated_at = NOW() WHERE id = $3`,
       [url || null, JSON.stringify(links), job.id]
     );
-    await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Talent ส่งงานแล้ว', 'Talent ส่งงานรอให้คุณตรวจสอบ — เปิดดูได้ใน Escrow');
+    await pushUserNotificationIfNotPeaceMode(job.employer_id, 'Talent ส่งงานแล้ว', 'Talent ส่งงานรอให้คุณตรวจสอบ — เปิดดูได้ใน Escrow', { skipFcm: true });
+    notifyAdvanceJobBoardEvent({
+      recipientUserId: job.employer_id,
+      kind: ADVANCE_JOB_PUSH_KINDS.WORK_SUBMITTED,
+      role: 'employer',
+      jobId,
+      talentId: job.hired_user_id,
+      title: 'Talent ส่งงานแล้ว',
+      body: 'Talent ส่งงานรอให้คุณตรวจสอบ — เปิดดูได้ใน Escrow',
+      eventType: 'work_submitted',
+    });
     return res.json({ success: true, message: 'ส่งงานแล้ว รอให้นายจ้างตรวจสอบ', work_submission_status: 'submitted' });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/submit-work error:', err);
@@ -18165,7 +26727,17 @@ app.post('/api/advance-jobs/:id/request-revision', async (req, res) => {
       `UPDATE advance_jobs SET work_submission_status = 'revision_requested', revision_count = $1, revision_notes = $2, last_revision_requested_at = NOW(), updated_at = NOW() WHERE id = $3`,
       [revCount + 1, JSON.stringify(newNotes), job.id]
     );
-    await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'นายจ้างขอแก้ไขงาน', `รายละเอียด: ${note.slice(0, 100)}${note.length > 100 ? '...' : ''}`);
+    await pushUserNotificationIfNotPeaceMode(job.hired_user_id, 'นายจ้างขอแก้ไขงาน', `รายละเอียด: ${note.slice(0, 100)}${note.length > 100 ? '...' : ''}`, { skipFcm: true });
+    notifyAdvanceJobBoardEvent({
+      recipientUserId: job.hired_user_id,
+      kind: ADVANCE_JOB_PUSH_KINDS.REVISION_REQUESTED,
+      role: 'talent',
+      jobId,
+      talentId: job.hired_user_id,
+      title: 'นายจ้างขอแก้ไขงาน',
+      body: `รายละเอียด: ${note.slice(0, 100)}${note.length > 100 ? '...' : ''}`,
+      eventType: 'revision_requested',
+    });
     return res.json({ success: true, message: 'ส่งคำขอแก้ไขแล้ว', revision_count: revCount + 1, revision_limit: revLimit });
   } catch (err) {
     console.error('POST /api/advance-jobs/:id/request-revision error:', err);
@@ -18266,11 +26838,24 @@ app.post('/api/advance-jobs/:id/milestones/:milestoneId/release', async (req, re
     );
     const advJobIdStr = String(job.id);
     const ledgerId = (s) => `L-adv-${advJobIdStr}-${s}-${Date.now()}`;
+    const providerLedgerId = ledgerId('provider_net');
     await pool.query(
       `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, provider_id, metadata)
        VALUES ($1, 'escrow_released', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)`,
-      [ledgerId('provider_net'), advJobIdStr, advJobIdStr, talentReceive, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-net-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_milestone', milestone_id: String(milestone.id), commission_deducted: 0, job_title: job.title || null })]
+      [providerLedgerId, advJobIdStr, advJobIdStr, talentReceive, `adv-${advJobIdStr}`, `T-adv-${advJobIdStr}-net-${Date.now()}`, talentId, JSON.stringify({ leg: 'provider_net', source: 'advance_milestone', milestone_id: String(milestone.id), commission_deducted: 0, job_title: job.title || null })]
     ).catch((e) => console.warn('Ledger audit insert (provider_net) failed:', e.message));
+    const whtPosting = await postProviderWhtForEarning(pool, {
+      sourceEventId: providerLedgerId,
+      sourceEventType: 'advance_job_milestone_release',
+      providerUserId: talentId,
+      grossIncomeAmount: talentReceive,
+      platformFeeAmount: 0,
+      sourcePaymentId: advJobIdStr,
+      sourceJobId: advJobIdStr,
+      sourceMilestoneId: String(milestone.id),
+      actorId: 'advance_milestone_release',
+      applyBalanceMutation: true,
+    });
     const pendingCount = (await pool.query(
       'SELECT COUNT(*) AS c FROM advance_job_milestones WHERE job_id = $1 AND status = $2',
       [job.id, 'pending']
@@ -18285,15 +26870,29 @@ app.post('/api/advance-jobs/:id/milestones/:milestoneId/release', async (req, re
         [talentId]
       );
       if (job.employer_id) {
-        await pushUserNotificationIfNotPeaceMode(job.employer_id, 'งานเสร็จแล้ว — ไปให้คะแนนการร่วมงานได้เลย', 'งาน Advance Job เสร็จสมบูรณ์แล้ว ไปให้คะแนนการร่วมงานได้ในหน้า Manage');
+        await pushUserNotificationIfNotPeaceMode(job.employer_id, 'งานเสร็จแล้ว — ไปให้คะแนนการร่วมงานได้เลย', 'งาน Advance Job เสร็จสมบูรณ์แล้ว ไปให้คะแนนการร่วมงานได้ในหน้า Manage', { skipFcm: true });
+        notifyAdvanceJobBoardEvent({
+          recipientUserId: job.employer_id,
+          kind: ADVANCE_JOB_PUSH_KINDS.PENDING_REVIEW,
+          role: 'employer',
+          jobId,
+          talentId,
+          title: 'งานเสร็จแล้ว — ให้คะแนน',
+          body: 'เปิดให้คะแนนผู้รับจ้างได้ในหน้า Manage',
+          eventType: 'pending_review',
+        });
+        const advGross = parseFloat(job.escrow_amount) || parseFloat(job.max_budget) || parseFloat(amount) || 0;
+        hookBrandAdviserCampaignPurchase(job.employer_id, 'advance_job', String(job.id), advGross, new Date());
       }
     }
-    await pushUserNotificationIfNotPeaceMode(talentId, 'เงินงวดเข้ากระเป๋าแล้ว', 'เงินงวด ฿' + Number(talentReceive).toLocaleString() + ' ถูกปล่อยเข้ากระเป๋าคุณแล้ว!');
-    setImmediate(() => onJobCompleted(pool, talentId, job.id, amount, new Date()).catch(() => {}));
+    await pushUserNotificationIfNotPeaceMode(talentId, 'เงินงวดเข้ากระเป๋าแล้ว', 'เงินงวด ฿' + round2(Number(talentReceive) - Number(whtPosting?.withheldAmount || 0)).toLocaleString() + ' ถูกปล่อยเข้ากระเป๋าคุณแล้ว!');
+    setImmediate(() => onJobCompleted(pool, talentId, job.id, amount, new Date()).catch(() => { }));
     return res.json({
       success: true,
       message: 'ปล่อยเงินงวดนี้ให้ Talent แล้ว',
       amount_released: talentReceive,
+      wht_withheld: Number(whtPosting?.withheldAmount || 0),
+      net_available: round2(Number(talentReceive) - Number(whtPosting?.withheldAmount || 0)),
       commission_deducted: 0,
       is_job_completed: parseInt(pendingCount, 10) === 0
     });
@@ -18507,7 +27106,7 @@ app.get('/api/advance-jobs/:id/messages', async (req, res) => {
               await pool.query(
                 'INSERT INTO advance_job_message_reads (message_id, reader_id) VALUES ($1, $2) ON CONFLICT (message_id, reader_id) DO NOTHING',
                 [r.id, userUuid]
-              ).catch(() => {});
+              ).catch(() => { });
             }
           }
         }
@@ -18546,7 +27145,7 @@ app.post('/api/advance-jobs/:id/messages', async (req, res) => {
     if (!userId) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ success: false, error: 'ไม่พบตัวตน' });
-    await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [userUuid]).catch(() => {});
+    await pool.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [userUuid]).catch(() => { });
     const jobId = String(req.params.id || '').trim();
     const { body, talent_id } = req.body || {};
     const text = String(body || '').trim();
@@ -18582,18 +27181,28 @@ app.post('/api/advance-jobs/:id/messages', async (req, res) => {
     const hasThreadCol = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'advance_job_messages' AND column_name = 'thread_id'`).then(r => r.rows?.length > 0);
     const ins = hasThreadCol && threadId
       ? await pool.query(
-          'INSERT INTO advance_job_messages (job_id, sender_id, body, thread_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at',
-          [job.id, userUuid, text, threadId]
-        )
+        'INSERT INTO advance_job_messages (job_id, sender_id, body, thread_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at',
+        [job.id, userUuid, text, threadId]
+      )
       : await pool.query(
-          'INSERT INTO advance_job_messages (job_id, sender_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
-          [job.id, userUuid, text]
-        );
+        'INSERT INTO advance_job_messages (job_id, sender_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
+        [job.id, userUuid, text]
+      );
     const row = ins.rows[0];
     if (talentUuid) {
       const recipientUuid = isEmployer ? talentUuid : job.employer_id;
       if (recipientUuid && String(recipientUuid) !== String(userUuid)) {
-        await pushUserNotificationIfNotPeaceMode(recipientUuid, 'มีข้อความใหม่ในแชทงาน ' + (job.title || 'Advance Job'), String(text || '').slice(0, 80) + (text.length > 80 ? '...' : ''));
+        await pushUserNotificationIfNotPeaceMode(recipientUuid, 'มีข้อความใหม่ในแชทงาน ' + (job.title || 'Advance Job'), String(text || '').slice(0, 80) + (text.length > 80 ? '...' : ''), { skipFcm: true });
+        notifyAdvanceJobBoardEvent({
+          recipientUserId: recipientUuid,
+          kind: ADVANCE_JOB_PUSH_KINDS.UNREAD_CHAT,
+          role: isEmployer ? 'talent' : 'employer',
+          jobId,
+          talentId: isEmployer ? talentUuid : userUuid,
+          title: 'มีข้อความใหม่ในแชทงาน',
+          body: String(text || '').slice(0, 80),
+          eventType: 'unread_message',
+        });
       }
     }
     return res.status(201).json({ success: true, message: { id: String(row.id), body: text, sender_id: String(userUuid), created_at: row.created_at } });
@@ -18834,8 +27443,28 @@ app.patch('/api/advance-jobs/:id/deals/:dealId', async (req, res) => {
         await pool.query('UPDATE advance_job_applicants SET status = $1 WHERE job_id = $2 AND user_id != $3', ['rejected', deal.job_id, hireUserId]);
         await pool.query('UPDATE advance_job_applicants SET status = $1 WHERE job_id = $2 AND user_id = $3', ['hired', deal.job_id, hireUserId]);
         const amtStr = '฿' + Number(deal.amount).toLocaleString();
-        await pushUserNotificationIfNotPeaceMode(deal.employer_id, 'Talent รับ Deal แล้ว! กรุณาชำระเงิน ' + amtStr + ' เข้า Escrow เพื่อเริ่มงาน', 'Talent ตอบรับดีลแล้ว กรุณาชำระเงินจำนวน ' + amtStr + ' เพื่อเริ่มงาน');
-        await pushUserNotificationIfNotPeaceMode(deal.talent_id, 'ยินดีด้วย! คุณรับ Deal แล้ว — รอนายจ้างโอนเงินเข้า Escrow', 'ยินดีด้วย! คุณรับ Deal แล้ว');
+        await pushUserNotificationIfNotPeaceMode(deal.employer_id, 'Talent รับ Deal แล้ว! กรุณาชำระเงิน ' + amtStr + ' เข้า Escrow เพื่อเริ่มงาน', 'Talent ตอบรับดีลแล้ว กรุณาชำระเงินจำนวน ' + amtStr + ' เพื่อเริ่มงาน', { skipFcm: true });
+        await pushUserNotificationIfNotPeaceMode(deal.talent_id, 'ยินดีด้วย! คุณรับ Deal แล้ว — รอนายจ้างโอนเงินเข้า Escrow', 'ยินดีด้วย! คุณรับ Deal แล้ว', { skipFcm: true });
+        notifyAdvanceJobBoardEvent({
+          recipientUserId: deal.employer_id,
+          kind: ADVANCE_JOB_PUSH_KINDS.PENDING_ESCROW,
+          role: 'employer',
+          jobId: String(deal.job_id),
+          talentId: deal.talent_id,
+          title: 'Talent รับ Deal แล้ว — โอนเงินค้ำ',
+          body: ('ชำระเงิน ' + amtStr + ' เข้า Escrow').slice(0, 120),
+          eventType: 'hire_confirmed',
+        });
+        notifyAdvanceJobBoardEvent({
+          recipientUserId: deal.talent_id,
+          kind: ADVANCE_JOB_PUSH_KINDS.PENDING_ESCROW,
+          role: 'talent',
+          jobId: String(deal.job_id),
+          talentId: deal.talent_id,
+          title: 'คุณรับ Deal แล้ว',
+          body: 'รอนายจ้างโอนเงินเข้า Escrow',
+          eventType: 'hire_confirmed',
+        });
 
         const sysMsg = '[System] Talent ตอบรับดีลแล้ว กรุณาชำระเงินจำนวน ' + amtStr + ' เพื่อเริ่มงาน (โอนเข้า Escrow ที่แท็บ Escrow)';
         const threadRow = await pool.query('SELECT id FROM advance_job_chat_threads WHERE job_id = $1 AND employer_id = $2 AND talent_id = $3 LIMIT 1', [deal.job_id, deal.employer_id, deal.talent_id]);
@@ -18933,6 +27562,140 @@ async function handleWalletDepositCreateRequest(req, res) {
 
     /** PaySo wallet QR — ไม่ต้องใช้ PAYMENT_GATEWAY_SECRET_KEY (Omise-compatible) */
     let paysoAttemptError = null;
+    let mobileBankingPaysoBridgeError = null;
+    /** PaySo บัตรเครดิต — redirect ไปหน้า Pay Solutions (hosted) เหมือน WooCommerce plugin */
+    if (method === 'card' && isPaysoEnabledFromEnv()) {
+      let customerEmailCard = 'noreply@aqond.local';
+      try {
+        const er = await pool.query('SELECT email FROM users WHERE id = $1::uuid LIMIT 1', [userUuid]);
+        const em = er.rows?.[0]?.email;
+        if (em && String(em).trim()) customerEmailCard = String(em).trim();
+      } catch (_) {
+        /* default email */
+      }
+      const prCard = await createPaysoCardWalletDepositCharge({
+        amountThb: amountNum,
+        userUuid,
+        customerEmail: customerEmailCard,
+        returnUrl: returnUrl,
+      });
+      if (prCard.ok && prCard.authorization_uri) {
+        const chargeIdCard = prCard.payso_reference_id;
+        await persistPendingDepositCharge(chargeIdCard, 'payso');
+        schedulePaysoAutoReconcile({
+          chargeId: chargeIdCard,
+          userId: userUuid,
+          amount: amountNum,
+          sourceType: 'payso',
+        });
+        return res.status(201).json({
+          charge_id: chargeIdCard,
+          status: 'pending',
+          amount: amountNum,
+          currency: 'THB',
+          authorization_uri: prCard.authorization_uri,
+          qr_code_url: null,
+          payment_id: chargeIdCard,
+          source_type: 'payso',
+          payment_channel: 'card',
+        });
+      }
+      if (!card) {
+        return res.status(502).json({
+          error: prCard.error || 'PaySo ไม่สามารถเปิดหน้าชำระด้วยบัตรได้ — ตรวจ PAYSO_SECRET_KEY และ PAYSO_MERCHANT_ID',
+          code: 'payso_card_redirect_failed',
+        });
+      }
+    }
+
+    /** PaySo TrueMoney — redirect hosted page เหมือนบัตร */
+    if (method === 'truemoney' && isPaysoEnabledFromEnv()) {
+      let customerEmailTm = 'noreply@aqond.local';
+      try {
+        const er = await pool.query('SELECT email FROM users WHERE id = $1::uuid LIMIT 1', [userUuid]);
+        const em = er.rows?.[0]?.email;
+        if (em && String(em).trim()) customerEmailTm = String(em).trim();
+      } catch (_) {
+        /* default email */
+      }
+      const prTm = await createPaysoTrueMoneyWalletDepositCharge({
+        amountThb: amountNum,
+        userUuid,
+        customerEmail: customerEmailTm,
+        returnUrl: returnUrl,
+      });
+      if (prTm.ok && prTm.authorization_uri) {
+        const chargeIdTm = prTm.payso_reference_id;
+        await persistPendingDepositCharge(chargeIdTm, 'payso');
+        schedulePaysoAutoReconcile({
+          chargeId: chargeIdTm,
+          userId: userUuid,
+          amount: amountNum,
+          sourceType: 'payso',
+        });
+        return res.status(201).json({
+          charge_id: chargeIdTm,
+          status: 'pending',
+          amount: amountNum,
+          currency: 'THB',
+          authorization_uri: prTm.authorization_uri,
+          qr_code_url: null,
+          payment_id: chargeIdTm,
+          source_type: 'payso',
+          payment_channel: 'truemoney',
+        });
+      }
+      return res.status(502).json({
+        error: prTm.error || 'PaySo ไม่สามารถเปิดหน้าชำระ TrueMoney ได้ — ตรวจ PAYSO_SECRET_KEY และ PAYSO_MERCHANT_ID',
+        code: 'payso_truemoney_redirect_failed',
+      });
+    }
+
+    /** PaySo Mobile Banking — redirect hosted page เหมือนบัตร */
+    if (method === 'mobile_banking' && isPaysoEnabledFromEnv()) {
+      let customerEmailMbRedirect = 'noreply@aqond.local';
+      try {
+        const er = await pool.query('SELECT email FROM users WHERE id = $1::uuid LIMIT 1', [userUuid]);
+        const em = er.rows?.[0]?.email;
+        if (em && String(em).trim()) customerEmailMbRedirect = String(em).trim();
+      } catch (_) {
+        /* default email */
+      }
+      const prMbRedirect = await createPaysoMobileBankingRedirectWalletDepositCharge({
+        amountThb: amountNum,
+        userUuid,
+        customerEmail: customerEmailMbRedirect,
+        returnUrl: returnUrl,
+      });
+      if (prMbRedirect.ok && prMbRedirect.authorization_uri) {
+        const chargeIdMbRedirect = prMbRedirect.payso_reference_id;
+        await persistPendingDepositCharge(chargeIdMbRedirect, 'payso');
+        schedulePaysoAutoReconcile({
+          chargeId: chargeIdMbRedirect,
+          userId: userUuid,
+          amount: amountNum,
+          sourceType: 'payso',
+        });
+        return res.status(201).json({
+          charge_id: chargeIdMbRedirect,
+          status: 'pending',
+          amount: amountNum,
+          currency: 'THB',
+          authorization_uri: prMbRedirect.authorization_uri,
+          qr_code_url: null,
+          payment_id: chargeIdMbRedirect,
+          source_type: 'payso',
+          payment_channel: 'mobile_banking',
+        });
+      }
+      return res.status(502).json({
+        error:
+          prMbRedirect.error ||
+          'PaySo ไม่สามารถเปิดหน้าชำระ Mobile Banking ได้ — ตรวจ PAYSO_SECRET_KEY และ PAYSO_MERCHANT_ID',
+        code: 'payso_mobile_banking_redirect_failed',
+      });
+    }
+
     if (method === 'promptpay' && isPaysoEnabledFromEnv()) {
       let customerEmail = 'noreply@aqond.local';
       try {
@@ -18969,12 +27732,72 @@ async function handleWalletDepositCreateRequest(req, res) {
       paysoAttemptError = pr.error || `payso_deposit_http_${pr.statusCode || 0}`;
     }
 
+    if (method === 'mobile_banking' && !isPaysoEnabledFromEnv()) {
+      const mbFallbackRaw = String(process.env.PAYMENT_GATEWAY_MOBILE_BANKING_FALLBACK || '').trim().toLowerCase();
+      const mbFallbackEnabled =
+        mbFallbackRaw === '1' || mbFallbackRaw === 'true' || mbFallbackRaw === 'yes' || mbFallbackRaw === 'on';
+
+      const bankCodeMb = String(req.body?.bank_code || req.body?.bank || '').trim().toLowerCase();
+      const allowedMbBanks = new Set(['scb', 'ktb', 'bbl', 'bay', 'kbank']);
+      if (!allowedMbBanks.has(bankCodeMb)) {
+        return res.status(400).json({
+          error: 'ธนาคารที่เลือกไม่รองรับในระบบ — โปรดเลือกจากรายการ',
+          code: 'mobile_banking_bank_invalid',
+        });
+      }
+
+      const bankDigits = normalizeBankDigits(
+        req.body?.bank_account_number ?? req.body?.bankAccountNumber ?? ''
+      );
+      if (!bankDigits || bankDigits.length < 10) {
+        return res.status(400).json({
+          error: 'โปรดกรอกเลขบัญชีให้ครบถ้วน (อย่างน้อย 10 หลัก)',
+          code: 'mobile_banking_account_invalid',
+        });
+      }
+
+      let bankAccountsRaw = null;
+      try {
+        const ur = await pool.query(
+          'SELECT bank_accounts FROM users WHERE id = $1::uuid LIMIT 1',
+          [userUuid]
+        );
+        bankAccountsRaw = ur.rows?.[0]?.bank_accounts;
+      } catch (_) {
+        bankAccountsRaw = null;
+      }
+      const accounts = parseUserBankAccounts(bankAccountsRaw);
+      const match = findMatchingBankAccountForMb(accounts, bankCodeMb, bankDigits);
+      const mismatchAck =
+        req.body?.mobile_banking_profile_mismatch_ack === true ||
+        req.body?.mobile_banking_profile_mismatch_ack === 'true' ||
+        req.body?.mobileBankingProfileMismatchAck === true ||
+        req.body?.mobileBankingProfileMismatchAck === 'true';
+      const gate = assertMbProfileGate(match, mismatchAck);
+      if (!gate.ok) {
+        return res.status(400).json({ error: gate.error, code: gate.code });
+      }
+
+      if (!mbFallbackEnabled) {
+        return res.status(503).json({
+          error: 'ช่องทาง Mobile Banking ใช้ Pay Solutions — เปิด PAYSO_ENABLED หรือตั้ง PAYMENT_GATEWAY_MOBILE_BANKING_FALLBACK=1 สำหรับ gateway สำรอง',
+          code: 'mobile_banking_payso_unconfigured',
+        });
+      }
+    }
+
+    if (mobileBankingPaysoBridgeError != null) {
+      paysoAttemptError = mobileBankingPaysoBridgeError;
+    }
+
     let secretKey = getPaymentGatewaySecretKey();
     if (!secretKey || secretKey.includes('xxxxx')) {
       const msg =
         paysoAttemptError != null
-          ? `สร้าง QR ผ่าน PaySo ไม่สำเร็จ (${paysoAttemptError}) และยังไม่มี PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST สำรอง (Omise-compatible)`
-          : 'Payment gateway ยังไม่ได้ตั้งค่า — ใส่ PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST ใน .env';
+          ? method === 'mobile_banking'
+            ? `สร้างรายการ Mobile Banking ผ่าน PaySo ไม่สำเร็จ (${paysoAttemptError}) และยังไม่มี PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST สำรอง (Omise-compatible)`
+            : `สร้าง QR ผ่าน PaySo ไม่สำเร็จ (${paysoAttemptError}) และยังไม่มี PAYMENT_GATEWAY_SECRET_KEY / PAYMENT_GATEWAY_API_HOST สำรอง (Omise-compatible)`
+          : 'PaySo card gateway ยังไม่ได้ตั้งค่า — ใส่ PAYSO_API_BASE_URL + PAYSO_SECRET_KEY (หรือ PAYSO_API_KEY) + PAYSO_PUBLIC_KEY ใน .env';
       return res.status(503).json({ error: msg });
     }
 
@@ -19005,7 +27828,7 @@ async function handleWalletDepositCreateRequest(req, res) {
         metadata: { user_id: String(userUuid), source: 'wallet_deposit', phone: phoneNumber }
       });
     } else if (method === 'mobile_banking') {
-      const bankCode = String(req.body?.bank_code || req.body?.bank || 'scb').trim().toLowerCase();
+      const bankCode = String(req.body?.bank_code || req.body?.bank || '').trim().toLowerCase();
       const source = await paymentClient.createInternetBankingSource(amountSatang, bankCode, 'thb');
       charge = await paymentClient.createCharge({
         amount: amountSatang,
@@ -19077,6 +27900,12 @@ async function handleWalletDepositCreateRequest(req, res) {
         code: 'gateway_auth_failure'
       });
     }
+    if (err?.code === 'internet_banking_bank_not_supported') {
+      return res.status(400).json({
+        error: err.message || 'ธนาคารไม่รองรับในเกตเวย์สำรอง',
+        code: 'internet_banking_bank_not_supported',
+      });
+    }
     const errMsg = err?.message || err?.response?.data?.message || err?.response?.data?.error || 'Failed to create deposit charge';
     return res.status(500).json({ error: String(errMsg) });
   }
@@ -19140,13 +27969,19 @@ app.post('/api/wallet/topup', paymentLimiter, async (req, res) => {
       ]
     );
     await pool.query('COMMIT');
+    await tryGenerateWalletFiscalDocumentDraft(pool, {
+      ledgerId,
+      actorType: 'system',
+      actorId: 'wallet_topup',
+      reason: 'wallet_deposit_success_tax_draft',
+    });
 
     const balRow = await pool.query('SELECT wallet_balance FROM users WHERE id = $1', [userUuid]);
     const newBalance = parseFloat(balRow.rows?.[0]?.wallet_balance || 0);
 
     return res.status(201).json({ balance: newBalance, transaction_group_id: ledgerId });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await pool.query('ROLLBACK').catch(() => { });
     console.error('POST /api/wallet/topup error:', err);
     return res.status(500).json({ error: err.message || 'Failed to top up wallet' });
   }
@@ -19233,13 +28068,7 @@ async function reconcilePaysoChargeIfPaid({
     return { checked: false, reason: 'cooldown' };
   }
   paysoChargeStatusLastCheckedAt.set(key, now);
-  // #region agent log
-  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H14",location:"backend/server.js:reconcilePaysoChargeIfPaid:check-start",message:"start reconcile check against payso status api",data:{chargeId:key,trigger,sourceType:src},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const q = await queryPaysoWalletDepositStatus({ referenceId: key });
-  // #region agent log
-  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H15",location:"backend/server.js:reconcilePaysoChargeIfPaid:check-result",message:"payso status api result",data:{chargeId:key,ok:q?.ok===true,statusCode:q?.statusCode||0,paid:q?.paid===true,status:q?.status||null,error:q?.error||null,trigger},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   console.log('[DBG-H15] payso status query result', {
     chargeId: key,
     trigger,
@@ -19292,9 +28121,6 @@ async function reconcilePaysoChargeIfPaid({
       explain: 'status_paid_but_credit_failed',
     };
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H16",location:"backend/server.js:reconcilePaysoChargeIfPaid:credited",message:"creditWalletDepositFromPayso applied",data:{chargeId:key,duplicate:credited?.duplicate===true,ledgerId:credited?.ledgerId||null,creditAmount:credited?.creditAmount??null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   console.log('[DBG-H16] payso credit applied', {
     chargeId: key,
     duplicate: credited?.duplicate === true,
@@ -19332,9 +28158,6 @@ app.get('/api/wallet/deposit/status/:chargeId', async (req, res) => {
     ).catch(() => ({ rows: [] }));
     if (!row.rows?.length) return res.status(404).json({ error: 'ไม่พบรายการเติมเงินนี้' });
     let r = row.rows[0];
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H8",location:"backend/server.js:/api/wallet/deposit/status/:chargeId",message:"deposit status polled from db row",data:{charge_id:r.charge_id,status:r.status,completed_at:r.completed_at ? new Date(r.completed_at).toISOString() : null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     console.log('[DBG-H8] deposit status row', { charge_id: r.charge_id, status: r.status, completed_at: r.completed_at || null });
     let reconcileMeta = null;
     if (String(r.status || '').toLowerCase() !== 'success' && String(r.source_type || '').toLowerCase() === 'payso') {
@@ -19354,7 +28177,7 @@ app.get('/api/wallet/deposit/status/:chargeId', async (req, res) => {
         if (rr.rows?.[0]) r = rr.rows[0];
       }
     }
-    
+
     return res.json({
       charge_id: r.charge_id,
       amount: parseFloat(r.amount),
@@ -19458,10 +28281,6 @@ app.post('/api/admin/wallet-deposit-charges/reconcile-payso-batch', adminAuthMid
       });
     }
 
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H22",location:"backend/server.js:/api/admin/wallet-deposit-charges/reconcile-payso-batch",message:"batch reconcile executed",data:{requested_limit:limit,input_count:rows.length,success_count:successCount,still_pending_count:stillPendingCount,error_count:errorCount},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-
     return res.json({
       requested_limit: limit,
       total: rows.length,
@@ -19477,7 +28296,7 @@ app.post('/api/admin/wallet-deposit-charges/reconcile-payso-batch', adminAuthMid
 });
 
 // POST /api/wallet/deposit-slip — อัปโหลดสลิปหลังชำระ PromptPay/บัตร (ผูก charge_id + บันทึก slip_url)
-app.post('/api/wallet/deposit-slip', paymentLimiter, uploadMulter.single('file'), async (req, res) => {
+app.post('/api/wallet/deposit-slip', paymentLimiter, uploadMulterDocument.single('file'), async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
@@ -19529,6 +28348,14 @@ attachWalletManualDepositRoutes(app, {
   adminAuthMiddleware,
 });
 
+registerWalletLiquidityAdminRoutes(app, pool, adminAuthMiddleware, auditService);
+registerUserFinancialMovementsAdminRoutes(app, pool, adminAuthMiddleware);
+registerUserCommerceAdminRoutes(app, pool, adminAuthMiddleware);
+registerUserSupportAdminRoutes(app, pool, adminAuthMiddleware);
+registerAdminCronRoutes(app, pool, adminAuthMiddleware);
+registerPartnerApiRoutes(app, pool);
+registerDeliveryPartnerRoutes(app, pool, { authenticateToken });
+
 // GET /api/wallet/transactions — ประวัติการเคลื่อนไหวกระเป๋า (จาก payment_ledger_audit) สำหรับผู้ใช้ที่ล็อกอิน
 app.get('/api/wallet/transactions', async (req, res) => {
   try {
@@ -19546,18 +28373,7 @@ app.get('/api/wallet/transactions', async (req, res) => {
       [String(userUuid), limit]
     );
     const rows = result.rows || [];
-    const pendingChargeRows = await pool.query(
-      `SELECT charge_id, amount, currency, status, created_at, COALESCE(source_type, 'promptpay') AS source_type
-       FROM wallet_deposit_charges
-       WHERE user_id = $1::uuid AND LOWER(COALESCE(status, 'pending')) <> 'success'
-       ORDER BY created_at DESC
-       LIMIT 30`,
-      [String(userUuid)]
-    ).then((r) => r.rows || []).catch(() => []);
-    // #region agent log
-    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"1d8d58"},body:JSON.stringify({sessionId:"1d8d58",runId:"m1-smoke",hypothesisId:"H10",location:"backend/server.js:/api/wallet/transactions",message:"wallet transactions source counts",data:{ledger_rows:rows.length,pending_charge_rows:pendingChargeRows.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    console.log('[DBG-H10] wallet transactions sources', { ledger_rows: rows.length, pending_charge_rows: pendingChargeRows.length });
+    console.log('[DBG-H10] wallet transactions sources', { ledger_rows: rows.length });
     const coachFeeRows = rows.filter((r) => r.event_type === 'coach_training_fee' && r.provider_id && String(r.provider_id) === String(userUuid));
     const traineeIds = [...new Set(coachFeeRows.map((r) => (r.metadata || {}).trainee_id).filter(Boolean))];
     const traineeNames = {};
@@ -19586,7 +28402,7 @@ app.get('/api/wallet/transactions', async (req, res) => {
             jobInfoMap[String(row.id)] = { title: row.title || 'Advance Job', tips_amount: 0 };
           }
         });
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const ledgerTransactions = rows.map((r) => {
@@ -19702,24 +28518,7 @@ app.get('/api/wallet/transactions', async (req, res) => {
       else if (tipsAmount > 0 && (r.event_type === 'escrow_held' && meta.leg === 'provider_net')) out.tips_amount = tipsAmount;
       return out;
     }).filter(Boolean);
-    const pendingChargeTransactions = pendingChargeRows.map((c) => {
-      const rawStatus = String(c.status || 'pending').toLowerCase();
-      const normalizedStatus = rawStatus === 'successful' ? 'success' : rawStatus;
-      return {
-        id: `depchg-${String(c.charge_id)}`,
-        payment_id: String(c.charge_id),
-        event_type: 'wallet_deposit',
-        amount: Number(c.amount || 0),
-        gross_amount: Number(c.amount || 0),
-        net_amount: Number(c.amount || 0),
-        currency: c.currency || 'THB',
-        direction: 'in',
-        status: normalizedStatus,
-        description: `เติมเงินรอดำเนินการ (${String(c.source_type || 'payso').toUpperCase()})`,
-        created_at: c.created_at,
-      };
-    });
-    const merged = [...ledgerTransactions, ...pendingChargeTransactions]
+    const merged = [...ledgerTransactions]
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
       .slice(0, limit);
     return res.json({ transactions: merged });
@@ -19736,7 +28535,7 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
-    
+
     const transactionId = String(req.params.transactionId || '').trim();
     const result = await pool.query(
       `SELECT id, tax_ref_id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, metadata, created_at, user_id, provider_id
@@ -19744,17 +28543,36 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
        WHERE id = $1 AND (user_id::text = $2 OR provider_id::text = $2)`,
       [transactionId, String(userUuid)]
     );
-    
+
     if (!result.rows?.length) {
       return res.status(404).json({ error: 'ไม่พบใบเสร็จนี้' });
     }
-    
+
     const tx = result.rows[0];
-    const userResult = await pool.query('SELECT id, full_name, email FROM users WHERE id = $1', [userUuid]);
+    const userResult = await pool.query(
+      `SELECT u.id, u.full_name, u.email,
+              p.legal_name AS tax_legal_name,
+              p.tax_id AS customer_tax_id,
+              p.registered_address AS customer_registered_address,
+              p.branch_code AS customer_branch_code,
+              p.branch_name AS customer_branch_name,
+              p.verified_status AS customer_tax_verified_status
+       FROM users u
+       LEFT JOIN tax_user_profiles p ON p.user_id = u.id
+       WHERE u.id = $1`,
+      [userUuid]
+    ).catch(async (err) => {
+      if (String(err?.code) === '42P01' || String(err?.code) === '42703') {
+        return pool.query('SELECT id, full_name, email FROM users WHERE id = $1', [userUuid]);
+      }
+      throw err;
+    });
     const userInfo = userResult.rows?.[0] || {};
-    
+
     const meta = tx.metadata || {};
     const insuranceAmount = meta.insurance_amount != null ? Number(meta.insurance_amount) : null;
+    const companySettings = await getTaxCompanySettingsSafe();
+    const isTaxInvoice = Boolean(companySettings.tax_invoice_ready);
     return res.json({
       receipt: {
         id: tx.id,
@@ -19777,16 +28595,30 @@ app.get('/api/wallet/receipt/:transactionId', async (req, res) => {
         handling_fee: meta.handling_fee != null ? Number(meta.handling_fee) : null,
         commission_fee: meta.commission_fee != null ? Number(meta.commission_fee) : (meta.platform_fee != null ? Number(meta.platform_fee) : null),
         commission_percent: meta.fee_percent != null ? Number(meta.fee_percent) : (meta.booking_fee_percent != null ? Number(meta.booking_fee_percent) : null),
+        document_type: isTaxInvoice ? 'tax_invoice' : 'receipt',
+        document_label: isTaxInvoice ? 'ใบกำกับภาษี / Tax Invoice' : 'ใบเสร็จรับเงิน / Receipt',
+        is_tax_invoice: isTaxInvoice,
         company: {
-          name: 'AQOND Technology Co., Ltd.',
-          address: 'Bangkok, Thailand',
-          tax_id: process.env.COMPANY_TAX_ID || process.env.TAX_ID || 'xxx-xxxx-xxxxx',
+          name: companySettings.legal_name,
+          address: companySettings.registered_address,
+          tax_id: companySettings.tax_id,
           tax_ref_id: tx.tax_ref_id || null,
-          phone: process.env.COMPANY_PHONE || '02-xxx-xxxx'
+          branch_code: companySettings.branch_code,
+          branch_name: companySettings.branch_name,
+          vat_registered: companySettings.vat_registered,
+          phone: companySettings.phone_optional,
+          support_email: companySettings.support_email,
+          support_line: companySettings.support_line,
+          help_center_url: companySettings.help_center_url
         },
         customer: {
-          name: userInfo.name || userInfo.email || 'N/A',
-          email: userInfo.email || 'N/A'
+          name: userInfo.tax_legal_name || userInfo.full_name || userInfo.email || 'N/A',
+          email: userInfo.email || 'N/A',
+          tax_id: cleanTaxId(userInfo.customer_tax_id),
+          registered_address: userInfo.customer_registered_address || null,
+          branch_code: userInfo.customer_branch_code || null,
+          branch_name: userInfo.customer_branch_name || null,
+          tax_verified_status: userInfo.customer_tax_verified_status || null
         }
       }
     });
@@ -19882,7 +28714,7 @@ app.post('/api/wallet/request-certified-statement', async (req, res) => {
       await pool.query(
         `UPDATE certified_statements SET status = 'failed' WHERE id = $1`,
         [stmt.id]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     return res.json({
@@ -20010,30 +28842,48 @@ app.get('/api/wallet/tax-documents', async (req, res) => {
       [userUuid]
     ).catch(() => ({ rows: [] }));
 
-    let ledgerWhere = `(provider_id::text = $1 OR user_id::text = $1)`;
+    let documentWhere = `party_user_id = $1::uuid`;
     const params = [userUuid];
     if (month && year) {
       params.push(`${year}-${String(month).padStart(2, '0')}-01`);
       params.push(`${year}-${String(month).padStart(2, '0')}-31`);
-      ledgerWhere += ` AND (created_at AT TIME ZONE 'Asia/Bangkok')::date >= $2::date AND (created_at AT TIME ZONE 'Asia/Bangkok')::date <= $3::date`;
+      documentWhere += ` AND (created_at AT TIME ZONE 'Asia/Bangkok')::date >= $2::date AND (created_at AT TIME ZONE 'Asia/Bangkok')::date <= $3::date`;
     }
-    const receipts = await pool.query(
-      `SELECT id, event_type, job_id, amount, bill_no, transaction_no, tax_ref_id, created_at
-       FROM payment_ledger_audit WHERE ${ledgerWhere} ORDER BY created_at DESC LIMIT 100`,
+    const fiscalDocs = await pool.query(
+      `SELECT id, document_no, document_type, status, source_event_type, source_payment_id,
+              source_job_id, source_charge_id, party_role, subtotal_amount, vat_amount,
+              wht_amount, total_amount, issued_at, created_at
+       FROM fiscal_documents
+       WHERE ${documentWhere}
+       ORDER BY COALESCE(issued_at, created_at) DESC
+       LIMIT 100`,
       params
     ).catch(() => ({ rows: [] }));
 
     const port = process.env.PORT || 3001;
     const baseUrl = process.env.BACKEND_URL || `http://localhost:${port}`;
     return res.json({
-      documents: (receipts.rows || []).map((r) => ({
-        id: r.id,
-        type: r.event_type,
-        job_id: r.job_id,
-        amount: parseFloat(r.amount),
-        bill_no: r.bill_no,
-        transaction_no: r.transaction_no,
-        tax_ref_id: r.tax_ref_id,
+      documents: (fiscalDocs.rows || []).map((r) => ({
+        id: String(r.id),
+        type: r.document_type,
+        document_type: r.document_type,
+        document_no: r.document_no || null,
+        status: r.status,
+        source_event_type: r.source_event_type || null,
+        source_payment_id: r.source_payment_id || null,
+        source_job_id: r.source_job_id || null,
+        source_charge_id: r.source_charge_id || null,
+        party_role: r.party_role || null,
+        amount: parseFloat(r.total_amount || 0),
+        subtotal_amount: parseFloat(r.subtotal_amount || 0),
+        vat_amount: parseFloat(r.vat_amount || 0),
+        wht_amount: parseFloat(r.wht_amount || 0),
+        bill_no: r.document_no || null,
+        tax_ref_id: r.document_no || null,
+        pdf_url: ['issued', 'exported', 'credit_note_issued'].includes(String(r.status || '').toLowerCase())
+          ? `${baseUrl}/api/tax/documents/me/${r.id}/pdf`
+          : null,
+        issued_at: r.issued_at,
         created_at: r.created_at,
       })),
       statements: (statements.rows || []).map((s) => ({
@@ -20086,7 +28936,7 @@ app.get('/api/compliance/:type', async (req, res) => {
     if (!COMPLIANCE_POLICY_TYPES.includes(type)) {
       return res.status(400).json({ error: 'Invalid policy type' });
     }
-    
+
     const result = await pool.query(
       `SELECT id, type, version, content, published_at, created_at
        FROM compliance_policies
@@ -20095,11 +28945,11 @@ app.get('/api/compliance/:type', async (req, res) => {
        LIMIT 1`,
       [type]
     );
-    
+
     if (!result.rows?.length) {
       return res.status(404).json({ error: 'Policy not found' });
     }
-    
+
     return res.json({ policy: result.rows[0] });
   } catch (err) {
     console.error('GET /api/compliance/:type error:', err);
@@ -20114,7 +28964,7 @@ app.get('/api/compliance/:type/history', async (req, res) => {
     if (!COMPLIANCE_POLICY_TYPES.includes(type)) {
       return res.status(400).json({ error: 'Invalid policy type' });
     }
-    
+
     const result = await pool.query(
       `SELECT id, type, version, is_active, published_at, created_at, notes,
               LENGTH(content) as content_length
@@ -20123,7 +28973,7 @@ app.get('/api/compliance/:type/history', async (req, res) => {
        ORDER BY created_at DESC`,
       [type]
     );
-    
+
     return res.json({ policies: result.rows || [] });
   } catch (err) {
     console.error('GET /api/compliance/:type/history error:', err);
@@ -20152,27 +29002,27 @@ app.post('/api/compliance/accept', async (req, res) => {
             if (r.rows?.length) userUuid = r.rows[0].id;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
-    
+
     const { policy_id, policy_type, policy_version } = req.body;
     if (!policy_id || !policy_type || !policy_version) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     // ตรวจสอบ policy_id มีใน compliance_policies (ป้องกัน FK violation)
     const policyCheck = await pool.query('SELECT id FROM compliance_policies WHERE id = $1', [policy_id]);
     if (policyCheck.rows?.length === 0) {
       return res.status(400).json({ error: 'Policy not found. Please refresh and try again.' });
     }
-    
+
     // ip_address VARCHAR(100) — truncate เพื่อป้องกัน "value too long for type character varying(100)"
     const ip = String(req.headers['x-forwarded-for'] || req.connection.remoteAddress || '').trim().slice(0, 100);
     const userAgent = String(req.headers['user-agent'] || '').slice(0, 100); // เผื่อ column เป็น VARCHAR(100)
-    
+
     await pool.query('BEGIN');
-    
+
     // บันทึก acceptance
     await pool.query(
       `INSERT INTO user_policy_acceptance (user_id, policy_id, policy_type, policy_version, ip_address, user_agent)
@@ -20180,7 +29030,7 @@ app.post('/api/compliance/accept', async (req, res) => {
        ON CONFLICT (user_id, policy_id) DO UPDATE SET accepted_at = NOW()`,
       [userUuid, policy_id, policy_type, policy_version, ip, userAgent]
     );
-    
+
     // อัปเดต users table (wrap ใน try-catch เผื่อคอลัมน์ยังไม่มี)
     try {
       if (policy_type === 'terms') {
@@ -20198,12 +29048,12 @@ app.post('/api/compliance/accept', async (req, res) => {
       if (process.env.DEBUG_LOGIN === '1') console.warn('Compliance accept: UPDATE users failed (columns may not exist):', upErr.message);
       // ไม่ fail ทั้ง request — acceptance บันทึกแล้ว
     }
-    
+
     await pool.query('COMMIT');
-    
+
     return res.json({ success: true, message: 'Policy accepted' });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await pool.query('ROLLBACK').catch(() => { });
     console.error('POST /api/compliance/accept error:', err);
     return res.status(500).json({ error: err.message });
   }
@@ -20216,7 +29066,7 @@ app.get('/api/compliance/user/status', async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
-    
+
     const [userRow, termsRow, privacyRow] = await Promise.all([
       pool.query(
         `SELECT last_accepted_terms_version, last_accepted_privacy_version FROM users WHERE id = $1`,
@@ -20229,14 +29079,14 @@ app.get('/api/compliance/user/status', async (req, res) => {
         `SELECT version FROM compliance_policies WHERE type = 'privacy' AND is_active = true ORDER BY created_at DESC LIMIT 1`
       )
     ]);
-    
+
     const user = userRow.rows?.[0] || {};
     const latestTerms = termsRow.rows?.[0]?.version;
     const latestPrivacy = privacyRow.rows?.[0]?.version;
-    
+
     const needsTermsAcceptance = latestTerms && user.last_accepted_terms_version !== latestTerms;
     const needsPrivacyAcceptance = latestPrivacy && user.last_accepted_privacy_version !== latestPrivacy;
-    
+
     return res.json({
       needs_acceptance: needsTermsAcceptance || needsPrivacyAcceptance,
       terms: {
@@ -20263,23 +29113,23 @@ app.post('/api/admin/compliance', adminAuthMiddleware, async (req, res) => {
   try {
     const adminId = req.adminUser?.id;
     const { type, version, content, notes } = req.body;
-    
+
     if (!type || !version || !content) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     if (!COMPLIANCE_POLICY_TYPES.includes(type)) {
       return res.status(400).json({ error: 'Invalid policy type' });
     }
-    
+
     await pool.query('BEGIN');
-    
+
     // ปิด is_active ของทุก policy ชนิดนี้
     await pool.query(
       `UPDATE compliance_policies SET is_active = false WHERE type = $1`,
       [type]
     );
-    
+
     // สร้าง policy ใหม่
     const result = await pool.query(
       `INSERT INTO compliance_policies (type, version, content, is_active, created_by, published_at, notes)
@@ -20287,12 +29137,12 @@ app.post('/api/admin/compliance', adminAuthMiddleware, async (req, res) => {
        RETURNING id, type, version, is_active, created_at, published_at`,
       [type, version, content, adminId, notes || null]
     );
-    
+
     await pool.query('COMMIT');
-    
+
     return res.json({ success: true, policy: result.rows[0] });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await pool.query('ROLLBACK').catch(() => { });
     console.error('POST /api/admin/compliance error:', err);
     return res.status(500).json({ error: err.message });
   }
@@ -20328,7 +29178,7 @@ app.get('/api/admin/compliance/all', adminAuthMiddleware, async (req, res) => {
        LEFT JOIN users u ON cp.created_by = u.id
        ORDER BY cp.type, cp.created_at DESC`
     );
-    
+
     return res.json({ policies: result.rows || [] });
   } catch (err) {
     console.error('GET /api/admin/compliance/all error:', err);
@@ -20346,11 +29196,11 @@ app.get('/api/admin/compliance/:id', adminAuthMiddleware, async (req, res) => {
        WHERE cp.id = $1`,
       [req.params.id]
     );
-    
+
     if (!result.rows?.length) {
       return res.status(404).json({ error: 'Policy not found' });
     }
-    
+
     return res.json({ policy: result.rows[0] });
   } catch (err) {
     console.error('GET /api/admin/compliance/:id error:', err);
@@ -20362,82 +29212,218 @@ app.get('/api/admin/compliance/:id', adminAuthMiddleware, async (req, res) => {
 app.patch('/api/admin/compliance/:id/activate', adminAuthMiddleware, async (req, res) => {
   try {
     const policyId = req.params.id;
-    
+
     const policyResult = await pool.query(
       `SELECT type FROM compliance_policies WHERE id = $1`,
       [policyId]
     );
-    
+
     if (!policyResult.rows?.length) {
       return res.status(404).json({ error: 'Policy not found' });
     }
-    
+
     const type = policyResult.rows[0].type;
-    
+
     await pool.query('BEGIN');
-    
+
     // ปิด is_active ของทุก policy ชนิดนี้
     await pool.query(
       `UPDATE compliance_policies SET is_active = false WHERE type = $1`,
       [type]
     );
-    
+
     // เปิดใช้ policy นี้
     await pool.query(
       `UPDATE compliance_policies SET is_active = true WHERE id = $1`,
       [policyId]
     );
-    
+
     await pool.query('COMMIT');
-    
+
     return res.json({ success: true, message: 'Policy activated' });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await pool.query('ROLLBACK').catch(() => { });
     console.error('PATCH /api/admin/compliance/:id/activate error:', err);
     return res.status(500).json({ error: err.message });
   }
 });
 
 // ============ PAYOUT REQUESTS (Talent ถอนเงินจาก Wallet) ============
-// Withdrawal rules: min 10 jobs OR balance > 650 THB; fee 35 standard / 50 instant
+// Fallback constants if payout_config cannot be read (see getPayoutWithdrawalThresholds)
 const WITHDRAWAL_MIN_JOBS = 10;
 const WITHDRAWAL_MIN_BALANCE_THB = 650;
 const WITHDRAWAL_FEE_STANDARD = 35;
 const WITHDRAWAL_FEE_INSTANT = 50;
 
-// GET /api/payouts/eligibility — ตรวจสอบสิทธิ์ถอน (min 10 jobs OR balance > 650)
+function isProviderRole(roleVal) {
+  return String(roleVal || '').trim().toLowerCase() === 'provider';
+}
+
+async function loadPayoutWithdrawalThresholdsResolved(pool) {
+  try {
+    return await getPayoutWithdrawalThresholds(pool);
+  } catch {
+    return {
+      withdrawal_min_jobs: WITHDRAWAL_MIN_JOBS,
+      withdrawal_min_balance_thb: WITHDRAWAL_MIN_BALANCE_THB,
+      withdrawal_fee_standard_thb: WITHDRAWAL_FEE_STANDARD,
+      withdrawal_fee_instant_thb: WITHDRAWAL_FEE_INSTANT,
+      min_payout_net_amount_thb: Math.max(
+        0,
+        Math.round((WITHDRAWAL_MIN_BALANCE_THB - WITHDRAWAL_FEE_STANDARD) * 100) / 100,
+      ),
+      withdrawal_fee_policy: normalizeWithdrawalFeePolicy(null, {
+        withdrawal_fee_standard_thb: WITHDRAWAL_FEE_STANDARD,
+        withdrawal_fee_instant_thb: WITHDRAWAL_FEE_INSTANT,
+      }),
+    };
+  }
+}
+
+function buildWithdrawalQuoteParts(amountNum, bankInfo, instantPayout, isProvider, thresholds) {
+  const ch = typeof bankInfo?.channel === 'string' ? String(bankInfo.channel).trim() : '';
+  const channelRaw = ch || (!isProvider ? 'promptpay' : 'bank_transfer');
+  const quote = computeWithdrawalFeeQuote({
+    payoutAmountThb: amountNum,
+    channelRaw,
+    isProvider,
+    instantPayout: !!instantPayout,
+    policy: thresholds.withdrawal_fee_policy || null,
+    feeStandardThb: thresholds.withdrawal_fee_standard_thb,
+    feeInstantThb: thresholds.withdrawal_fee_instant_thb,
+  });
+  return { quote, channelResolved: channelRaw };
+}
+
+// GET /api/payouts/eligibility — ตรวจสอบสิทธิ์ถอน (min jobs OR min balance จาก payout_config)
 app.get('/api/payouts/eligibility', async (req, res) => {
   try {
     const userId = resolveAdvanceJobUserId(req);
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตนผู้ใช้' });
-    const balRow = await pool.query('SELECT wallet_balance, wallet_pending FROM users WHERE id = $1', [userUuid]);
+    const [balRow, thresholds] = await Promise.all([
+      pool.query('SELECT wallet_balance, wallet_pending FROM users WHERE id = $1', [userUuid]),
+      loadPayoutWithdrawalThresholdsResolved(pool),
+    ]);
     if (!balRow.rows?.length) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
     const balance = parseFloat(balRow.rows[0].wallet_balance || 0);
     const pending = parseFloat(balRow.rows[0].wallet_pending || 0);
-    const jobsRow = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM jobs WHERE accepted_by = $1 AND status = 'completed'`,
-      [userUuid]
-    ).catch(() => ({ rows: [{ c: 0 }] }));
+    const jobsRow = await pool
+      .query(
+        `SELECT COUNT(*)::int AS c FROM jobs WHERE accepted_by = $1 AND status = 'completed'`,
+        [userUuid],
+      )
+      .catch(() => ({ rows: [{ c: 0 }] }));
     const completedJobs = jobsRow.rows?.[0]?.c ?? 0;
-    const eligibleByJobs = completedJobs >= WITHDRAWAL_MIN_JOBS;
-    const eligibleByBalance = balance >= WITHDRAWAL_MIN_BALANCE_THB;
+    const minJobs = thresholds.withdrawal_min_jobs;
+    const minBal = thresholds.withdrawal_min_balance_thb;
+    const eligibleByJobs = completedJobs >= minJobs;
+    const eligibleByBalance = balance >= minBal;
     const eligible = eligibleByJobs || eligibleByBalance;
     return res.json({
       eligible,
-      reason: eligible ? null : `ต้องมีงานเสร็จอย่างน้อย ${WITHDRAWAL_MIN_JOBS} งาน หรือยอดเงินคงเหลือ ≥ ${WITHDRAWAL_MIN_BALANCE_THB} บาท`,
-      min_jobs: WITHDRAWAL_MIN_JOBS,
+      reason: eligible
+        ? null
+        : `ต้องมีงานเสร็จอย่างน้อย ${minJobs} งาน หรือยอดเงินคงเหลือ ≥ ${minBal} บาท`,
+      min_jobs: minJobs,
       completed_jobs: completedJobs,
-      min_balance_thb: WITHDRAWAL_MIN_BALANCE_THB,
+      min_balance_thb: minBal,
       balance,
       pending,
-      fee_standard_thb: WITHDRAWAL_FEE_STANDARD,
-      fee_instant_thb: WITHDRAWAL_FEE_INSTANT
+      fee_standard_thb: thresholds.withdrawal_fee_standard_thb,
+      fee_instant_thb: thresholds.withdrawal_fee_instant_thb,
     });
   } catch (err) {
     console.error('GET /api/payouts/eligibility error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/payouts/quote — ประมาณการค่าธรรมเนียม/ยอดหัก (ไม่มี side effect; รวมเหตุผลบล็อก)
+app.post('/api/payouts/quote', payoutQuoteLimiter, async (req, res) => {
+  try {
+    const userId = resolveAdvanceJobUserId(req);
+    if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userId);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตนผู้ใช้ในระบบ' });
+
+    const { amount, bank_details, instant_payout: instantPayout } = req.body || {};
+    const amountNum = Math.round(Number(amount) * 100) / 100;
+
+    const thresholds = await loadPayoutWithdrawalThresholdsResolved(pool);
+    const minJobs = thresholds.withdrawal_min_jobs;
+    const minBal = thresholds.withdrawal_min_balance_thb;
+
+    const [userRow, frozen, jobsRow] = await Promise.all([
+      pool.query('SELECT wallet_balance, role FROM users WHERE id = $1', [userUuid]),
+      isWalletFrozen(userUuid),
+      pool
+        .query(
+          `SELECT COUNT(*)::int AS c FROM jobs WHERE accepted_by = $1 AND status = 'completed'`,
+          [userUuid],
+        )
+        .catch(() => ({ rows: [{ c: 0 }] })),
+    ]);
+
+    if (!userRow.rows?.length) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const balance = parseFloat(userRow.rows[0].wallet_balance || 0);
+    const completedJobs = jobsRow.rows?.[0]?.c ?? 0;
+    const isProvider = isProviderRole(userRow.rows[0].role);
+
+    const eligibleByJobs = completedJobs >= minJobs;
+    const eligibleByBalanceForRules = balance >= minBal;
+    const withdrawalRulesEligible = eligibleByJobs || eligibleByBalanceForRules;
+
+    const amountValid = amountNum > 0;
+
+    const bankInfo = bank_details && typeof bank_details === 'object' ? bank_details : {};
+    const { quote } = buildWithdrawalQuoteParts(amountNum, bankInfo, instantPayout, isProvider, thresholds);
+
+    /** @type {'wallet_frozen' | 'invalid_amount' | 'withdrawal_rules_not_met' | 'insufficient_balance' | null} */
+    let blockingReason = null;
+    let blockingMessageTh = null;
+
+    if (frozen) {
+      blockingReason = 'wallet_frozen';
+      blockingMessageTh = 'วอลเล็ตถูกระงับ — ไม่สามารถถอนเงินได้ในขณะนี้';
+    } else if (!amountValid) {
+      blockingReason = 'invalid_amount';
+      blockingMessageTh = 'กรุณาระบุจำนวนเงินที่ถูกต้อง (มากกว่า 0)';
+    } else if (!withdrawalRulesEligible) {
+      blockingReason = 'withdrawal_rules_not_met';
+      blockingMessageTh = `ยังไม่ถึงเกณฑ์ถอน — ต้องมีงานเสร็จอย่างน้อย ${minJobs} งาน หรือยอดเงินคงเหลือ ≥ ${minBal} บาท`;
+    } else if (balance < quote.total_deduct) {
+      blockingReason = 'insufficient_balance';
+      blockingMessageTh = `ยอดในกระเป๋าไม่พอ (ต้องมี ≥ ${quote.total_deduct.toLocaleString('th-TH')} บาท รวมค่าธรรมเนียม ${quote.fee_thb} บาท)`;
+    }
+
+    const totalRequired = quote.total_deduct;
+
+    return res.json({
+      ok: true,
+      blocking_reason: blockingReason,
+      blocking_message_th: blockingMessageTh,
+      withdrawal_rules_eligible: withdrawalRulesEligible,
+      balance_sufficient: amountValid && withdrawalRulesEligible && balance >= totalRequired,
+      available_balance: balance,
+      amount_requested: amountNum,
+      completed_jobs: completedJobs,
+      min_jobs: minJobs,
+      min_balance_thb: minBal,
+      total_required: totalRequired,
+      fee_thb: quote.fee_thb,
+      net_receive: quote.net_receive,
+      total_deduct: quote.total_deduct,
+      eta_label_th: quote.eta_label_th,
+      fee_lane: quote.fee_lane,
+      processor_cost_estimate_thb: quote.processor_cost_estimate_thb,
+      platform_margin_preview_thb: quote.platform_margin_amount,
+      is_provider: isProvider,
+    });
+  } catch (err) {
+    console.error('POST /api/payouts/quote error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to compute payout quote' });
   }
 });
 
@@ -20454,48 +29440,61 @@ app.post('/api/payouts/request', withdrawalLimiter, async (req, res) => {
     const userFrozen = await isWalletFrozen(userUuid);
     if (userFrozen) return res.status(403).json({ error: 'วอลเล็ตถูกระงับ — ไม่สามารถถอนเงินได้ กรุณาติดต่อฝ่ายสนับสนุน' });
     const bankInfo = bank_details && typeof bank_details === 'object' ? bank_details : {};
-    const balRow = await pool.query(
-      'SELECT wallet_balance FROM users WHERE id = $1',
-      [userUuid]
-    );
+
+    const thresholds = await loadPayoutWithdrawalThresholdsResolved(pool);
+    const minJobs = thresholds.withdrawal_min_jobs;
+    const minBal = thresholds.withdrawal_min_balance_thb;
+
+    const [balRow, userRoleRow] = await Promise.all([
+      pool.query('SELECT wallet_balance FROM users WHERE id = $1', [userUuid]),
+      pool.query('SELECT role FROM users WHERE id = $1', [userUuid]),
+    ]);
     if (!balRow.rows?.length) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
     const balance = parseFloat(balRow.rows[0].wallet_balance || 0);
-    const totalDeduct = amountNum + feeAmount;
+    const isProvider = isProviderRole(userRoleRow.rows?.[0]?.role);
+    const { quote } = buildWithdrawalQuoteParts(amountNum, bankInfo, instantPayout, isProvider, thresholds);
+    const feeAmount = quote.fee_thb;
+    const totalDeduct = quote.total_deduct;
+
     if (balance < totalDeduct) {
       return res.status(400).json({
         error: `ยอดในกระเป๋าไม่เพียงพอ (ต้องมี ≥ ${totalDeduct.toLocaleString()} บาท รวมค่าธรรมเนียม ${feeAmount} บาท)`,
         available: balance,
         amount_requested: amountNum,
         fee_thb: feeAmount,
-        total_required: totalDeduct
+        total_required: totalDeduct,
+        blocking_reason: 'insufficient_balance',
       });
     }
-    // Withdrawal rules: min 10 jobs OR balance >= 650 THB
-    const jobsRow = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM jobs WHERE accepted_by = $1 AND status = 'completed'`,
-      [userUuid]
-    ).catch(() => ({ rows: [{ c: 0 }] }));
+    const jobsRow = await pool
+      .query(
+        `SELECT COUNT(*)::int AS c FROM jobs WHERE accepted_by = $1 AND status = 'completed'`,
+        [userUuid],
+      )
+      .catch(() => ({ rows: [{ c: 0 }] }));
     const completedJobs = jobsRow.rows?.[0]?.c ?? 0;
-    const eligibleByJobs = completedJobs >= WITHDRAWAL_MIN_JOBS;
-    const eligibleByBalance = balance >= WITHDRAWAL_MIN_BALANCE_THB;
+    const eligibleByJobs = completedJobs >= minJobs;
+    const eligibleByBalance = balance >= minBal;
     if (!eligibleByJobs && !eligibleByBalance) {
       return res.status(400).json({
-        error: `ยังไม่สามารถถอนได้ — ต้องมีงานเสร็จอย่างน้อย ${WITHDRAWAL_MIN_JOBS} งาน หรือยอดเงินคงเหลือ ≥ ${WITHDRAWAL_MIN_BALANCE_THB} บาท`,
-        min_jobs: WITHDRAWAL_MIN_JOBS,
+        error: `ยังไม่สามารถถอนได้ — ต้องมีงานเสร็จอย่างน้อย ${minJobs} งาน หรือยอดเงินคงเหลือ ≥ ${minBal} บาท`,
+        min_jobs: minJobs,
         completed_jobs: completedJobs,
-        min_balance_thb: WITHDRAWAL_MIN_BALANCE_THB
+        min_balance_thb: minBal,
+        blocking_reason: 'withdrawal_rules_not_met',
       });
     }
-    const feeAmount = instantPayout ? WITHDRAWAL_FEE_INSTANT : WITHDRAWAL_FEE_STANDARD;
-    const ins = await pool.query(
-      `INSERT INTO payout_requests (user_id, amount, bank_details, status, instant_payout, withdrawal_fee)
+    const ins = await pool
+      .query(
+        `INSERT INTO payout_requests (user_id, amount, bank_details, status, instant_payout, withdrawal_fee)
        VALUES ($1, $2, $3, 'pending', $4, $5)
-       RETURNING id, user_id, amount, bank_details, status, created_at`,
-      [userUuid, amountNum, JSON.stringify(bankInfo), !!instantPayout, feeAmount]
-    ).catch((e) => {
-      if (e.code === '42P01') return null;
-      throw e;
-    });
+       RETURNING id, user_id, amount, bank_details, status, created_at, withdrawal_fee, instant_payout`,
+        [userUuid, amountNum, JSON.stringify(bankInfo), !!instantPayout, feeAmount],
+      )
+      .catch((e) => {
+        if (e.code === '42P01') return null;
+        throw e;
+      });
     if (!ins?.rows?.length) {
       return res.status(500).json({ error: 'ตาราง payout_requests ยังไม่มี กรุณารัน migration 028' });
     }
@@ -20509,7 +29508,7 @@ app.post('/api/payouts/request', withdrawalLimiter, async (req, res) => {
         if (identitySwap) {
           await pool.query(
             `UPDATE payout_requests SET security_hold_until = NOW() + INTERVAL '24 hours', anomaly_hold_reason = $2 WHERE id = $1`,
-            [payoutId, 'Identity Swap: Password/phone change + new bank within 15 min']
+            [payoutId, 'Identity Swap: Password/phone change + new bank within 15 min'],
           );
         }
         await checkFirstTimerBurst(pool, userUuid, amountNum);
@@ -20521,7 +29520,9 @@ app.post('/api/payouts/request', withdrawalLimiter, async (req, res) => {
           });
         }
         await checkRapidLedger(pool, userUuid);
-      } catch (e) { console.warn('[Payout] anomaly check:', e?.message); }
+      } catch (e) {
+        console.warn('[Payout] anomaly check:', e?.message);
+      }
     });
 
     return res.status(201).json({
@@ -20529,10 +29530,12 @@ app.post('/api/payouts/request', withdrawalLimiter, async (req, res) => {
         id: String(row.id),
         user_id: String(row.user_id),
         amount: parseFloat(row.amount),
+        withdrawal_fee: parseFloat(row.withdrawal_fee ?? feeAmount),
+        instant_payout: !!row.instant_payout,
         bank_details: row.bank_details || {},
         status: row.status,
-        created_at: row.created_at ? new Date(row.created_at).toISOString() : null
-      }
+        created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
+      },
     });
   } catch (err) {
     console.error('POST /api/payouts/request error:', err);
@@ -20548,11 +29551,37 @@ app.get('/api/referral/me', authenticateToken, async (req, res) => {
     const userUuid = await resolveUserIdToUuid(userIdRaw);
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
     let code = await ensureReferralCode(pool, userUuid);
-    const stats = await getReferralStats(pool, userUuid);
-    const baseUrl = process.env.LANDING_URL || process.env.FRONTEND_URL || 'https://aqond.com';
+    const [stats, recentEarnings, pendingCommission] = await Promise.all([
+      getReferralStats(pool, userUuid),
+      getReferralEarningsRecent(pool, userUuid, 15),
+      getReferralPendingTotal(pool, userUuid),
+    ]);
+    const snapshot = await getReferralCampaignPublicSnapshot(pool);
+    const referralBaseRaw =
+      (process.env.REFERRAL_LINK_BASE_URL && String(process.env.REFERRAL_LINK_BASE_URL).trim()) ||
+      (process.env.LANDING_URL && String(process.env.LANDING_URL).trim()) ||
+      (process.env.FRONTEND_URL && String(process.env.FRONTEND_URL).trim()) ||
+      'https://aqond.com';
+    const baseUrl = referralBaseRaw.replace(/\/+$/, '');
+    let inviteBaseUrlApplied = 'fallback_static';
+    if (process.env.REFERRAL_LINK_BASE_URL && String(process.env.REFERRAL_LINK_BASE_URL).trim()) {
+      inviteBaseUrlApplied = 'REFERRAL_LINK_BASE_URL';
+    } else if (process.env.LANDING_URL && String(process.env.LANDING_URL).trim()) {
+      inviteBaseUrlApplied = 'LANDING_URL';
+    } else if (process.env.FRONTEND_URL && String(process.env.FRONTEND_URL).trim()) {
+      inviteBaseUrlApplied = 'FRONTEND_URL';
+    }
+
     res.json({
       referralCode: code,
       referralLink: code ? `${baseUrl}/ref/${code}` : null,
+      inviteBaseUrlApplied,
+      effectiveCommissionRatePct: snapshot.effectiveCommissionRatePct,
+      campaignActive: snapshot.campaignActive,
+      campaignName: snapshot.campaignName,
+      referralRateSource: snapshot.rateSource,
+      recentEarnings,
+      pendingCommission,
       ...stats,
     });
   } catch (err) {
@@ -20573,13 +29602,109 @@ app.get('/api/referral/leaderboard', async (req, res) => {
   }
 });
 
+// Brand Adviser Grand Prize — สะสม user ที่เข้าเงื่อนไขจนหมดโปร (แยกจาก cash 1.5% / 7 วัน)
+app.get('/api/referral/brand-adviser/campaign', async (_req, res) => {
+  try {
+    const config = await loadBrandAdviserCampaignConfig(pool);
+    const platform = await getPlatformCampaignStats(pool, config);
+    res.json({ ...publicCampaignPayload(config), platform });
+  } catch (err) {
+    console.error('GET /api/referral/brand-adviser/campaign error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load campaign' });
+  }
+});
+
+app.get('/api/referral/brand-adviser/platform-stats', async (_req, res) => {
+  try {
+    const config = await loadBrandAdviserCampaignConfig(pool);
+    const platform = await getPlatformCampaignStats(pool, config);
+    res.json({ campaign: publicCampaignPayload(config), ...platform });
+  } catch (err) {
+    console.error('GET /api/referral/brand-adviser/platform-stats error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load platform stats' });
+  }
+});
+
+app.get('/api/referral/brand-adviser/leaderboard', async (req, res) => {
+  try {
+    const config = await loadBrandAdviserCampaignConfig(pool);
+    const limit = Math.min(100, parseInt(req.query.limit, 10) || 20);
+    const board = String(req.query.board || 'grand').trim().toLowerCase();
+    const allowed = ['grand', 'week', 'velocity'];
+    const boardKey = allowed.includes(board) ? board : 'grand';
+    const leaderboard = await getCampaignLeaderboard(pool, limit, config, boardKey);
+    const platform = await getPlatformCampaignStats(pool, config);
+    res.json({
+      campaign: publicCampaignPayload(config),
+      board: boardKey,
+      leaderboard,
+      podium: platform.podium || leaderboard.slice(0, 3),
+    });
+  } catch (err) {
+    console.error('GET /api/referral/brand-adviser/leaderboard error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch campaign leaderboard' });
+  }
+});
+
+app.get('/api/referral/brand-adviser/me', authenticateToken, async (req, res) => {
+  try {
+    const userIdRaw = req.user?.id;
+    if (!userIdRaw) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const userUuid = await resolveUserIdToUuid(userIdRaw);
+    if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
+    const config = await loadBrandAdviserCampaignConfig(pool);
+    const stats = await getCampaignStatsForReferrer(pool, userUuid, config);
+    const growthSeries = await getCampaignGrowthSeries(pool, userUuid, config);
+    res.json({
+      campaign: publicCampaignPayload(config),
+      ...stats,
+      growthSeries,
+    });
+  } catch (err) {
+    console.error('GET /api/referral/brand-adviser/me error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch campaign stats' });
+  }
+});
+
+app.post('/api/admin/referral/brand-adviser/reconcile', adminAuthMiddleware, async (_req, res) => {
+  try {
+    const out = await reconcileCampaignSnapshots(pool);
+    res.json({ success: true, ...out });
+  } catch (err) {
+    console.error('POST brand-adviser/reconcile error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/referral/brand-adviser/stats', adminAuthMiddleware, async (_req, res) => {
+  try {
+    const config = await loadBrandAdviserCampaignConfig(pool);
+    const platform = await getPlatformCampaignStats(pool, config);
+    const fraudFlags = await getCampaignFraudFlags(pool, 30);
+    const leaderboard = await getCampaignLeaderboard(pool, 10, config, 'grand');
+    res.json({
+      campaign: publicCampaignPayload(config),
+      ...platform,
+      leaderboard,
+      fraudFlags,
+    });
+  } catch (err) {
+    console.error('GET admin brand-adviser/stats error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/referral/validate/:code — ตรวจสอบรหัส (สำหรับ Landing)
 app.get('/api/referral/validate/:code', async (req, res) => {
   try {
     const code = req.params.code?.trim();
     if (!code) return res.json({ valid: false });
-    const userId = await resolveCodeToUserId(pool, code);
-    res.json({ valid: !!userId });
+    const ref = await resolveReferrerPublicByCode(pool, code);
+    if (!ref) return res.json({ valid: false });
+    res.json({
+      valid: true,
+      referrerName: ref.displayName,
+    });
   } catch {
     res.json({ valid: false });
   }
@@ -20627,7 +29752,7 @@ app.get('/api/admin/referral/monitor', adminAuthMiddleware, async (req, res) => 
     ]);
     const t = totals.rows?.[0];
     const p = paid.rows?.[0];
-    res.json({
+    const payload = {
       leaderboard,
       totalReferrers: t?.total_referrers || 0,
       totalReferrals: t?.total_referrals || 0,
@@ -20645,7 +29770,13 @@ app.get('/api/admin/referral/monitor', adminAuthMiddleware, async (req, res) => 
       pendingPayoutCount: parseInt(pendingCount.rows?.[0]?.cnt || 0, 10),
       fraudSameBank: (sameBank.rows || []).map((r) => ({ referrerId: r.referrer_id, refereeId: r.referred_id })),
       fraudSameIp: (sameIp.rows || []).map((r) => ({ referrerId: r.referrer_id, refereeId: r.referred_id })),
-    });
+    };
+    const baConfig = await loadBrandAdviserCampaignConfig(pool).catch(() => null);
+    if (baConfig) {
+      payload.brandAdviserCampaign = await getPlatformCampaignStats(pool, baConfig).catch(() => null);
+      payload.brandAdviserFraudFlags = await getCampaignFraudFlags(pool, 20).catch(() => []);
+    }
+    res.json(payload);
   } catch (err) {
     if (err.code === '42P01') return res.json({ leaderboard: [], totalReferrers: 0, totalReferrals: 0, totalPaid: 0, suspiciousInactive: [], budget: null });
     console.error('GET /api/admin/referral/monitor error:', err);
@@ -20923,7 +30054,7 @@ app.post('/api/jobs/:id/bids', async (req, res) => {
     if (employerId) {
       const notifTitle = 'ข้อเสนอเหมาข้ามจังหวัด';
       const notifMsg = `มีข้อเสนอใหม่สำหรับงานข้ามจังหวัดของคุณ! ราคาเริ่มต้นที่ ${priceLabel} บาท ดูเลย!`;
-      pushUserNotificationIfNotPeaceMode(employerId, notifTitle, notifMsg).catch(() => {});
+      pushUserNotificationIfNotPeaceMode(employerId, notifTitle, notifMsg).catch(() => { });
       const empUuid = await resolveUserIdToUuid(employerId).catch(() => null);
       if (empUuid) {
         await pool.query(
@@ -20940,7 +30071,7 @@ app.post('/api/jobs/:id/bids', async (req, res) => {
               bid_expires_at: bid.bid_expires_at,
             }),
           ]
-        ).catch(() => {});
+        ).catch(() => { });
       }
     }
     res.json({ success: true, bid, bid_ttl_minutes: ttlMin });
@@ -21101,7 +30232,7 @@ app.post('/api/jobs/:id/bids/:bidId/accept', async (req, res) => {
     } catch (txErr) {
       try {
         await client.query('ROLLBACK');
-      } catch (_) {}
+      } catch (_) { }
       throw txErr;
     } finally {
       client.release();
@@ -21110,7 +30241,7 @@ app.post('/api/jobs/:id/bids/:bidId/accept', async (req, res) => {
     const providerRow = await pool.query(`SELECT full_name FROM users WHERE id::text = $1 OR id = $1::uuid LIMIT 1`, [String(providerUuid)]);
     const providerName = providerRow.rows?.[0]?.full_name || 'ผู้รับงาน';
     if (employerUuid || job.created_by) {
-      pushUserNotificationIfNotPeaceMode(providerUuid, 'ยอมรับราคาของคุณแล้ว', `ผู้จ้างตกลงราคาเหมาข้ามจังหวัด — ${job.title || ''}`.slice(0, 120)).catch(() => {});
+      pushUserNotificationIfNotPeaceMode(providerUuid, 'ยอมรับราคาของคุณแล้ว', `ผู้จ้างตกลงราคาเหมาข้ามจังหวัด — ${job.title || ''}`.slice(0, 120)).catch(() => { });
     }
 
     res.json({
@@ -21234,7 +30365,7 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
       await pool.query(
         `INSERT INTO system_event_log (actor_type, actor_id, action, entity_type, entity_id, state_after, reason) VALUES ('system', $1, 'COLLISION_24HR_BAN', 'users', $1, $2, 'Conflict ignored on job accept')`,
         [providerUuid, JSON.stringify({ ban_expires_at: banUntil, job_id: jobId, conflicting })]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     // งานเงินสด: ผู้รับงานต้องมียอดเครดิตในระบบ ≥ ยอมรับผิดชอบ (หักทันทีตอนรับงาน) — ใช้ transaction กับการรับงาน
@@ -21331,7 +30462,7 @@ app.post('/api/jobs/:id/accept', async (req, res) => {
     } catch (txErr) {
       try {
         await client.query('ROLLBACK');
-      } catch (_) {}
+      } catch (_) { }
       throw txErr;
     } finally {
       client.release();
@@ -21602,7 +30733,7 @@ app.post('/api/jobs/:id/cancel', async (req, res) => {
               providerId,
               'งานถูกยกเลิก!',
               `งานถูกยกเลิก! คุณได้รับเงินชดเชย ${driverComp} บาท เข้าวอลเล็ตเรียบร้อยแล้ว`
-            ).catch(() => {});
+            ).catch(() => { });
           }
 
           return res.json({
@@ -21614,7 +30745,7 @@ app.post('/api/jobs/:id/cancel', async (req, res) => {
         } catch (txErr) {
           try {
             await client.query('ROLLBACK');
-          } catch (_) {}
+          } catch (_) { }
           if (txErr.code === '23514' || (txErr.message && String(txErr.message).includes('intercity_cancel'))) {
             return res.status(503).json({ error: 'รัน migration 143 (ledger intercity_cancel) ก่อน' });
           }
@@ -21698,8 +30829,8 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
@@ -22114,7 +31245,7 @@ app.post('/api/jobs/:id/request-completion-otp', optionalAuth, async (req, res) 
     const userId = req.user?.id ? String(req.user.id) : null;
 
     // localhost = ไม่จำกัด (พัฒนา/ทดสอบ)
-    if (isLocalhost(ip)) {
+    if (isLocalhost(ip) || isRateLimitUnlocked(req)) {
       // skip rate limit
     } else {
       const checks = await Promise.all([
@@ -22170,6 +31301,407 @@ for (let i = 1; i <= PROVIDER_EXAM_TOTAL_QUESTIONS; i++) {
   const opts = ['a', 'b', 'c', 'd'];
   PROVIDER_EXAM_CORRECT[`nexus-q${i}`] = opts[i % 4];
 }
+
+// ============ Compass Onboarding (intent survey + guided track) ============
+app.get('/api/onboarding/compass-status', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await buildCompassStatus(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('compass-status error:', e);
+    res.status(500).json({ error: 'Failed to get compass status' });
+  }
+});
+
+app.post('/api/onboarding/compass-survey', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await submitCompassSurvey(pool, userId, req.body || {});
+    res.json(status);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('compass-survey error:', e);
+    res.status(st).json({ error: e.message || 'Failed to save survey' });
+  }
+});
+
+app.post('/api/onboarding/compass-category-pack', async (req, res) => {
+  try {
+    const { userId, intent, fields } = req.body || {};
+    if (!userId || !fields) {
+      return res.status(400).json({ error: 'userId and fields required' });
+    }
+    const merged = await saveCategoryPack(pool, userId, intent, fields);
+    const status = await buildCompassStatus(pool, userId);
+    res.json({ ok: true, compass_category_pack: merged, status });
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('compass-category-pack error:', e);
+    res.status(st).json({ error: e.message || 'Failed to save category pack' });
+  }
+});
+
+app.get('/api/onboarding/compass-kyc-prefill', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const data = await getCompassKycPrefill(pool, userId);
+    if (!data) return res.status(404).json({ error: 'User not found' });
+    res.json(data);
+  } catch (e) {
+    console.error('compass-kyc-prefill error:', e);
+    res.status(500).json({ error: 'Failed to get prefill' });
+  }
+});
+
+app.get('/api/admin/compass/queue', adminAuthMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const intent = req.query.intent ? String(req.query.intent) : undefined;
+    const rows = await listCompassQueue(pool, { limit, intent });
+    res.json({ queue: rows });
+  } catch (e) {
+    console.error('admin compass queue error:', e);
+    res.status(500).json({ error: 'Failed to list compass queue' });
+  }
+});
+
+app.get('/api/admin/compass/user-status', adminAuthMiddleware, async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await buildCompassStatus(pool, String(userId));
+    res.json(status);
+  } catch (e) {
+    console.error('admin compass user-status error:', e);
+    res.status(500).json({ error: 'Failed to get compass status' });
+  }
+});
+
+// ============ Growth Engine (viral milestones, entitlements, intent) ============
+app.get('/api/growth/status', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await getGrowthStatus(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('growth status error:', e);
+    res.status(500).json({ error: 'Failed to get growth status' });
+  }
+});
+
+app.post('/api/growth/referral/sync', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await syncReferralMilestones(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('growth referral sync error:', e);
+    res.status(500).json({ error: 'Failed to sync referral milestones' });
+  }
+});
+
+app.post('/api/growth/wallet-activated', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    await markWalletActivated(pool, userId);
+    const status = await getGrowthStatus(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('growth wallet-activated error:', e);
+    res.status(500).json({ error: 'Failed to mark wallet activated' });
+  }
+});
+
+app.post('/api/growth/mystery-box/claim', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await claimMysteryVoucher(pool, userId);
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('growth mystery-box claim error:', e);
+    res.status(st).json({ error: e.message || 'Failed to claim voucher' });
+  }
+});
+
+app.post('/api/intent/dwell', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await recordIntentEvents(pool, userId, req.body?.events || []);
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('intent dwell error:', e);
+    res.status(st).json({ error: e.message || 'Failed to record intent' });
+  }
+});
+
+app.post('/api/growth/app-open', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const pattern = await recordAppOpenPattern(pool, userId, {
+      dominant_intent: req.body?.dominant_intent,
+    });
+    res.json({ ok: true, pattern });
+  } catch (e) {
+    console.error('growth app-open error:', e);
+    res.status(500).json({ error: 'Failed to record app open' });
+  }
+});
+
+app.get('/api/home/personalized', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.json({ banner: null, intents: [] });
+    const hints = await getPersonalizedHomeHints(pool, userId, {
+      surface: req.query.surface,
+    });
+    res.json(hints);
+  } catch (e) {
+    console.error('home personalized error:', e);
+    res.status(500).json({ error: 'Failed to get personalized home' });
+  }
+});
+
+app.get('/api/growth/plans', async (req, res) => {
+  try {
+    const plans = await listSubscriptionPlans(pool);
+    res.json({ plans, campaigns: GROWTH_CAMPAIGNS });
+  } catch (e) {
+    console.error('growth plans error:', e);
+    res.status(500).json({ error: 'Failed to list plans' });
+  }
+});
+
+// ============ Talent AI Resume Video (Phase 1) ============
+app.get('/api/talent-video/entitlement', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const ent = await getTalentVideoEntitlement(pool, userId);
+    res.json(ent);
+  } catch (e) {
+    console.error('talent-video entitlement error:', e);
+    res.status(500).json({ error: 'Failed to get entitlement' });
+  }
+});
+
+app.post('/api/talent-video/generate', async (req, res) => {
+  try {
+    const { userId, script_text, avatar_url, character } = req.body || {};
+    if (!userId || !avatar_url) {
+      return res.status(400).json({ error: 'userId and avatar_url required' });
+    }
+    const job = await createTalentVideoJob(pool, userId, { script_text, avatar_url, character });
+    res.json(job);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('talent-video generate error:', e);
+    res.status(st).json({ error: e.message || 'Failed to start generation', code: e.code });
+  }
+});
+
+app.get('/api/talent-video/jobs/:jobId', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    const { jobId } = req.params;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const job = await getTalentVideoJob(pool, userId, jobId);
+    res.json(job);
+  } catch (e) {
+    const st = e?.status || 500;
+    res.status(st).json({ error: e.message || 'Job not found' });
+  }
+});
+
+app.get('/api/talent-video/jobs', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const jobs = await listTalentVideoJobs(pool, userId);
+    res.json({ jobs });
+  } catch (e) {
+    console.error('talent-video jobs list error:', e);
+    res.status(500).json({ error: 'Failed to list jobs' });
+  }
+});
+
+// ============ Talent AI Resume Profile (Hermes + Qwen) ============
+app.get('/api/talent-resume/draft', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await generateTalentResumeDraft(pool, userId);
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('talent-resume draft error:', e);
+    res.status(st).json({ error: e.message || 'Failed to generate draft' });
+  }
+});
+
+app.post('/api/talent-resume/publish', async (req, res) => {
+  try {
+    const { userId, ...payload } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await publishTalentResumeDraft(pool, userId, payload);
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('talent-resume publish error:', e);
+    res.status(st).json({ error: e.message || 'Failed to publish' });
+  }
+});
+
+app.get('/api/talent-resume/profile-context', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const ctx = await buildTalentProfileContext(pool, userId);
+    if (!ctx) return res.status(404).json({ error: 'User not found' });
+    res.json(ctx);
+  } catch (e) {
+    console.error('talent-resume profile-context error:', e);
+    res.status(500).json({ error: 'Failed to load profile context' });
+  }
+});
+
+// ============ Growth Incubation (Phase 2 — weekly brief + ffmpeg overlay) ============
+app.get('/api/growth/incubation/status', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await getIncubationStatus(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('incubation status error:', e);
+    res.status(500).json({ error: 'Failed to get incubation status' });
+  }
+});
+
+app.get('/api/growth/incubation/brief', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const weekNo = req.query.weekNo ? parseInt(req.query.weekNo, 10) : undefined;
+    const brief = await getOrCreateWeeklyBrief(pool, userId, { weekNo });
+    res.json(brief);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('incubation brief error:', e);
+    res.status(st).json({ error: e.message || 'Failed to get brief', code: e.code });
+  }
+});
+
+app.get('/api/growth/incubation/overlay-version', (_req, res) => {
+  res.json({ overlayVersion: INCUBATION_OVERLAY_VERSION, overlayMode: 'tiktok_endcard' });
+});
+
+app.post('/api/growth/incubation/compose', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await composeIncubationClip(pool, userId, req.body || {});
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('incubation compose error:', e);
+    res.status(st).json({ error: e.message || 'Failed to compose clip', code: e.code });
+  }
+});
+
+app.get('/api/merchants/top10', async (req, res) => {
+  try {
+    const weekStart = req.query.weekStart || req.query.week_start;
+    const data = await getMerchantTop10(pool, weekStart ? String(weekStart) : undefined);
+    res.json(data);
+  } catch (e) {
+    console.error('merchants top10 error:', e);
+    res.status(500).json({ error: 'Failed to get top 10 merchants' });
+  }
+});
+
+app.get('/api/aqond-pass', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await getAqondPassStatus(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('aqond-pass status error:', e);
+    res.status(500).json({ error: 'Failed to get AQOND Pass status' });
+  }
+});
+
+app.post('/api/aqond-pass/activate', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await activateAqondPass(pool, userId);
+    res.json(status);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('aqond-pass activate error:', e);
+    res.status(st).json({ error: e.message || 'Failed to activate AQOND Pass' });
+  }
+});
+
+app.get('/api/subscriptions/upsell-799', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await getUpsell799Status(pool, userId);
+    res.json(status);
+  } catch (e) {
+    console.error('upsell-799 status error:', e);
+    res.status(500).json({ error: 'Failed to get upsell status' });
+  }
+});
+
+app.post('/api/subscriptions/checkout-799', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId;
+    const planId = req.body?.planId || req.body?.plan_id;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    if (!planId) return res.status(400).json({ error: 'planId required' });
+    const result = await checkoutSubscription799(pool, userId, planId, {
+      payment_method: req.body?.payment_method || 'wallet',
+      payment_ref: req.body?.payment_ref,
+      source: req.body?.source,
+    });
+    res.json(result);
+  } catch (e) {
+    const st = e?.status || 500;
+    console.error('checkout-799 error:', e);
+    res.status(st).json({
+      error: e.message || 'Checkout failed',
+      code: e.code,
+      required: e.required,
+      balance: e.balance,
+    });
+  }
+});
+
+app.get('/api/admin/growth/conversion-funnel', adminAuthMiddleware, async (req, res) => {
+  try {
+    const rangeDays = parseInt(req.query.rangeDays || req.query.days || '30', 10);
+    const funnel = await getGrowthConversionFunnel(pool, { rangeDays });
+    res.json(funnel);
+  } catch (e) {
+    console.error('growth conversion funnel error:', e);
+    res.status(500).json({ error: 'Failed to load conversion funnel' });
+  }
+});
 
 app.get('/api/provider-onboarding/status', async (req, res) => {
   try {
@@ -22273,7 +31805,7 @@ app.post('/api/provider-onboarding/submit-exam', async (req, res) => {
     try {
       const cfg = await pool.query('SELECT pass_percent FROM exam_module_config WHERE module = 1 LIMIT 1');
       if (cfg.rows[0]?.pass_percent != null) passThreshold = Number(cfg.rows[0].pass_percent);
-    } catch (_) {}
+    } catch (_) { }
     const passed = score >= passThreshold;
     const timeSpent = parseInt(req.body.time_spent_seconds, 10) || null;
     const startedAt = req.body.started_at ? new Date(req.body.started_at) : null;
@@ -22310,7 +31842,7 @@ app.post('/api/provider-onboarding/submit-exam', async (req, res) => {
           score: row.score,
           passed: !!row.passed,
         }));
-      } catch (_) {}
+      } catch (_) { }
       return res.json({
         passed: true,
         score,
@@ -22360,7 +31892,7 @@ const NEXUS_MODULE2_PASS_PERCENT = 80;
 const NEXUS_MODULE2_TOTAL = 36;
 const NEXUS_MODULE2_CATEGORIES = [
   'Cleaning', 'Delivery', 'Tutoring', 'Repair', 'Beauty', 'Moving', 'Pet Care', 'Gardening',
-  'Photography', 'Event', 'Catering', 'Driving', 'Security', 'IT Support', 'Accounting',
+  'Photography', 'Event', 'Catering', 'Driving', 'Messenger', 'Public Transport', 'Security', 'IT Support', 'Accounting',
   'Legal', 'Medical', 'Construction', 'Design', 'Other'
 ];
 const NEXUS_MODULE2_CORRECT = {};
@@ -22494,6 +32026,33 @@ app.post('/api/nexus-exam/submit', async (req, res) => {
 
     if (moduleNum === 2) {
       const cat = (category || 'General').trim();
+
+      const m1Passed = await pool.query(
+        `SELECT 1 FROM user_exam_results WHERE user_id = $1 AND module = 1 AND passed = TRUE LIMIT 1`,
+        [user.id]
+      );
+      if (m1Passed.rows.length === 0) {
+        return res.status(403).json({
+          error: 'MODULE1_REQUIRED',
+          message: 'ต้องผ่าน Module 1 ก่อนทำ Module 2',
+        });
+      }
+
+      const compassRow = await pool.query(
+        `SELECT compass_mode, primary_intent FROM users WHERE id = $1 LIMIT 1`,
+        [user.id]
+      );
+      if (compassRow.rows[0]?.compass_mode) {
+        const expected = resolveM2Category(compassRow.rows[0].primary_intent);
+        if (cat !== expected) {
+          return res.status(403).json({
+            error: 'COMPASS_M2_CATEGORY_LOCKED',
+            expected,
+            message: `เส้นทาง Compass กำหนดหมวด ${expected} — ทำหมวดนี้ก่อน`,
+          });
+        }
+      }
+
       const realQuestions = getModule2Questions(cat);
       let correct = 0;
       let total = 0;
@@ -22518,7 +32077,7 @@ app.post('/api/nexus-exam/submit', async (req, res) => {
       try {
         const cfg = await pool.query('SELECT pass_percent FROM exam_module_config WHERE module = 2 LIMIT 1');
         if (cfg.rows[0]?.pass_percent != null) m2PassThreshold = Number(cfg.rows[0].pass_percent);
-      } catch (_) {}
+      } catch (_) { }
       const passed = score >= m2PassThreshold;
 
       const attemptRes = await pool.query(
@@ -22534,20 +32093,31 @@ app.post('/api/nexus-exam/submit', async (req, res) => {
       if (passed) {
         // ── บันทึก skill + certification ลงใน user_skills ──
         const certId = `CERT-M2-${cat.toUpperCase().replace(/\s+/g, '-')}-${user.id.slice(0, 8).toUpperCase()}`;
+        const isPublicTransport = cat === 'Public Transport';
+        const skillCategory = isPublicTransport ? 'Transport' : 'Module2';
         try {
           // UPDATE ก่อน ถ้าไม่มีแถวจึง INSERT (robust: ไม่พึ่ง UNIQUE constraint)
           const upd = await pool.query(
             `UPDATE user_skills
              SET is_certified = TRUE, certification_id = $3, certified_at = NOW(),
-                 skill_category = 'Module2'
+                 skill_category = $4,
+                 admin_enabled = CASE WHEN $5 THEN FALSE ELSE COALESCE(admin_enabled, TRUE) END,
+                 admin_disabled_reason = CASE WHEN $5 THEN COALESCE(admin_disabled_reason, 'รอแอดมินอนุมัติหลัง KYC รถสาธารณะ') ELSE admin_disabled_reason END
              WHERE user_id = $1 AND skill_name = $2`,
-            [user.id, cat, certId]
+            [user.id, cat, certId, skillCategory, isPublicTransport]
           );
           if (upd.rowCount === 0) {
             await pool.query(
-              `INSERT INTO user_skills (user_id, skill_name, skill_category, is_certified, certification_id, certified_at)
-               VALUES ($1, $2, 'Module2', TRUE, $3, NOW())`,
-              [user.id, cat, certId]
+              `INSERT INTO user_skills (user_id, skill_name, skill_category, is_certified, certification_id, certified_at, admin_enabled, admin_disabled_reason)
+               VALUES ($1, $2, $3, TRUE, $4, NOW(), $5, $6)`,
+              [
+                user.id,
+                cat,
+                skillCategory,
+                certId,
+                !isPublicTransport,
+                isPublicTransport ? 'รอแอดมินอนุมัติหลัง KYC รถสาธารณะ' : null,
+              ]
             );
           }
           console.log(`✅ [Module2] Skill saved: user=${user.id} skill="${cat}" cert=${certId}`);
@@ -22572,6 +32142,23 @@ app.post('/api/nexus-exam/submit', async (req, res) => {
     }
 
     if (moduleNum === 3) {
+      const compassRow = await pool.query(
+        `SELECT compass_mode, primary_intent FROM users WHERE id = $1 LIMIT 1`,
+        [user.id]
+      );
+      const m2Cat = resolveM2Category(compassRow.rows[0]?.primary_intent);
+      const m2Passed = await pool.query(
+        `SELECT 1 FROM user_exam_results WHERE user_id = $1 AND module = 2 AND passed = TRUE AND category = $2 LIMIT 1`,
+        [user.id, m2Cat]
+      );
+      if (m2Passed.rows.length === 0) {
+        return res.status(403).json({
+          error: 'MODULE2_REQUIRED',
+          expectedCategory: m2Cat,
+          message: `ต้องผ่าน Module 2 หมวด ${m2Cat} ก่อนทำ Module 3`,
+        });
+      }
+
       // Module 3: บันทึกผล (ผ่านอัตโนมัติเพื่อเรียนรู้) — ไม่มีคะแนนตัดผ่าน
       const score = 100;
       await pool.query(
@@ -22581,6 +32168,11 @@ app.post('/api/nexus-exam/submit', async (req, res) => {
       // อัปเดต onboarding_status เป็น TRAINING_COMPLETE
       await pool.query(
         `UPDATE users SET onboarding_status = 'TRAINING_COMPLETE', updated_at = NOW() WHERE id = $1`,
+        [user.id]
+      );
+      await pool.query(
+        `UPDATE users SET onboarding_compass_completed_at = COALESCE(onboarding_compass_completed_at, NOW())
+         WHERE id = $1 AND compass_mode = TRUE`,
         [user.id]
       );
       // Gatekeeper: Training_Complete && KYC_Verified -> VERIFIED_PROVIDER อัตโนมัติ
@@ -22627,7 +32219,8 @@ app.get('/api/nexus-exam/module2-passed', async (req, res) => {
     const result = await pool.query(
       `SELECT skill_name, certified_at, certification_id
        FROM user_skills
-       WHERE user_id = $1 AND is_certified = TRUE AND skill_category = 'Module2'
+       WHERE user_id = $1 AND is_certified = TRUE AND COALESCE(admin_enabled, TRUE) = TRUE
+         AND (skill_category = 'Module2' OR skill_category = 'Transport')
        ORDER BY certified_at DESC`,
       [uid]
     );
@@ -22718,6 +32311,33 @@ try {
   console.warn('⚠️ LMS Training routes skipped:', e?.message);
 }
 
+try {
+  registerCourseStudioRoutes(app, { pool, authenticateToken });
+  console.log('✅ Course Studio routes registered');
+} catch (e) {
+  console.warn('⚠️ Course Studio routes skipped:', e?.message);
+}
+
+try {
+  registerCoursePurchaseRoutes(app, { pool, authenticateToken, optionalAuth });
+  console.log('✅ Course Purchase routes registered');
+} catch (e) {
+  console.warn('⚠️ Course Purchase routes skipped:', e?.message);
+}
+
+try {
+  registerCourseMarketplaceRoutes(app, {
+    pool,
+    authenticateToken,
+    optionalAuth,
+    adminAuthMiddleware,
+    notifyCourseUser: pushUserNotificationIfNotPeaceMode,
+  });
+  console.log('✅ Course Marketplace routes registered');
+} catch (e) {
+  console.warn('⚠️ Course Marketplace routes skipped:', e?.message);
+}
+
 // ============ Security Pulse API (Cyber Command Center) ============
 try {
   registerSecurityPulseRoutes(app, pool, adminAuthMiddleware, () => rateLimitMemory?.size ?? 0, auditService);
@@ -22740,6 +32360,8 @@ app.post('/api/admin/setup-database', async (req, res) => {
         phone VARCHAR(20),
         full_name VARCHAR(255),
         name VARCHAR(255),
+        password TEXT,
+        password_hash TEXT,
         role VARCHAR(50) DEFAULT 'user',
         provider_status VARCHAR(50) DEFAULT 'UNVERIFIED',
         provider_verified_at TIMESTAMP,
@@ -22753,6 +32375,9 @@ app.post('/api/admin/setup-database', async (req, res) => {
         kyc_next_reverify_at TIMESTAMP,
         wallet_balance DECIMAL(10,2) DEFAULT 0,
         wallet_pending DECIMAL(10,2) DEFAULT 0,
+        wallet_frozen BOOLEAN DEFAULT FALSE,
+        account_status VARCHAR(50) DEFAULT 'active',
+        force_logout_at TIMESTAMPTZ,
         avatar_url TEXT,
         skills TEXT,
         location TEXT,
@@ -23165,11 +32790,11 @@ app.post('/api/account/delete-request', async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.status(403).json({ error: 'ไม่พบตัวตน' });
-    
+
     const { reason } = req.body || {};
     const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
-    
+
     // ตรวจสอบว่ามี pending request อยู่แล้วหรือไม่
     const existing = await pool.query(
       `SELECT id FROM account_deletion_requests 
@@ -23177,14 +32802,14 @@ app.post('/api/account/delete-request', async (req, res) => {
        LIMIT 1`,
       [userUuid]
     );
-    
+
     if (existing.rows?.length) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'You already have a pending deletion request',
         message: 'คุณมีคำขอลบบัญชีที่รออยู่แล้ว กรุณารอการดำเนินการ'
       });
     }
-    
+
     // สร้างคำขอลบบัญชี (รอ Admin อนุมัติ)
     const result = await pool.query(
       `INSERT INTO account_deletion_requests 
@@ -23193,10 +32818,10 @@ app.post('/api/account/delete-request', async (req, res) => {
        RETURNING id, requested_at`,
       [userUuid, reason || 'User requested account deletion', ip, userAgent]
     );
-    
+
     const req_row = result.rows[0];
     logSecurity('ACCOUNT_DELETION_REQUEST', { userId: userUuid, requestId: req_row.id, ip });
-    
+
     return res.status(201).json({
       success: true,
       message: 'Account deletion request submitted successfully',
@@ -23253,7 +32878,7 @@ app.get('/api/account/delete-status', async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     if (!userUuid) return res.json({ requests: [] });
-    
+
     const result = await pool.query(
       `SELECT id, status, reason, requested_at, processed_at, scheduled_deletion_date, admin_notes
        FROM account_deletion_requests 
@@ -23262,7 +32887,7 @@ app.get('/api/account/delete-status', async (req, res) => {
        LIMIT 5`,
       [userUuid]
     );
-    
+
     return res.json({ requests: result.rows || [] });
   } catch (err) {
     logError(err, { endpoint: '/api/account/delete-status' });
@@ -23277,7 +32902,7 @@ app.delete('/api/account/cancel-deletion/:requestId', async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     const userUuid = await resolveUserIdToUuid(userId);
     const requestId = req.params.requestId;
-    
+
     const result = await pool.query(
       `UPDATE account_deletion_requests 
        SET status = 'cancelled', processed_at = NOW()
@@ -23285,11 +32910,11 @@ app.delete('/api/account/cancel-deletion/:requestId', async (req, res) => {
        RETURNING id`,
       [requestId, userUuid]
     );
-    
+
     if (!result.rows?.length) {
       return res.status(404).json({ error: 'Request not found or cannot be cancelled' });
     }
-    
+
     logSecurity('ACCOUNT_DELETION_CANCELLED', { userId: userUuid, requestId });
     return res.json({ success: true, message: 'Deletion request cancelled successfully' });
   } catch (err) {
@@ -23304,35 +32929,35 @@ app.patch('/api/admin/account-deletions/:id', adminAuthMiddleware, async (req, r
     const requestId = req.params.id;
     const { status, admin_notes } = req.body || {};
     const adminId = req.adminUser?.id;
-    
+
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status. Must be approved or rejected.' });
     }
-    
+
     const existing = await pool.query(
       'SELECT id, user_id, status FROM account_deletion_requests WHERE id = $1',
       [requestId]
     );
-    
+
     if (!existing.rows?.length) {
       return res.status(404).json({ error: 'Deletion request not found' });
     }
-    
+
     if (existing.rows[0].status !== 'pending') {
       return res.status(400).json({ error: 'This request has already been processed' });
     }
-    
-    const scheduled_deletion = status === 'approved' 
+
+    const scheduled_deletion = status === 'approved'
       ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
       : null;
-    
+
     await pool.query(
       `UPDATE account_deletion_requests 
        SET status = $1, processed_at = NOW(), processed_by = $2, admin_notes = $3, scheduled_deletion_date = $4
        WHERE id = $5`,
       [status, adminId, admin_notes, scheduled_deletion, requestId]
     );
-    
+
     if (status === 'approved') {
       // อัปเดตสถานะ user เป็น pending_deletion
       await pool.query(
@@ -23341,16 +32966,16 @@ app.patch('/api/admin/account-deletions/:id', adminAuthMiddleware, async (req, r
         [existing.rows[0].user_id]
       );
     }
-    
-    logSecurity('ACCOUNT_DELETION_ADMIN_ACTION', { 
-      adminId, 
-      requestId, 
+
+    logSecurity('ACCOUNT_DELETION_ADMIN_ACTION', {
+      adminId,
+      requestId,
       action: status,
-      userId: existing.rows[0].user_id 
+      userId: existing.rows[0].user_id
     });
-    
-    return res.json({ 
-      success: true, 
+
+    return res.json({
+      success: true,
       message: `Account deletion request ${status}`,
       scheduled_deletion_date: scheduled_deletion
     });
@@ -23365,7 +32990,7 @@ app.get('/api/admin/account-deletions', adminAuthMiddleware, async (req, res) =>
   try {
     const status = req.query.status || 'pending';
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
-    
+
     const result = await pool.query(
       `SELECT adr.id, adr.user_id, adr.reason, adr.status, adr.requested_at, 
               adr.processed_at, adr.scheduled_deletion_date, adr.admin_notes,
@@ -23377,7 +33002,7 @@ app.get('/api/admin/account-deletions', adminAuthMiddleware, async (req, res) =>
        LIMIT $2`,
       [status === 'all' ? null : status, limit]
     );
-    
+
     return res.json({ requests: result.rows || [] });
   } catch (err) {
     if (err.message?.includes('permission denied')) {
@@ -23511,7 +33136,7 @@ app.patch('/api/admin/law-enforcement/:id', adminAuthMiddleware, async (req, res
 app.post('/api/jobs/update-expired', async (req, res) => {
   try {
     console.log('🔄 [Auto-Update] Checking for expired jobs...');
-    
+
     // โพสต์ใหม่ 7 วัน ไม่ expired — เฉพาะงานที่ created_at > 7 วัน และ datetime ผ่านแล้ว
     const result = await pool.query(`
       UPDATE jobs 
@@ -23523,9 +33148,9 @@ app.post('/api/jobs/update-expired', async (req, res) => {
         AND status NOT IN ('expired', 'completed', 'cancelled', 'deleted')
       RETURNING id, title, datetime, status
     `);
-    
+
     const updatedCount = result.rows.length;
-    
+
     if (updatedCount > 0) {
       console.log(`✅ [Auto-Update] Marked ${updatedCount} jobs as expired`);
       result.rows.forEach(job => {
@@ -23534,7 +33159,7 @@ app.post('/api/jobs/update-expired', async (req, res) => {
     } else {
       console.log('✅ [Auto-Update] No expired jobs found');
     }
-    
+
     res.json({
       success: true,
       updated: updatedCount,
@@ -23591,11 +33216,53 @@ function scheduleNextExpiredJobsRun() {
       console.error('🔴 [Cron]', cronLastError);
       try {
         logError(new Error(cronLastError), { memoryPercent: memPct, memoryGuard: 'heap_vs_limit' });
-      } catch (e) {}
+      } catch (e) { }
       return;
     }
   }
   setTimeout(runExpiredJobsSequential, CRON_INTERVAL_MS);
+}
+
+async function runHighRiskAnomalyAlertCron() {
+  try {
+    const highRisk = await getHighRiskUsers(pool, { limit: 20 });
+    const candidates = (highRisk || []).filter((row) => Number(row?.total_score || 0) >= AUTO_SUSPEND_THRESHOLD);
+    if (!candidates.length) return;
+    const { insertAdminLiveEvent } = await import('./lib/adminLiveEvents.js');
+    let sent = 0;
+    for (const row of candidates) {
+      const userId = String(row.user_id || '');
+      if (!userId) continue;
+      const dedupe = await pool.query(
+        `SELECT 1
+         FROM admin_live_events
+         WHERE event_type = 'security_high_risk_user'
+           AND payload->>'user_id' = $1
+           AND created_at >= NOW() - INTERVAL '6 hours'
+         LIMIT 1`,
+        [userId],
+      ).catch(() => ({ rows: [] }));
+      if (dedupe.rows?.length) continue;
+      await insertAdminLiveEvent(pool, {
+        event_type: 'security_high_risk_user',
+        user_id: userId,
+        title: 'Security Alert — High-Risk User',
+        message: `${row.full_name || row.phone || row.email || userId} มีคะแนนความเสี่ยง ${Number(row.total_score || 0)} (>= ${AUTO_SUSPEND_THRESHOLD})`,
+        payload: {
+          user_id: userId,
+          total_score: Number(row.total_score || 0),
+          flag_count: Number(row.flag_count || 0),
+          anomaly_types: Array.isArray(row.anomaly_types) ? row.anomaly_types : [],
+          account_status: row.account_status || null,
+          latest_at: row.latest_at || null,
+        },
+      });
+      sent += 1;
+    }
+    if (sent > 0) console.log(`✅ [Cron] Sent ${sent} high-risk anomaly alert(s) to admin live events`);
+  } catch (err) {
+    console.warn('🔴 [Cron] High-risk anomaly alerts:', err?.message || err);
+  }
 }
 
 async function runExpiredJobsSequential() {
@@ -23714,15 +33381,17 @@ async function runExpiredJobsSequential() {
           WHERE b.deposit_status = 'held' AND b.started_at IS NOT NULL
             AND s.end_time < NOW() - INTERVAL '5 minutes'
             AND b.status IN ('confirmed', 'in_progress')
+            AND COALESCE(b.booking_type, 'slot') != 'beauty'
           LIMIT 20
         `);
+        const slotConfig = await loadSlotFeeConfig(pool);
         for (const row of toSettle.rows || []) {
           try {
             const talentVip = await pool.query('SELECT vip_tier FROM users WHERE id = $1', [row.talent_id]).then(r => r.rows?.[0]?.vip_tier || 'none');
-            const commissionRate = getCommissionBooking(talentVip);
             const totalAmount = Number(row.deposit_amount || 0);
-            const feeAmount = Math.round(totalAmount * commissionRate * 100) / 100;
-            const talentPayout = Math.round((totalAmount - feeAmount) * 100) / 100;
+            const release = calcBookingRelease(totalAmount, totalAmount, talentVip, { slotConfig });
+            const talentPayout = release.talentPayout;
+            const feeAmount = release.totalPlatformRevenue;
             const startedAt = new Date(row.started_at);
             const endAt = new Date(row.end_time);
             const hours = Math.max(0, (endAt - startedAt) / (1000 * 60 * 60));
@@ -23770,6 +33439,34 @@ async function runExpiredJobsSequential() {
     } catch (noShowErr) {
       console.warn('🔴 [Cron] Booking no-show:', noShowErr?.message || noShowErr);
     }
+    try {
+      await runHighRiskAnomalyAlertCron();
+    } catch (anomalyAlertErr) {
+      console.warn('🔴 [Cron] anomaly risk alerts:', anomalyAlertErr?.message || anomalyAlertErr);
+    }
+    try {
+      await runIncubationBriefCron(pool, (uid, title, msg) =>
+        pushUserNotificationIfNotPeaceMode(uid, title, msg, {
+          fcm: { data: { route: '/talent/incubation' } },
+        }),
+      );
+    } catch (incubationCronErr) {
+      console.warn('🔴 [Cron] incubation briefs:', incubationCronErr?.message || incubationCronErr);
+    }
+    try {
+      await runMerchantTop10WeeklyCron(pool);
+    } catch (top10Err) {
+      console.warn('🔴 [Cron] merchant top10:', top10Err?.message || top10Err);
+    }
+    try {
+      await runAqondPassCron(pool, (uid, title, msg) =>
+        pushUserNotificationIfNotPeaceMode(uid, title, msg, {
+          fcm: { data: { route: '/m/pass' } },
+        }),
+      );
+    } catch (passCronErr) {
+      console.warn('🔴 [Cron] aqond pass:', passCronErr?.message || passCronErr);
+    }
   } catch (error) {
     cronLastError = error.message;
     console.error('🔴 [Cron] Error updating expired jobs:', error.message);
@@ -23814,7 +33511,7 @@ async function authenticateToken(req, res, next) {
     try {
       const payload = JSON.parse(Buffer.from(token.slice(5), 'base64').toString('utf8'));
       userId = payload.user_id ? String(payload.user_id) : null;
-    } catch (_) {}
+    } catch (_) { }
   }
   // real JWT
   if (!userId) {
@@ -23896,11 +33593,11 @@ async function calculateWorkerGrade(userId) {
     WHERE accepted_by = $1
   `, [userId]);
 
-  const avg            = parseFloat(ratingRow.rows[0]?.avg_rating   || 0);
-  const totalReviews   = parseInt  (ratingRow.rows[0]?.total_reviews || 0);
-  const certCount      = parseInt  (certRow.rows[0]?.cert_count      || 0);
-  const totalJobs      = parseInt  (jobRow.rows[0]?.total_jobs        || 0);
-  const successRate    = parseFloat(jobRow.rows[0]?.success_rate      || 0);
+  const avg = parseFloat(ratingRow.rows[0]?.avg_rating || 0);
+  const totalReviews = parseInt(ratingRow.rows[0]?.total_reviews || 0);
+  const certCount = parseInt(certRow.rows[0]?.cert_count || 0);
+  const totalJobs = parseInt(jobRow.rows[0]?.total_jobs || 0);
+  const successRate = parseFloat(jobRow.rows[0]?.success_rate || 0);
   const isShadowBanned = !!userRow.rows[0]?.shadow_banned_at;
 
   // ── Grade Logic ──
@@ -23992,7 +33689,7 @@ app.post('/api/reviews', authenticateToken, async (req, res) => {
     await pool.query(
       'UPDATE users SET rating = $1, updated_at = NOW() WHERE id = $2',
       [gradeData.avg_rating, revieweeUuid]
-    ).catch(() => {});
+    ).catch(() => { });
     console.log(`✅ [Review] job=${job_id} reviewee=${revieweeUuid} grade=${gradeData.grade} avg=${gradeData.avg_rating}`);
 
     res.json({ success: true, review_id: result.rows[0].id, new_grade: gradeData });
@@ -24048,8 +33745,8 @@ app.get('/api/reviews/worker/:userId', async (req, res) => {
 
     res.json({
       reviews: reviewsResult.rows,
-      stats:   statsResult.rows[0],
-      total:   parseInt(statsResult.rows[0]?.total_reviews || 0),
+      stats: statsResult.rows[0],
+      total: parseInt(statsResult.rows[0]?.total_reviews || 0),
     });
   } catch (err) {
     console.error('❌ [Reviews] get worker reviews:', err.message);
@@ -24147,9 +33844,9 @@ async function requireVvipGrade(req, res, next) {
           message: 'งานนี้สำหรับ Grade A เท่านั้น',
           current_grade: fresh.grade,
           requirements: {
-            avg_rating:   { required: 4.5,  current: fresh.avg_rating },
-            cert_count:   { required: '>3', current: fresh.cert_count },
-            success_rate: { required: 95,   current: fresh.success_rate },
+            avg_rating: { required: 4.5, current: fresh.avg_rating },
+            cert_count: { required: '>3', current: fresh.cert_count },
+            success_rate: { required: 95, current: fresh.success_rate },
           }
         });
       }
@@ -24224,12 +33921,12 @@ const INCIDENT_TYPES = [
 ];
 
 const INCIDENT_TYPE_LABELS = {
-  accident:         'อุบัติเหตุ',
-  illness:          'เจ็บป่วยกะทันหัน',
-  vehicle_issue:    'รถเสีย / ปัญหาการเดินทาง',
+  accident: 'อุบัติเหตุ',
+  illness: 'เจ็บป่วยกะทันหัน',
+  vehicle_issue: 'รถเสีย / ปัญหาการเดินทาง',
   family_emergency: 'เหตุฉุกเฉินครอบครัว',
   natural_disaster: 'ภัยธรรมชาติ',
-  other:            'เหตุสุดวิสัยอื่นๆ',
+  other: 'เหตุสุดวิสัยอื่นๆ',
 };
 
 // ── POST /api/incidents/report — ผู้รับงานรายงานเหตุฉุกเฉิน ──────────
@@ -24283,7 +33980,7 @@ app.post('/api/incidents/report', authenticateToken, async (req, res) => {
          description, valid_until, created_at)
       VALUES ($1,'percent',20,1,0,TRUE,$2, NOW() + INTERVAL '30 days', NOW())
       ON CONFLICT DO NOTHING
-    `, [couponCode, `ขออภัยในเหตุฉุกเฉิน (Incident #${incidentId.slice(0,8)})`]).catch(() => {});
+    `, [couponCode, `ขออภัยในเหตุฉุกเฉิน (Incident #${incidentId.slice(0, 8)})`]).catch(() => { });
 
     // ── 5. บันทึก notification สำหรับลูกค้า ──
     const typeLabel = INCIDENT_TYPE_LABELS[type] || type;
@@ -24294,7 +33991,7 @@ app.post('/api/incidents/report', authenticateToken, async (req, res) => {
       clientId,
       `ผู้รับงานของคุณแจ้งเหตุ: ${typeLabel} ทีมงานกำลังดำเนินการหาคนแทนให้`,
       JSON.stringify({ incident_id: incidentId, job_id, coupon_code: couponCode, type }),
-    ]).catch(() => {});
+    ]).catch(() => { });
 
     // ── 6. บันทึก notification สำหรับ Admin ──
     await pool.query(`
@@ -24304,15 +34001,15 @@ app.post('/api/incidents/report', authenticateToken, async (req, res) => {
     `, [
       `${typeLabel} — งาน: ${job.title || job_id}`,
       JSON.stringify({ incident_id: incidentId, job_id, worker_id: workerId }),
-    ]).catch(() => {});
+    ]).catch(() => { });
 
     console.log(`🚨 [Emergency] incident=${incidentId} job=${job_id} worker=${workerId} type=${type}`);
 
     res.json({
-      success:      true,
-      incident_id:  incidentId,
-      coupon_code:  couponCode,
-      message:      'แจ้งเหตุเรียบร้อย ทีมงานกำลังดำเนินการ',
+      success: true,
+      incident_id: incidentId,
+      coupon_code: couponCode,
+      message: 'แจ้งเหตุเรียบร้อย ทีมงานกำลังดำเนินการ',
     });
   } catch (err) {
     console.error('❌ [Emergency] report error:', err.message);
@@ -24326,7 +34023,7 @@ app.get('/api/incidents', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
     const status = req.query.status || 'pending';
-    const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const offset = parseInt(req.query.offset) || 0;
 
     const whereClause = status === 'all' ? '' : `WHERE i.resolution_status = $3`;
@@ -24351,7 +34048,7 @@ app.get('/api/incidents', authenticateToken, async (req, res) => {
       FROM incidents i
       LEFT JOIN jobs  j ON j.id::text = i.job_id
       LEFT JOIN users w ON w.id = i.worker_id
-      LEFT JOIN users c ON c.id::text = COALESCE(j.client_id::text, j.created_by)
+      LEFT JOIN users c ON c.id = COALESCE(j.client_id, j.created_by)
       ${whereClause}
       ORDER BY i.reported_at DESC
       LIMIT $1 OFFSET $2
@@ -24362,7 +34059,7 @@ app.get('/api/incidents', authenticateToken, async (req, res) => {
     );
 
     res.json({
-      incidents:     result.rows,
+      incidents: result.rows,
       pending_count: parseInt(total.rows[0].count),
     });
   } catch (err) {
@@ -24450,9 +34147,9 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
         const j = jobForPayout.rows[0];
         const pd = typeof j.payment_details === 'string' ? JSON.parse(j.payment_details || '{}') : (j.payment_details || {});
         const insuranceAmt = parseFloat(j.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(j.price) || 0;
-        const originalPrice     = insuranceAmt;
+        const originalPrice = insuranceAmt;
         const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
-        const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
+        const reserveAmount = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
         // Credit 40% to replacement worker wallet
         await pool.query(
@@ -24460,7 +34157,7 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
           [replacementPayout, replacement_worker_id]
         );
         // Ledger: 40% payout + 60% reserve
-        const payId = (tag) => `RPL-${inc.job_id.slice(0,8)}-${tag}-${Date.now()}`;
+        const payId = (tag) => `RPL-${inc.job_id.slice(0, 8)}-${tag}-${Date.now()}`;
         await pool.query(`
           INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
           VALUES ($1, 'insurance_replacement_payout', $2, 'wallet', $3, $4, 'THB', 'completed', $5, $6, $7, $8)
@@ -24495,7 +34192,7 @@ app.patch('/api/incidents/:id/resolve', authenticateToken, async (req, res) => {
       );
       await pool.query(
         `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`, [inc.worker_id]
-      ).catch(() => {});
+      ).catch(() => { });
       await pool.query(`
         UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [inc.job_id]
       );
@@ -24562,7 +34259,7 @@ async function processInsuranceClaim(jobId, clientId, evidenceText = '') {
   if (existing.rows[0]) {
     const s = existing.rows[0].claim_status;
     if (s === 'approved') throw new Error('งานนี้เคลมประกันไปแล้ว และได้รับการอนุมัติแล้ว');
-    if (s === 'pending')  throw new Error('คำขอเคลมประกันของงานนี้กำลังรอการพิจารณาอยู่');
+    if (s === 'pending') throw new Error('คำขอเคลมประกันของงานนี้กำลังรอการพิจารณาอยู่');
     if (s === 'rejected') throw new Error('คำขอเคลมประกันของงานนี้ถูกปฏิเสธแล้ว');
   }
 
@@ -24571,7 +34268,7 @@ async function processInsuranceClaim(jobId, clientId, evidenceText = '') {
   const insuranceAmount = parseFloat(job.insurance_amount) || parseFloat(pd.escrow_insurance_amount) || parseFloat(job.price) || 0;
   const originalPrice = insuranceAmount;
   const replacementPayout = Math.round(originalPrice * REPLACEMENT_PAYOUT_RATE * 100) / 100;
-  const reserveAmount     = Math.round((originalPrice - replacementPayout) * 100) / 100;
+  const reserveAmount = Math.round((originalPrice - replacementPayout) * 100) / 100;
 
   // 4. สร้าง insurance_claim record
   const claimResult = await pool.query(`
@@ -24586,13 +34283,13 @@ async function processInsuranceClaim(jobId, clientId, evidenceText = '') {
   await pool.query(
     `UPDATE jobs SET insurance_claim_status = 'pending', updated_at = NOW() WHERE id = $1`,
     [jobId]
-  ).catch(() => {/* column อาจยังไม่มี — handled by ALTER below */});
+  ).catch(() => {/* column อาจยังไม่มี — handled by ALTER below */ });
 
   return {
-    claim_id:           claimResult.rows[0].id,
-    original_price:     originalPrice,
+    claim_id: claimResult.rows[0].id,
+    original_price: originalPrice,
     replacement_payout: replacementPayout,
-    reserve_amount:     reserveAmount,
+    reserve_amount: reserveAmount,
   };
 }
 
@@ -24702,7 +34399,7 @@ app.patch('/api/admin/insurance/claims/:id/approve', adminAuthMiddleware, async 
     await pool.query(
       `UPDATE jobs SET insurance_claim_status='approved', updated_at=NOW() WHERE id=$1`,
       [claim.job_id]
-    ).catch(() => {});
+    ).catch(() => { });
 
     // ── 40/60 Rule: 40% → User Wallet, 60% → Platform Stability Reserve ──
     const recipientId = replacement_worker_id || claim.client_id;
@@ -24752,11 +34449,11 @@ app.patch('/api/admin/insurance/claims/:id/approve', adminAuthMiddleware, async 
       id,
       `Claim approved: ${claim.job_id} (40/60 rule)`,
       JSON.stringify({
-        claim_id:          id,
-        original_price:    claim.original_price,
+        claim_id: id,
+        original_price: claim.original_price,
         replacement_payout: claim.replacement_payout,
-        reserve_amount:    claim.reserve_amount,
-        rate:              0.40,
+        reserve_amount: claim.reserve_amount,
+        rate: 0.40,
       }),
       adminId,
     ]).catch((e) => console.warn('[Insurance] fund_movements insert skipped:', e.message));
@@ -24766,7 +34463,7 @@ app.patch('/api/admin/insurance/claims/:id/approve', adminAuthMiddleware, async 
       await pool.query(
         `UPDATE jobs SET accepted_by=$1, status='accepted', updated_at=NOW() WHERE id=$2`,
         [replacement_worker_id, claim.job_id]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     auditService.log(
@@ -24807,7 +34504,7 @@ app.patch('/api/admin/insurance/claims/:id/reject', adminAuthMiddleware, async (
     await pool.query(
       `UPDATE jobs SET insurance_claim_status='rejected', updated_at=NOW() WHERE id=$1`,
       [claim.job_id]
-    ).catch(() => {});
+    ).catch(() => { });
 
     auditService.log(
       adminId, 'INSURANCE_CLAIM_REJECTED',
@@ -24882,7 +34579,7 @@ async function runMaturityRewardsCheck() {
           `INSERT INTO maturity_rewards_vouchers (id, user_id, amount_baht, source_credit, remaining_baht, expires_at, metadata)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [voucherId, userId, MATURITY_VOUCHER_AMOUNT, MATURITY_THRESHOLD, MATURITY_VOUCHER_AMOUNT, expiresAt, JSON.stringify({ source: 'maturity_rewards' })]
-        ).catch(() => {});
+        ).catch(() => { });
 
         await pool.query(
           `UPDATE users SET insurance_credit_balance = GREATEST(0, COALESCE(insurance_credit_balance, 0) - $1), updated_at = NOW() WHERE id = $2::uuid`,
@@ -24969,7 +34666,7 @@ function detectAiFlag(comment = '', ratingOverall = 5) {
 
   if (foundKeywords.length > 0 || isLowRating) {
     const reasons = [];
-    if (isLowRating)         reasons.push(`คะแนนต่ำ (${ratingOverall} ดาว)`);
+    if (isLowRating) reasons.push(`คะแนนต่ำ (${ratingOverall} ดาว)`);
     if (foundKeywords.length) reasons.push(`พบคำ: ${foundKeywords.slice(0, 3).join(', ')}`);
     return reasons.join(' | ');
   }
@@ -24980,7 +34677,7 @@ function detectAiFlag(comment = '', ratingOverall = 5) {
 app.get('/api/admin/reviews', adminAuthMiddleware, async (req, res) => {
   try {
     const flaggedOnly = req.query.flagged === 'true';
-    const limit  = Math.min(parseInt(req.query.limit)  || 50, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const offset = parseInt(req.query.offset) || 0;
 
     const whereClause = flaggedOnly ? 'WHERE r.is_flagged = TRUE' : '';
@@ -25033,7 +34730,7 @@ app.patch('/api/admin/reviews/:id/verify', adminAuthMiddleware, async (req, res)
     // ถ้า verify ให้ recalculate grade ของ reviewee
     if (verified !== false) {
       const row = await pool.query(`SELECT reviewee_id FROM job_reviews WHERE id=$1`, [id]);
-      if (row.rows[0]) await calculateWorkerGrade(row.rows[0].reviewee_id).catch(() => {});
+      if (row.rows[0]) await calculateWorkerGrade(row.rows[0].reviewee_id).catch(() => { });
     }
 
     res.json({ success: true, is_verified: verified !== false });
@@ -25074,7 +34771,7 @@ app.patch('/api/admin/workers/:id/shadow-ban', adminAuthMiddleware, async (req, 
     await pool.query(
       `UPDATE worker_grades SET is_vvip_eligible = FALSE WHERE user_id = $1::uuid`,
       [id]
-    ).catch(() => {});
+    ).catch(() => { });
 
     console.log(`🚫 [ShadowBan] worker=${id} reason=${reason}`);
     res.json({ success: true, message: 'Worker shadow banned from VVIP jobs' });
@@ -25094,7 +34791,7 @@ app.patch('/api/admin/workers/:id/shadow-ban/lift', adminAuthMiddleware, async (
     );
 
     // recalculate grade
-    await calculateWorkerGrade(id).catch(() => {});
+    await calculateWorkerGrade(id).catch(() => { });
 
     res.json({ success: true, message: 'Shadow ban lifted' });
   } catch (err) {
@@ -25147,7 +34844,7 @@ app.patch('/api/admin/disputes/:id/resolve', adminAuthMiddleware, async (req, re
         `UPDATE job_reviews SET is_flagged = FALSE WHERE id = $1`, [id]
       );
       const reviewRow = await pool.query(`SELECT reviewee_id FROM job_reviews WHERE id=$1`, [id]);
-      if (reviewRow.rows[0]) await calculateWorkerGrade(reviewRow.rows[0].reviewee_id).catch(() => {});
+      if (reviewRow.rows[0]) await calculateWorkerGrade(reviewRow.rows[0].reviewee_id).catch(() => { });
     }
 
     res.json({ success: true, dispute_status: 'resolved', favor });
@@ -25185,8 +34882,8 @@ app.get('/api/admin/disputes', adminAuthMiddleware, async (req, res) => {
 // ── GET /api/admin/workers — รายการ Worker พร้อม Grade สำหรับ Admin
 app.get('/api/admin/workers', adminAuthMiddleware, async (req, res) => {
   try {
-    const grade  = req.query.grade;
-    const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+    const grade = req.query.grade;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const offset = parseInt(req.query.offset) || 0;
 
     const whereClause = grade ? `WHERE wg.grade = $3` : '';
@@ -25372,10 +35069,10 @@ app.post('/api/emergency/sos', authenticateToken, async (req, res) => {
       // Mock: POLICE I LERT U (Thailand) — would POST to real API
       // Mock: 1669 Emergency Medical — would POST to real API
       if (process.env.EMERGENCY_POLICE_ILERT_URL) {
-        await fetch(process.env.EMERGENCY_POLICE_ILERT_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+        await fetch(process.env.EMERGENCY_POLICE_ILERT_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => { });
       }
       if (process.env.EMERGENCY_1669_URL) {
-        await fetch(process.env.EMERGENCY_1669_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+        await fetch(process.env.EMERGENCY_1669_URL, { method: 'POST', body: payloadStr, headers: { 'Content-Type': 'application/json' } }).catch(() => { });
       }
       apiSent = true;
     } catch (apiErr) {
@@ -25513,7 +35210,7 @@ app.post('/api/marine/book-with-deposit', async (req, res) => {
 
     const createdJob = await pool.query('SELECT * FROM jobs WHERE id::text = $1', [jobId]).then(r => r.rows[0]);
     if (createdJob?.location && typeof createdJob.location === 'string') {
-      try { createdJob.location = JSON.parse(createdJob.location); } catch (_) {}
+      try { createdJob.location = JSON.parse(createdJob.location); } catch (_) { }
     }
     res.json({ success: true, message: 'มัดจำยืนยันแล้ว — รอการยืนยันจากกัปตัน', job: createdJob, deposit_amount: depositAmount, total_to_pay: totalToPay, markup_amount: markupAmount });
   } catch (e) {
@@ -25772,11 +35469,40 @@ io.on('connection', (socket) => {
     }
     if (role === 'admin') socket.join('admin');
   });
-  socket.on('disconnect', () => {});
+  socket.on('joinSupportTicket', (payload) => {
+    const ticketId = typeof payload === 'object' ? payload?.ticketId : payload;
+    if (ticketId) socket.join(`support-ticket:${ticketId}`);
+  });
+  socket.on('joinAdminSupport', () => {
+    socket.join('admin');
+  });
+  socket.on('disconnect', () => { });
 });
 
 registerRescueNetTelecomRoutes(app, { pool, authenticateToken, adminAuthMiddleware });
 registerGigastoreWebhookRoutes(app, { pool });
+
+// Multer (ขนาดไฟล์ / ประเภทช่อง) — อยู่ท้าย route ทั้งหมด เพื่อรับเฉพาะ LIMIT_* จากอัปโหลด
+app.use((err, req, res, next) => {
+  if (!(err instanceof multer.MulterError)) return next(err);
+  corsHeaders(req, res);
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      error:
+        'ไฟล์มีขนาดใหญ่เกินระบบอนุญาต — โปรลดความละเอียดหรือเลือกไฟล์ที่เล็กลงแล้วลองใหม่',
+    });
+  }
+  if (
+    err.code === 'LIMIT_FIELD_KEY' ||
+    err.code === 'LIMIT_FIELD_COUNT' ||
+    err.code === 'LIMIT_UNEXPECTED_FILE'
+  ) {
+    return res.status(400).json({
+      error: 'รูปแบบการอัปโหลดไม่ถูกต้อง — ให้เลือกรูปจากเครื่องอีกครั้ง',
+    });
+  }
+  return res.status(400).json({ error: err.message || 'อัปโหลดไม่สำเร็จ' });
+});
 
 function getDbHostLabelForStartupLog() {
   const url = process.env.DATABASE_URL;
@@ -25791,9 +35517,35 @@ function getDbHostLabelForStartupLog() {
   return `${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`;
 }
 
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error('\n❌ Port 3001 is already in use (another node server.js is running).');
+    console.error('   Free the port, then start again in YOUR terminal:\n');
+    console.error('     npm run stop');
+    console.error('     node server.js\n');
+    console.error('   Or one command: npm run restart\n');
+    process.exit(1);
+  }
+  throw err;
+});
+
 server.listen(PORT, async () => {
+  // #region agent log
+  try {
+    const { isJarvisVoiceEnabled } = await import('./lib/jarvis/voiceIntelligence.js');
+    agentDebugLog('H-voice', 'server.js:startup', 'voice_lib_loaded', {
+      enabled: isJarvisVoiceEnabled(),
+      voiceLibPath: 'lib/jarvis/voiceLib/index.js',
+    });
+  } catch (voiceErr) {
+    agentDebugLog('H-voice', 'server.js:startup', 'voice_lib_load_failed', {
+      message: voiceErr?.message || String(voiceErr),
+    });
+  }
+  // #endregion
   console.log("=".repeat(70));
   console.log("🚀 MEERAK PRODUCTION BACKEND");
+  console.log("🔧 Auth Fix Version: 2026-05-27-auth-diag");
   console.log("=".repeat(70));
   console.log(`📍 Server: http://localhost:${PORT}`);
   console.log(`📁 Storage: AWS S3 (${process.env.AWS_S3_BUCKET || 'aqond-uploads'})`);
@@ -25820,6 +35572,15 @@ server.listen(PORT, async () => {
   try {
     await pool.query('SELECT 1');
     console.log("✅ PostgreSQL: Connected");
+    startupBcryptWorkerPoolSilently();
+    refreshMobileAppConfigCacheFromDb().catch(() => { });
+    const _mobCfgWarmInterval = setInterval(
+      () => refreshMobileAppConfigCacheFromDb().catch(() => { }),
+      MOBILE_APP_CONFIG_BACKGROUND_REFRESH_MS,
+    );
+    if (typeof _mobCfgWarmInterval.unref === 'function') _mobCfgWarmInterval.unref();
+    const _regIdempotencyPruneInterval = setInterval(() => pruneExpiredRegistrationIdempotencyQuiet(), 6 * 60 * 60 * 1000);
+    if (typeof _regIdempotencyPruneInterval.unref === 'function') _regIdempotencyPruneInterval.unref();
     // สร้างตาราง jobs ถ้ายังไม่มี (แล้วค่อย ADD COLUMN ด้านล่าง)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS jobs (
@@ -25876,9 +35637,14 @@ server.listen(PORT, async () => {
 
     // ensure users table has all required columns (สำหรับ DB เก่าที่ยังไม่มีคอลัมน์บางตัว)
     const vipUserColumns = [
+      ['password', 'TEXT'],
+      ['password_hash', 'TEXT'],
+      ['wallet_frozen', 'BOOLEAN DEFAULT FALSE'],
+      ['force_logout_at', 'TIMESTAMPTZ'],
       ['vip_tier', "VARCHAR(20) DEFAULT 'none'"],
       ['vip_quota_balance', 'INT DEFAULT 0'],
       ['vip_expiry', 'TIMESTAMPTZ'],
+      ['vip_started_at', 'TIMESTAMPTZ'],
       // u.name / w.name / cl.name compatibility (reviews, incidents, etc.)
       ['name', 'VARCHAR(255)'],
       // KYC columns ที่ query ใช้แต่อาจไม่มีใน DB เก่า
@@ -25907,6 +35673,30 @@ server.listen(PORT, async () => {
       }
     }
     console.log("✅ Users table: VIP columns ensured");
+    try {
+      const { ensureVipSubscriptionSchema } = await import('./lib/vipSubscriptionService.js');
+      await ensureVipSubscriptionSchema(pool);
+      console.log("✅ vip_subscription_orders table: ensured");
+    } catch (e) {
+      console.warn("  vip_subscription_orders:", e?.message || e);
+    }
+    try {
+      const { ensureAdminLiveEventsSchema } = await import('./lib/adminLiveEvents.js');
+      await ensureAdminLiveEventsSchema(pool);
+      const { ensureKycSupplementSchema } = await import('./lib/kycSupplementService.js');
+      await ensureKycSupplementSchema(pool);
+      const { ensureKycExpirySchema, runKycExpiryCheck } = await import('./lib/kycExpiryService.js');
+      await ensureKycExpirySchema(pool);
+      void runKycExpiryCheck(pool).then((r) => {
+        if (r?.triggered > 0) console.log(`✅ kyc expiry check: ${r.triggered} user(s) set resubmission_required`);
+      }).catch((e) => console.warn('kyc expiry check:', e?.message));
+      setInterval(() => {
+        void runKycExpiryCheck(pool).catch((e) => console.warn('kyc expiry cron:', e?.message));
+      }, 24 * 60 * 60 * 1000);
+      console.log("✅ admin_live_events + kyc_supplement_requests + kyc_status check: ensured");
+    } catch (e) {
+      console.warn("  admin_live_events:", e?.message || e);
+    }
     // Sync users.name from full_name for u.name/w.name/cl.name compatibility
     try {
       const r = await pool.query(
@@ -25937,26 +35727,1626 @@ server.listen(PORT, async () => {
     `).catch((e) => console.warn("user_skills table create:", e.message));
     // ensure skill_category column on older DBs
     await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS skill_category VARCHAR(50)`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS certification_id VARCHAR(100)`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS certified_at TIMESTAMP`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS is_certified BOOLEAN DEFAULT FALSE`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_skills_user_id ON user_skills(user_id)`)
-      .catch(() => {});
+      .catch(() => { });
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_skills_certified ON user_skills(user_id, is_certified)`)
-      .catch(() => {});
+      .catch(() => { });
     // UNIQUE index (ต้องมีถ้าใช้ ON CONFLICT — แต่ตอนนี้ใช้ UPDATE-then-INSERT แทนแล้ว)
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_skills_unique ON user_skills(user_id, skill_name)`)
-      .catch(() => {});
+      .catch(() => { });
     // certification_id อาจเป็น UUID type ใน DB เก่า → แปลงเป็น VARCHAR(100)
     await pool.query(`ALTER TABLE user_skills ALTER COLUMN certification_id TYPE VARCHAR(100) USING certification_id::VARCHAR`)
-      .catch(() => {});
+      .catch(() => { });
+    await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS admin_enabled BOOLEAN DEFAULT TRUE`)
+      .catch(() => { });
+    await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS admin_disabled_reason TEXT`)
+      .catch(() => { });
+    await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS admin_disabled_at TIMESTAMP`)
+      .catch(() => { });
+    await pool.query(`ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS admin_disabled_by VARCHAR(64)`)
+      .catch(() => { });
     console.log("✅ user_skills table: ensured");
+
+    for (const sql of [
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS wants_public_transport BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS yellow_plate_photo_url TEXT`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS public_transport_license_front_url TEXT`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS public_transport_license_back_url TEXT`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS driver_license_number VARCHAR(32)`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS driver_license_type VARCHAR(32)`,
+      `ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS driver_license_class JSONB`,
+    ]) {
+      await pool.query(sql).catch(() => { });
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS registration_idempotency (
+        idempotency_key VARCHAR(160) PRIMARY KEY,
+        phone_norm VARCHAR(32) NOT NULL,
+        firebase_uid TEXT NOT NULL,
+        user_id UUID NOT NULL,
+        body_hash VARCHAR(128) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      )
+    `).catch((e) => console.warn("registration_idempotency table create:", e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_registration_idempotency_expires ON registration_idempotency (expires_at)`)
+      .catch(() => { });
+    console.log("✅ registration_idempotency table: ensured");
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS signup_intents (
+        intent_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone VARCHAR(32) NOT NULL,
+        state VARCHAR(32) NOT NULL DEFAULT 'pending',
+        source_platform VARCHAR(32),
+        embedded_browser BOOLEAN NOT NULL DEFAULT FALSE,
+        retry_count INT NOT NULL DEFAULT 0,
+        recovery_token VARCHAR(128) NOT NULL,
+        idempotency_key VARCHAR(160),
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((e) => console.warn("signup_intents table create:", e.message));
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_signup_intents_recovery ON signup_intents (recovery_token)
+    `).catch(() => { });
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_signup_intents_idempo_pending
+        ON signup_intents (idempotency_key)
+        WHERE idempotency_key IS NOT NULL AND state = 'pending'
+    `).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_signup_intents_phone ON signup_intents (phone)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_signup_intents_expires ON signup_intents (expires_at)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_signup_intents_state ON signup_intents (state)`).catch(() => { });
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS signup_intent_events (
+        id BIGSERIAL PRIMARY KEY,
+        intent_id UUID NOT NULL REFERENCES signup_intents(intent_id) ON DELETE CASCADE,
+        from_state VARCHAR(32),
+        to_state VARCHAR(32) NOT NULL,
+        meta JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((e) => console.warn("signup_intent_events table create:", e.message));
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_signup_intent_events_intent ON signup_intent_events (intent_id, created_at DESC)
+    `).catch(() => { });
+    // Phase 2.5 — flow_version column + events flow_version
+    await pool.query(`ALTER TABLE signup_intents ADD COLUMN IF NOT EXISTS flow_version VARCHAR(16)`).catch(() => { });
+    await pool.query(`ALTER TABLE signup_intent_events ADD COLUMN IF NOT EXISTS flow_version VARCHAR(16)`).catch(() => { });
+    console.log("✅ signup_intents + signup_intent_events tables: ensured");
+
+    // Phase 2.5 — background sweeper (ENABLE_INTENT_SWEEPER default off)
+    try { startIntentExpirationSweeper(pool); } catch (_) { /* fail-open */ }
+
+    // Phase 3.4 — shadow comparison snapshots (append-only audit; no FK to users)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS signup_shadow_snapshots (
+        snapshot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        comparison_id VARCHAR(80) NOT NULL,
+        comparison_version VARCHAR(32) NOT NULL,
+        confidence_score INT NOT NULL,
+        drift_detected BOOLEAN NOT NULL,
+        mismatch_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+        shadow_result_kind VARCHAR(32),
+        request_id VARCHAR(120),
+        traffic_lane VARCHAR(40),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((e) => console.warn("signup_shadow_snapshots table create:", e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_shadow_snapshots_created ON signup_shadow_snapshots (created_at DESC)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_shadow_snapshots_confidence ON signup_shadow_snapshots (confidence_score)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_shadow_snapshots_drift ON signup_shadow_snapshots (drift_detected)`).catch(() => { });
+    console.log("✅ signup_shadow_snapshots table: ensured");
+
+    // Phase 4.0 — passive runtime bootstrap (ENABLE_SIGNUP_RUNTIME_BOOTSTRAP default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_BOOTSTRAP === '1' || process.env.ENABLE_SIGNUP_RUNTIME_BOOTSTRAP === 'true') {
+        const bootResult = bootstrapSignupRuntime({ queue_backend: 'memory', queue_name: 'signup_v2_jobs' });
+        if (bootResult.bootstrapped) {
+          console.log("✅ signup runtime bootstrapped:", bootResult.runtime?.runtime_id, "state:", bootResult.runtime?.state);
+        } else {
+          console.warn("⚠️ signup runtime bootstrap skipped:", bootResult.reason);
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.1 — passive dispatch inspection (ENABLE_SIGNUP_PASSIVE_DISPATCH_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_PASSIVE_DISPATCH_RUNTIME === '1' || process.env.ENABLE_SIGNUP_PASSIVE_DISPATCH_RUNTIME === 'true') {
+        const inspectResult = inspectPassiveDispatchCycle({ queue_name: 'signup_v2_jobs' });
+        if (process.env.SIGNUP_PASSIVE_DISPATCH_STDOUT === '1' || process.env.SIGNUP_PASSIVE_DISPATCH_STDOUT === 'true') {
+          console.log("✅ passive dispatch inspection:", JSON.stringify({ queue_depth: inspectResult.queue_depth, artifact_count: inspectResult.artifacts.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.2 — queue reservation demo (ENABLE_SIGNUP_QUEUE_RESERVATION_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_QUEUE_RESERVATION_RUNTIME === '1' || process.env.ENABLE_SIGNUP_QUEUE_RESERVATION_RUNTIME === 'true') {
+        const inspectResult = inspectPassiveDispatchCycle({ queue_name: 'signup_v2_jobs' });
+        if (inspectResult.artifacts.length > 0) {
+          const firstEnvelope = inspectResult.artifacts[0].envelope;
+          const rsvResult = reserveSignupQueueEnvelope({ queue_name: 'signup_v2_jobs', envelope_id: firstEnvelope.envelope_id });
+          if (process.env.SIGNUP_QUEUE_RESERVATION_STDOUT === '1' || process.env.SIGNUP_QUEUE_RESERVATION_STDOUT === 'true') {
+            console.log("✅ queue reservation demo:", JSON.stringify({ reserved: rsvResult.reserved, reservation_id: rsvResult.reservation?.reservation_id, state: inspectReservedQueueState() }));
+          }
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.3 — passive acknowledge demo (ENABLE_SIGNUP_PASSIVE_ACK_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_PASSIVE_ACK_RUNTIME === '1' || process.env.ENABLE_SIGNUP_PASSIVE_ACK_RUNTIME === 'true') {
+        const ackReport = inspectPassiveAcknowledgements();
+        if (process.env.SIGNUP_PASSIVE_ACK_STDOUT === '1' || process.env.SIGNUP_PASSIVE_ACK_STDOUT === 'true') {
+          console.log("✅ passive ack demo:", JSON.stringify({ reservation_count: ackReport.reservation_count, artifact_count: ackReport.artifacts.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.4 — passive replay recovery demo (ENABLE_SIGNUP_PASSIVE_REPLAY_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_PASSIVE_REPLAY_RUNTIME === '1' || process.env.ENABLE_SIGNUP_PASSIVE_REPLAY_RUNTIME === 'true') {
+        const replayReport = inspectPassiveReplayRecovery();
+        if (process.env.SIGNUP_PASSIVE_REPLAY_STDOUT === '1' || process.env.SIGNUP_PASSIVE_REPLAY_STDOUT === 'true') {
+          console.log("✅ passive replay recovery demo:", JSON.stringify({ reservation_count: replayReport.reservation_count, replayable: replayReport.replayable_count, recoverable: replayReport.recoverable_count }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.5 — passive retry orchestration demo (ENABLE_SIGNUP_PASSIVE_RETRY_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_PASSIVE_RETRY_RUNTIME === '1' || process.env.ENABLE_SIGNUP_PASSIVE_RETRY_RUNTIME === 'true') {
+        const retryReport = inspectPassiveRetryOrchestration();
+        if (process.env.SIGNUP_PASSIVE_RETRY_STDOUT === '1' || process.env.SIGNUP_PASSIVE_RETRY_STDOUT === 'true') {
+          console.log("✅ passive retry orchestration demo:", JSON.stringify({ replay_artifacts: retryReport.replay_artifact_count, retryable: retryReport.retryable_count, dead_letter: retryReport.dead_letter_count }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.6 — passive dead-letter routing demo (ENABLE_SIGNUP_PASSIVE_DLQ_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_PASSIVE_DLQ_RUNTIME === '1' || process.env.ENABLE_SIGNUP_PASSIVE_DLQ_RUNTIME === 'true') {
+        const dlqReport = inspectPassiveDeadLetterRouting();
+        if (process.env.SIGNUP_PASSIVE_DLQ_STDOUT === '1' || process.env.SIGNUP_PASSIVE_DLQ_STDOUT === 'true') {
+          console.log("✅ passive DLQ routing demo:", JSON.stringify({ retry_artifacts: dlqReport.retry_artifact_count, dead_letter: dlqReport.dead_letter_count, manual_review: dlqReport.manual_review_count }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.7 — controlled active dispatch demo (ENABLE_SIGNUP_ACTIVE_DISPATCH_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_ACTIVE_DISPATCH_RUNTIME === '1' || process.env.ENABLE_SIGNUP_ACTIVE_DISPATCH_RUNTIME === 'true') {
+        const activeResult = executeActiveDispatchCycle({ queue_name: 'signup_v2_jobs', noop: true });
+        if (process.env.SIGNUP_ACTIVE_DISPATCH_STDOUT === '1' || process.env.SIGNUP_ACTIVE_DISPATCH_STDOUT === 'true') {
+          console.log("✅ active dispatch demo:", JSON.stringify({ executed_count: activeResult.executed_count, artifact_count: activeResult.artifacts.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.8 — execution commit coordinator demo (ENABLE_SIGNUP_EXECUTION_COMMIT_COORDINATOR default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_COMMIT_COORDINATOR === '1' || process.env.ENABLE_SIGNUP_EXECUTION_COMMIT_COORDINATOR === 'true') {
+        const activeResult = executeActiveDispatchCycle({ queue_name: 'signup_v2_jobs', noop: true });
+        if (activeResult.artifacts.length > 0) {
+          const art = activeResult.artifacts[0];
+          commitExecutionArtifacts({ envelope_id: art.envelope_id, dispatch_receipt: art.dispatch_receipt, consumer_lease: art.consumer_lease, execution_result: art.execution_result, executed: true });
+        }
+        if (process.env.SIGNUP_EXECUTION_COMMIT_STDOUT === '1' || process.env.SIGNUP_EXECUTION_COMMIT_STDOUT === 'true') {
+          const report = inspectCommittedExecutions();
+          console.log("✅ execution commit demo:", JSON.stringify({ total: report.total_commits, committed: report.committed_count, noop: report.noop_count }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.9 — runtime lifecycle coordinator demo (ENABLE_SIGNUP_RUNTIME_LIFECYCLE_COORDINATOR default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_LIFECYCLE_COORDINATOR === '1' || process.env.ENABLE_SIGNUP_RUNTIME_LIFECYCLE_COORDINATOR === 'true') {
+        const advResult = advanceRuntimeLifecycle({ noop: true });
+        if (process.env.SIGNUP_RUNTIME_LIFECYCLE_STDOUT === '1' || process.env.SIGNUP_RUNTIME_LIFECYCLE_STDOUT === 'true') {
+          const report = inspectLifecycleAdvancements();
+          console.log("✅ lifecycle advancement demo:", JSON.stringify({ advanced: advResult.advanced, state: advResult.advancement_state, total: report.total_advancements }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.10 — execution window coordinator demo (ENABLE_SIGNUP_EXECUTION_WINDOW_COORDINATOR default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_WINDOW_COORDINATOR === '1' || process.env.ENABLE_SIGNUP_EXECUTION_WINDOW_COORDINATOR === 'true') {
+        const winResult = createExecutionWindow({ max_executions: 1, noop: true });
+        if (winResult.created) {
+          executeWindowCycle({ window_id: winResult.window_id, noop: true });
+          closeExecutionWindow({ window_id: winResult.window_id });
+        }
+        if (process.env.SIGNUP_EXECUTION_WINDOW_STDOUT === '1' || process.env.SIGNUP_EXECUTION_WINDOW_STDOUT === 'true') {
+          const report = inspectExecutionWindows();
+          console.log("✅ execution window demo:", JSON.stringify({ total_windows: report.total_windows, total_executions: report.total_executions, closed: report.closed_count }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.11 — execution journal demo (ENABLE_SIGNUP_EXECUTION_JOURNAL default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_JOURNAL === '1' || process.env.ENABLE_SIGNUP_EXECUTION_JOURNAL === 'true') {
+        appendExecutionJournalEntry({ event_type: SIGNUP_JOURNAL_EVENT_TYPES.RUNTIME_BOOTED, metadata: { noop: true } });
+        if (process.env.SIGNUP_EXECUTION_JOURNAL_STDOUT === '1' || process.env.SIGNUP_EXECUTION_JOURNAL_STDOUT === 'true') {
+          const report = inspectExecutionJournal();
+          console.log("✅ execution journal demo:", JSON.stringify({ total_entries: report.total_entries }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.12 — execution replay engine demo (ENABLE_SIGNUP_EXECUTION_REPLAY_ENGINE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_REPLAY_ENGINE === '1' || process.env.ENABLE_SIGNUP_EXECUTION_REPLAY_ENGINE === 'true') {
+        const journal = inspectExecutionJournal();
+        const integrity = validateReplayIntegrity(journal);
+        if (integrity.valid) {
+          const replayState = replayExecutionJournal(journal);
+          if (process.env.SIGNUP_EXECUTION_REPLAY_STDOUT === '1' || process.env.SIGNUP_EXECUTION_REPLAY_STDOUT === 'true') {
+            console.log("✅ execution replay demo:", JSON.stringify({ event_count: replayState.replay_metadata.event_count, envelopes: Object.keys(replayState.envelope_states).length, booted: replayState.runtime_state.booted }));
+          }
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.13 — execution state machine demo (ENABLE_SIGNUP_EXECUTION_STATE_MACHINE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_STATE_MACHINE === '1' || process.env.ENABLE_SIGNUP_EXECUTION_STATE_MACHINE === 'true') {
+        const transitions = getAllowedTransitions();
+        const cycles = detectCyclesFrom(EXECUTION_LIFECYCLE_STATES.RUNTIME_BOOTED);
+        if (process.env.SIGNUP_EXECUTION_STATE_MACHINE_STDOUT === '1' || process.env.SIGNUP_EXECUTION_STATE_MACHINE_STDOUT === 'true') {
+          console.log("✅ state machine demo:", JSON.stringify({ states: Object.keys(transitions).length, has_cycle: cycles.has_cycle, cycle_path: cycles.cycle_path }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.14 — execution dispatcher demo (ENABLE_SIGNUP_EXECUTION_DISPATCHER default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_DISPATCHER === '1' || process.env.ENABLE_SIGNUP_EXECUTION_DISPATCHER === 'true') {
+        const decision = dispatchExecution({ current_state: 'runtime_booted' }, { event_type: 'envelope_reserved' });
+        const plan = buildDispatchPlan({ current_state: 'runtime_booted' });
+        if (process.env.SIGNUP_EXECUTION_DISPATCHER_STDOUT === '1' || process.env.SIGNUP_EXECUTION_DISPATCHER_STDOUT === 'true') {
+          console.log("✅ dispatcher demo:", JSON.stringify({ decision: decision.dispatch_decision, plan_steps: plan.steps.length, terminal_reachable: plan.terminal_reachable }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.15 — controlled execution runtime demo (ENABLE_SIGNUP_EXECUTION_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_RUNTIME === '1' || process.env.ENABLE_SIGNUP_EXECUTION_RUNTIME === 'true') {
+        const execResult = runControlledExecution({ current_state: 'runtime_booted' }, { event_type: 'envelope_reserved' });
+        if (process.env.SIGNUP_EXECUTION_RUNTIME_STDOUT === '1' || process.env.SIGNUP_EXECUTION_RUNTIME_STDOUT === 'true') {
+          console.log("✅ execution runtime demo:", JSON.stringify({ decision: execResult.dispatch_decision, permitted: execResult.permitted, steps: execResult.steps_executed, final_state: execResult.final_state }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.16 — execution fencing demo (ENABLE_SIGNUP_EXECUTION_FENCING default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_FENCING === '1' || process.env.ENABLE_SIGNUP_EXECUTION_FENCING === 'true') {
+        const fenceInput = { scope_id: 'scope-demo', runtime_id: 'rt-demo', envelope_id: 'demo-env-001', event_type: 'envelope_reserved', plan_id: 'dp-demo-001' };
+        const fp = generateExecutionFingerprint(fenceInput);
+        const fenceResult = validateExecutionFencing(fenceInput);
+        let duplicateBlocked = false;
+        try { validateExecutionFencing(fenceInput); } catch (_dup) { duplicateBlocked = true; }
+        clearExecutionFence();
+        if (process.env.SIGNUP_EXECUTION_FENCING_STDOUT === '1' || process.env.SIGNUP_EXECUTION_FENCING_STDOUT === 'true') {
+          console.log("✅ fencing demo:", JSON.stringify({ fingerprint_length: fp.length, first_allowed: fenceResult.allowed, duplicate_blocked: duplicateBlocked }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.17 — execution scope isolation demo (ENABLE_SIGNUP_EXECUTION_SCOPE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_SCOPE === '1' || process.env.ENABLE_SIGNUP_EXECUTION_SCOPE === 'true') {
+        const scope = createExecutionScope({ runtime_id: 'rt-demo-001', envelope_id: 'env-demo-001', plan_id: 'dp-demo-001' });
+        const key = resolveScopeKey(scope);
+        const hierarchy = getScopeHierarchy(scope);
+        if (process.env.SIGNUP_EXECUTION_SCOPE_STDOUT === '1' || process.env.SIGNUP_EXECUTION_SCOPE_STDOUT === 'true') {
+          console.log("✅ scope demo:", JSON.stringify({ scope_id: scope.scope_id, key, global: hierarchy.global, runtime_scoped: hierarchy.runtime_scoped }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.18 — scope-aware fencing demo (ENABLE_SIGNUP_SCOPED_FENCING default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_SCOPED_FENCING === '1' || process.env.ENABLE_SIGNUP_SCOPED_FENCING === 'true') {
+        const scopeA = { scope_id: 'scope-A', runtime_id: 'rt-A', envelope_id: 'env-001', event_type: 'envelope_reserved', plan_id: 'dp-001' };
+        const scopeB = { scope_id: 'scope-B', runtime_id: 'rt-B', envelope_id: 'env-001', event_type: 'envelope_reserved', plan_id: 'dp-001' };
+        const resultA = validateExecutionFencing(scopeA);
+        const resultB = validateExecutionFencing(scopeB);
+        let crossScopeAllowed = resultA.allowed && resultB.allowed;
+        let sameScopeBlocked = false;
+        try { validateExecutionFencing(scopeA); } catch (_dup) { sameScopeBlocked = true; }
+        clearExecutionFence();
+        if (process.env.SIGNUP_SCOPED_FENCING_STDOUT === '1' || process.env.SIGNUP_SCOPED_FENCING_STDOUT === 'true') {
+          console.log("✅ scoped fencing demo:", JSON.stringify({ cross_scope_allowed: crossScopeAllowed, same_scope_blocked: sameScopeBlocked, scope_a: resultA.scope_id, scope_b: resultB.scope_id }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.19 — multi-runtime coordinator demo (ENABLE_SIGNUP_MULTI_RUNTIME default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_MULTI_RUNTIME === '1' || process.env.ENABLE_SIGNUP_MULTI_RUNTIME === 'true') {
+        const rtA = registerRuntimeInstance({ runtime_id: 'rt-A', node_id: 'node-1' });
+        const rtB = registerRuntimeInstance({ runtime_id: 'rt-B', node_id: 'node-2' });
+        assignScopeToRuntime({ scope_id: 'scope-demo-001' }, 'rt-A');
+        const ownership = resolveExecutionOwnership({ scope_id: 'scope-demo-001' }, { plan_id: 'dp-001', runtime_id: 'rt-A' });
+        const mismatch = resolveExecutionOwnership({ scope_id: 'scope-demo-001' }, { plan_id: 'dp-001', runtime_id: 'rt-B' });
+        clearCoordinationState();
+        if (process.env.SIGNUP_MULTI_RUNTIME_STDOUT === '1' || process.env.SIGNUP_MULTI_RUNTIME_STDOUT === 'true') {
+          console.log("✅ multi-runtime demo:", JSON.stringify({ runtimes: 2, owned: ownership.owned, mismatch_owned: mismatch.owned, mismatch_reason: mismatch.reason }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 4.20 — kernel finalizer demo (ENABLE_SIGNUP_KERNEL_FINALIZER default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_KERNEL_FINALIZER === '1' || process.env.ENABLE_SIGNUP_KERNEL_FINALIZER === 'true') {
+        const integrity = validateKernelIntegrity();
+        const readiness = generateReadinessReport();
+        const summary = getKernelSummary();
+        if (process.env.SIGNUP_KERNEL_FINALIZER_STDOUT === '1' || process.env.SIGNUP_KERNEL_FINALIZER_STDOUT === 'true') {
+          console.log("✅ kernel finalizer:", JSON.stringify({ integrity: integrity.integrity, layers: integrity.checked_layers, status: readiness.status, frozen: summary.kernel_frozen }));
+        }
+        if (integrity.integrity === 'PASS' && (process.env.SIGNUP_KERNEL_FREEZE === '1' || process.env.SIGNUP_KERNEL_FREEZE === 'true')) {
+          const freeze = freezeKernel();
+          console.log("🔒 kernel frozen:", JSON.stringify({ frozen: freeze.kernel_frozen, phase: freeze.phase }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.1 — execution partitioner demo (ENABLE_SIGNUP_EXECUTION_PARTITIONER default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_PARTITIONER === '1' || process.env.ENABLE_SIGNUP_EXECUTION_PARTITIONER === 'true') {
+        const nA = registerNode({ node_id: 'node-1', region: 'ap-southeast' });
+        const nB = registerNode({ node_id: 'node-2', region: 'us-east' });
+        const nodes = [nA, nB];
+        const assign1 = assignScopeToNode({ scope_id: 'scope-demo-001' }, nodes);
+        const assign2 = assignScopeToNode({ scope_id: 'scope-demo-002' }, nodes);
+        const consistency = validatePartitionConsistency([{ scope_id: 'scope-demo-001' }, { scope_id: 'scope-demo-002' }], nodes);
+        clearNodeRegistry();
+        if (process.env.SIGNUP_EXECUTION_PARTITIONER_STDOUT === '1' || process.env.SIGNUP_EXECUTION_PARTITIONER_STDOUT === 'true') {
+          console.log("✅ partitioner demo:", JSON.stringify({ scope1_node: assign1.node_id, scope2_node: assign2.node_id, consistent: consistency.consistent, probes: consistency.probes_run }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.2 — execution router demo (ENABLE_SIGNUP_EXECUTION_ROUTER default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_ROUTER === '1' || process.env.ENABLE_SIGNUP_EXECUTION_ROUTER === 'true') {
+        const demoNodes = [{ node_id: 'node-1' }, { node_id: 'node-2' }, { node_id: 'node-3' }];
+        const demoScopes = [{ scope_id: 's-001' }, { scope_id: 's-002' }, { scope_id: 's-003' }, { scope_id: 's-004' }];
+        const route = resolveExecutionRoute({ scope: { scope_id: 's-001' }, available_nodes: demoNodes });
+        const sim = simulateRouting({ scope: { scope_id: 's-002' }, available_nodes: demoNodes });
+        const stats = getRoutingStats(demoNodes, demoScopes);
+        if (process.env.SIGNUP_EXECUTION_ROUTER_STDOUT === '1' || process.env.SIGNUP_EXECUTION_ROUTER_STDOUT === 'true') {
+          console.log("✅ router demo:", JSON.stringify({ target: route.target_node_id, sim_valid: sim.valid, routed: stats.routed_scopes, distribution: stats.distribution }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.3 — distributed dispatcher sync demo (ENABLE_SIGNUP_DISTRIBUTED_DISPATCH default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_DISTRIBUTED_DISPATCH === '1' || process.env.ENABLE_SIGNUP_DISTRIBUTED_DISPATCH === 'true') {
+        const syncNodes = [{ node_id: 'node-1' }, { node_id: 'node-2' }, { node_id: 'node-3' }];
+        const syncInput = { scope_id: 'scope-sync-001', current_state: 'runtime_booted', event_type: 'envelope_reserved', available_nodes: syncNodes };
+        const singleResult = computeDistributedDispatch(syncInput);
+        const clusterSim = simulateClusterDispatch(syncInput, syncNodes);
+        if (process.env.SIGNUP_DISTRIBUTED_DISPATCH_STDOUT === '1' || process.env.SIGNUP_DISTRIBUTED_DISPATCH_STDOUT === 'true') {
+          console.log("✅ distributed dispatch demo:", JSON.stringify({ decision: singleResult.decision, target: singleResult.target_node, consensus: clusterSim.consensus, nodes_simulated: clusterSim.nodes_simulated }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.4 — cross-node replay consistency demo (ENABLE_SIGNUP_REPLAY_CONSISTENCY default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_REPLAY_CONSISTENCY === '1' || process.env.ENABLE_SIGNUP_REPLAY_CONSISTENCY === 'true') {
+        const demoJournal = {
+          entries: [
+            { event_type: 'runtime_booted', sequence: 1, runtime_id: 'rt-demo' },
+            { event_type: 'envelope_reserved', sequence: 2, envelope_id: 'env-demo-001' },
+            { event_type: 'dispatch_acknowledged', sequence: 3, envelope_id: 'env-demo-001', dispatch_id: 'dsp-001' },
+          ]
+        };
+        const demoNodes = [{ node_id: 'node-1' }, { node_id: 'node-2' }, { node_id: 'node-3' }];
+        const normalized = normalizeReplayInput(demoJournal);
+        const consistency = replayWithConsistencyCheck(demoJournal, demoNodes);
+        const determinism = validateReplayDeterminism(demoJournal, demoNodes);
+        if (process.env.SIGNUP_REPLAY_CONSISTENCY_STDOUT === '1' || process.env.SIGNUP_REPLAY_CONSISTENCY_STDOUT === 'true') {
+          console.log("✅ replay consistency demo:", JSON.stringify({ entries: normalized.entries.length, consistent: consistency.consistent, nodes: consistency.nodes_replayed, deterministic: determinism.deterministic }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.5 — execution convergence demo (ENABLE_SIGNUP_EXECUTION_CONVERGENCE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_CONVERGENCE === '1' || process.env.ENABLE_SIGNUP_EXECUTION_CONVERGENCE === 'true') {
+        const stateA = { runtime_state: { booted: true }, envelope_states: { 'env-001': { execution_state: 'succeeded', committed: true, reserved: true, event_sequences: [1, 2, 3] } }, dispatch_states: {} };
+        const stateB = { runtime_state: { booted: true }, envelope_states: { 'env-001': { execution_state: 'failed', committed: false, reserved: true, event_sequences: [1, 2] } }, dispatch_states: {} };
+        const nodeStates = [{ node_id: 'node-1', state: stateA }, { node_id: 'node-2', state: stateB }];
+        const conflicts = detectStateConflicts(nodeStates);
+        const canonical = computeCanonicalState(nodeStates);
+        const plan = buildConvergencePlan(nodeStates);
+        if (process.env.SIGNUP_EXECUTION_CONVERGENCE_STDOUT === '1' || process.env.SIGNUP_EXECUTION_CONVERGENCE_STDOUT === 'true') {
+          console.log("✅ convergence demo:", JSON.stringify({ has_conflict: conflicts.has_conflict, conflict_count: conflicts.conflicts.length, canonical: canonical.canonical, resolved: canonical.conflicts_resolved, plan_steps: plan.steps.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 5.6 — eventual consistency mesh demo (ENABLE_SIGNUP_CONSISTENCY_MESH default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_CONSISTENCY_MESH === '1' || process.env.ENABLE_SIGNUP_CONSISTENCY_MESH === 'true') {
+        const meshA = { runtime_state: { booted: true }, envelope_states: { 'env-001': { execution_state: 'succeeded', committed: true, reserved: true, event_sequences: [1, 2, 3] } }, dispatch_states: {} };
+        const meshB = { runtime_state: { booted: true }, envelope_states: { 'env-001': { execution_state: 'failed', committed: false, reserved: true, event_sequences: [1, 2] } }, dispatch_states: {} };
+        const meshNodes = [{ node_id: 'node-1', state: meshA }, { node_id: 'node-2', state: meshB }];
+        const drift = detectSystemDrift(meshNodes);
+        const step = simulateStabilizationStep(meshNodes);
+        const stability = validateMeshStability(step.stabilized_nodes);
+        if (process.env.SIGNUP_CONSISTENCY_MESH_STDOUT === '1' || process.env.SIGNUP_CONSISTENCY_MESH_STDOUT === 'true') {
+          console.log("✅ consistency mesh demo:", JSON.stringify({ drift_before: drift.drift_score, drift_after: step.after_drift, stable: stability.stable }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.1 — execution gateway demo (ENABLE_SIGNUP_EXECUTION_GATEWAY default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_GATEWAY === '1' || process.env.ENABLE_SIGNUP_EXECUTION_GATEWAY === 'true') {
+        const gateInput = { scope_id: 'scope-gw-001', event_type: 'envelope_reserved', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const gate = evaluateExecutionGate(gateInput);
+        const risk = classifyExecutionRisk(gateInput);
+        const report = buildExecutionGateReport(gateInput);
+        const blockedGate = evaluateExecutionGate({ ...gateInput, dispatch_decision: 'BLOCK' });
+        if (process.env.SIGNUP_EXECUTION_GATEWAY_STDOUT === '1' || process.env.SIGNUP_EXECUTION_GATEWAY_STDOUT === 'true') {
+          console.log("✅ execution gateway demo:", JSON.stringify({ allowed: gate.allowed, risk: risk.risk_level, checks: report.checks.length, blocked_test: blockedGate.allowed }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.2 — runtime bridge demo (ENABLE_SIGNUP_RUNTIME_BRIDGE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_BRIDGE === '1' || process.env.ENABLE_SIGNUP_RUNTIME_BRIDGE === 'true') {
+        const bridgeInput = { scope_id: 'scope-br-001', event_type: 'envelope_reserved', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' }, current_state: 'runtime_booted', consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const execResult = executeThroughGateway(bridgeInput);
+        const simResult = simulateExecutionFlow(bridgeInput);
+        const blockedResult = executeThroughGateway({ ...bridgeInput, dispatch_decision: 'BLOCK' });
+        if (process.env.SIGNUP_RUNTIME_BRIDGE_STDOUT === '1' || process.env.SIGNUP_RUNTIME_BRIDGE_STDOUT === 'true') {
+          console.log("✅ runtime bridge demo:", JSON.stringify({ executed: execResult.executed, mode: execResult.runtime_mode, sim_allowed: simResult.gateway.allowed, blocked_test: blockedResult.executed }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.3 — execution modes demo (ENABLE_SIGNUP_EXECUTION_MODES default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_EXECUTION_MODES === '1' || process.env.ENABLE_SIGNUP_EXECUTION_MODES === 'true') {
+        const lowInput = { dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const highInput = { dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' } };
+        const modeLow = getExecutionMode(lowInput);
+        const modeHigh = getExecutionMode(highInput);
+        const policyLow = buildModeExecutionPolicy(modeLow.mode);
+        const policyHigh = buildModeExecutionPolicy(modeHigh.mode);
+        if (process.env.SIGNUP_EXECUTION_MODES_STDOUT === '1' || process.env.SIGNUP_EXECUTION_MODES_STDOUT === 'true') {
+          console.log("✅ execution modes demo:", JSON.stringify({ low_mode: modeLow.mode, low_real: isRealExecutionAllowed(modeLow.mode), high_mode: modeHigh.mode, high_real: isRealExecutionAllowed(modeHigh.mode) }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.4 — mode controller demo (ENABLE_SIGNUP_MODE_CONTROLLER default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_MODE_CONTROLLER === '1' || process.env.ENABLE_SIGNUP_MODE_CONTROLLER === 'true') {
+        const ctrlInput = { dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const controlled = applyExecutionMode(ctrlInput, 'controlled');
+        const canary = applyExecutionMode(ctrlInput, 'canary');
+        const plan = buildModeExecutionPlan(ctrlInput, 'canary');
+        if (process.env.SIGNUP_MODE_CONTROLLER_STDOUT === '1' || process.env.SIGNUP_MODE_CONTROLLER_STDOUT === 'true') {
+          console.log("✅ mode controller demo:", JSON.stringify({ controlled_depth: controlled.execution_behavior.execution_depth, canary_commit: canary.execution_behavior.commit_allowed, plan_steps: plan.steps.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.5 — activation engine demo (ENABLE_SIGNUP_ACTIVATION_ENGINE default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_ACTIVATION_ENGINE === '1' || process.env.ENABLE_SIGNUP_ACTIVATION_ENGINE === 'true') {
+        const actInput = { scope_id: 'scope-act-001', event_type: 'envelope_reserved', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-1' }, current_state: 'runtime_booted', consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const pipeline = buildActivationPipeline(actInput);
+        const activated = isExecutionActivated(actInput);
+        const result = activateControlledExecution(actInput);
+        const blockedResult = activateControlledExecution({ ...actInput, dispatch_decision: 'BLOCK' });
+        if (process.env.SIGNUP_ACTIVATION_ENGINE_STDOUT === '1' || process.env.SIGNUP_ACTIVATION_ENGINE_STDOUT === 'true') {
+          console.log("✅ activation engine demo:", JSON.stringify({ stages: pipeline.stages.length, activated, mode: result.mode, depth: result.execution_depth, steps: result.steps_executed, blocked: !blockedResult.activated }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.6 — lifecycle boundary demo (ENABLE_SIGNUP_LIFECYCLE_BOUNDARY default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_LIFECYCLE_BOUNDARY === '1' || process.env.ENABLE_SIGNUP_LIFECYCLE_BOUNDARY === 'true') {
+        let lc = createExecutionLifecycle({ execution_id: 'exec-demo-001', scope_id: 'scope-lc-001', mode: 'controlled' });
+        lc = transitionExecutionLifecycle(lc, 'gated');
+        lc = transitionExecutionLifecycle(lc, 'routed');
+        lc = transitionExecutionLifecycle(lc, 'executing');
+        lc = finalizeExecutionLifecycle(lc, { commit: true });
+        const integrity = validateLifecycleIntegrity(lc);
+        if (process.env.SIGNUP_LIFECYCLE_BOUNDARY_STDOUT === '1' || process.env.SIGNUP_LIFECYCLE_BOUNDARY_STDOUT === 'true') {
+          console.log("✅ lifecycle boundary demo:", JSON.stringify({ state: lc.state, finalized: lc.finalized, transitions: lc.history.length, integrity: integrity.valid }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // Phase 6.7 — durability foundation demo (ENABLE_SIGNUP_DURABILITY_FOUNDATION default off)
+    try {
+      if (process.env.ENABLE_SIGNUP_DURABILITY_FOUNDATION === '1' || process.env.ENABLE_SIGNUP_DURABILITY_FOUNDATION === 'true') {
+        let dlc = createExecutionLifecycle({ execution_id: 'exec-dur-001', scope_id: 'scope-dur', mode: 'controlled' });
+        dlc = transitionExecutionLifecycle(dlc, 'gated');
+        dlc = transitionExecutionLifecycle(dlc, 'routed');
+        dlc = transitionExecutionLifecycle(dlc, 'executing');
+        const recoveryPlan = buildExecutionRecoveryPlan(dlc);
+        const crashSim = simulateCrashRecovery(dlc);
+        const checksum = computeRecoveryChecksum(dlc);
+        if (process.env.SIGNUP_DURABILITY_FOUNDATION_STDOUT === '1' || process.env.SIGNUP_DURABILITY_FOUNDATION_STDOUT === 'true') {
+          console.log("✅ durability foundation demo:", JSON.stringify({ recoverable: recoveryPlan.recoverable, last_state: recoveryPlan.last_known_state, next_step: recoveryPlan.next_step, resume_point: crashSim.safe_resume_point, checksum_len: checksum.length }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 6.8: Execution Governance Finalization & Hard Lock ---
+    try {
+      if (process.env.ENABLE_SIGNUP_GOVERNANCE_FINALIZER === '1' || process.env.ENABLE_SIGNUP_GOVERNANCE_FINALIZER === 'true') {
+        const govSnapshot = buildGovernanceFinalSnapshot();
+        const govIntegrity = validateGovernanceIntegrity();
+        let govFreezeResult = null;
+        if (process.env.SIGNUP_GOVERNANCE_FREEZE === '1' || process.env.SIGNUP_GOVERNANCE_FREEZE === 'true') {
+          govFreezeResult = finalizeExecutionGovernance();
+        }
+        if (process.env.SIGNUP_GOVERNANCE_FINALIZER_STDOUT === '1' || process.env.SIGNUP_GOVERNANCE_FINALIZER_STDOUT === 'true') {
+          console.log("✅ governance finalizer demo:", JSON.stringify({
+            integrity: govIntegrity.integrity,
+            checked: govIntegrity.checked_layers,
+            failures: govIntegrity.failures.length,
+            frozen: isGovernanceFrozen(),
+            snapshot_hash: govSnapshot.snapshot_hash.slice(0, 12),
+            freeze_status: govFreezeResult ? govFreezeResult.status : 'NOT_FROZEN',
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.1: Traffic Entry Layer (Controlled Ingestion Surface) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_TRAFFIC_INGRESS === '1' || process.env.ENABLE_SIGNUP_TRAFFIC_INGRESS === 'true') {
+        const samplePayload = { request_id: 'req-demo-71', scope_id: 'scope-demo-71', event_type: 'envelope_reserved', payload: { user_id: 'u-demo', action: 'signup' }, timestamp: new Date().toISOString(), source: 'api' };
+        const normalized = normalizeTrafficPayload(samplePayload);
+        const validation = validateIngressRequest(normalized);
+        const preGate = isTrafficAllowed(normalized);
+        const ingestion = ingestTrafficRequest(samplePayload);
+        const rejectedIngestion = ingestTrafficRequest({ payload: 'bad' });
+        if (process.env.SIGNUP_TRAFFIC_INGRESS_STDOUT === '1' || process.env.SIGNUP_TRAFFIC_INGRESS_STDOUT === 'true') {
+          console.log("✅ traffic ingress demo:", JSON.stringify({
+            normalized: normalized.normalized,
+            valid: validation.valid,
+            pre_gate: preGate,
+            accepted: ingestion.accepted,
+            ingress_id: ingestion.ingress_id,
+            rejected_reason: rejectedIngestion.reason,
+            rejected_check: rejectedIngestion.failed_check,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.2: Controlled Exposure Routing Layer (Intent Mapping) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_EXPOSURE_ROUTER === '1' || process.env.ENABLE_SIGNUP_EXPOSURE_ROUTER === 'true') {
+        const liveCtx = { scope_id: 'scope-demo-72', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-72' };
+        const canaryCtx = { scope_id: 'scope-demo-72c', event_type: 'dispatch_acknowledged', source: 'api', canary: true, request_id: 'req-demo-72c' };
+        const liveProfile = getTrafficExposureProfile(liveCtx);
+        const canaryProfile = getTrafficExposureProfile(canaryCtx);
+        const intentValid = validateRoutingIntent(liveProfile.intent);
+        if (process.env.SIGNUP_EXPOSURE_ROUTER_STDOUT === '1' || process.env.SIGNUP_EXPOSURE_ROUTER_STDOUT === 'true') {
+          console.log("✅ exposure router demo:", JSON.stringify({
+            live_type: liveProfile.classification.traffic_type,
+            live_route: liveProfile.route.route,
+            canary_type: canaryProfile.classification.traffic_type,
+            canary_route: canaryProfile.route.route,
+            intent_valid: intentValid.valid,
+            exec_allowed: liveProfile.route.execution_allowed,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.3: Shadow Execution + Observability Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_SHADOW_OBSERVABILITY === '1' || process.env.ENABLE_SIGNUP_SHADOW_OBSERVABILITY === 'true') {
+        const shadowCtx = { scope_id: 'scope-demo-73', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-73', traffic_type: 'shadow' };
+        const shadowResult = simulateShadowExecution(shadowCtx);
+        const shadowTrace = buildShadowTrace(shadowCtx);
+        const traceValid = validateShadowIntegrity(shadowTrace);
+        const routingProfile = getTrafficExposureProfile(shadowCtx);
+        const obsTrace = createExecutionTrace({ scope_id: shadowCtx.scope_id, ingress: { accepted: true, ingress_id: 'ing-demo-73' }, routing: routingProfile, shadow: shadowResult });
+        recordExecutionMetric({ scope_id: shadowCtx.scope_id, metric_type: 'shadow_success' });
+        const snapshot = buildObservabilitySnapshot(shadowCtx.scope_id);
+        const anomalies = detectTraceAnomalies(snapshot);
+        if (process.env.SIGNUP_SHADOW_OBSERVABILITY_STDOUT === '1' || process.env.SIGNUP_SHADOW_OBSERVABILITY_STDOUT === 'true') {
+          console.log("✅ shadow + observability demo:", JSON.stringify({
+            shadow_ok: shadowResult.shadow_execution,
+            steps: shadowResult.steps_simulated,
+            final_state: shadowResult.simulated_state,
+            trace_valid: traceValid.valid,
+            obs_traces: snapshot.total_traces,
+            obs_metrics: snapshot.total_metrics,
+            anomalies: anomalies.anomaly_count,
+            exec_real: obsTrace.execution_real,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.4: Execution Policy Enforcement Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_POLICY_ENFORCER === '1' || process.env.ENABLE_SIGNUP_POLICY_ENFORCER === 'true') {
+        const policyCtx = { scope_id: 'scope-demo-74', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-74' };
+        const policyResult = evaluateGlobalExecutionPolicy(policyCtx);
+        const policySnap = buildPolicySnapshot(policyCtx.scope_id);
+        const compliant = isExecutionCompliant(policyCtx);
+        const signals = detectPolicyViolationSignals(policyCtx);
+        const leakCtx = { ...policyCtx, execution_allowed: true };
+        const leakSignals = detectPolicyViolationSignals(leakCtx);
+        if (process.env.SIGNUP_POLICY_ENFORCER_STDOUT === '1' || process.env.SIGNUP_POLICY_ENFORCER_STDOUT === 'true') {
+          console.log("✅ policy enforcer demo:", JSON.stringify({
+            compliant: policyResult.compliant,
+            mode: policyResult.policy_mode,
+            risk: policyResult.risk_level,
+            violations: policyResult.violations.length,
+            snap_mode: policySnap.policy_mode,
+            is_compliant: compliant,
+            signals: signals.signal_count,
+            leak_detected: leakSignals.signals.some(s => s.type === 'execution_leak_detected'),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.5: Execution Guard Kernel (Hard Enforcement Core) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_GUARD_KERNEL === '1' || process.env.ENABLE_SIGNUP_GUARD_KERNEL === 'true') {
+        const guardCtx = { scope_id: 'scope-demo-75', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-75', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-demo-75' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const finalGate = evaluateFinalExecutionGate(guardCtx);
+        const guardPassed = isExecutionGuardPassed(guardCtx);
+        const decisionTrace = buildGuardDecisionTrace(guardCtx);
+        const finality = resolveExecutionFinality(guardCtx);
+        const deniedCtx = { ...guardCtx, dispatch_decision: 'BLOCK' };
+        const deniedGate = evaluateFinalExecutionGate(deniedCtx);
+        if (process.env.SIGNUP_GUARD_KERNEL_STDOUT === '1' || process.env.SIGNUP_GUARD_KERNEL_STDOUT === 'true') {
+          console.log("✅ guard kernel demo:", JSON.stringify({
+            allowed: finalGate.final_allowed,
+            decision: finalGate.decision,
+            risk: finalGate.risk_level,
+            mode: finalGate.mode,
+            guard_passed: guardPassed,
+            layers_checked: decisionTrace.layers.length,
+            all_passed: decisionTrace.all_passed,
+            finality_decision: finality.decision,
+            denied_decision: deniedGate.decision,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.6: Execution Audit & Forensics Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_FORENSICS_ENGINE === '1' || process.env.ENABLE_SIGNUP_FORENSICS_ENGINE === 'true') {
+        const forensicCtx = { scope_id: 'scope-demo-76', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-76', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-demo-76' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const forensics = analyzeExecutionForensics(forensicCtx);
+        const report = buildForensicReport(forensicCtx.scope_id);
+        const drift = detectDecisionDrift(forensicCtx);
+        const reportIntegrity = validateForensicIntegrity(report);
+        const fHash = computeForensicHash(forensicCtx);
+        if (process.env.SIGNUP_FORENSICS_ENGINE_STDOUT === '1' || process.env.SIGNUP_FORENSICS_ENGINE_STDOUT === 'true') {
+          console.log("✅ forensics engine demo:", JSON.stringify({
+            integrity: forensics.integrity,
+            guard_decision: forensics.decision_chain.guard,
+            drift: drift.drift_detected,
+            drift_points: drift.drift_points.length,
+            report_valid: reportIntegrity.valid,
+            report_guard: report.guard_trace.final_decision,
+            policy_compliant: report.policy_state.compliant,
+            hash_len: fHash.length,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.7: System Consistency Proof Engine ---
+    try {
+      if (process.env.ENABLE_SIGNUP_CONSISTENCY_PROOF === '1' || process.env.ENABLE_SIGNUP_CONSISTENCY_PROOF === 'true') {
+        const proofCtx = { scope_id: 'scope-demo-77', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-77', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-demo-77' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const proof = generateConsistencyProof(proofCtx);
+        const graph = buildConsistencyGraph(proofCtx);
+        const consistent = isSystemConsistent(proofCtx);
+        const proof2 = generateConsistencyProof(proofCtx);
+        const comparison = compareConsistencyStates(proof, proof2);
+        if (process.env.SIGNUP_CONSISTENCY_PROOF_STDOUT === '1' || process.env.SIGNUP_CONSISTENCY_PROOF_STDOUT === 'true') {
+          console.log("✅ consistency proof demo:", JSON.stringify({
+            consistent: proof.consistent,
+            proof_valid: proof.proof_valid,
+            checks: proof.proof_checks.length,
+            violations: proof.violations.length,
+            nodes: graph.nodes.length,
+            edges: graph.edges.length,
+            is_consistent: consistent,
+            replay_identical: comparison.identical,
+            hash_match: comparison.hash_match,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 7.8: Production Hard Lock Seal ---
+    try {
+      if (process.env.ENABLE_SIGNUP_PRODUCTION_SEAL === '1' || process.env.ENABLE_SIGNUP_PRODUCTION_SEAL === 'true') {
+        const sealCtx = { scope_id: 'scope-demo-78', event_type: 'envelope_reserved', source: 'api', request_id: 'req-demo-78', dispatch_decision: 'ALLOW', route: { target_node_id: 'node-demo-78' }, consensus: true, replay_consistent: true, convergence_stable: true, mesh_stable: true };
+        const report = buildSealReport(sealCtx);
+        let sealResult = null;
+        if (process.env.SIGNUP_PRODUCTION_SEAL_FREEZE === '1' || process.env.SIGNUP_PRODUCTION_SEAL_FREEZE === 'true') {
+          sealResult = createProductionSeal(sealCtx);
+        }
+        const sealed = isSystemSealed();
+        let sealVerify = null;
+        if (sealed) {
+          sealVerify = verifySealConsistency(sealCtx);
+        }
+        if (process.env.SIGNUP_PRODUCTION_SEAL_STDOUT === '1' || process.env.SIGNUP_PRODUCTION_SEAL_STDOUT === 'true') {
+          console.log("✅ production seal demo:", JSON.stringify({
+            sealed: sealed,
+            report_consistent: report.consistency.consistent,
+            report_nodes: report.graph.nodes,
+            report_guard: report.guard.decision,
+            report_policy: report.policy.compliant,
+            seal_id: sealResult ? sealResult.seal_id : 'NOT_SEALED',
+            seal_integrity: sealResult ? sealResult.integrity : 'N/A',
+            verify_match: sealVerify ? sealVerify.seal_hash_match : 'N/A',
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.1: Intent Contract Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_INTENT_CONTRACT === '1' || process.env.ENABLE_SIGNUP_INTENT_CONTRACT === 'true') {
+        const intent = createIntentEnvelope({ intent_type: 'user.signup', payload: { user_id: 'u-demo-81', action: 'signup' }, governance: { mode: 'controlled' }, execution_constraints: { replay_safe: true, max_retries: 3, execution_timeout_ms: 5000 } });
+        const parsed = parseIntentContract({ intent_type: 'user.signup', payload: { user_id: 'u-demo-81', action: 'signup' }, governance: { mode: 'controlled' }, execution_constraints: { replay_safe: true, max_retries: 3, execution_timeout_ms: 5000 } });
+        const replaySafe = isIntentReplaySafe(intent);
+        const hashCheck = computeIntentHash(intent) === intent.intent_hash;
+        if (process.env.SIGNUP_INTENT_CONTRACT_STDOUT === '1' || process.env.SIGNUP_INTENT_CONTRACT_STDOUT === 'true') {
+          console.log("✅ intent contract demo:", JSON.stringify({
+            intent_id: intent.intent_id,
+            hash_len: intent.intent_hash.length,
+            replay_safe: replaySafe,
+            hash_match: hashCheck,
+            frozen: Object.isFrozen(intent),
+            parsed_match: parsed.intent_hash === intent.intent_hash,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.2: Intent Registry Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_INTENT_REGISTRY === '1' || process.env.ENABLE_SIGNUP_INTENT_REGISTRY === 'true') {
+        const signupDef = registerIntentDefinition({ intent_type: 'user.signup', intent_version: 'v1', schema: { required: ['email'] }, governance_modes: ['controlled', 'canary'], replay_safe: true, compatibility: { backward_compatible: true } });
+        const loginDef = registerIntentDefinition({ intent_type: 'user.login', intent_version: 'v1', schema: { required: ['email', 'password'] }, governance_modes: ['controlled', 'strict'], replay_safe: false });
+        const allIntents = listRegisteredIntents();
+        const testIntent = createIntentEnvelope({ intent_type: 'user.signup', payload: { email: 'test@demo.com' }, governance: { mode: 'controlled' }, execution_constraints: { replay_safe: true, max_retries: 0, execution_timeout_ms: 0 } });
+        const compat = validateIntentCompatibility(testIntent);
+        const freezeResult = freezeIntentRegistry();
+        if (process.env.SIGNUP_INTENT_REGISTRY_STDOUT === '1' || process.env.SIGNUP_INTENT_REGISTRY_STDOUT === 'true') {
+          console.log("✅ intent registry demo:", JSON.stringify({
+            total_registered: allIntents.length,
+            signup_hash_len: signupDef.definition_hash.length,
+            login_replay: loginDef.replay_safe,
+            compatible: compat.compatible,
+            frozen: isIntentRegistryFrozen(),
+            registry_hash_len: freezeResult.registry_hash.length,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.3: Runtime Capability Mapping Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_CAPABILITY === '1' || process.env.ENABLE_SIGNUP_RUNTIME_CAPABILITY === 'true') {
+        const signupMapping = registerRuntimeCapabilityMapping({ intent_type: 'user.signup', intent_version: 'v1', allowed_capabilities: ['shadow_execution', 'controlled_execution', 'observability_access'], default_capability: 'controlled_execution', governance_modes: ['controlled', 'canary'], replay_safe: true });
+        const loginMapping = registerRuntimeCapabilityMapping({ intent_type: 'user.login', intent_version: 'v1', allowed_capabilities: ['shadow_execution', 'simulation_execution', 'forensic_analysis'], default_capability: 'shadow_execution', governance_modes: ['controlled', 'strict'], replay_safe: false });
+        const testIntent = createIntentEnvelope({ intent_type: 'user.signup', payload: { email: 'cap@demo.com' }, governance: { mode: 'controlled' }, execution_constraints: { replay_safe: true, max_retries: 0, execution_timeout_ms: 0 } });
+        const resolved = resolveRuntimeCapability(testIntent);
+        const capValid = validateRuntimeCapability(testIntent, 'shadow_execution');
+        const capFreeze = freezeRuntimeCapabilityRegistry();
+        if (process.env.SIGNUP_RUNTIME_CAPABILITY_STDOUT === '1' || process.env.SIGNUP_RUNTIME_CAPABILITY_STDOUT === 'true') {
+          console.log("✅ runtime capability demo:", JSON.stringify({
+            signup_caps: signupMapping.allowed_capabilities.length,
+            login_default: loginMapping.default_capability,
+            resolved: resolved.resolved_capability,
+            allowed: resolved.capability_allowed,
+            valid: capValid.valid,
+            frozen: isRuntimeCapabilityRegistryFrozen(),
+            registry_hash_len: capFreeze.registry_hash.length,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.4: Workflow Composition Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_WORKFLOW_COMPOSITION === '1' || process.env.ENABLE_SIGNUP_WORKFLOW_COMPOSITION === 'true') {
+        const wf = createWorkflowDefinition({ workflow_id: 'wf-signup-v1', workflow_name: 'user_signup_flow', workflow_version: 'v1', steps: [{ step_id: 'step-1', step_type: 'intent', intent_type: 'user.signup', runtime_capability: 'controlled_execution', next_steps: ['step-2'] }, { step_id: 'step-2', step_type: 'terminal', intent_type: 'system.replay', runtime_capability: 'shadow_execution', next_steps: [] }] });
+        const validated = validateWorkflowDefinition(wf);
+        const plan = buildWorkflowExecutionPlan(wf);
+        const cycles = detectWorkflowCycles(wf);
+        const wfFreeze = freezeWorkflowRegistry();
+        if (process.env.SIGNUP_WORKFLOW_COMPOSITION_STDOUT === '1' || process.env.SIGNUP_WORKFLOW_COMPOSITION_STDOUT === 'true') {
+          console.log("✅ workflow composition demo:", JSON.stringify({
+            workflow_id: wf.workflow_id,
+            total_steps: plan.total_steps,
+            terminals: plan.terminal_steps.length,
+            exec_order: plan.execution_order.length,
+            has_cycles: cycles.has_cycles,
+            valid: validated.valid,
+            frozen: isWorkflowRegistryFrozen(),
+            hash_len: wf.workflow_hash.length,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.5: Workflow Runtime Orchestrator ---
+    try {
+      if (process.env.ENABLE_SIGNUP_WORKFLOW_RUNTIME === '1' || process.env.ENABLE_SIGNUP_WORKFLOW_RUNTIME === 'true') {
+        const wfDef = { workflow_id: 'wf-signup-v1', workflow_name: 'user_signup_flow', workflow_version: 'v1', steps: [{ step_id: 'step-1', step_type: 'intent', intent_type: 'user.signup', runtime_capability: 'controlled_execution', next_steps: ['step-2'] }, { step_id: 'step-2', step_type: 'terminal', intent_type: 'system.replay', runtime_capability: 'shadow_execution', next_steps: [] }], workflow_hash: '' };
+        wfDef.workflow_hash = (await import('./lib/registrationEvolution/workflowCompositionLayer.js')).computeWorkflowHash(wfDef);
+        let session = createWorkflowRuntimeSession({ workflow: wfDef });
+        const execSteps = getExecutableWorkflowSteps(session);
+        session = advanceWorkflowRuntime(session, { step_id: 'step-1' });
+        session = pauseWorkflowRuntime(session);
+        session = resumeWorkflowRuntime(session);
+        session = advanceWorkflowRuntime(session, { step_id: 'step-2' });
+        const integrity = validateWorkflowRuntimeIntegrity(session);
+        if (process.env.SIGNUP_WORKFLOW_RUNTIME_STDOUT === '1' || process.env.SIGNUP_WORKFLOW_RUNTIME_STDOUT === 'true') {
+          console.log("✅ workflow runtime demo:", JSON.stringify({
+            session_id: session.session_id.slice(0, 20),
+            state: session.state,
+            completed: session.completed_steps.length,
+            cursor_empty: session.cursor.length === 0,
+            entry_steps: execSteps.length,
+            integrity: integrity.valid,
+            checks: integrity.checks.length,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.6: Workflow Checkpoint & Recovery Runtime ---
+    try {
+      if (process.env.ENABLE_SIGNUP_WORKFLOW_CHECKPOINT === '1' || process.env.ENABLE_SIGNUP_WORKFLOW_CHECKPOINT === 'true') {
+        const wfDef = { workflow_id: 'wf-signup-v1', workflow_name: 'user_signup_flow', workflow_version: 'v1', steps: [{ step_id: 'step-1', step_type: 'intent', intent_type: 'user.signup', runtime_capability: 'controlled_execution', next_steps: ['step-2'] }, { step_id: 'step-2', step_type: 'terminal', intent_type: 'system.replay', runtime_capability: 'shadow_execution', next_steps: [] }], workflow_hash: '' };
+        wfDef.workflow_hash = (await import('./lib/registrationEvolution/workflowCompositionLayer.js')).computeWorkflowHash(wfDef);
+        let session = createWorkflowRuntimeSession({ workflow: wfDef });
+        session = advanceWorkflowRuntime(session, { step_id: 'step-1' });
+
+        const cp1 = createWorkflowCheckpoint(session);
+        const valid = validateWorkflowCheckpoint(cp1);
+        const restored = restoreWorkflowCheckpoint(cp1);
+        const plan = buildWorkflowRecoveryPlan(session);
+        const recoverable = isWorkflowRecoverable(session);
+
+        session = advanceWorkflowRuntime(session, { step_id: 'step-2' });
+        const cp2 = createWorkflowCheckpoint(session);
+        const comparison = compareWorkflowCheckpoints(cp1, cp2);
+
+        if (process.env.SIGNUP_WORKFLOW_CHECKPOINT_STDOUT === '1' || process.env.SIGNUP_WORKFLOW_CHECKPOINT_STDOUT === 'true') {
+          console.log("✅ workflow checkpoint demo:", JSON.stringify({
+            cp1_id: cp1.checkpoint_id,
+            cp1_hash: cp1.checkpoint_hash.slice(0, 16),
+            valid: valid.valid,
+            checks: valid.checks.length,
+            restored_from: restored.restored_from_checkpoint,
+            plan_recoverable: plan.recoverable,
+            resume_points: plan.safe_resume_points.length,
+            pending: plan.pending_steps.length,
+            is_recoverable: recoverable,
+            cp2_identical: comparison.identical,
+            divergence: comparison.divergence_fields,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.7: Distributed Workflow Session Coordination ---
+    try {
+      if (process.env.ENABLE_SIGNUP_DISTRIBUTED_WORKFLOW === '1' || process.env.ENABLE_SIGNUP_DISTRIBUTED_WORKFLOW === 'true') {
+        const nodeA = registerWorkflowRuntimeNode({ node_name: 'orchestrator-alpha', node_region: 'us-east', capacity: 50 });
+        const nodeB = registerWorkflowRuntimeNode({ node_name: 'orchestrator-beta', node_region: 'eu-west', capacity: 50 });
+
+        const wfDef = { workflow_id: 'wf-signup-v1', workflow_name: 'user_signup_flow', workflow_version: 'v1', steps: [{ step_id: 'step-1', step_type: 'intent', intent_type: 'user.signup', runtime_capability: 'controlled_execution', next_steps: ['step-2'] }, { step_id: 'step-2', step_type: 'terminal', intent_type: 'system.replay', runtime_capability: 'shadow_execution', next_steps: [] }], workflow_hash: '' };
+        wfDef.workflow_hash = (await import('./lib/registrationEvolution/workflowCompositionLayer.js')).computeWorkflowHash(wfDef);
+        const session = createWorkflowRuntimeSession({ workflow: wfDef });
+
+        const assignment = assignWorkflowSession(session, nodeA);
+        const ownerBefore = resolveWorkflowSessionOwner(session.session_id);
+        const transfer = transferWorkflowSession(session, nodeA, nodeB);
+        const ownerAfter = resolveWorkflowSessionOwner(session.session_id);
+        const dwMap = buildDistributedWorkflowMap();
+        const integrity = validateDistributedWorkflowIntegrity();
+        const dwHash = computeDistributedWorkflowHash();
+
+        if (process.env.SIGNUP_DISTRIBUTED_WORKFLOW_STDOUT === '1' || process.env.SIGNUP_DISTRIBUTED_WORKFLOW_STDOUT === 'true') {
+          console.log("✅ distributed workflow demo:", JSON.stringify({
+            nodeA: nodeA.node_id.slice(0, 20),
+            nodeB: nodeB.node_id.slice(0, 20),
+            assigned_to: assignment.node_id.slice(0, 20),
+            owner_before: ownerBefore.node_id.slice(0, 20),
+            transfer_id: transfer.transfer_id,
+            owner_after: ownerAfter.node_id.slice(0, 20),
+            total_sessions: dwMap.total_sessions,
+            total_transfers: dwMap.total_transfers,
+            integrity_valid: integrity.valid,
+            integrity_checks: integrity.checks.length,
+            dw_hash: dwHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.8: External Runtime SDK Surface ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_SDK === '1' || process.env.ENABLE_SIGNUP_RUNTIME_SDK === 'true') {
+        const sdkClient = createRuntimeClient({ client_name: 'signup-frontend', governance_mode: 'controlled', allowed_intents: ['user.signup', 'system.replay'], allowed_capabilities: ['controlled_execution', 'shadow_execution'] });
+
+        const intentEnvelope = { intent_type: 'user.signup', intent_version: 'v1', governance_mode: 'controlled', payload: { email: 'demo@test.com' }, metadata: {}, runtime_capability: 'controlled_execution' };
+        intentEnvelope.intent_hash = (await import('./lib/registrationEvolution/intentContractLayer.js')).computeIntentHash(intentEnvelope);
+
+        const submission = submitRuntimeIntent(sdkClient, intentEnvelope);
+
+        const wfDef = { workflow_id: 'wf-signup-v1', workflow_name: 'user_signup_flow', workflow_version: 'v1', steps: [{ step_id: 'step-1', step_type: 'intent', intent_type: 'user.signup', runtime_capability: 'controlled_execution', next_steps: ['step-2'] }, { step_id: 'step-2', step_type: 'terminal', intent_type: 'system.replay', runtime_capability: 'shadow_execution', next_steps: [] }], workflow_hash: '' };
+        wfDef.workflow_hash = (await import('./lib/registrationEvolution/workflowCompositionLayer.js')).computeWorkflowHash(wfDef);
+        const sdkSession = createSdkWorkflowSession(sdkClient, wfDef);
+
+        const invocation = buildRuntimeInvocation({ client_id: sdkClient.client_id, intent_type: 'user.signup', intent_hash: intentEnvelope.intent_hash, workflow_hash: wfDef.workflow_hash, capability: 'controlled_execution', governance_mode: 'controlled' });
+        const invValid = validateRuntimeInvocation(invocation);
+        const snapshot = buildSdkRuntimeSnapshot();
+        const surfaceHash = computeSdkSurfaceHash();
+
+        if (process.env.SIGNUP_RUNTIME_SDK_STDOUT === '1' || process.env.SIGNUP_RUNTIME_SDK_STDOUT === 'true') {
+          console.log("✅ runtime SDK surface demo:", JSON.stringify({
+            client_id: sdkClient.client_id.slice(0, 20),
+            submission_id: submission.submission_id,
+            replay_safe: submission.replay_safe,
+            session_id: sdkSession.session_id.slice(0, 20),
+            binding_hash: sdkSession.binding_hash.slice(0, 16),
+            invocation_id: invocation.invocation_id,
+            inv_valid: invValid.valid,
+            inv_checks: invValid.checks.length,
+            total_clients: snapshot.total_clients,
+            surface_hash: surfaceHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 8.9: Product Kernel Finalization ---
+    try {
+      if (process.env.ENABLE_SIGNUP_PRODUCT_KERNEL === '1' || process.env.ENABLE_SIGNUP_PRODUCT_KERNEL === 'true') {
+        const kernelIntegrity = validateProductKernelIntegrity();
+        const determinism = validateKernelDeterminism();
+        const consistency = verifyProductKernelConsistency();
+        const snapshot = buildProductKernelSnapshot();
+        const kernelHash = computeProductKernelHash();
+        const frozenBefore = isProductKernelFrozen();
+
+        let sealResult = null;
+        if (!frozenBefore) {
+          try { sealResult = freezeProductKernel(); } catch (e) { sealResult = { error: e.message }; }
+        }
+
+        const frozenAfter = isProductKernelFrozen();
+
+        if (process.env.SIGNUP_PRODUCT_KERNEL_STDOUT === '1' || process.env.SIGNUP_PRODUCT_KERNEL_STDOUT === 'true') {
+          console.log("✅ product kernel finalization demo:", JSON.stringify({
+            integrity_valid: kernelIntegrity.valid,
+            integrity_layers: kernelIntegrity.layers.length,
+            integrity_checks: kernelIntegrity.checks.length,
+            determinism_valid: determinism.valid,
+            determinism_checks: determinism.checks.length,
+            consistency_valid: consistency.consistent,
+            consistency_proofs: consistency.proofs.length,
+            kernel_hash: kernelHash.slice(0, 16),
+            snapshot_layers: snapshot.layer_versions.length,
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            seal: sealResult ? (sealResult.error || sealResult.seal_type) : 'already_frozen',
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.1: HTTP Runtime Exposure Surface ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_HTTP_SURFACE === '1' || process.env.ENABLE_SIGNUP_RUNTIME_HTTP_SURFACE === 'true') {
+        const surface = createRuntimeHttpSurface({ surface_name: 'signup-api', governance_mode: 'controlled' });
+
+        registerRuntimeRoute({ method: 'POST', path: '/runtime/intents', description: 'Submit intent for validation' });
+        registerRuntimeRoute({ method: 'POST', path: '/runtime/workflows', description: 'Submit workflow for validation' });
+        registerRuntimeRoute({ method: 'GET', path: '/runtime/workflows/:id', description: 'Lookup workflow by ID' });
+        registerRuntimeRoute({ method: 'GET', path: '/runtime/platform/snapshot', description: 'Platform kernel snapshot' });
+        registerRuntimeRoute({ method: 'GET', path: '/runtime/health', description: 'Health check' });
+
+        const intentReq = handleRuntimeRequest({ method: 'POST', path: '/runtime/intents', request_id: 'req-demo-001', timestamp: new Date().toISOString(), body: { intent_type: 'user.signup', intent_version: 'v1', payload: { email: 'test@demo.com' }, governance: { mode: 'controlled' }, execution_constraints: {}, intent_hash: '' } });
+        const snapshotReq = handleRuntimeRequest({ method: 'GET', path: '/runtime/platform/snapshot', request_id: 'req-demo-002', timestamp: new Date().toISOString() });
+        const healthReq = handleRuntimeRequest({ method: 'GET', path: '/runtime/health', request_id: 'req-demo-003', timestamp: new Date().toISOString() });
+
+        const httpSnapshot = buildRuntimeHttpSnapshot();
+        const surfaceHash = computeRuntimeSurfaceHash();
+
+        if (process.env.SIGNUP_RUNTIME_HTTP_SURFACE_STDOUT === '1' || process.env.SIGNUP_RUNTIME_HTTP_SURFACE_STDOUT === 'true') {
+          console.log("✅ runtime HTTP surface demo:", JSON.stringify({
+            surface_id: surface.surface_id.slice(0, 20),
+            readonly_kernel: surface.readonly_kernel,
+            execution_allowed: surface.execution_allowed,
+            intent_status: intentReq.status,
+            snapshot_status: snapshotReq.status,
+            health_status: healthReq.status,
+            health_kernel_frozen: healthReq.kernel_frozen,
+            route_count: httpSnapshot.route_count,
+            request_count: httpSnapshot.request_count,
+            surface_hash: surfaceHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.2: Runtime API Gateway & Request Authentication ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_API_GATEWAY === '1' || process.env.ENABLE_SIGNUP_RUNTIME_API_GATEWAY === 'true') {
+        const gwClient = registerApiClient({ client_name: 'signup-web-app', governance_mode: 'simulation', allowed_routes: ['POST /runtime/intents', 'GET /runtime/health', 'GET /runtime/platform/snapshot'], api_key: 'sk-demo-signup-001' });
+
+        const sig = computeRequestSignature({ method: 'GET', path: '/runtime/health', request_id: 'gw-demo-001', api_key: 'sk-demo-signup-001' });
+        const authn = authenticateRuntimeRequest({ api_key: 'sk-demo-signup-001', request_signature: sig, request_id: 'gw-demo-001', timestamp: new Date().toISOString(), method: 'GET', path: '/runtime/health' });
+        const authz = authorizeRuntimeRequest({ client_id: gwClient.client_id, method: 'GET', path: '/runtime/health' });
+
+        const gwResponse = handleGatewayRuntimeRequest({ api_key: 'sk-demo-signup-001', request_signature: computeRequestSignature({ method: 'GET', path: '/runtime/health', request_id: 'gw-demo-002', api_key: 'sk-demo-signup-001' }), request_id: 'gw-demo-002', timestamp: new Date().toISOString(), method: 'GET', path: '/runtime/health' });
+
+        const gwSnapshot = buildApiGatewaySnapshot();
+        const gwHash = computeApiGatewayHash();
+
+        if (process.env.SIGNUP_RUNTIME_API_GATEWAY_STDOUT === '1' || process.env.SIGNUP_RUNTIME_API_GATEWAY_STDOUT === 'true') {
+          console.log("✅ runtime API gateway demo:", JSON.stringify({
+            client_id: gwClient.client_id.slice(0, 20),
+            execution_allowed: gwClient.execution_allowed,
+            authn_ok: authn.authenticated,
+            authn_reason: authn.reason,
+            authz_ok: authz.authorized,
+            authz_level: authz.authorization_level,
+            gw_status: gwResponse.status,
+            gw_authenticated: gwResponse.authenticated,
+            gw_authorized: gwResponse.authorized,
+            gw_execution_allowed: gwResponse.execution_allowed,
+            total_clients: gwSnapshot.total_clients,
+            auth_attempts: gwSnapshot.authentication.attempts,
+            gw_hash: gwHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.3: Tenant Provisioning & Namespace Isolation ---
+    try {
+      if (process.env.ENABLE_SIGNUP_TENANT_PROVISIONING === '1' || process.env.ENABLE_SIGNUP_TENANT_PROVISIONING === 'true') {
+        const tenant = registerTenant({ tenant_name: 'acme', governance_mode: 'simulation', namespace: 'acme.production', allowed_intents: ['user.signup', 'user.login'], allowed_capabilities: ['controlled_execution', 'shadow_execution'] });
+
+        const tenantClient = registerApiClient({ client_name: 'acme-web-app', governance_mode: 'simulation', allowed_routes: ['POST /runtime/intents', 'GET /runtime/health'], api_key: 'sk-acme-tenant-001' });
+
+        const binding = bindClientToTenant(tenantClient, tenant);
+        const nsResolution = resolveTenantNamespace({ namespace: 'acme.production' });
+        const isolation = validateTenantIsolation();
+        const runtimeCtx = buildTenantRuntimeContext({ tenant_id: tenant.tenant_id });
+        const provSnapshot = buildTenantProvisioningSnapshot();
+        const provHash = computeTenantProvisioningHash();
+
+        if (process.env.SIGNUP_TENANT_PROVISIONING_STDOUT === '1' || process.env.SIGNUP_TENANT_PROVISIONING_STDOUT === 'true') {
+          console.log("✅ tenant provisioning demo:", JSON.stringify({
+            tenant_id: tenant.tenant_id.slice(0, 24),
+            namespace: tenant.namespace,
+            execution_allowed: tenant.execution_allowed,
+            binding_id: binding.binding_id,
+            ns_resolved: nsResolution !== null,
+            ns_isolated: nsResolution ? nsResolution.isolated : false,
+            isolation_valid: isolation.valid,
+            isolation_checks: isolation.checks.length,
+            ctx_readonly: runtimeCtx.readonly_runtime,
+            ctx_hash: runtimeCtx.context_hash.slice(0, 16),
+            total_tenants: provSnapshot.total_tenants,
+            total_bindings: provSnapshot.total_bindings,
+            prov_hash: provHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.4: Tenant Runtime Policy & Governance Isolation ---
+    try {
+      if (process.env.ENABLE_SIGNUP_TENANT_RUNTIME_POLICY === '1' || process.env.ENABLE_SIGNUP_TENANT_RUNTIME_POLICY === 'true') {
+        const pTenant = registerTenant({ tenant_name: 'betacorp', governance_mode: 'controlled', namespace: 'betacorp.staging', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'] });
+        const pClient = registerApiClient({ client_name: 'betacorp-dashboard', governance_mode: 'controlled', allowed_routes: ['POST /runtime/intents', 'GET /runtime/health'], api_key: 'sk-betacorp-policy-001' });
+        const pBinding = bindClientToTenant(pClient, pTenant);
+
+        const policy = registerTenantRuntimePolicy({ tenant_id: pTenant.tenant_id, namespace: 'betacorp.staging', governance_mode: 'controlled', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'], workflow_limits: { max_workflows: 50, max_parallel_steps: 5, max_replay_depth: 3 }, api_limits: { max_requests_per_minute: 500, max_payload_size_kb: 256 } });
+        const resolvedPolicy = resolveTenantRuntimePolicy({ tenant_id: pTenant.tenant_id });
+        const policyValid = validateTenantRuntimePolicy({ tenant_id: pTenant.tenant_id });
+        const policyCtx = buildTenantPolicyRuntimeContext({ tenant_id: pTenant.tenant_id });
+        const policySnap = buildTenantPolicySnapshot();
+        const policyHash = computeTenantPolicyHash();
+
+        if (process.env.SIGNUP_TENANT_RUNTIME_POLICY_STDOUT === '1' || process.env.SIGNUP_TENANT_RUNTIME_POLICY_STDOUT === 'true') {
+          console.log("✅ tenant runtime policy demo:", JSON.stringify({
+            policy_id: policy.policy_id,
+            readonly_policy: policy.readonly_policy,
+            execution_allowed: policy.execution_allowed,
+            resolved_ns: resolvedPolicy ? resolvedPolicy.namespace : null,
+            resolved_gov: resolvedPolicy ? resolvedPolicy.governance_mode : null,
+            valid: policyValid.valid,
+            checks: policyValid.checks.length,
+            ctx_readonly: policyCtx.readonly_runtime,
+            ctx_hash: policyCtx.runtime_policy_hash.slice(0, 16),
+            total_policies: policySnap.total_policies,
+            policy_hash: policyHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.5: Runtime Usage Metering & Deterministic Quota ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_USAGE_METER === '1' || process.env.ENABLE_SIGNUP_RUNTIME_USAGE_METER === 'true') {
+        const mTenant = registerTenant({ tenant_name: 'gammaco', governance_mode: 'controlled', namespace: 'gammaco.production', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'] });
+        const mPolicy = registerTenantRuntimePolicy({ tenant_id: mTenant.tenant_id, namespace: 'gammaco.production', governance_mode: 'controlled', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'], workflow_limits: { max_workflows: 50, max_parallel_steps: 5, max_replay_depth: 3 }, api_limits: { max_requests_per_minute: 500, max_payload_size_kb: 256 } });
+
+        const meter = registerUsageMeter({ tenant_id: mTenant.tenant_id, namespace: 'gammaco.production', governance_mode: 'controlled', quotas: { max_requests_per_hour: 1000, max_workflow_sessions: 100, max_runtime_invocations: 500, max_checkpoint_operations: 200 }, metering: { track_requests: true, track_workflows: true, track_invocations: true, track_checkpoints: true } });
+
+        const u1 = recordRuntimeUsage({ tenant_id: mTenant.tenant_id, event_type: 'request' });
+        const u2 = recordRuntimeUsage({ tenant_id: mTenant.tenant_id, event_type: 'workflow_session' });
+        const u3 = recordRuntimeUsage({ tenant_id: mTenant.tenant_id, event_type: 'runtime_invocation' });
+        const quotaState = resolveRuntimeQuotaState({ tenant_id: mTenant.tenant_id });
+        const quotaValid = validateRuntimeQuota({ tenant_id: mTenant.tenant_id });
+        const usageSnap = buildRuntimeUsageSnapshot();
+        const usageHash = computeRuntimeUsageHash();
+
+        if (process.env.SIGNUP_RUNTIME_USAGE_METER_STDOUT === '1' || process.env.SIGNUP_RUNTIME_USAGE_METER_STDOUT === 'true') {
+          console.log("✅ runtime usage meter demo:", JSON.stringify({
+            meter_id: meter.meter_id,
+            readonly_meter: meter.readonly_meter,
+            execution_allowed: meter.execution_allowed,
+            u1_recorded: u1.recorded,
+            u1_remaining: u1.quota_remaining,
+            u2_type: u2.event_type,
+            u3_type: u3.event_type,
+            quota_exceeded: quotaState.quota_exceeded,
+            quota_valid: quotaValid.valid,
+            quota_checks: quotaValid.checks.length,
+            total_events: usageSnap.total_usage_events,
+            total_meters: usageSnap.total_meters,
+            usage_hash: usageHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.6: Runtime Audit Ledger & Immutable Usage Evidence ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_AUDIT_LEDGER === '1' || process.env.ENABLE_SIGNUP_RUNTIME_AUDIT_LEDGER === 'true') {
+        const aTenant = registerTenant({ tenant_name: 'deltainc', governance_mode: 'strict', namespace: 'deltainc.production', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'] });
+        const aPolicy = registerTenantRuntimePolicy({ tenant_id: aTenant.tenant_id, namespace: 'deltainc.production', governance_mode: 'strict', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'], workflow_limits: { max_workflows: 50, max_parallel_steps: 5, max_replay_depth: 3 }, api_limits: { max_requests_per_minute: 500, max_payload_size_kb: 256 } });
+        const aMeter = registerUsageMeter({ tenant_id: aTenant.tenant_id, namespace: 'deltainc.production', governance_mode: 'strict', quotas: { max_requests_per_hour: 1000, max_workflow_sessions: 100, max_runtime_invocations: 500, max_checkpoint_operations: 200 }, metering: { track_requests: true, track_workflows: true, track_invocations: true, track_checkpoints: true } });
+
+        const usageEvt = recordRuntimeUsage({ tenant_id: aTenant.tenant_id, event_type: 'request' });
+
+        const entry1 = createAuditLedgerEntry({ tenant_id: aTenant.tenant_id, namespace: 'deltainc.production', evidence_type: 'runtime_usage', source_id: usageEvt.usage_event_id, source_hash: usageEvt.usage_hash, governance_mode: 'strict', metadata: { event_type: 'request' } });
+        const entry2 = createAuditLedgerEntry({ tenant_id: aTenant.tenant_id, namespace: 'deltainc.production', evidence_type: 'api_gateway_request', source_id: 'gw-req-demo-audit', source_hash: 'a'.repeat(64), governance_mode: 'strict' });
+
+        const ledger = resolveAuditLedger({ tenant_id: aTenant.tenant_id });
+        const integrity = validateAuditLedgerIntegrity({ tenant_id: aTenant.tenant_id });
+        const chain = buildAuditEvidenceChain({ tenant_id: aTenant.tenant_id });
+        const auditSnap = buildRuntimeAuditSnapshot();
+        const auditHash = computeRuntimeAuditHash();
+
+        if (process.env.SIGNUP_RUNTIME_AUDIT_LEDGER_STDOUT === '1' || process.env.SIGNUP_RUNTIME_AUDIT_LEDGER_STDOUT === 'true') {
+          console.log("✅ runtime audit ledger demo:", JSON.stringify({
+            entry1_id: entry1.ledger_entry_id,
+            entry1_readonly: entry1.readonly_ledger,
+            entry2_type: entry2.evidence_type,
+            ledger_entries: ledger ? ledger.total_entries : 0,
+            integrity_valid: integrity.valid,
+            integrity_checks: integrity.checks.length,
+            chain_id: chain.chain_id,
+            chain_links: chain.total_links,
+            chain_hash: chain.chain_hash.slice(0, 16),
+            snap_total: auditSnap.total_entries,
+            snap_integrity: auditSnap.append_only_integrity,
+            audit_hash: auditHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.7: Runtime Event Provenance Graph & Causal Lineage ---
+    try {
+      if (process.env.ENABLE_SIGNUP_RUNTIME_PROVENANCE === '1' || process.env.ENABLE_SIGNUP_RUNTIME_PROVENANCE === 'true') {
+        const pvTenant = registerTenant({ tenant_name: 'epsilonltd', governance_mode: 'controlled', namespace: 'epsilonltd.production', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'] });
+        const pvPolicy = registerTenantRuntimePolicy({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', governance_mode: 'controlled', allowed_intents: ['user.signup'], allowed_capabilities: ['controlled_execution'], workflow_limits: { max_workflows: 50, max_parallel_steps: 5, max_replay_depth: 3 }, api_limits: { max_requests_per_minute: 500, max_payload_size_kb: 256 } });
+        const pvMeter = registerUsageMeter({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', governance_mode: 'controlled', quotas: { max_requests_per_hour: 1000, max_workflow_sessions: 100, max_runtime_invocations: 500, max_checkpoint_operations: 200 }, metering: { track_requests: true, track_workflows: true, track_invocations: true, track_checkpoints: true } });
+
+        const pvUsage = recordRuntimeUsage({ tenant_id: pvTenant.tenant_id, event_type: 'request' });
+        const pvAudit = createAuditLedgerEntry({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', evidence_type: 'runtime_usage', source_id: pvUsage.usage_event_id, source_hash: pvUsage.usage_hash, governance_mode: 'controlled' });
+
+        const nodeGw = registerProvenanceNode({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', event_type: 'gateway_request', event_id: 'gw-prov-001', source_layer: 'gateway', source_hash: 'b'.repeat(64) });
+        const nodeMeter = registerProvenanceNode({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', event_type: 'usage_record', event_id: pvUsage.usage_event_id, source_layer: 'meter', source_hash: pvUsage.usage_hash });
+        const nodeAudit = registerProvenanceNode({ tenant_id: pvTenant.tenant_id, namespace: 'epsilonltd.production', event_type: 'audit_entry', event_id: pvAudit.ledger_entry_id, source_layer: 'audit', source_hash: pvAudit.ledger_hash });
+
+        const link1 = linkProvenanceNodes({ from_node_id: nodeGw.node_id, to_node_id: nodeMeter.node_id, relation_type: 'triggers' });
+        const link2 = linkProvenanceNodes({ from_node_id: nodeMeter.node_id, to_node_id: nodeAudit.node_id, relation_type: 'records' });
+
+        const graph = buildProvenanceGraph({ tenant_id: pvTenant.tenant_id });
+        const lineage = traceCausalLineage({ node_id: nodeGw.node_id });
+        const graphValid = validateProvenanceGraph({ tenant_id: pvTenant.tenant_id });
+        const provSnap = buildProvenanceSnapshot();
+        const provHash = computeProvenanceHash();
+
+        if (process.env.SIGNUP_RUNTIME_PROVENANCE_STDOUT === '1' || process.env.SIGNUP_RUNTIME_PROVENANCE_STDOUT === 'true') {
+          console.log("✅ runtime provenance graph demo:", JSON.stringify({
+            nodes: graph.total_nodes,
+            links: graph.total_links,
+            roots: graph.root_nodes.length,
+            leaves: graph.leaf_nodes.length,
+            graph_hash: graph.graph_hash.slice(0, 16),
+            lineage_depth: lineage.depth,
+            lineage_root: lineage.root_event,
+            lineage_terminals: lineage.terminal_events.length,
+            valid: graphValid.valid,
+            checks: graphValid.checks.length,
+            snap_nodes: provSnap.total_nodes,
+            snap_integrity: provSnap.graph_integrity,
+            prov_hash: provHash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.8: System Convergence & Unified Truth Engine ---
+    try {
+      if (process.env.ENABLE_SIGNUP_SYSTEM_CONVERGENCE === '1' || process.env.ENABLE_SIGNUP_SYSTEM_CONVERGENCE === 'true') {
+        const convergenceModel = buildSystemConvergenceModel();
+        const contradictions = detectSystemContradictions();
+        const truthSnapshot = buildUnifiedTruthSnapshot();
+        const convergenceHash = computeSystemConvergenceHash();
+
+        let convergenceValid = null;
+        try { convergenceValid = validateSystemConvergence(); } catch (e) { convergenceValid = { valid: false, error: e.message }; }
+
+        const frozenBefore = isSystemConvergenceFrozen();
+        let sealResult = null;
+        if (!frozenBefore) {
+          try { sealResult = freezeSystemConvergence(); } catch (e) { sealResult = { error: e.message }; }
+        }
+        const frozenAfter = isSystemConvergenceFrozen();
+
+        if (process.env.SIGNUP_SYSTEM_CONVERGENCE_STDOUT === '1' || process.env.SIGNUP_SYSTEM_CONVERGENCE_STDOUT === 'true') {
+          console.log("✅ system convergence demo:", JSON.stringify({
+            converged: convergenceModel.converged,
+            layers: convergenceModel.layer_count,
+            alignment: convergenceModel.cross_layer_alignment,
+            contradictions_consistent: contradictions.consistent,
+            contradictions_count: contradictions.violations.length,
+            severity: contradictions.severity,
+            truth_state: truthSnapshot.truth_state,
+            truth_consistent: truthSnapshot.consistency,
+            convergence_hash: convergenceHash.slice(0, 16),
+            validation: convergenceValid ? convergenceValid.valid : false,
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            seal: sealResult ? (sealResult.error || sealResult.final_hash.slice(0, 16)) : 'already_frozen',
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 9.9: System Final Seal & Closure Layer ---
+    try {
+      if (process.env.ENABLE_SIGNUP_FINAL_SEAL === '1' || process.env.ENABLE_SIGNUP_FINAL_SEAL === 'true') {
+        const preHash = computeFinalSystemHash();
+        const sealedBefore = isSystemFinalSealed();
+
+        let sealResult = null;
+        if (!sealedBefore) {
+          try { sealResult = createFinalSystemSeal(); } catch (e) { sealResult = { error: e.message }; }
+        }
+
+        let integrityResult = null;
+        try { integrityResult = validateFinalSealIntegrity(); } catch (e) { integrityResult = { valid: false, error: e.message }; }
+
+        let attestation = null;
+        try { attestation = buildFinalSystemAttestation(); } catch (e) { attestation = { error: e.message }; }
+
+        let freezeResult = null;
+        try { freezeResult = freezeFinalSystemSeal(); } catch (e) { freezeResult = { error: e.message }; }
+
+        const sealedAfter = isSystemFinalSealed();
+
+        if (process.env.SIGNUP_FINAL_SEAL_STDOUT === '1' || process.env.SIGNUP_FINAL_SEAL_STDOUT === 'true') {
+          console.log("✅ final system seal demo:", JSON.stringify({
+            pre_hash: preHash.slice(0, 16),
+            sealed_before: sealedBefore,
+            seal: sealResult ? (sealResult.error || sealResult.seal_id) : 'already_sealed',
+            seal_hash: sealResult && sealResult.final_system_hash ? sealResult.final_system_hash.slice(0, 16) : null,
+            integrity: integrityResult ? integrityResult.valid : false,
+            attestation: attestation ? (attestation.error || attestation.attestation) : null,
+            freeze: freezeResult ? (freezeResult.error || freezeResult.finalized) : null,
+            sealed_after: sealedAfter,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 10.1: Productization Layer (SaaS + Platform Exposure Core) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_PRODUCTIZATION === '1' || process.env.ENABLE_SIGNUP_PRODUCTIZATION === 'true') {
+        const frozenBefore = isProductPlatformFrozen();
+
+        let platform = null;
+        try { platform = createProductPlatform({ expose_http: true, expose_sdk: true, expose_gateway: true }); } catch (e) { platform = { error: e.message }; }
+
+        let proPlan = null;
+        try { proPlan = defineProductPlan({ plan_id: 'pro' }); } catch (e) { proPlan = { error: e.message }; }
+
+        let freePlan = null;
+        try { freePlan = defineProductPlan({ plan_id: 'free' }); } catch (e) { freePlan = { error: e.message }; }
+
+        let entPlan = null;
+        try { entPlan = defineProductPlan({ plan_id: 'enterprise' }); } catch (e) { entPlan = { error: e.message }; }
+
+        const productSnap = buildProductRuntimeSnapshot();
+        const productHash = computeProductPlatformHash();
+
+        let freezeResult = null;
+        try { freezeResult = freezeProductPlatform(); } catch (e) { freezeResult = { error: e.message }; }
+
+        const frozenAfter = isProductPlatformFrozen();
+
+        if (process.env.SIGNUP_PRODUCTIZATION_STDOUT === '1' || process.env.SIGNUP_PRODUCTIZATION_STDOUT === 'true') {
+          console.log("✅ productization layer demo:", JSON.stringify({
+            platform_id: platform.error || platform.platform_id,
+            mode: platform.product_mode || null,
+            pro_plan: proPlan.error || proPlan.plan_id,
+            free_plan: freePlan.error || freePlan.plan_id,
+            ent_plan: entPlan.error || entPlan.plan_id,
+            product_state: productSnap.product_state,
+            plans_defined: productSnap.plans_defined,
+            product_hash: productHash.slice(0, 16),
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            freeze: freezeResult ? (freezeResult.error || freezeResult.commercial_state) : null,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 10.2: SDK Packaging Layer (Developer Runtime Interface) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_SDK_PACKAGING === '1' || process.env.ENABLE_SIGNUP_SDK_PACKAGING === 'true') {
+        const frozenBefore = isSdkPackageFrozen();
+
+        let sdkClient = null;
+        try { sdkClient = createSdkClient({ tenant_id: 'demo-tenant', plan_id: 'pro', governance_mode: 'controlled' }); } catch (e) { sdkClient = { error: e.message }; }
+
+        let intentResult = null;
+        if (sdkClient && !sdkClient.error) {
+          try { intentResult = sdkSubmitIntent(sdkClient, { intent_type: 'create_signup', payload: { email: 'sdk@demo.com' } }); } catch (e) { intentResult = { error: e.message }; }
+        }
+
+        const sdkSnap = buildSdkPackageSnapshot();
+        const sdkHash = computeSdkPackageHash();
+
+        let freezeResult = null;
+        try { freezeResult = freezeSdkPackage(); } catch (e) { freezeResult = { error: e.message }; }
+
+        const frozenAfter = isSdkPackageFrozen();
+
+        if (process.env.SIGNUP_SDK_PACKAGING_STDOUT === '1' || process.env.SIGNUP_SDK_PACKAGING_STDOUT === 'true') {
+          console.log("✅ SDK packaging layer demo:", JSON.stringify({
+            client: sdkClient.error || sdkClient.client_id,
+            intent: intentResult ? (intentResult.error || intentResult.intent_id) : null,
+            intent_accepted: intentResult ? intentResult.accepted : null,
+            sdk_state: sdkSnap.sdk_state,
+            clients: sdkSnap.client_count,
+            intents: sdkSnap.intent_submissions,
+            sdk_hash: sdkHash.slice(0, 16),
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            freeze: freezeResult ? (freezeResult.error || freezeResult.sdk_mode) : null,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 10.3: Go-To-Market Foundation (Billing-Agnostic SaaS Layer) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_GTM === '1' || process.env.ENABLE_SIGNUP_GTM === 'true') {
+        const frozenBefore = isGoToMarketFrozen();
+
+        let offering = null;
+        try { offering = createMarketOffering({ name: 'Meerak Platform', description: 'Intent-based workflow SaaS', pricing_model: 'tiered' }); } catch (e) { offering = { error: e.message }; }
+
+        let pricing = null;
+        try { pricing = definePricingStrategy({ name: 'default_tiered' }); } catch (e) { pricing = { error: e.message }; }
+
+        const readiness = evaluateMarketReadiness();
+
+        let bundle = null;
+        try {
+          bundle = registerGoToMarketBundle({
+            name: 'meerak_saas_v1',
+            offering_id: offering && !offering.error ? offering.offering_id : null,
+            pricing_id: pricing && !pricing.error ? pricing.pricing_id : null,
+          });
+        } catch (e) { bundle = { error: e.message }; }
+
+        const gtmSnap = buildGoToMarketSnapshot();
+        const gtmHash = computeGoToMarketHash();
+
+        let freezeResult = null;
+        try { freezeResult = freezeGoToMarketLayer(); } catch (e) { freezeResult = { error: e.message }; }
+
+        const frozenAfter = isGoToMarketFrozen();
+
+        if (process.env.SIGNUP_GTM_STDOUT === '1' || process.env.SIGNUP_GTM_STDOUT === 'true') {
+          console.log("✅ GTM layer demo:", JSON.stringify({
+            offering: offering.error || offering.offering_id,
+            pricing: pricing.error || pricing.pricing_id,
+            readiness_score: readiness.score,
+            market_ready: readiness.market_ready,
+            blockers: readiness.blockers.length,
+            bundle: bundle ? (bundle.error || bundle.bundle_id) : null,
+            gtm_state: gtmSnap.gtm_state,
+            gtm_hash: gtmHash.slice(0, 16),
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            freeze: freezeResult ? (freezeResult.error || freezeResult.commercial_state) : null,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 10.4: SaaS Dashboard Layer (Control Plane UI Runtime) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_DASHBOARD === '1' || process.env.ENABLE_SIGNUP_DASHBOARD === 'true') {
+        const frozenBefore = isDashboardFrozen();
+
+        let dashSession = null;
+        try { dashSession = createDashboardSession({ tenant_id: 'demo-tenant', user_role: 'admin', governance_mode: 'strict' }); } catch (e) { dashSession = { error: e.message }; }
+
+        let dashView = null;
+        if (dashSession && !dashSession.error) {
+          try { dashView = buildDashboardView(dashSession); } catch (e) { dashView = { error: e.message }; }
+        }
+
+        let widgetData = null;
+        try { widgetData = getDashboardWidgetData({ widget_type: 'tenant_overview' }); } catch (e) { widgetData = { error: e.message }; }
+
+        let dashAction = null;
+        try { dashAction = registerDashboardAction({ action_type: 'view_tenant', target_id: 'demo-tenant' }); } catch (e) { dashAction = { error: e.message }; }
+
+        let interaction = null;
+        if (dashSession && !dashSession.error) {
+          try { interaction = simulateDashboardInteraction({ session_id: dashSession.dashboard_session_id, path: ['tenant_overview', 'usage_meter', 'audit_chain'] }); } catch (e) { interaction = { error: e.message }; }
+        }
+
+        const dashSnap = buildDashboardSnapshot();
+        const dashHash = computeDashboardHash();
+
+        let freezeResult = null;
+        try { freezeResult = freezeDashboardLayer(); } catch (e) { freezeResult = { error: e.message }; }
+
+        const frozenAfter = isDashboardFrozen();
+
+        if (process.env.SIGNUP_DASHBOARD_STDOUT === '1' || process.env.SIGNUP_DASHBOARD_STDOUT === 'true') {
+          console.log("✅ SaaS dashboard demo:", JSON.stringify({
+            session: dashSession.error || dashSession.dashboard_session_id,
+            view_widgets: dashView ? (dashView.error || dashView.widget_count) : null,
+            widget_data: widgetData ? (widgetData.error || widgetData.widget_type) : null,
+            action: dashAction ? (dashAction.error || dashAction.action_id) : null,
+            interaction_steps: interaction ? (interaction.error || interaction.steps) : null,
+            dash_state: dashSnap.dashboard_state,
+            sessions: dashSnap.sessions,
+            dash_hash: dashHash.slice(0, 16),
+            frozen_before: frozenBefore,
+            frozen_after: frozenAfter,
+            freeze: freezeResult ? (freezeResult.error || freezeResult.dashboard_state) : null,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 10.5: Bridge Code (V1 → V2 Shadow Integration) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_SHADOW_BRIDGE === '1' || process.env.ENABLE_SIGNUP_SHADOW_BRIDGE === 'true') {
+        const intentMap = mapSignupToIntent({ phone: '0891234567', role: 'user', referral_code: 'DEMO' });
+        const shadowResult = processSignupShadow({ phone: '0891234567', role: 'user' });
+
+        const interceptResult = interceptEvent('signup', { phone: '089****', role: 'user' });
+
+        const adminView = buildUnifiedAdminView();
+        const adminMetrics = getAdminMetrics();
+
+        if (process.env.SIGNUP_SHADOW_BRIDGE_STDOUT === '1' || process.env.SIGNUP_SHADOW_BRIDGE_STDOUT === 'true') {
+          console.log("✅ V1→V2 shadow bridge demo:", JSON.stringify({
+            intent_mapped: !!intentMap.intent_type,
+            shadow_processed: shadowResult.shadow_processed,
+            shadow_steps: shadowResult.steps,
+            intercept: interceptResult.intercepted || interceptResult.ignored || false,
+            admin_layers: adminView.layers_available.length,
+            admin_mode: adminMetrics.system_mode,
+            audit_entries: adminMetrics.total_audit_entries,
+            provenance_nodes: adminMetrics.provenance_nodes,
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
+
+    // --- Phase 11: Product Live Mode (Activation Layer) ---
+    try {
+      if (process.env.ENABLE_SIGNUP_SHADOW_BRIDGE === '1' || process.env.ENABLE_SIGNUP_SHADOW_BRIDGE === 'true') {
+        const infraReady = isShadowInfraReady();
+        const infra = getShadowInfra();
+
+        const events = ['signup', 'login', 'kyc', 'job_apply', 'payment'];
+        const shadowResults = {};
+        for (const evt of events) {
+          shadowResults[evt] = processEventShadow(evt, { source: 'activation_demo' });
+        }
+
+        const stats = getInterceptorStats();
+        const activationStep = resolveActivationStep();
+        const goLive = verifyGoLive();
+        const report = buildActivationReport();
+
+        if (process.env.SIGNUP_SHADOW_BRIDGE_STDOUT === '1' || process.env.SIGNUP_SHADOW_BRIDGE_STDOUT === 'true') {
+          console.log("✅ Phase 11 — Product Activation:", JSON.stringify({
+            infra_ready: infraReady,
+            shadow_tenant: infra ? infra.tenant_id.slice(0, 24) : null,
+            activation_step: activationStep.label,
+            system_state: report.system_state,
+            go_live_ready: goLive.go_live_ready,
+            checks_passed: `${goLive.passed}/${goLive.total}`,
+            events_covered: Object.entries(shadowResults).filter(([, r]) => r.shadow_processed).map(([e]) => e),
+            pipeline_steps: shadowResults.signup?.steps || {},
+            interceptor_total: stats.total_intercepted,
+            report_hash: report.report_hash.slice(0, 16),
+          }));
+        }
+      }
+    } catch (_) { /* fail-open */ }
 
     // kyc_submissions table (server.js ใช้ชื่อนี้ ต่างจาก kyc_documents ใน migration เก่า)
     await pool.query(`
@@ -25981,14 +37371,14 @@ server.listen(PORT, async () => {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `).catch((e) => console.warn("kyc_submissions table create:", e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_sub_user_id ON kyc_submissions(user_id)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_sub_status ON kyc_submissions(status)`).catch(() => {});
-    await pool.query(`ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)`).catch(() => {});
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_sub_user_id ON kyc_submissions(user_id)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_sub_status ON kyc_submissions(status)`).catch(() => { });
+    await pool.query(`ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)`).catch(() => { });
     console.log("✅ kyc_submissions table: ensured");
 
     // bookings: deposit_amount, deposit_status (026)
-    await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
-    await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(20) DEFAULT 'none'`).catch(() => {});
+    await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC(12,2) DEFAULT 0`).catch(() => { });
+    await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(20) DEFAULT 'none'`).catch(() => { });
 
     // ── user_exam_results: Nexus exam results ──
     await pool.query(`
@@ -26025,9 +37415,9 @@ server.listen(PORT, async () => {
         updated_at        TIMESTAMP DEFAULT NOW()
       )
     `).catch((e) => console.warn("incidents table:", e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_job      ON incidents(job_id)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_worker   ON incidents(worker_id)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_status   ON incidents(resolution_status)`).catch(() => {});
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_job      ON incidents(job_id)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_worker   ON incidents(worker_id)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_incidents_status   ON incidents(resolution_status)`).catch(() => { });
 
     // emergency_pending status เป็น VARCHAR ไม่ต้อง migrate ENUM
     console.log("✅ Emergency incidents table: ensured");
@@ -26051,11 +37441,11 @@ server.listen(PORT, async () => {
         UNIQUE(job_id)
       )
     `).catch((e) => console.warn("insurance_claims table:", e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_claims_status ON insurance_claims(claim_status)`).catch(() => {});
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_claims_job    ON insurance_claims(job_id)`).catch(() => {});
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_claims_status ON insurance_claims(claim_status)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_insurance_claims_job    ON insurance_claims(job_id)`).catch(() => { });
 
     // เพิ่ม insurance_claim_status ใน jobs (ถ้ายังไม่มี)
-    await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS insurance_claim_status VARCHAR(20) DEFAULT 'none'`).catch(() => {});
+    await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS insurance_claim_status VARCHAR(20) DEFAULT 'none'`).catch(() => { });
 
     console.log("✅ Insurance claims table: ensured");
 
@@ -26080,7 +37470,7 @@ server.listen(PORT, async () => {
         UNIQUE(job_id, reviewer_id)
       )
     `).catch((e) => console.warn("job_reviews table:", e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_reviews_reviewee ON job_reviews(reviewee_id)`).catch(() => {});
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_reviews_reviewee ON job_reviews(reviewee_id)`).catch(() => { });
 
     // ── Worker Grading & VVIP: worker_grades table ──
     await pool.query(`
@@ -26099,33 +37489,73 @@ server.listen(PORT, async () => {
       )
     `).catch((e) => console.warn("worker_grades table:", e.message));
 
+    // ── Care Ops analytics persistence: push audit + provider ranking signals ──
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS support_care_push_audit (
+        id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        ticket_id         VARCHAR(120) NOT NULL,
+        invitation_id     VARCHAR(120) NOT NULL,
+        job_id            VARCHAR(120),
+        provider_id       VARCHAR(120) NOT NULL,
+        provider_name     TEXT,
+        source            VARCHAR(120) DEFAULT 'care_reroute_fcm',
+        push_sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        tokens_success    INTEGER DEFAULT 0,
+        tokens_failed     INTEGER DEFAULT 0,
+        opened_at         TIMESTAMPTZ,
+        opened_source     VARCHAR(120),
+        accepted_at       TIMESTAMPTZ,
+        push_to_accept_ms BIGINT,
+        created_at        TIMESTAMPTZ DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(ticket_id, invitation_id, provider_id)
+      )
+    `).catch((e) => console.warn("support_care_push_audit table:", e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_care_push_audit_sent_at ON support_care_push_audit(push_sent_at DESC)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_care_push_audit_provider ON support_care_push_audit(provider_id)`).catch(() => { });
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_care_push_audit_ticket_inv ON support_care_push_audit(ticket_id, invitation_id)`).catch(() => { });
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS support_provider_ranking_signals (
+        provider_id          VARCHAR(120) PRIMARY KEY,
+        reliability_score    NUMERIC(8,4) DEFAULT 0,
+        fast_accept_boost    NUMERIC(8,4) DEFAULT 0,
+        manual_penalty       NUMERIC(8,4) DEFAULT 0,
+        last_signal_reason   TEXT,
+        last_push_to_accept_ms BIGINT,
+        created_at           TIMESTAMPTZ DEFAULT NOW(),
+        updated_at           TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch((e) => console.warn("support_provider_ranking_signals table:", e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_provider_ranking_updated ON support_provider_ranking_signals(updated_at DESC)`).catch(() => { });
+
     // ── VVIP columns on jobs / advance_jobs / users ──
     const vvipColumns = [
-      ['jobs',          'is_vvip',          'BOOLEAN DEFAULT FALSE'],
-      ['jobs',          'min_grade',         "CHAR(1) DEFAULT 'C'"],
-      ['advance_jobs',  'is_vvip',          'BOOLEAN DEFAULT FALSE'],
-      ['advance_jobs',  'min_grade',         "CHAR(1) DEFAULT 'C'"],
-      ['users',         'worker_grade',      "CHAR(1) DEFAULT 'C'"],
-      ['users',         'grade_updated_at',  'TIMESTAMP'],
+      ['jobs', 'is_vvip', 'BOOLEAN DEFAULT FALSE'],
+      ['jobs', 'min_grade', "CHAR(1) DEFAULT 'C'"],
+      ['advance_jobs', 'is_vvip', 'BOOLEAN DEFAULT FALSE'],
+      ['advance_jobs', 'min_grade', "CHAR(1) DEFAULT 'C'"],
+      ['users', 'worker_grade', "CHAR(1) DEFAULT 'C'"],
+      ['users', 'grade_updated_at', 'TIMESTAMP'],
       // Admin Governance: shadow ban + flag columns
-      ['users',         'shadow_banned_at',  'TIMESTAMP'],
-      ['users',         'ban_reason',        'TEXT'],
+      ['users', 'shadow_banned_at', 'TIMESTAMP'],
+      ['users', 'ban_reason', 'TEXT'],
     ];
     for (const [tbl, col, def] of vvipColumns) {
-      await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS ${col} ${def}`).catch(() => {});
+      await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS ${col} ${def}`).catch(() => { });
     }
 
     // ── job_reviews admin governance columns ──
     const reviewColumns = [
-      ['is_flagged',          'BOOLEAN DEFAULT FALSE'],
-      ['flagged_reason',      'TEXT'],
-      ['dispute_status',      "VARCHAR(20) DEFAULT 'none'"],
-      ['dispute_text',        'TEXT'],
-      ['dispute_images',      'JSONB DEFAULT \'[]\''],
-      ['dispute_resolution',  'TEXT'],
+      ['is_flagged', 'BOOLEAN DEFAULT FALSE'],
+      ['flagged_reason', 'TEXT'],
+      ['dispute_status', "VARCHAR(20) DEFAULT 'none'"],
+      ['dispute_text', 'TEXT'],
+      ['dispute_images', 'JSONB DEFAULT \'[]\''],
+      ['dispute_resolution', 'TEXT'],
     ];
     for (const [col, def] of reviewColumns) {
-      await pool.query(`ALTER TABLE job_reviews ADD COLUMN IF NOT EXISTS ${col} ${def}`).catch(() => {});
+      await pool.query(`ALTER TABLE job_reviews ADD COLUMN IF NOT EXISTS ${col} ${def}`).catch(() => { });
     }
     console.log("✅ Worker Grading & VVIP: tables and columns ensured");
 
@@ -26146,11 +37576,28 @@ server.listen(PORT, async () => {
   }
 
   console.log("=".repeat(70));
-  
+
   // ✅ Start Cron Job: Sequential (ทำเสร็จก่อนค่อยเริ่มรอบถัดไป)
   runExpiredJobsSequential();
   console.log("🕐 Cron Job: Auto-update expired jobs started (sequential, every 1 hour)");
+  try {
+    startExecutiveDailyReportScheduler(pool, { tickMs: 5 * 60 * 1000 });
+    console.log("📧 Executive Daily CSV scheduler started (DB-driven, every 5 minutes)");
+  } catch (e) {
+    console.warn("Executive Daily scheduler:", e?.message || e);
+  }
   console.log("=".repeat(70));
+
+  const purgeStoriesIntervalMs = 60 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const n = await purgeExpiredStories(pool);
+      if (n > 0) console.log(`[Stories] Purged ${n} expired story row(s)`);
+    } catch (e) {
+      if (String(e?.code) !== '42P01') console.warn('[Stories] purge:', e?.message);
+    }
+  }, purgeStoriesIntervalMs);
+  purgeExpiredStories(pool).catch(() => { });
 
   try {
     const { startGatewayBackgroundServices } = await import('./lib/gatewayScheduler.js');
@@ -26158,4 +37605,28 @@ server.listen(PORT, async () => {
   } catch (e) {
     console.warn('Gateway background services:', e?.message || e);
   }
+
+  try {
+    const { startAdminAsyncExportWorker, startLedgerPartitionMaintenance } = await import('./lib/adminAsyncExportJobs.js');
+    startAdminAsyncExportWorker(pool);
+    startLedgerPartitionMaintenance(pool);
+    if (isPaysoWebhookAsyncEnabled()) {
+      startWalletDepositWebhookWorker(pool);
+      console.log('💳 PaySo wallet webhook async worker enabled (PAYSO_WEBHOOK_ASYNC=1)');
+    }
+  } catch (e) {
+    console.warn('Scale background workers:', e?.message || e);
+  }
+
+  try {
+    const { startCommerceIntelligenceWorkers } = await import('./lib/userCommerceEvents.js');
+    startCommerceIntelligenceWorkers(pool);
+    const { backfillPartnerHashes } = await import('./lib/partnerHashService.js');
+    void backfillPartnerHashes(pool).then((n) => {
+      if (n > 0) console.log(`🔗 Partner hash backfill: ${n} users`);
+    }).catch((e) => console.warn('Partner hash backfill:', e?.message || e));
+  } catch (e) {
+    console.warn('Commerce intelligence workers:', e?.message || e);
+  }
 });
+

@@ -1,0 +1,109 @@
+{{- if .Values.observability.prometheus }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: aqond-services
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.global.namespace }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            target_label: __metrics_path__
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+  slo-rules.yml: |
+    groups:
+      - name: aqond-slo
+        rules:
+          - alert: FlashSaleErrorBudgetBurn
+            expr: |
+              sum(rate(http_requests_total{status=~"5..",service="order-svc"}[5m]))
+              / sum(rate(http_requests_total{service="order-svc"}[5m])) > 0.01
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: Order svc error budget burn (P73)
+              runbook: https://wiki.aqond/runbooks/flash-sale-errors
+          - alert: PaymentErrorBudgetBurn
+            expr: |
+              sum(rate(http_requests_total{status=~"5..",service="payment-svc"}[5m]))
+              / sum(rate(http_requests_total{service="payment-svc"}[5m])) > 0.001
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: Payment svc error budget burn (P171)
+          - alert: CheckoutLatencyP99High
+            expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service="checkout-svc"}[5m])) by (le)) > 2
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: Checkout p99 latency SLO breach (P171)
+          - alert: SREBurnRateFast
+            expr: aqond_sre_requests_total > 0
+            for: 1m
+            labels:
+              severity: info
+            annotations:
+              summary: SRE svc receiving traffic (P171 health)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.51.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --web.enable-remote-write-receiver
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+{{- end }}

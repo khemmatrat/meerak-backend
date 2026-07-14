@@ -23,6 +23,8 @@
 import { walletTopupHandler } from './walletTopupHandler.js';
 import { jobCheckoutHandler, recordEscrowReleased, resolveEscrowJobReference, isJobCompletedForEscrow } from './jobCheckoutHandler.js';
 import { subscriptionHandler } from './subscriptionHandler.js';
+import { coursePurchaseHandler } from './coursePurchaseHandler.js';
+import { adCampaignSpendHandler } from './adCampaignSpendHandler.js';
 
 export { recordEscrowReleased, resolveEscrowJobReference, isJobCompletedForEscrow };
 
@@ -77,7 +79,11 @@ export function getRegisteredPurposes() {
 registerHandler('wallet_topup', walletTopupHandler);
 registerHandler('job_checkout', jobCheckoutHandler);
 registerHandler('subscription', subscriptionHandler);
+registerHandler('course_purchase', coursePurchaseHandler);
+registerHandler('ad_campaign_spend', adCampaignSpendHandler);
 
 // Alias: 'wallet-topup' → 'wallet_topup' (accept both)
 registerHandler('wallet-topup', walletTopupHandler);
 registerHandler('job-checkout', jobCheckoutHandler);
+registerHandler('course-purchase', coursePurchaseHandler);
+registerHandler('ad-campaign-spend', adCampaignSpendHandler);

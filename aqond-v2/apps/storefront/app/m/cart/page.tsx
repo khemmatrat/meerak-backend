@@ -14,6 +14,7 @@ import { recordCartRemoveTelemetry, recordCartViewTelemetry } from '@/lib/experi
 import { TtCartLine } from '@/components/mobile/TtCartLine';
 import { TtProductGrid, type TtProduct } from '@/components/mobile/TtProductGrid';
 import { TtCheckoutStepBar, TtCheckoutNextHint } from '@/components/mobile/TtCheckoutStepBar';
+import { IconLuxPin } from '@/components/mobile/TtLuxuryIcons';
 
 async function setCartQty(
   ownerId: string,
@@ -128,7 +129,9 @@ export default function MobileCartPage() {
           <span style={{ flex: 1, fontWeight: 700, fontSize: '1rem' }} data-testid="cart-page-count">
             รถเข็นสินค้า ({displayCount})
           </span>
-          <span className="tt-icon-btn" title="ที่อยู่">📍</span>
+          <span className="tt-icon-btn" title="ที่อยู่" aria-hidden>
+            <IconLuxPin size={20} />
+          </span>
         </div>
       </header>
 

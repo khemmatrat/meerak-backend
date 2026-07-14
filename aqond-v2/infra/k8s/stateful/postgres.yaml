@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aqond-postgres
+  namespace: aqond-dev
+spec:
+  ports:
+    - port: 5432
+  clusterIP: None
+  selector:
+    app: aqond-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aqond-postgres
+  namespace: aqond-dev
+spec:
+  serviceName: aqond-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aqond-postgres
+  template:
+    metadata:
+      labels:
+        app: aqond-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: admin_boss
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aqond-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: commerce
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi

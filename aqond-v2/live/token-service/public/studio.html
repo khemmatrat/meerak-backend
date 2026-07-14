@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Live Studio</title>
+  <script src="/api/v1/live/merchant-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.0/dist/livekit-client.umd.min.js"></script>
+  <style>
+    :root { --bg: #0b1020; --card: #151d30; --text: #e8edf5; --muted: #8fa3bf; --accent: #2563eb; --live: #dc2626; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #243049; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .badge { font-size: 0.75rem; background: #7f1d1d; color: #fecaca; padding: 0.2rem 0.55rem; border-radius: 999px; }
+    main { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; padding: 1rem; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    video { width: 100%; background: #000; border-radius: 12px; aspect-ratio: 16/9; }
+    .panel { background: var(--card); border: 1px solid #243049; border-radius: 12px; padding: 1rem; }
+    .panel h3 { margin: 0 0 0.75rem; font-size: 0.95rem; }
+    button { padding: 0.55rem 1rem; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #334155; }
+    button.danger { background: var(--live); }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .product { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+    .product:hover { border-color: #334155; background: #0f172a; }
+    .product img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: #0f172a; }
+    .product .t { font-size: 0.85rem; flex: 1; }
+    .meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; word-break: break-all; }
+    .overlay-preview { margin-top: 1rem; padding: 0.75rem; background: #0f172a; border-radius: 8px; border: 1px dashed #334155; font-size: 0.85rem; }
+    #status { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>AQOND Live Studio</strong> <span class="badge">P4 F-Code</span></div>
+    <a href="/api/v1/marketplace/shop" style="color:#93c5fd">Shop</a>
+  </header>
+  <main>
+    <section>
+      <video id="preview" autoplay playsinline muted></video>
+      <div id="status">ยังไม่ได้เริ่มไลฟ์</div>
+      <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button id="btnStart">เริ่มไลฟ์</button>
+        <button id="btnStop" class="danger" disabled>หยุด</button>
+        <button id="btnCopy" class="secondary" disabled>คัดลอกลิงก์ผู้ชม</button>
+      </div>
+      <div class="overlay-preview" id="overlayPreview">F-Code: — (เลือกสินค้าด้านขวา)</div>
+    </section>
+    <aside class="panel">
+      <h3>สินค้าในร้าน — กดเพื่อแสดง F-Code</h3>
+      <div id="products">กำลังโหลด…</div>
+    </aside>
+  </main>
+  <script>
+    const { Room, RoomEvent, createLocalVideoTrack } = LivekitClient;
+    let room = null;
+    let roomName = null;
+    let watchUrl = null;
+
+    function setStatus(msg) { document.getElementById("status").textContent = msg; }
+
+    function trackEvent(ev) {
+      fetch("/api/v1/analytics/events/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ev),
+      }).catch(() => {});
+    }
+
+    async function loadProducts() {
+      const el = document.getElementById("products");
+      try {
+        const res = await fetch("/api/v1/marketplace/products?limit=24");
+        const data = await res.json();
+        const list = data.products || [];
+        if (!list.length) { el.textContent = "ไม่มีสินค้า — ลงสินค้าและ Publish ก่อน"; return; }
+        el.innerHTML = list.map((p) => {
+          const img = p.image_uris?.[0] || "";
+          return `<div class="product" data-ext="${p.external_id}">
+            ${img ? `<img src="${img}" alt="" />` : `<div style="width:48px;height:48px;background:#0f172a;border-radius:6px"></div>`}
+            <div class="t">${p.title}<br><span style="color:#4ade80">${p.price_thb} THB</span></div>
+          </div>`;
+        }).join("");
+        el.querySelectorAll(".product").forEach((node) => {
+          node.addEventListener("click", () => pushFCode(node.dataset.ext));
+        });
+      } catch (e) {
+        el.textContent = "โหลดสินค้าไม่ได้: " + e.message;
+      }
+    }
+
+    async function pushFCode(externalId) {
+      if (!roomName) { alert("เริ่มไลฟ์ก่อน"); return; }
+      const res = await fetch("/api/v1/live/f-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(window.__LIVE_MERCHANT_API_KEY__ ? { "X-Live-Merchant-Api-Key": window.__LIVE_MERCHANT_API_KEY__ } : {}),
+        },
+        body: JSON.stringify({ room_name: roomName, external_id: externalId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "F-Code failed"); return; }
+      const o = data.overlay;
+      document.getElementById("overlayPreview").innerHTML =
+        `<strong>${o.f_code}</strong> · ${o.title} · <span style="color:#4ade80">${o.price_thb} THB</span>`;
+    }
+
+    document.getElementById("btnStart").addEventListener("click", async () => {
+      const btn = document.getElementById("btnStart");
+      btn.disabled = true;
+      try {
+        const merchant = new URLSearchParams(location.search).get("merchant") || "demo-shop";
+        const tier = new URLSearchParams(location.search).get("tier") || "tier-1";
+        const cr = await fetch("/api/v1/live/room", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(window.__LIVE_MERCHANT_API_KEY__ ? { "X-Live-Merchant-Api-Key": window.__LIVE_MERCHANT_API_KEY__ } : {}),
+          },
+          body: JSON.stringify({ merchant_id: merchant, tier, title: "Live " + merchant }),
+        });
+        const created = await cr.json();
+        if (!cr.ok) throw new Error(created.error || cr.status);
+
+        roomName = created.room;
+        watchUrl = location.origin + created.session.watch_url;
+
+        room = new Room();
+        await room.connect(created.url, created.token);
+        const videoTrack = await createLocalVideoTrack({ facingMode: "user" });
+        document.getElementById("preview").srcObject = new MediaStream([videoTrack.mediaStreamTrack]);
+        await room.localParticipant.publishTrack(videoTrack);
+
+        document.getElementById("btnStop").disabled = false;
+        document.getElementById("btnCopy").disabled = false;
+        setStatus("🔴 LIVE · " + roomName);
+        trackEvent({
+          stream_id: roomName,
+          merchant_id: merchant,
+          event_type: "live_join",
+          session_id: sessionId,
+          metadata: { role: "seller" },
+        });
+      } catch (e) {
+        btn.disabled = false;
+        alert("เริ่มไลฟ์ไม่ได้: " + e.message);
+      }
+    });
+
+    document.getElementById("btnStop").addEventListener("click", async () => {
+      if (room) await room.disconnect();
+      room = null;
+      document.getElementById("btnStart").disabled = false;
+      document.getElementById("btnStop").disabled = true;
+      setStatus("หยุดไลฟ์แล้ว");
+    });
+
+    document.getElementById("btnCopy").addEventListener("click", () => {
+      if (watchUrl) navigator.clipboard.writeText(watchUrl);
+    });
+
+    loadProducts();
+  </script>
+</body>
+</html>

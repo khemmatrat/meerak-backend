@@ -34,7 +34,8 @@ import { resolveHandler as resolveHandlerFromRegistry } from './paymentBusinessA
 
 // -----------------------------------------------------------------------------
 // Pluggable hooks (shared namespace with paymentWebhookWorker).
-// Defaults are permissive; production MUST register strict verifier + resolver.
+// Signature verification fails closed by default when no verifier is registered
+// (see _verifySignatureSafe). Production registers a strict verifier in server.js.
 // -----------------------------------------------------------------------------
 
 /**
@@ -103,7 +104,14 @@ function _headersFromJob(job) {
 
 async function _verifySignatureSafe(job, normalized) {
   if (!_signatureVerifier) {
-    return { ok: true, key_version: 'unverified' };
+    // Finding B: fail-closed by default. A missing verifier means we cannot trust the webhook, so
+    // reject unless an operator sets the explicit, clearly-named opt-in (dev/test convenience only).
+    const allowUnverified =
+      String(process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK || '').trim() === '1';
+    if (allowUnverified) {
+      return { ok: true, key_version: 'unverified_dangerous_optin' };
+    }
+    return { ok: false, failure_code: 'signature_verifier_not_configured' };
   }
   try {
     const r = await _signatureVerifier({ job, normalized });

@@ -1,0 +1,7 @@
+{
+  "name": "aqond-v2-live-token",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.21.0", "livekit-server-sdk": "^2.9.0" }
+}

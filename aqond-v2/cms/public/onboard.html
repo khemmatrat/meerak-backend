@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Merchant Onboard</title>
+  <script src="/api/v1/cms/merchant-config.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --accent: #3b82f6;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --ok: #22c55e;
+      --err: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: radial-gradient(circle at top, #1e293b, var(--bg));
+      color: var(--text);
+      padding: 1.5rem;
+    }
+    main {
+      max-width: 520px;
+      margin: 0 auto;
+      background: var(--card);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    h1 { margin: 0 0 0.25rem; font-size: 1.35rem; }
+    p.sub { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.9rem; }
+    label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--muted); }
+    input[type="file"], input[type="text"], textarea {
+      width: 100%;
+      margin-bottom: 1rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: var(--text);
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    button {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    #preview { max-width: 100%; border-radius: 10px; margin-bottom: 1rem; display: none; }
+    #status { margin-top: 1rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Merchant Onboard (Hermes AI)</h1>
+    <p class="sub">ถ่ายรูปสินค้า → AI สร้าง title/ราคา/หมวด → sync Bagisto</p>
+
+    <form id="form">
+      <label for="images">รูปสินค้า (1–5 รูป)</label>
+      <input id="images" name="images" type="file" accept="image/*" capture="environment" multiple required />
+      <img id="preview" alt="preview" />
+
+      <label for="merchant_hint">คำใบ้ร้าน (ไม่บังคับ)</label>
+      <textarea id="merchant_hint" name="merchant_hint" placeholder="เช่น ร้านเสื้อผ้า vintage, ราคาเริ่มต้น 199 บาท"></textarea>
+
+      <button type="submit" id="submit">อัปโหลด &amp; สร้างสินค้า</button>
+      <p class="hint">CPU PoC: อาจใช้ 1–5 นาที ต่อสินค้า — อย่าปิดหน้านี้</p>
+    </form>
+
+    <div id="status"></div>
+  </main>
+
+  <script>
+    const form = document.getElementById("form");
+    const statusEl = document.getElementById("status");
+    const submitBtn = document.getElementById("submit");
+    const preview = document.getElementById("preview");
+    const fileInput = document.getElementById("images");
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = "block";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const files = fileInput.files;
+      if (!files?.length) return;
+
+      submitBtn.disabled = true;
+      statusEl.className = "";
+      statusEl.textContent = "กำลังวิเคราะห์รูปด้วย Hermes (moondream + hermes3)…";
+
+      const fd = new FormData();
+      for (const f of files) fd.append("images", f);
+      const hint = document.getElementById("merchant_hint").value.trim();
+      if (hint) fd.append("merchant_hint", hint);
+
+      const idempotencyKey = crypto.randomUUID();
+      const started = Date.now();
+
+      try {
+        const res = await fetch("/api/v1/cms/ai/onboard", {
+          method: "POST",
+          headers: {
+            "Idempotency-Key": idempotencyKey,
+            ...(window.__CMS_API_KEY__ ? { "X-CMS-Api-Key": window.__CMS_API_KEY__ } : {}),
+          },
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+
+        if (!res.ok) {
+          statusEl.className = "err";
+          statusEl.textContent = `Error ${res.status} (${elapsed}s)\n${JSON.stringify(data, null, 2)}`;
+          return;
+        }
+
+        const extId = data.bagisto?.product?.external_id || data.product?.external_id || idempotencyKey;
+        const isDraft = (data.bagisto?.product?.status || data.product?.status) === "draft";
+
+        statusEl.className = "ok";
+        statusEl.innerHTML =
+          `<div>สำเร็จ (${elapsed}s) — <strong>${isDraft ? "Draft (ยังไม่ขาย)" : "Published"}</strong></div>` +
+          `<div>Title: ${data.product?.title}</div>` +
+          `<div>Price: ${data.product?.price} THB · สต็อก ${data.product?.inventory}</div>` +
+          (isDraft
+            ? `<p style="margin:1rem 0"><button type="button" id="publishBtn" style="width:100%;padding:0.75rem;background:#16a34a;color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer">เผยแพร่สินค้า (Publish)</button></p>`
+            : "") +
+          `<p><a href="/api/v1/marketplace/shop" style="color:#60a5fa">ดูร้านค้า →</a></p>` +
+          `<pre style="font-size:0.75rem;overflow:auto">${JSON.stringify(data, null, 2)}</pre>`;
+
+        if (isDraft) {
+          document.getElementById("publishBtn").onclick = async () => {
+            const btn = document.getElementById("publishBtn");
+            btn.disabled = true;
+            btn.textContent = "กำลัง publish…";
+            const pr = await fetch(`/api/v1/marketplace/products/${extId}/publish`, { method: "POST" });
+            const pd = await pr.json().catch(() => ({}));
+            if (pr.ok) {
+              btn.textContent = "เผยแพร่แล้ว — ดูในร้านได้";
+              btn.style.background = "#15803d";
+            } else {
+              btn.textContent = "Publish ล้มเหลว";
+              alert(JSON.stringify(pd));
+            }
+          };
+        }
+      } catch (err) {
+        statusEl.className = "err";
+        statusEl.textContent = `Network error: ${err.message}`;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "provider": "grok",
+  "prefix": "UGC image-to-video.",
+  "spoken_wrapper": "{spoken_instruction} Script: \"{spoken}\"",
+  "suffix": "Preserve identity. Lip sync. 9:16 vertical."
+}

@@ -1,0 +1,59 @@
+{
+  "version": "1.0.0",
+  "types": {
+    "ugc": {
+      "label": "UGC Lip Sync",
+      "max_words": 80,
+      "include_layers": ["business", "strategy", "emotion", "hook", "pain", "solution", "offer", "cta"],
+      "spoken_layers": ["hook", "pain", "solution", "offer", "cta"]
+    },
+    "tvc": {
+      "label": "TVC Narration",
+      "max_words": 40,
+      "include_layers": ["strategy", "hook", "solution", "cta"],
+      "spoken_layers": ["hook", "solution", "cta"]
+    },
+    "story": {
+      "label": "Story",
+      "max_words": 100,
+      "include_layers": ["business", "emotion", "hook", "pain", "solution", "cta"],
+      "spoken_layers": ["hook", "pain", "solution", "cta"]
+    },
+    "interview": {
+      "label": "Interview",
+      "max_words": 90,
+      "include_layers": ["business", "hook", "solution", "offer", "cta"],
+      "spoken_layers": ["hook", "solution", "offer", "cta"]
+    },
+    "explainer": {
+      "label": "Explainer",
+      "max_words": 90,
+      "include_layers": ["business", "pain", "solution", "offer", "cta"],
+      "spoken_layers": ["pain", "solution", "offer", "cta"]
+    },
+    "product_demo": {
+      "label": "Product Demo",
+      "max_words": 70,
+      "include_layers": ["hook", "solution", "offer", "cta"],
+      "spoken_layers": ["hook", "solution", "offer", "cta"]
+    },
+    "recruitment": {
+      "label": "Recruitment",
+      "max_words": 80,
+      "include_layers": ["business", "hook", "solution", "offer", "cta"],
+      "spoken_layers": ["hook", "solution", "offer", "cta"]
+    },
+    "review": {
+      "label": "Review",
+      "max_words": 75,
+      "include_layers": ["emotion", "hook", "solution", "cta"],
+      "spoken_layers": ["hook", "solution", "cta"]
+    },
+    "testimonial": {
+      "label": "Testimonial",
+      "max_words": 70,
+      "include_layers": ["emotion", "hook", "solution", "cta"],
+      "spoken_layers": ["hook", "solution", "cta"]
+    }
+  }
+}

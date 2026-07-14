@@ -10,6 +10,9 @@
  * @locked
  */
 
+import { resolvePolicyPercent } from './merchantHubFeePolicy.js';
+import { slotTierRate } from './bookingFeeConfig.js';
+
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
 function normalizeTier(tier) {
@@ -71,6 +74,73 @@ function calcMatchJobProviderInflow(jobFee, providerVipTier, options = {}) {
   };
 }
 
+// ============ MERCHANT HUB BOOKING (Beauty / Chef / Tailor / …) ============
+// Rates resolved from payout_config.beauty_booking_policy (+ optional VIP tier maps)
+
+/**
+ * Merchant Hub — employer pays quoted + service fee % (flat or VIP tier)
+ */
+function calcBeautyEmployerOutflow(quotedPrice, policy = {}, options = {}) {
+  const feeRate = resolvePolicyPercent(
+    policy,
+    'employer_service_fee_percent',
+    'employer_service_fee_by_tier',
+    options.bookerVipTier,
+  ) || Number(policy.employer_service_fee_percent ?? 5) / 100;
+  const fee = round2(quotedPrice * feeRate);
+  const total = round2(quotedPrice + fee);
+  return { quotedPrice, employerServiceFee: fee, employerTotal: total, feeRate };
+}
+
+/**
+ * Merchant Hub — provider payout (service vs transport split; optional VIP tier on rates)
+ */
+function calcBeautyProviderPayout(serviceSubtotal, transportTotal, policy = {}, options = {}) {
+  const svc = Math.max(0, Number(serviceSubtotal) || 0);
+  const tr = Math.max(0, Number(transportTotal) || 0);
+  const sourcingRate = resolvePolicyPercent(
+    policy,
+    'service_sourcing_percent',
+    'service_sourcing_by_tier',
+    options.talentVipTier,
+  ) || Number(policy.service_sourcing_percent ?? 8) / 100;
+  const commissionRate = resolvePolicyPercent(
+    policy,
+    'service_commission_percent',
+    'service_commission_by_tier',
+    options.talentVipTier,
+  ) || Number(policy.service_commission_percent ?? 28) / 100;
+  const transportRate =
+    Number(policy.transport_platform_fee_percent ?? 3) / 100;
+  const sourcingFee = round2(svc * sourcingRate);
+  const serviceCommission = round2(svc * commissionRate);
+  const transportPlatformFee = round2(tr * transportRate);
+  const serviceNet = round2(svc - sourcingFee - serviceCommission);
+  const transportNet = round2(tr - transportPlatformFee);
+  const talentPayout = round2(serviceNet + transportNet);
+  const platformRevenue = round2(sourcingFee + serviceCommission + transportPlatformFee);
+  return {
+    serviceSubtotal: svc,
+    transportTotal: tr,
+    sourcingFee,
+    serviceCommission,
+    transportPlatformFee,
+    serviceNet,
+    transportNet,
+    talentPayout,
+    platformRevenue,
+  };
+}
+
+/** Charge for a principal portion of quoted_price (deposit or remainder) */
+function calcBeautyPaymentCharge(principalPortion, quotedPrice, employerServiceFee) {
+  const principal = Math.max(0, Number(principalPortion) || 0);
+  const quoted = Math.max(0, Number(quotedPrice) || 0);
+  const feeTotal = Math.max(0, Number(employerServiceFee) || 0);
+  const feePortion = quoted > 0 ? round2(feeTotal * (principal / quoted)) : 0;
+  return { principalPortion: principal, feePortion, totalCharge: round2(principal + feePortion) };
+}
+
 // ============ BOOKING TALENTS ============
 // Booking Commission: None 32% | Silver 28% | Gold 24% | Platinum 20%
 const BOOKING_COMMISSION_RATE = { none: 0.32, silver: 0.28, gold: 0.24, platinum: 0.20 };
@@ -82,15 +152,17 @@ const BIDDING_FEE_RATE = 0.093;
 const BOOKING_MARKUP_RATE = { none: 0.08, silver: 0.07, gold: 0.06, platinum: 0.05 };
 
 /**
- * Booking — Employer side (what booker pays at pay-deposit)
- * totalToPay = deposit_amount × (1 + markup_rate)
+ * Slot Booking — Employer markup at pay-deposit (platform_fee from fee_rates DB).
  */
-function calcBookingEmployerOutflow(depositAmount, bookerVipTier) {
+function calcBookingEmployerOutflow(depositAmount, bookerVipTier, slotConfig) {
   const tier = normalizeTier(bookerVipTier);
-  const markupRate = BOOKING_MARKUP_RATE[tier] ?? 0.08;
-  const markupAmount = round2(depositAmount * markupRate);
-  const totalToPay = round2(depositAmount * (1 + markupRate));
-  return { depositAmount, markupRate, markupAmount, totalToPay };
+  const markupRate = slotConfig
+    ? slotTierRate(slotConfig, 'platform_fee', tier)
+    : (BOOKING_MARKUP_RATE[tier] ?? 0.08);
+  const effectiveRate = markupRate > 0 ? markupRate : (BOOKING_MARKUP_RATE[tier] ?? 0.08);
+  const markupAmount = round2(depositAmount * effectiveRate);
+  const totalToPay = round2(depositAmount * (1 + effectiveRate));
+  return { depositAmount, markupRate: effectiveRate, markupAmount, totalToPay };
 }
 
 /**
@@ -105,17 +177,27 @@ function calcBookingEmployerOutflow(depositAmount, bookerVipTier) {
 function calcBookingRelease(depositAmount, finalBidPrice, talentVipTier, options = {}) {
   const tier = normalizeTier(talentVipTier);
   const waive = options?.waiveBookingCommission === true;
-  const commissionRate = waive ? 0 : (BOOKING_COMMISSION_RATE[tier] ?? 0.32);
+  const slotConfig = options?.slotConfig;
+  const commissionRate = waive
+    ? 0
+    : slotConfig
+      ? slotTierRate(slotConfig, 'commission_booking', tier)
+      : (BOOKING_COMMISSION_RATE[tier] ?? 0.32);
+  const effectiveCommission = commissionRate > 0 ? commissionRate : (BOOKING_COMMISSION_RATE[tier] ?? 0.32);
 
-  // Base (deposit_amount)
-  const sourcingFee = round2(depositAmount * BOOKING_SOURCING_RATE);
-  const bookingCommission = waive ? 0 : round2(depositAmount * commissionRate);
+  const sourcingPct = slotConfig?.booking_sourcing_percent ?? BOOKING_SOURCING_RATE * 100;
+  const sourcingRate = Number(sourcingPct) / 100;
+  const biddingPct = slotConfig?.bidding_fee_percent ?? BIDDING_FEE_RATE * 100;
+  const biddingRate = Number(biddingPct) / 100;
+
+  const sourcingFee = round2(depositAmount * sourcingRate);
+  const bookingCommission = waive ? 0 : round2(depositAmount * effectiveCommission);
   const platformFromBase = round2(sourcingFee + bookingCommission);
   const talentBase = round2(depositAmount - platformFromBase);
 
   // Surplus (only when finalBidPrice > depositAmount)
   const surplus = round2(Math.max(0, finalBidPrice - depositAmount));
-  const biddingFee = surplus > 0 ? round2(surplus * BIDDING_FEE_RATE) : 0;
+  const biddingFee = surplus > 0 ? round2(surplus * biddingRate) : 0;
   const talentSurplus = round2(surplus - biddingFee);
   const platformFromSurplus = biddingFee;
 
@@ -135,7 +217,7 @@ function calcBookingRelease(depositAmount, finalBidPrice, talentVipTier, options
     platformFromSurplus,
     talentPayout,
     totalPlatformRevenue,
-    commissionRate,
+    commissionRate: effectiveCommission,
     isChallenged: surplus > 0,
     brandAdviserWaivedBookingCommission: waive,
   };
@@ -248,6 +330,9 @@ function calcMarineCancellationCompensation(grossCompensation) {
 export {
   round2,
   normalizeTier,
+  calcBeautyEmployerOutflow,
+  calcBeautyProviderPayout,
+  calcBeautyPaymentCharge,
   calcMatchJobEmployerOutflow,
   calcMatchJobProviderInflow,
   calcBookingEmployerOutflow,

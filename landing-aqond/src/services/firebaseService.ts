@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { getMessaging, type Messaging } from 'firebase/messaging';
 import {
   getFirestore,
   collection,
@@ -28,6 +29,21 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+
+// FCM Messaging (browser only — not available in SSR/Node)
+let messagingInstance: Messaging | null = null;
+export function getMessagingInstance(): Messaging | null {
+  if (typeof window === 'undefined') return null;
+  if (!messagingInstance) {
+    try {
+      messagingInstance = getMessaging(app);
+    } catch (e) {
+      console.warn('[AQOND] Firebase Messaging not available:', e);
+      return null;
+    }
+  }
+  return messagingInstance;
+}
 
 // Collection names — อ้างอิงชื่อเดียวกันเป๊ะๆ ทั้ง Landing + Admin
 export const COLLECTIONS = {
@@ -59,6 +75,8 @@ export interface ProviderRegistration {
   portfolioVideos?: string[];
   skillDemoType?: SkillDemoType;
   referralCode?: string; // รหัสเพื่อนแนะนำ — เก็บไว้สำหรับ analytics และลำดับ
+  /** สมัครแบบทั่วไป vs Platinum — Platinum ต้องมีวิดีโออย่างน้อย 1 คลิป */
+  applicationTier?: 'standard' | 'platinum';
   isVerifiedByVideo?: boolean;
   status?: ProviderStatus;
   platinumBadge?: boolean;
@@ -130,16 +148,28 @@ export const uploadVideoToStorage = async (file: File): Promise<string | null> =
 };
 
 // Helper functions to add data to Firestore
-export const addProviderRegistration = async (data: Omit<ProviderRegistration, 'timestamp'>) => {
+export type AddProviderRegistrationResult =
+  | { success: true; id: string }
+  | { success: false; error: unknown };
+
+export const addProviderRegistration = async (
+  data: Omit<ProviderRegistration, 'timestamp'>
+): Promise<AddProviderRegistrationResult> => {
   try {
+    const tier = data.applicationTier ?? 'standard';
+    const hasVideo = (data.portfolioVideos?.length ?? 0) > 0;
+    if (tier === 'platinum' && !hasVideo) {
+      return { success: false, error: 'platinum_requires_video' as const };
+    }
     const docData = {
       ...data,
-      isVerifiedByVideo: (data.portfolioVideos?.length ?? 0) > 0,
+      applicationTier: tier,
+      isVerifiedByVideo: hasVideo,
       status: 'pending_review' as ProviderStatus,
       timestamp: new Date(),
     };
-    await addDoc(collection(db, COLLECTIONS.providerRegistrations), docData);
-    return { success: true };
+    const docRef = await addDoc(collection(db, COLLECTIONS.providerRegistrations), docData);
+    return { success: true, id: docRef.id };
   } catch (e) {
     console.error('Error adding provider document: ', e);
     return { success: false, error: e };
@@ -166,7 +196,10 @@ const toDate = (v: unknown): Date => {
 
 export const getProvidersForReview = async () => {
   const all = await getProvidersAll();
-  return all.filter((p) => (p.status as string) === 'pending_review' || !p.status);
+  return all.filter((p) => {
+    const st = (p as ProviderRegistration & { id: string }).status;
+    return st === 'pending_review' || !st;
+  });
 };
 
 export const getProvidersAll = async () => {
@@ -339,7 +372,7 @@ export const getReviewLogs = async (limit = 50) => {
 
 export const getActiveJobs = async () => {
   const all = await getJobsAll();
-  return all.filter((j) => (j.status as string) === 'active');
+  return all.filter((j) => (j as Job & { id: string }).status === 'active');
 };
 
 const MOCK_JOBS: Array<Record<string, unknown>> = [

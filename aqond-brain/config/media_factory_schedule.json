@@ -1,0 +1,35 @@
+{
+  "timezone": "Asia/Bangkok",
+  "default_character": "man",
+  "target_hook_seconds": [8, 10],
+  "hooks_per_day": 5,
+  "hook_slots": [
+    {
+      "time": "10:40",
+      "topic": "MatchJob กันคนโกงจ่ายค่าจ้าง"
+    },
+    {
+      "time": "13:00",
+      "topic": "Booking จองงานปลอดภัยใน AQOND"
+    },
+    {
+      "time": "15:30",
+      "topic": "KYC ยืนยันตัวตนก่อนรับเงิน"
+    },
+    {
+      "time": "18:00",
+      "topic": "หาเงินเสริมโดยไม่โดนหลอก"
+    },
+    {
+      "time": "20:30",
+      "topic": "ทำไมต้องใช้ AQOND แทนแอปอื่น"
+    }
+  ],
+  "topics_pool": [
+    "MatchJob Anti-Fraud",
+    "Booking งานออนไลน์ปลอดภัย",
+    "KYC ป้องกันโดนหลอก",
+    "รับเงินผ่านระบบ escrow",
+    "โปรไฟล์ AQOND สร้างความน่าเชื่อถือ"
+  ]
+}

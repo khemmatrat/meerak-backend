@@ -1,0 +1,160 @@
+/**
+ * AQOND Merchant OS — AXS token bridge (Sprint 25)
+ * Scoped to .axs-merchant
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-merchant {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-surface: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  min-height: 100vh;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+/* —— Header & nav —— */
+.axs-merchant .tt-merchant-header-bar {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-merchant .tt-merchant-header-icon {
+  background: var(--axs-surface-2);
+}
+
+.axs-merchant .tt-merchant-shop-section {
+  background: rgba(184, 134, 11, 0.06);
+  border-bottom-color: var(--axs-border);
+}
+
+.axs-merchant .tt-merchant-nav-pill.active {
+  border-color: rgba(184, 134, 11, 0.45);
+  background: rgba(184, 134, 11, 0.1);
+  color: var(--axs-primary-hover);
+}
+
+.axs-merchant .tt-merchant-nav-compact-link.is-active {
+  color: var(--axs-primary);
+  border-color: var(--axs-primary);
+}
+
+.axs-merchant .tt-merchant-more-sheet {
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-sheet) var(--axs-radius-sheet) 0 0;
+}
+
+/* —— CTAs —— */
+.axs-merchant .tt-btn-primary,
+.axs-merchant .tt-merchant-btn.tt-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+}
+
+.axs-merchant .tt-btn-primary:hover:not(:disabled),
+.axs-merchant .tt-merchant-btn.tt-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+/* —— Cards —— */
+.axs-merchant .tt-merchant-order-card,
+.axs-merchant .tt-sales-card,
+.axs-merchant .tt-wallet-card,
+.axs-merchant .tt-wallet-hero,
+.axs-merchant .tt-fee-policy-card,
+.axs-merchant .tt-merchant-profile-card,
+.axs-merchant .tt-merchant-status-card {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-merchant .tt-merchant-order-card.sla-breach {
+  border-color: var(--axs-danger);
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.axs-merchant .tt-merchant-sla-alert {
+  color: var(--axs-danger);
+}
+
+.axs-merchant .tt-merchant-sla-warn {
+  color: var(--axs-warning);
+}
+
+.axs-merchant .tt-merchant-refresh {
+  color: var(--axs-primary);
+  border-color: var(--axs-border);
+}
+
+.axs-merchant .tt-merchant-ok {
+  color: var(--axs-success);
+}
+
+.axs-merchant .tt-merchant-warn {
+  color: var(--axs-danger);
+}
+
+.axs-merchant .tt-analytics-pct.up {
+  color: var(--axs-success);
+}
+
+.axs-merchant .tt-analytics-pct.down {
+  color: var(--axs-danger);
+}
+
+.axs-merchant .tt-peak-bar {
+  background: var(--axs-gradient-gold);
+}
+
+.axs-merchant .tt-wallet-amount {
+  color: var(--axs-primary);
+}
+
+.axs-merchant .tt-merchant-picker-row.active {
+  background: rgba(184, 134, 11, 0.08);
+  color: var(--axs-primary-hover);
+}
+
+.axs-merchant .tt-merchant-picker-sheet {
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-sheet) var(--axs-radius-sheet) 0 0;
+}
+
+/* —— Gate pages —— */
+.axs-merchant .tt-merchant-gate {
+  background: var(--axs-bg);
+}
+
+/* —— Loading —— */
+.axs-merchant-loading {
+  padding: var(--axs-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-merchant-loading-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--axs-space-2);
+}
+
+.axs-merchant-loading-stat {
+  height: 80px;
+  border-radius: var(--axs-radius-card);
+}

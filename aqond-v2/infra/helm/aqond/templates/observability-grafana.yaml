@@ -1,0 +1,56 @@
+{{- if .Values.observability.grafana }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: {{ .Values.global.namespace }}
+data:
+  aqond-golden.json: |
+    {"title":"AQOND Golden Signals","panels":[
+      {"title":"Order QPS","targets":[{"expr":"sum(rate(http_requests_total{service=\"order-svc\"}[1m]))"}]},
+      {"title":"Flash queue depth","targets":[{"expr":"order_queue_depth"}]},
+      {"title":"Shard skew","targets":[{"expr":"count(aqond_hot_shards)"}]}
+    ]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.0
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+          volumeMounts:
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+      volumes:
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+{{- end }}

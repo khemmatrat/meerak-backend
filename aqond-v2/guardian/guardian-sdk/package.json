@@ -1,0 +1,12 @@
+{
+  "name": "@aqond/guardian-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AQOND Guardian Kernel SDK — Phase 1.1 observe only",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./observe": "./lib/observe.js"
+  }
+}

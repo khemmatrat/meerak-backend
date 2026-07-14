@@ -2,6 +2,7 @@
  * Phase 3.5: Daily Reconciliation - Payment Ledger by Date
  */
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   getReconciliationSummary,
   getLedgerEntriesByDate,
@@ -74,10 +75,30 @@ export const Reconciliation: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mb-2">
           <FileText size={28} />
           Daily Reconciliation
         </h1>
+        <div className="flex flex-wrap gap-4 mb-6">
+          <Link
+            to="/reconciliation/course-payouts"
+            className="inline-flex text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+          >
+            Course Payout Ops →
+          </Link>
+          <Link
+            to="/reconciliation/course-review"
+            className="inline-flex text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+          >
+            Course Review Queue →
+          </Link>
+          <Link
+            to="/reconciliation/course-analytics"
+            className="inline-flex text-sm font-semibold text-indigo-700 hover:text-indigo-900"
+          >
+            Course Analytics →
+          </Link>
+        </div>
 
         <div className="flex flex-wrap items-center gap-4 mb-6">
           <label className="flex items-center gap-2">

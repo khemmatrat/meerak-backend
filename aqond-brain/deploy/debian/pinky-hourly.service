@@ -1,0 +1,22 @@
+[Unit]
+Description=Aqond Pinky — เช็กงาน pipeline ทุก 1 ชั่วโมง
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# แก้ path ให้ตรงเซิร์ฟเวอร์ (หรือใช้ EnvironmentFile)
+WorkingDirectory=/opt/aqond-brain
+EnvironmentFile=-/etc/default/aqond-pinky
+ExecStart=/usr/bin/python3 /opt/aqond-brain/scripts/pinky_manager.py
+# ถ้าใช้ venv:
+# ExecStart=/opt/aqond-brain/.venv/bin/python /opt/aqond-brain/scripts/pinky_manager.py
+
+User=www-data
+Group=www-data
+
+# ให้อ่าน .env และ pipeline ได้
+UMask=002
+
+[Install]
+WantedBy=multi-user.target

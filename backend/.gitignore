@@ -1,17 +1,22 @@
-# เฉพาะที่ไม่ควรขึ้น repo (ไฟล์ที่ต้องใช้รัน/deploy ไม่อาจ ignore)
+# backend — sync with root policy
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
+!.env.*.example
 *.log
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-# ไฟล์ทดสอบ/ชั่วคราว (ไม่จำเป็นสำหรับ Render)
-*.ps1
-*.myversion
-test*.txt
+*.md
+!README.md
+!Readme.md
+*.txt
 test*.html
 TEST.html
 *.jpg
-*.md
+*.myversion
+uploads/statements/
+!uploads/statements/.gitkeep

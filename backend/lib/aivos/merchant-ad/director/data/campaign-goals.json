@@ -1,0 +1,38 @@
+{
+  "version": "1.1.0",
+  "dimension": "campaign_goal",
+  "entries": {
+    "promotion": {
+      "offer_framing": "Limited-time promotion and special savings today.",
+      "hook_angle": "Lead with the deal and urgency."
+    },
+    "brand_awareness": {
+      "offer_framing": "Introduce the brand and build recognition.",
+      "hook_angle": "Focus on brand story and trust, not hard sell."
+    },
+    "quality": {
+      "offer_framing": "Emphasize quality and trust in the product.",
+      "hook_angle": "Highlight craftsmanship and reliability."
+    },
+    "discount": {
+      "offer_framing": "Emphasize limited-time savings and urgency.",
+      "hook_angle": "Lead with promotion and special deal today."
+    },
+    "bestseller": {
+      "offer_framing": "Emphasize popularity and social proof.",
+      "hook_angle": "Mention that many customers already love it."
+    },
+    "new": {
+      "offer_framing": "Emphasize new arrival and freshness.",
+      "hook_angle": "Announce newly launched product."
+    },
+    "awareness": {
+      "offer_framing": "Introduce the shop and product clearly.",
+      "hook_angle": "Build recognition for the brand or shop."
+    },
+    "_default": {
+      "offer_framing": "Present the product benefit clearly.",
+      "hook_angle": "Introduce the product naturally."
+    }
+  }
+}

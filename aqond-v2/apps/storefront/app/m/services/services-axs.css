@@ -1,0 +1,1225 @@
+/**
+ * AQOND Services OS — AXS token bridge (Sprint 28a)
+ * Scoped to .axs-services
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-services {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-surface: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  min-height: 100vh;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+/* —— Shell —— */
+.axs-services .tt-services-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+}
+
+.axs-services .tt-services-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  background: var(--axs-surface);
+  border-bottom: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-services .tt-services-back,
+.axs-services .tt-services-gear {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  color: var(--axs-text-secondary);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.axs-services .tt-services-back svg {
+  width: 20px;
+  height: 20px;
+}
+
+.axs-services .tt-services-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.axs-services .tt-services-title h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--axs-text);
+}
+
+.axs-services .tt-services-title-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-body {
+  flex: 1;
+  padding: 12px 16px calc(72px + env(safe-area-inset-bottom));
+}
+
+.axs-services .tt-services-os-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  background: var(--axs-surface);
+  border-top: 1px solid var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.06);
+}
+
+.axs-services .tt-services-os-nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--axs-text-muted);
+  text-decoration: none;
+}
+
+.axs-services .tt-services-os-nav a.active {
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-os-nav-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.axs-services .tt-services-login-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--axs-radius-card);
+  background: rgba(184, 134, 11, 0.08);
+  border: 1px solid rgba(184, 134, 11, 0.25);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-services .tt-services-login-banner strong {
+  color: var(--axs-primary-hover);
+}
+
+/* —— Hub —— */
+.axs-services .tt-services-hub-intro {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  color: var(--axs-text-muted);
+  line-height: 1.5;
+}
+
+.axs-services .tt-services-hub-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.axs-services .tt-services-hub-card {
+  display: block;
+  padding: 16px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--axs-duration) var(--axs-ease-out);
+}
+
+.axs-services .tt-services-hub-card:hover {
+  border-color: rgba(184, 134, 11, 0.45);
+}
+
+.axs-services .tt-services-hub-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.axs-services .tt-services-hub-card-icon {
+  font-size: 1.5rem;
+}
+
+.axs-services .tt-services-hub-card h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-hub-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--axs-text-muted);
+  line-height: 1.45;
+}
+
+.axs-services .tt-services-hub-badge {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--axs-primary);
+}
+
+/* —— CTAs —— */
+.axs-services .tt-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+}
+
+.axs-services .tt-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+/* —— Placeholder module pages —— */
+.axs-services .tt-services-module-placeholder {
+  padding: 8px 0;
+}
+
+/* —— Loading —— */
+.axs-services-loading {
+  padding: var(--axs-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--axs-space-3);
+}
+
+.axs-services-loading-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--axs-space-2);
+}
+
+.axs-services-loading-stat {
+  height: 88px;
+  border-radius: var(--axs-radius-card);
+}
+
+/* —— Match Job (Sprint 28b) —— */
+.axs-services .tt-services-match-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.axs-services .tt-services-match-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-category-hub {
+  border-radius: var(--axs-radius-card);
+  border: 1px solid rgba(184, 134, 11, 0.2);
+  background: linear-gradient(180deg, var(--axs-surface) 0%, rgba(184, 134, 11, 0.04) 100%);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.axs-services .tt-services-category-hub-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-category-kicker {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-category-hub h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-category-all {
+  border: 2px solid var(--axs-border);
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-button);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-category-all.active {
+  border-color: var(--axs-primary);
+  background: rgba(184, 134, 11, 0.12);
+  color: var(--axs-primary-hover);
+}
+
+.axs-services .tt-services-category-group {
+  margin-bottom: 14px;
+}
+
+.axs-services .tt-services-category-group h4 {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--axs-text-secondary);
+}
+
+.axs-services .tt-services-category-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.axs-services .tt-services-category-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 3.5rem;
+  padding: 8px 10px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-category-tile.active {
+  border-color: var(--axs-primary);
+  box-shadow: 0 0 0 2px rgba(184, 134, 11, 0.2);
+}
+
+.axs-services .tt-services-category-emoji {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.axs-services .tt-services-category-strip {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--axs-border);
+}
+
+.axs-services .tt-services-category-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.axs-services .tt-services-pill {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-pill.active {
+  background: var(--axs-gradient-gold);
+  color: #fff;
+  border-color: transparent;
+}
+
+.axs-services .tt-services-filter-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--axs-radius-card);
+  background: rgba(184, 134, 11, 0.08);
+  border: 1px solid rgba(184, 134, 11, 0.2);
+  font-size: 0.85rem;
+}
+
+.axs-services .tt-services-search-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.axs-services .tt-services-search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  color: var(--axs-text-muted);
+  cursor: pointer;
+}
+
+.axs-services .tt-services-suggestions {
+  position: absolute;
+  z-index: 30;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-md);
+  overflow: hidden;
+}
+
+.axs-services .tt-services-suggestions button {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-suggestions button:hover {
+  background: rgba(184, 134, 11, 0.08);
+}
+
+.axs-services .tt-services-job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-services .tt-services-job-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-services .tt-services-job-card .aq-card {
+  padding: 14px;
+}
+
+.axs-services .tt-services-job-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.axs-services .tt-services-job-card-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.axs-services .tt-services-job-card-desc {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  color: var(--axs-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.axs-services .tt-services-job-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--axs-border);
+}
+
+.axs-services .tt-services-job-price {
+  color: var(--axs-primary);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.axs-services .tt-services-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.axs-services .tt-services-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-back-link {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-detail-card {
+  padding: 16px;
+}
+
+.axs-services .tt-services-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.axs-services .tt-services-detail-title {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-detail-desc {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  color: var(--axs-text-secondary);
+  line-height: 1.5;
+}
+
+.axs-services .tt-services-detail-facts {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.axs-services .tt-services-detail-facts dt {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--axs-text-muted);
+  margin-bottom: 2px;
+}
+
+.axs-services .tt-services-detail-facts dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* —— Match Job create / mine / payment (Sprint 28c) —— */
+.axs-services .tt-services-create-steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.axs-services .tt-services-create-step {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--axs-border);
+}
+
+.axs-services .tt-services-create-step.active {
+  background: var(--axs-gradient-gold);
+}
+
+.axs-services .tt-services-create-card {
+  padding: 16px;
+}
+
+.axs-services .tt-services-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.axs-services .tt-services-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.axs-services .tt-services-select,
+.axs-services .tt-services-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  font: inherit;
+}
+
+.axs-services .tt-services-create-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.axs-services .tt-services-create-actions button {
+  flex: 1;
+}
+
+.axs-services .tt-services-create-success h3 {
+  margin: 0 0 8px;
+}
+
+.axs-services .tt-services-mine-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-mine-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.axs-services .tt-services-mine-expired {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-mine-pay-link {
+  display: block;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--axs-primary);
+  text-decoration: none;
+  margin-top: -4px;
+  margin-bottom: 8px;
+  padding-right: 4px;
+}
+
+.axs-services .tt-services-payment-intent {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: rgba(184, 134, 11, 0.06);
+  border: 1px solid rgba(184, 134, 11, 0.15);
+}
+
+.axs-services .tt-success-inline {
+  color: #047857;
+  font-size: 0.9rem;
+  margin: 8px 0;
+}
+
+/* —— Job Board (Sprint 28d) —— */
+.axs-services .tt-services-board-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-board-sort {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.axs-services .tt-services-board-filters {
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-board-count {
+  margin: 0 0 10px;
+}
+
+.axs-services .tt-services-board-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--axs-primary);
+  margin-bottom: 8px;
+}
+
+.axs-services .tt-services-board-card-premium .aq-card {
+  border-color: rgba(139, 92, 246, 0.35);
+  background: linear-gradient(135deg, rgba(255, 251, 235, 0.9), rgba(237, 233, 254, 0.5));
+}
+
+.axs-services .tt-services-board-premium-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6d28d9;
+  margin-bottom: 6px;
+}
+
+.axs-services .tt-services-board-snapshot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.axs-services .tt-services-board-snapshot span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(184, 134, 11, 0.08);
+  border: 1px solid rgba(184, 134, 11, 0.15);
+}
+
+.axs-services .tt-services-board-section-title {
+  margin: 16px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--axs-text-muted);
+}
+
+.axs-services .tt-services-board-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.axs-services .tt-services-board-applicant-card {
+  padding: 14px;
+}
+
+.axs-services .tt-services-board-applicant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.axs-services .tt-services-board-applicant-actions button {
+  flex: 1;
+  min-width: 80px;
+}
+
+/* —— Booking (Sprint 28f) —— */
+.axs-services .tt-services-talent-card {
+  padding: 0;
+}
+
+.axs-services .tt-services-talent-card-inner {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.axs-services .tt-services-talent-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(184, 134, 11, 0.15), rgba(16, 185, 129, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-talent-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.axs-services .tt-services-talent-avatar-lg {
+  width: 72px;
+  height: 72px;
+}
+
+.axs-services .tt-services-talent-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.axs-services .tt-services-talent-detail-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.axs-services .tt-services-booking-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-services .tt-services-booking-slot {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+}
+
+.axs-services .tt-services-booking-slot.active {
+  border-color: var(--axs-primary);
+  background: rgba(184, 134, 11, 0.08);
+}
+
+/* —— Video Feed (Sprint 28g) —— */
+.axs-services .tt-services-video-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.axs-services .tt-services-video-card {
+  border-radius: var(--axs-radius-card);
+  overflow: hidden;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+}
+
+.axs-services .tt-services-video-player-wrap {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  max-height: 70vh;
+  background: #000;
+}
+
+.axs-services .tt-services-video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.axs-services .tt-services-video-play-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-video-ad-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: rgba(109, 40, 217, 0.9);
+  color: #fff;
+}
+
+.axs-services .tt-services-video-meta {
+  padding: 14px;
+}
+
+.axs-services .tt-services-video-talent {
+  margin: 0 0 4px;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.axs-services .tt-services-video-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.axs-services .tt-services-video-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.axs-services .tt-services-video-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.axs-services .tt-services-video-action {
+  flex: 1;
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-video-action.active {
+  border-color: var(--axs-primary);
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-video-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.axs-services .tt-services-video-comments-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  max-height: 55vh;
+  padding: 16px;
+  background: var(--axs-surface);
+  border-top: 1px solid var(--axs-border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+}
+
+.axs-services .tt-services-video-comments-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.axs-services .tt-services-video-comments-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.axs-services .tt-services-video-comments-list p {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.axs-services .tt-services-video-comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.axs-services .tt-services-video-saved-grid {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.axs-services .tt-services-video-saved-card {
+  padding: 10px;
+}
+
+.axs-services .tt-services-video-saved-thumb {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: #111;
+}
+
+.axs-services .tt-services-video-saved-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+/* —— Create Job / Routing (Sprint 28h) —— */
+.axs-services .tt-services-create-hub-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (min-width: 640px) {
+  .axs-services .tt-services-create-hub-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.axs-services .tt-services-create-hub-card {
+  display: block;
+  padding: 16px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-services .tt-services-create-hub-card h3 {
+  margin: 8px 0 4px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-create-hub-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-services .tt-services-routing-suggestion {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(184, 134, 11, 0.35);
+  background: rgba(184, 134, 11, 0.08);
+}
+
+.axs-services .tt-services-routing-suggestion-inline {
+  margin-top: 8px;
+}
+
+.axs-services .tt-services-routing-suggestion-label {
+  margin: 0 0 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--axs-primary);
+}
+
+.axs-services .tt-services-routing-suggestion-text {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.axs-services .tt-services-routing-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.axs-services .tt-services-hiring-guide {
+  margin: 14px 0 4px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.axs-services .tt-services-hiring-guide-heading {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-hiring-guide-section {
+  margin-bottom: 10px;
+}
+
+.axs-services .tt-services-hiring-guide-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+@media (min-width: 640px) {
+  .axs-services .tt-services-hiring-guide-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.axs-services .tt-services-hiring-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.axs-services .tt-services-hiring-guide-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.axs-services .tt-services-hiring-chip {
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  font-size: 0.7rem;
+}
+
+.axs-services .tt-services-hiring-matrix-link {
+  font-size: 0.8rem;
+}
+
+.axs-services .tt-services-routing-matrix-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.axs-services .tt-services-routing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.axs-services .tt-services-routing-filter {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.axs-services .tt-services-routing-filter.active {
+  border-color: var(--axs-primary);
+  color: var(--axs-primary);
+  background: rgba(184, 134, 11, 0.1);
+}
+
+.axs-services .tt-services-routing-export {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.axs-services .tt-services-routing-panels {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 900px) {
+  .axs-services .tt-services-routing-panels {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.axs-services .tt-services-routing-panel {
+  border: 1px solid var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  padding: 14px;
+  background: var(--axs-surface);
+}
+
+.axs-services .tt-services-routing-panel h3 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.axs-services .tt-services-routing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 28rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-services .tt-services-routing-item {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-services .tt-services-routing-item-title {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}

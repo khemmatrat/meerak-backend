@@ -1,37 +1,54 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { Briefcase, DollarSign, Clock, Sparkles, Users, Lock, Crown, Search, Eye, Bookmark, RefreshCw, WifiOff, FileText, Send, Inbox, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { Link, useLocation, useSearchParams, useNavigate } from "react-router-dom";
+import { Briefcase, Clock, Sparkles, Users, Lock, Crown, Search, Eye, Bookmark, RefreshCw, WifiOff, FileText, Send, Inbox, ChevronRight, SlidersHorizontal, X, MapPin, Banknote } from "lucide-react";
 import {
   listAdvanceJobs,
   getSavedAdvanceJobIds,
   getSavedAdvanceJobs,
   getMyAdvanceJobs,
   getMyAdvanceJobApplications,
+  getJobBoardBadges,
+  getUnreadAdvanceJobMap,
   saveAdvanceJob,
   unsaveAdvanceJob,
   JobServiceError,
 } from "../services/jobService";
-import type { JobAdvanceAPI, MyJobAdvanceAPI, MyJobAdvanceApplicationAPI } from "../types/api";
+import type { JobAdvanceAPI, MyJobAdvanceAPI, MyJobAdvanceApplicationAPI, JobBoardBadgesAPI } from "../types/api";
 import { useAuth } from "../context/AuthContext";
 import { useNotification } from "../context/NotificationContext";
 import { useLanguage } from "../context/LanguageContext";
 import { gradeService, type GradeData, GRADE_REQUIREMENTS } from "../services/gradeService";
 import { isReviewerMode, getMockJobsForReview } from "../services/mockJobsForReview";
 import { PreLaunchServiceBlock } from "../components/PreLaunchServiceBlock";
+import { ApplicationTimeline } from "../components/ApplicationTimeline";
+import { JobBoardEmptyState } from "../components/JobBoardEmptyState";
+import {
+  getUserPreferredProvinces,
+  getRoutingPreferredCategories,
+  scoreAdvanceSmartMatchJobs,
+  suggestCategoryFromHistory,
+} from "../utils/jobBoardSmartMatch";
+import { resolveJobBoardCopy } from "../utils/jobBoardCopy";
 import { useMobileAppConfig } from "../context/MobileAppConfigContext";
+import { Link as RouterLink } from "react-router-dom";
+import { JobBoardActionSheet } from "../components/JobBoardActionSheet";
+import {
+  buildEmployerActionItems,
+  buildTalentActionItems,
+} from "../utils/jobBoardActionItems";
+import { trackAdvanceEvent, advanceJobEventMeta } from "../utils/analytics";
+import {
+  EMPLOYMENT_TYPE_OPTIONS,
+  JOBBOARD_CATEGORY_GROUPS,
+  THAI_PROVINCES,
+  getEmploymentTypeLabel,
+  getJobboardCategoryLabel,
+  getJobboardGroupLabel,
+} from "../constants/workTaxonomy";
 
 /** งานราคาดี: Aura สีทอง/ม่วง (ราคาสูง >= 15000) */
 const PREMIUM_PRICE_THRESHOLD = 15000;
-
-const CATEGORIES = [
-  "Design & Creative",
-  "Writing & Translation",
-  "Video & Animation",
-  "Programming & Tech",
-  "Marketing",
-  "Admin & Support",
-  "Other",
-];
 
 const SORT_OPTIONS = [
   { value: "newest", labelKey: "job_board.sort_newest" },
@@ -46,53 +63,429 @@ const SUB_TABS = [
   { id: "saved" as const, labelKey: "job_board.saved_jobs" },
 ];
 
-/** Empty State — icon, message, CTA */
-function EmptyState({
-  icon: Icon,
-  title,
-  message,
-  ctaLabel,
-  ctaHref,
-  dataTour,
+const STATUS_LABEL_TH: Record<string, string> = {
+  open: "เปิดรับ",
+  pending: "รอดำเนินการ",
+  closed: "ปิดรับ",
+  completed: "เสร็จสิ้น",
+  interested: "สนใจ",
+  shortlisted: "คัดเลือกแล้ว",
+  hired: "จ้างแล้ว",
+  rejected: "ปฏิเสธ",
+};
+
+function getStatusLabelTh(status: string): string {
+  return STATUS_LABEL_TH[String(status || "").toLowerCase()] || status;
+}
+
+function formatBoardBadgeTitle(b: JobBoardBadgesAPI): string | undefined {
+  const parts: string[] = [];
+  if (b.unread_messages > 0) parts.push(`ข้อความใหม่ ${b.unread_messages}`);
+  if (b.pending_escrow > 0) parts.push(`รอโอนเงิน ${b.pending_escrow}`);
+  if (b.pending_review > 0) parts.push(`รอให้คะแนน ${b.pending_review}`);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+type JobFilters = {
+  q: string;
+  category: string;
+  target_province: string;
+  employment_type: string;
+  min_budget: string;
+  max_budget: string;
+  min_duration: string;
+  max_duration: string;
+  sort: "newest" | "budget_high" | "applicants";
+};
+
+function buildFilterChips(
+  filters: JobFilters,
+  setFilters: React.Dispatch<React.SetStateAction<JobFilters>>,
+): { key: string; label: string; onRemove: () => void }[] {
+  const chips: { key: string; label: string; onRemove: () => void }[] = [];
+  if (filters.q.trim()) {
+    chips.push({
+      key: "q",
+      label: `ค้นหา: ${filters.q.trim().slice(0, 24)}${filters.q.trim().length > 24 ? "…" : ""}`,
+      onRemove: () => setFilters((f) => ({ ...f, q: "" })),
+    });
+  }
+  if (filters.category) {
+    chips.push({
+      key: "category",
+      label: getJobboardCategoryLabel(filters.category),
+      onRemove: () => setFilters((f) => ({ ...f, category: "" })),
+    });
+  }
+  if (filters.target_province) {
+    chips.push({
+      key: "province",
+      label: filters.target_province,
+      onRemove: () => setFilters((f) => ({ ...f, target_province: "" })),
+    });
+  }
+  if (filters.employment_type) {
+    chips.push({
+      key: "employment",
+      label: getEmploymentTypeLabel(filters.employment_type),
+      onRemove: () => setFilters((f) => ({ ...f, employment_type: "" })),
+    });
+  }
+  if (filters.min_budget || filters.max_budget) {
+    const min = filters.min_budget ? `฿${Number(filters.min_budget).toLocaleString()}` : "";
+    const max = filters.max_budget ? `฿${Number(filters.max_budget).toLocaleString()}` : "";
+    chips.push({
+      key: "budget",
+      label: min && max ? `งบ ${min}–${max}` : min ? `งบ ${min}+` : `งบ ≤${max}`,
+      onRemove: () => setFilters((f) => ({ ...f, min_budget: "", max_budget: "" })),
+    });
+  }
+  if (filters.min_duration || filters.max_duration) {
+    const min = filters.min_duration || "";
+    const max = filters.max_duration || "";
+    chips.push({
+      key: "duration",
+      label: min && max ? `${min}–${max} วัน` : min ? `${min}+ วัน` : `≤${max} วัน`,
+      onRemove: () => setFilters((f) => ({ ...f, min_duration: "", max_duration: "" })),
+    });
+  }
+  if (filters.sort !== "newest") {
+    const sortLabel = SORT_OPTIONS.find((o) => o.value === filters.sort);
+    chips.push({
+      key: "sort",
+      label: sortLabel ? sortLabel.value === "budget_high" ? "งบสูงสุด" : "ผู้สนใจมาก" : filters.sort,
+      onRemove: () => setFilters((f) => ({ ...f, sort: "newest" })),
+    });
+  }
+  return chips;
+}
+
+const EMPTY_FILTERS: JobFilters = {
+  q: "",
+  category: "",
+  target_province: "",
+  employment_type: "",
+  min_budget: "",
+  max_budget: "",
+  min_duration: "",
+  max_duration: "",
+  sort: "newest",
+};
+
+function JobFilterSheet({
+  open,
+  onClose,
+  filters,
+  setFilters,
+  onApply,
+  t,
 }: {
-  icon: React.ElementType;
-  title: string;
-  message: string;
-  ctaLabel: string;
-  ctaHref: string;
-  dataTour?: string;
+  open: boolean;
+  onClose: () => void;
+  filters: JobFilters;
+  setFilters: React.Dispatch<React.SetStateAction<JobFilters>>;
+  onApply: () => void;
+  t: (k: string) => string;
 }) {
-  const { config } = useMobileAppConfig();
-  const { notify } = useNotification();
-  const jobPostingCta = /\/create-job/.test(ctaHref);
-  const postingBlocked = jobPostingCta && !config.featureFlags.enableJobPosting;
-  return (
-    <div className="luxury-card rounded-2xl p-12 text-center max-w-lg mx-auto">
-      <div className="w-20 h-20 mx-auto rounded-full bg-slate-700/50 flex items-center justify-center mb-6">
-        <Icon size={40} className="text-slate-500" />
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <>
+      <div className="jb-bottom-sheet-backdrop" onClick={onClose} aria-hidden />
+      <div
+        className="jb-bottom-sheet jb-bottom-sheet--nav-safe"
+        role="dialog"
+        aria-modal="true"
+        aria-label="ตัวกรองงาน"
+      >
+        <div className="jb-bottom-sheet-handle" />
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">ตัวกรองงาน</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-slate-100"
+            aria-label="ปิด"
+          >
+            <X size={20} className="text-slate-500" />
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">
+              {t("job_board.all_categories")}
+            </label>
+            <select
+              value={filters.category}
+              onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}
+              className="jb-sheet-input"
+            >
+              <option value="">{t("job_board.all_categories")}</option>
+              {JOBBOARD_CATEGORY_GROUPS.map((g) => (
+                <optgroup key={g.group} label={getJobboardGroupLabel(g.group)}>
+                  {g.categories.map((c) => (
+                    <option key={c} value={c}>
+                      {getJobboardCategoryLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1.5">จังหวัด</label>
+              <select
+                value={filters.target_province}
+                onChange={(e) => setFilters((f) => ({ ...f, target_province: e.target.value }))}
+                className="jb-sheet-input text-sm"
+              >
+                <option value="">ทุกจังหวัด</option>
+                {THAI_PROVINCES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1.5">ลักษณะจ้าง</label>
+              <select
+                value={filters.employment_type}
+                onChange={(e) => setFilters((f) => ({ ...f, employment_type: e.target.value }))}
+                className="jb-sheet-input text-sm"
+              >
+                <option value="">ทุกประเภท</option>
+                {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">{t("job_board.budget_label")}</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder={t("job_board.min_budget")}
+                value={filters.min_budget}
+                onChange={(e) => setFilters((f) => ({ ...f, min_budget: e.target.value }))}
+                className="jb-sheet-input flex-1 text-sm"
+              />
+              <span className="text-slate-400 shrink-0">–</span>
+              <input
+                type="number"
+                placeholder={t("job_board.max_budget")}
+                value={filters.max_budget}
+                onChange={(e) => setFilters((f) => ({ ...f, max_budget: e.target.value }))}
+                className="jb-sheet-input flex-1 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">{t("job_board.duration_label")}</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder={t("job_board.min_days")}
+                value={filters.min_duration}
+                onChange={(e) => setFilters((f) => ({ ...f, min_duration: e.target.value }))}
+                className="jb-sheet-input flex-1 text-sm"
+              />
+              <span className="text-slate-400 shrink-0">–</span>
+              <input
+                type="number"
+                placeholder={t("job_board.max_days")}
+                value={filters.max_duration}
+                onChange={(e) => setFilters((f) => ({ ...f, max_duration: e.target.value }))}
+                className="jb-sheet-input flex-1 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">เรียงตาม</label>
+            <select
+              value={filters.sort}
+              onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as JobFilters["sort"] }))}
+              className="jb-sheet-input"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, q: f.q }))}
+              className="flex-1 py-3 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+            >
+              ล้างตัวกรอง
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onApply();
+                onClose();
+              }}
+              className="flex-[2] py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500"
+            >
+              {t("job_board.search_btn")}
+            </button>
+          </div>
+        </div>
       </div>
-      <h3 className="text-lg font-bold text-slate-100 mb-2">{title}</h3>
-      <p className="text-slate-400 text-sm mb-6">{message}</p>
-      {postingBlocked ? (
-        <button
-          type="button"
-          data-tour={dataTour}
-          onClick={() => notify("การโพสต์งานถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning")}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-medium bg-slate-600 text-slate-300 cursor-not-allowed opacity-90"
-        >
-          <Briefcase size={20} />
-          {ctaLabel}
-        </button>
-      ) : (
-        <Link
-          to={ctaHref}
-          data-tour={dataTour}
-          className="inline-flex items-center gap-2 btn-gold-black px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity"
-        >
-          <Briefcase size={20} />
-          {ctaLabel}
-        </Link>
+    </>,
+    document.body,
+  );
+}
+
+function JobBoardSkeleton({ variant = "grid" }: { variant?: "grid" | "list" | "saved" }) {
+  if (variant === "saved") {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="jb-skeleton-card luxury-card space-y-3 relative">
+            <Bookmark size={16} className="absolute top-4 right-4 text-slate-300/80" />
+            <div className="h-4 w-24 rounded bg-slate-200/80" />
+            <div className="h-5 w-full rounded bg-slate-200/80" />
+            <div className="h-4 w-3/4 rounded bg-slate-200/60" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (variant === "list") {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="jb-skeleton-card luxury-card rounded-2xl p-5 space-y-3">
+            <div className="h-5 w-2/3 rounded bg-slate-200/80" />
+            <div className="flex gap-2">
+              <div className="h-6 w-16 rounded-lg bg-slate-200/60" />
+              <div className="h-6 w-24 rounded-lg bg-slate-200/60" />
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="h-14 rounded-xl bg-slate-200/50" />
+              <div className="h-14 rounded-xl bg-slate-200/50" />
+              <div className="h-14 rounded-xl bg-slate-200/50" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div key={i} className="jb-skeleton-card luxury-card space-y-3">
+          <div className="h-4 w-24 rounded bg-slate-200/80" />
+          <div className="h-5 w-full rounded bg-slate-200/80" />
+          <div className="h-4 w-3/4 rounded bg-slate-200/60" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getEmployerJobNextAction(job: MyJobAdvanceAPI): {
+  tab: "applicants" | "escrow" | "scope" | "review";
+  label: string;
+} {
+  if (job.status === "completed") {
+    return { tab: "review", label: "ให้คะแนน" };
+  }
+  if (job.work_submission_status === "submitted") {
+    return { tab: "escrow", label: "ตรวจงาน" };
+  }
+  if (job.hired_user_id) {
+    const escrow = job.escrow_status || "none";
+    if (escrow !== "held" && escrow !== "released") {
+      return { tab: "escrow", label: "โอนเงินค้ำ" };
+    }
+    return { tab: "escrow", label: "รอส่งงาน" };
+  }
+  if ((job.applicant_count ?? 0) > 0) {
+    return { tab: "applicants", label: "เลือกผู้รับจ้าง" };
+  }
+  return { tab: "applicants", label: "รอผู้สนใจ" };
+}
+
+function EmployerJobDashboardCard({ job }: { job: MyJobAdvanceAPI }) {
+  const navigate = useNavigate();
+  const action = getEmployerJobNextAction(job);
+  const manageUrl = `/job-board/${job.id}/manage?tab=${action.tab}`;
+  const unread = (job as any).unread_messages as number | undefined;
+  const cardBadges: { label: string; href: string }[] = [];
+  if (unread && unread > 0) {
+    cardBadges.push({
+      label: `มีแชทใหม่ ${unread > 9 ? "9+" : unread}`,
+      href: `/job-board/${job.id}/manage?tab=chat`,
+    });
+  }
+  if (job.hired_user_id && job.escrow_status !== "held" && job.escrow_status !== "released") {
+    cardBadges.push({ label: "รอโอนเงินค้ำ", href: `/job-board/${job.id}/manage?tab=escrow` });
+  }
+  if (job.review_pending) {
+    cardBadges.push({ label: "รอให้คะแนน", href: `/job-board/${job.id}/manage?tab=review` });
+  }
+
+  const handleNavigate = () => navigate(manageUrl);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleNavigate();
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleNavigate}
+      onKeyDown={handleKeyDown}
+      className="luxury-card rounded-2xl p-5 block hover:border-blue-500/30 transition-colors cursor-pointer"
+    >
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <h3 className="font-bold text-slate-100 text-lg line-clamp-2 flex-1">{job.title}</h3>
+        <span className="shrink-0 px-2.5 py-1 rounded-lg bg-blue-600/20 text-blue-300 text-xs font-semibold">
+          {action.label}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="text-center p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
+          <p className="text-2xl font-bold text-slate-100">{job.view_count ?? 0}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">ผู้เข้าชม</p>
+        </div>
+        <div className="text-center p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
+          <p className="text-2xl font-bold text-emerald-400">{job.applicant_count ?? 0}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">ผู้สนใจ</p>
+        </div>
+        <div className="text-center p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+          <p className="text-sm font-bold text-blue-300 leading-tight">{action.label}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">ต้องทำ</p>
+        </div>
+      </div>
+      {cardBadges.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {cardBadges.slice(0, 2).map((b) => (
+            <RouterLink
+              key={b.label}
+              to={b.href}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25"
+            >
+              {b.label}
+            </RouterLink>
+          ))}
+        </div>
       )}
+      <div className="flex items-center justify-between text-sm text-slate-500">
+        <span className="px-2 py-0.5 rounded-lg bg-slate-700/50 text-slate-300 text-xs">
+          {getStatusLabelTh(job.status)}
+        </span>
+        <span className="flex items-center gap-1 text-blue-400 font-medium">
+          จัดการ <ChevronRight size={16} />
+        </span>
+      </div>
     </div>
   );
 }
@@ -110,11 +503,12 @@ interface JobCardProps {
   job:           JobAdvanceAPI & { is_vvip?: boolean; min_grade?: string };
   workerGrade?:  GradeData | null;
   savedIds?:     Set<string>;
+  appliedIds?:   Set<string>;
   token?:        string | null;
   onSaveChange?: (jobId: string, saved: boolean) => void;
 }
 
-export function JobCard({ job, workerGrade, savedIds, token, onSaveChange }: JobCardProps) {
+export function JobCard({ job, workerGrade, savedIds, appliedIds, token, onSaveChange }: JobCardProps) {
   const { t } = useLanguage();
   const isPremium  = job.max_budget >= PREMIUM_PRICE_THRESHOLD || job.min_budget >= PREMIUM_PRICE_THRESHOLD;
   const isVvip     = !!job.is_vvip;
@@ -180,7 +574,7 @@ export function JobCard({ job, workerGrade, savedIds, token, onSaveChange }: Job
         {/* Top row: category + badges + save */}
         <div className="flex justify-between items-start gap-2 mb-3 flex-wrap">
           <span className="px-3 py-1 rounded-xl bg-slate-700/50 text-slate-300 text-xs font-medium">
-            {job.category}
+            {getJobboardCategoryLabel(job.category)}
           </span>
           <div className="flex items-center gap-1.5 flex-wrap">
             {token && (
@@ -226,6 +620,20 @@ export function JobCard({ job, workerGrade, savedIds, token, onSaveChange }: Job
         {/* Title */}
         <h3 className="font-bold text-slate-100 text-lg line-clamp-2 mb-2">{job.title}</h3>
 
+        {/* Status chips */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {appliedIds?.has(String(job.id)) && (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
+              สมัครแล้ว
+            </span>
+          )}
+          {isSaved && (
+            <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 text-[10px] font-semibold">
+              บันทึกแล้ว
+            </span>
+          )}
+        </div>
+
         {/* Locked overlay info */}
         {isLocked ? (
           <div className="flex items-start gap-2 bg-slate-800/80 border border-amber-500/20 rounded-xl p-3 mb-3">
@@ -241,30 +649,33 @@ export function JobCard({ job, workerGrade, savedIds, token, onSaveChange }: Job
               </p>
             </div>
           </div>
-        ) : (
-          <p className="text-slate-400 text-sm line-clamp-2 mb-4">{job.description}</p>
-        )}
+        ) : null}
 
-        {/* Stats */}
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="flex items-center gap-1.5 font-semibold number-wallet-gold text-amber-400">
-            <DollarSign size={16} />
-            ฿{job.min_budget.toLocaleString()} – ฿{job.max_budget.toLocaleString()}
+        {/* Scannable chip row */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] mt-2">
+          <span className="jb-job-meta-chip">
+            <Banknote size={11} />
+            ฿{job.min_budget.toLocaleString()}–{job.max_budget.toLocaleString()}
           </span>
-          <span className="flex items-center gap-1.5 text-slate-500">
-            <Clock size={14} />
+          <span className="jb-job-meta-chip">
+            <Clock size={11} />
             {job.duration_days} {t("job_board.days")}
           </span>
-          {job.applicant_count > 0 && (
-            <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium">
-              <Users size={14} />
-              {t("job_board.interested")} {job.applicant_count}
+          {(job as any).target_province ? (
+            <span className="jb-job-meta-chip">
+              <MapPin size={11} />
+              {(job as any).target_province}
             </span>
-          )}
-          {job.view_count != null && job.view_count > 0 && (
-            <span className="flex items-center gap-1 text-slate-400 text-xs">
-              <Eye size={14} />
-              {t("job_board.views")} {job.view_count}
+          ) : null}
+          {(job as any).employment_type ? (
+            <span className="jb-job-meta-chip">
+              {getEmploymentTypeLabel(String((job as any).employment_type))}
+            </span>
+          ) : null}
+          {job.applicant_count > 0 && (
+            <span className="jb-job-meta-chip jb-job-meta-chip--accent">
+              <Users size={11} />
+              {job.applicant_count}
             </span>
           )}
         </div>
@@ -283,6 +694,19 @@ export const JobBoard: React.FC = () => {
   const { token, user } = useAuth();
   const { notify } = useNotification();
   const { t } = useLanguage();
+  const { config } = useMobileAppConfig();
+  const jobBoardCopy = useMemo(
+    () => resolveJobBoardCopy(config.remote),
+    [config.remote],
+  );
+  const profileProvinces = useMemo(
+    () =>
+      getUserPreferredProvinces(
+        user,
+        config.remote?.jobBoardCopy?.smartMatchProvinces,
+      ),
+    [user, config.remote?.jobBoardCopy?.smartMatchProvinces],
+  );
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [workerGrade, setWorkerGrade] = useState<GradeData | null>(null);
@@ -295,20 +719,135 @@ export const JobBoard: React.FC = () => {
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [badgeCounts, setBadgeCounts] = useState({ myJobs: 0, applications: 0, saved: 0 });
-  const [filters, setFilters] = useState({
+  const [boardBadges, setBoardBadges] = useState<{
+    my_jobs: JobBoardBadgesAPI;
+    applications: JobBoardBadgesAPI;
+  }>({
+    my_jobs: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+    applications: { unread_messages: 0, pending_escrow: 0, pending_review: 0, total: 0 },
+  });
+  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [actionSheet, setActionSheet] = useState<{
+    open: boolean;
+    title: string;
+    side: "my-jobs" | "my-applications";
+  }>({ open: false, title: "", side: "my-jobs" });
+  const [filters, setFilters] = useState<JobFilters>({
     q: "",
     category: "",
+    target_province: "",
+    employment_type: "",
     min_budget: "",
     max_budget: "",
     min_duration: "",
     max_duration: "",
     sort: "newest" as "newest" | "budget_high" | "applicants",
   });
+  const navigate = useNavigate();
+
+  const filterChips = useMemo(() => buildFilterChips(filters, setFilters), [filters]);
+  const activeFilterCount = filterChips.length;
+  const myUserId = user?.id ?? (user as { userId?: string })?.userId;
+
+  const employerActionItems = useMemo(
+    () => buildEmployerActionItems(myJobs, unreadMap),
+    [myJobs, unreadMap],
+  );
+  const talentActionItems = useMemo(
+    () => buildTalentActionItems(applications, myUserId, unreadMap),
+    [applications, myUserId, unreadMap],
+  );
+
+  const openTabActionSheet = (side: "my-jobs" | "my-applications") => {
+    const items = side === "my-jobs" ? employerActionItems : talentActionItems;
+    if (items.length === 0) {
+      setSubTab(side);
+      return;
+    }
+    if (items.length === 1) {
+      navigate(items[0].href);
+      setSubTab(side);
+      return;
+    }
+    setActionSheet({
+      open: true,
+      title: side === "my-jobs" ? "งานของฉัน — ต้องดำเนินการ" : "งานที่สมัคร — ต้องดำเนินการ",
+      side,
+    });
+  };
+
+  useEffect(() => {
+    if (!showFilterSheet) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showFilterSheet]);
+
+  const routingCategories = useMemo(
+    () => getRoutingPreferredCategories(config.remote?.routingWeightOverrides),
+    [config.remote?.routingWeightOverrides],
+  );
 
   const subTab = (searchParams.get("tab") as SubTabId) || "all";
   const setSubTab = (tab: SubTabId) => {
     setSearchParams(tab === "all" ? {} : { tab });
   };
+
+  const smartMatchJobs = useMemo(() => {
+    if (subTab !== "all" || jobs.length === 0) return [];
+    return scoreAdvanceSmartMatchJobs({
+      jobs,
+      applications,
+      savedJobs,
+      savedIds,
+      appliedJobIds,
+      profileProvinces,
+      routingCategories,
+      filterCategory: filters.category,
+      filterProvince: filters.target_province,
+      reasonLabels: jobBoardCopy.smartMatchReasonLabels,
+    });
+  }, [
+    subTab,
+    jobs,
+    applications,
+    savedJobs,
+    savedIds,
+    appliedJobIds,
+    profileProvinces,
+    routingCategories,
+    filters.category,
+    filters.target_province,
+    jobBoardCopy.smartMatchReasonLabels,
+  ]);
+
+  useEffect(() => {
+    if (searchParams.get("openFilter") !== "1") return;
+    const cat = searchParams.get("category")?.trim() || "";
+    if (cat) {
+      setFilters((f) => ({ ...f, category: cat }));
+    }
+    setSubTab("all");
+    setShowFilterSheet(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("openFilter");
+    next.delete("category");
+    setSearchParams(next.toString() ? next : {}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (subTab === "all" && smartMatchJobs.length > 0) {
+      trackAdvanceEvent(
+        "advance_smart_match_impression",
+        { count: smartMatchJobs.length },
+        jobBoardCopy,
+      );
+    }
+  }, [subTab, smartMatchJobs.length, jobBoardCopy]);
 
   const loadJobs = useCallback(async () => {
     setLoading(true);
@@ -316,6 +855,8 @@ export const JobBoard: React.FC = () => {
       const params: Record<string, string | number | undefined> = { status: "all", sort: filters.sort };
       if (filters.q.trim()) params.q = filters.q.trim();
       if (filters.category) params.category = filters.category;
+      if (filters.target_province) params.target_province = filters.target_province;
+      if (filters.employment_type) params.employment_type = filters.employment_type;
       if (filters.min_budget) params.min_budget = Number(filters.min_budget) || undefined;
       if (filters.max_budget) params.max_budget = Number(filters.max_budget) || undefined;
       if (filters.min_duration) params.min_duration = Number(filters.min_duration) || undefined;
@@ -340,6 +881,25 @@ export const JobBoard: React.FC = () => {
     }
   }, [token, notify, filters, user]);
 
+  const refreshBoardBadges = useCallback(async () => {
+    if (!token) return;
+    try {
+      const badges = await getJobBoardBadges(token);
+      setBoardBadges({
+        my_jobs: badges.my_jobs,
+        applications: badges.applications,
+      });
+    } catch (_) {}
+  }, [token]);
+
+  const refreshUnreadMap = useCallback(async () => {
+    if (!token) return;
+    try {
+      const m = await getUnreadAdvanceJobMap(token);
+      setUnreadMap(m);
+    } catch (_) {}
+  }, [token]);
+
   const loadMyJobs = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -347,12 +907,14 @@ export const JobBoard: React.FC = () => {
       const list = await getMyAdvanceJobs(token);
       setMyJobs(list);
       setBadgeCounts((p) => ({ ...p, myJobs: list.length }));
+      refreshBoardBadges();
+      refreshUnreadMap();
     } catch (e) {
       notify(e instanceof JobServiceError ? e.message : "โหลดงานของฉันไม่สำเร็จ", "error");
     } finally {
       setLoading(false);
     }
-  }, [token, notify]);
+  }, [token, notify, refreshBoardBadges, refreshUnreadMap]);
 
   const loadApplications = useCallback(async () => {
     if (!token) return;
@@ -360,13 +922,16 @@ export const JobBoard: React.FC = () => {
     try {
       const list = await getMyAdvanceJobApplications(token);
       setApplications(list);
+      setAppliedJobIds(new Set(list.map((a) => String(a.job_id))));
       setBadgeCounts((p) => ({ ...p, applications: list.length }));
+      refreshBoardBadges();
+      refreshUnreadMap();
     } catch (e) {
       notify(e instanceof JobServiceError ? e.message : "โหลดงานที่สมัครไม่สำเร็จ", "error");
     } finally {
       setLoading(false);
     }
-  }, [token, notify]);
+  }, [token, notify, refreshBoardBadges, refreshUnreadMap]);
 
   const loadSavedJobs = useCallback(async () => {
     if (!token) return;
@@ -412,12 +977,20 @@ export const JobBoard: React.FC = () => {
     if (!token) return;
     (async () => {
       try {
-        const [myJ, apps, ids] = await Promise.all([
+        const [myJ, apps, ids, badges] = await Promise.all([
           getMyAdvanceJobs(token),
           getMyAdvanceJobApplications(token),
           getSavedAdvanceJobIds(token),
+          getJobBoardBadges(token),
         ]);
         setBadgeCounts({ myJobs: myJ?.length ?? 0, applications: apps?.length ?? 0, saved: ids?.length ?? 0 });
+        setAppliedJobIds(new Set((apps || []).map((a) => String(a.job_id))));
+        if (badges) {
+          setBoardBadges({
+            my_jobs: badges.my_jobs,
+            applications: badges.applications,
+          });
+        }
       } catch (_) {}
     })();
   }, [token, refreshTrigger]);
@@ -430,14 +1003,31 @@ export const JobBoard: React.FC = () => {
   }, [location.state, subTab]);
 
   useEffect(() => {
+    if (subTab !== "my-applications") return;
+    loadApplications();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") loadApplications();
+    }, 25000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadApplications();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [subTab, loadApplications]);
+
+  useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible" && subTab === "my-jobs") {
         setRefreshTrigger((k) => k + 1);
+        refreshUnreadMap();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [subTab]);
+  }, [subTab, refreshUnreadMap]);
 
   const handleSaveChange = (jobId: string, saved: boolean) => {
     setSavedIds((prev) => {
@@ -490,7 +1080,7 @@ export const JobBoard: React.FC = () => {
 
   return (
     <div
-      className="space-y-8 pb-12 min-h-screen"
+      className="aqond-trust-theme jobboard-flow-theme space-y-8 pb-12 min-h-screen"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -517,8 +1107,8 @@ export const JobBoard: React.FC = () => {
             {t("job_board.title")}
           </h1>
 
-          {/* Pill-style Tab Bar with Badge Counts */}
-          <div className="flex flex-wrap gap-2 p-1.5 rounded-xl bg-slate-800/50 border border-slate-600/50 w-fit">
+          {/* Pill-style Tab Bar — scroll แนวนอน ไม่ตกบรรทัด */}
+          <div className="jb-tab-scroll flex gap-2 p-1.5 rounded-xl bg-slate-100 border border-slate-200 w-full">
             {SUB_TABS.map((tab) => {
               const count =
                 tab.id === "all" ? jobs.length
@@ -526,20 +1116,55 @@ export const JobBoard: React.FC = () => {
                 : tab.id === "my-applications" ? (subTab === "my-applications" ? applications.length : badgeCounts.applications)
                 : tab.id === "saved" ? (subTab === "saved" ? savedJobs.length : badgeCounts.saved)
                 : 0;
+              const actionCount =
+                tab.id === "my-jobs" ? boardBadges.my_jobs.total
+                : tab.id === "my-applications" ? boardBadges.applications.total
+                : 0;
+              const actionTitle =
+                tab.id === "my-jobs" ? formatBoardBadgeTitle(boardBadges.my_jobs)
+                : tab.id === "my-applications" ? formatBoardBadgeTitle(boardBadges.applications)
+                : undefined;
               const isActive = subTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setSubTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all shrink-0 whitespace-nowrap ${
                     isActive
                       ? "bg-blue-600 text-white shadow-md"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-white"
                   }`}
                 >
                   {t(tab.labelKey)}
-                  {count > 0 && (
+                  {actionCount > 0 && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tab.id === "my-jobs" || tab.id === "my-applications") {
+                          openTabActionSheet(tab.id);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (tab.id === "my-jobs" || tab.id === "my-applications") {
+                            openTabActionSheet(tab.id);
+                          }
+                        }
+                      }}
+                      className={`min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold flex items-center justify-center cursor-pointer ${
+                        isActive ? "bg-red-500 text-white" : "bg-red-500/80 text-white"
+                      }`}
+                      title={actionTitle || "ต้องดำเนินการ — แตะเพื่อเลือกงาน"}
+                    >
+                      {actionCount > 99 ? "99+" : actionCount}
+                    </span>
+                  )}
+                  {count > 0 && actionCount === 0 && (
                     <span
                       className={`min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold flex items-center justify-center ${
                         isActive ? "bg-blue-500/80 text-white" : "bg-slate-600 text-slate-300"
@@ -556,140 +1181,179 @@ export const JobBoard: React.FC = () => {
 
       {/* Search & Filter — only for All Jobs */}
       {subTab === "all" && (
-      <div className="luxury-card rounded-2xl p-4 sm:p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+      <div className="jb-search-toolbar space-y-2.5">
+        <div className="flex gap-2 items-stretch">
+          <div className="relative flex-1 min-w-0">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
-              type="text"
+              type="search"
               placeholder={t("job_board.search_placeholder")}
               value={filters.q}
               onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
               onKeyDown={(e) => e.key === "Enter" && loadJobs()}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-gold/30 outline-none"
+              className="jb-search-input w-full"
             />
           </div>
-          <select
-            value={filters.category}
-            onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}
-            className="px-4 py-2.5 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 focus:ring-2 focus:ring-gold/30 outline-none min-w-[160px]"
-          >
-            <option value="">{t("job_board.all_categories")}</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <select
-            value={filters.sort}
-            onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as typeof filters.sort }))}
-            className="px-4 py-2.5 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-100 focus:ring-2 focus:ring-gold/30 outline-none min-w-[140px]"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-            ))}
-          </select>
           <button
-            onClick={loadJobs}
-            className="btn-gold-black px-5 py-2.5 rounded-xl font-medium shrink-0"
+            type="button"
+            onClick={() => setShowFilterSheet(true)}
+            className="jb-filter-trigger relative shrink-0"
+            aria-label="เปิดตัวกรอง"
           >
-            {t("job_board.search_btn")}
+            <SlidersHorizontal size={18} />
+            <span className="hidden sm:inline text-sm font-medium">ตัวกรอง</span>
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
           <button
+            type="button"
             onClick={handlePullRefresh}
             disabled={loading}
-            className="p-2.5 rounded-xl bg-charcoal-800 border border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+            className="jb-filter-trigger shrink-0 !px-3"
             title={t("job_board.refresh")}
+            aria-label={t("job_board.refresh")}
           >
             <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-slate-400 text-sm">{t("job_board.budget_label")}:</span>
-          <input
-            type="number"
-            placeholder={t("job_board.min_budget")}
-            value={filters.min_budget}
-            onChange={(e) => setFilters((f) => ({ ...f, min_budget: e.target.value }))}
-            className="w-24 px-3 py-1.5 rounded-lg bg-charcoal-800 border border-slate-600 text-slate-100 text-sm placeholder-slate-500"
-          />
-          <span className="text-slate-500">–</span>
-          <input
-            type="number"
-            placeholder={t("job_board.max_budget")}
-            value={filters.max_budget}
-            onChange={(e) => setFilters((f) => ({ ...f, max_budget: e.target.value }))}
-            className="w-24 px-3 py-1.5 rounded-lg bg-charcoal-800 border border-slate-600 text-slate-100 text-sm placeholder-slate-500"
-          />
-          <span className="text-slate-400 text-sm ml-2">{t("job_board.duration_label")}:</span>
-          <input
-            type="number"
-            placeholder={t("job_board.min_days")}
-            value={filters.min_duration}
-            onChange={(e) => setFilters((f) => ({ ...f, min_duration: e.target.value }))}
-            className="w-20 px-3 py-1.5 rounded-lg bg-charcoal-800 border border-slate-600 text-slate-100 text-sm placeholder-slate-500"
-          />
-          <span className="text-slate-500">–</span>
-          <input
-            type="number"
-            placeholder={t("job_board.max_days")}
-            value={filters.max_duration}
-            onChange={(e) => setFilters((f) => ({ ...f, max_duration: e.target.value }))}
-            className="w-20 px-3 py-1.5 rounded-lg bg-charcoal-800 border border-slate-600 text-slate-100 text-sm placeholder-slate-500"
-          />
+
+        {filterChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {filterChips.map((chip) => (
+              <span key={chip.key} className="jb-filter-chip">
+                {chip.label}
+                <button type="button" onClick={chip.onRemove} aria-label="ลบตัวกรอง">
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, q: f.q }))}
+              className="text-xs text-slate-500 hover:text-blue-600 px-1"
+            >
+              ล้างตัวกรอง
+            </button>
+          </div>
+        )}
+
+        <JobFilterSheet
+          open={showFilterSheet}
+          onClose={() => setShowFilterSheet(false)}
+          filters={filters}
+          setFilters={setFilters}
+          onApply={loadJobs}
+          t={t}
+        />
+      </div>
+      )}
+
+      {subTab === "all" && smartMatchJobs.length > 0 && !loading && (
+        <div className="luxury-card rounded-2xl p-4 space-y-3">
+          <h3
+            className="text-sm font-bold text-slate-100 flex items-center gap-2"
+            title={jobBoardCopy.smartMatchTooltip}
+          >
+            <Sparkles size={16} className="text-blue-400" />
+            {jobBoardCopy.smartMatchTitle}
+          </h3>
+          <p className="text-[11px] text-slate-500 -mt-1">{jobBoardCopy.smartMatchTooltip}</p>
+          <div className="jb-smart-match-strip">
+            {smartMatchJobs.map(({ job, reasons }) => (
+              <Link
+                key={job.id}
+                to={`/job-board/${job.id}`}
+                onClick={() =>
+                  trackAdvanceEvent(
+                    "advance_smart_match_click",
+                    advanceJobEventMeta(job, { job_id: job.id }),
+                    jobBoardCopy,
+                  )
+                }
+                className="shrink-0 w-44 p-3 rounded-xl bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/40 transition-colors"
+                title={reasons.join(" · ") || jobBoardCopy.smartMatchTooltip}
+              >
+                <p className="text-sm font-semibold text-slate-100 line-clamp-2">{job.title}</p>
+                <p className="text-xs text-blue-300 mt-1">
+                  ฿{job.min_budget.toLocaleString()}–{job.max_budget.toLocaleString()}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{getJobboardCategoryLabel(job.category)}</p>
+                {reasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {reasons.slice(0, 2).map((r) => (
+                      <span
+                        key={r}
+                        className="px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-200 text-[10px] font-semibold border border-blue-500/25"
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Link>
+            ))}
         </div>
       </div>
       )}
 
       {loading ? (
-        <div className="luxury-card rounded-2xl p-12 text-center">
-          <div className="inline-block w-8 h-8 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin mb-4" />
-          <p className="text-slate-400">{t("job_board.loading")}</p>
-        </div>
+        <JobBoardSkeleton
+          variant={
+            subTab === "saved"
+              ? "saved"
+              : subTab === "my-jobs" || subTab === "my-applications"
+                ? "list"
+                : "grid"
+          }
+        />
       ) : subTab === "my-jobs" ? (
         myJobs.length === 0 ? (
-          <EmptyState
+          <JobBoardEmptyState
             icon={FileText}
             title={t("job_board.empty_my_jobs")}
-            message={t("job_board.empty_my_jobs_msg")}
+            bullets={jobBoardCopy.emptyMyJobsBullets}
             ctaLabel={t("job_board.post_job_now")}
             ctaHref="/create-job-advance"
             dataTour="job-board-post"
+            analyticsContext="empty_my_jobs"
+            experimentCopy={jobBoardCopy}
           />
         ) : (
           <div className="space-y-4">
             {myJobs.map((job) => (
-              <Link
+              <EmployerJobDashboardCard
                 key={job.id}
-                to={`/job-board/${job.id}/manage`}
-                className="luxury-card rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-gold/20 transition-colors block"
-              >
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-100 text-lg truncate">{job.title}</h3>
-                  <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-400">
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-700/50">{job.status}</span>
-                    <span className="flex items-center gap-1"><Users size={14} /> {job.applicant_count} {t("job_board.interested")}</span>
-                    {job.hired_user_id && <span className="text-emerald-400">จ้างแล้ว</span>}
-                  </div>
-                  <div className="flex items-center gap-4 mt-2 text-sm">
-                    <span className="number-wallet-gold text-amber-400">
-                      ฿{job.min_budget?.toLocaleString()} – ฿{job.max_budget?.toLocaleString()}
-                    </span>
-                    <span className="flex items-center gap-1 text-slate-500"><Clock size={14} /> {job.duration_days} {t("job_board.days")}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-amber-400 font-medium shrink-0">จัดการ <ChevronRight size={18} /></div>
-              </Link>
+                job={{ ...job, unread_messages: unreadMap[String(job.id)] || 0 } as MyJobAdvanceAPI}
+              />
             ))}
           </div>
         )
       ) : subTab === "my-applications" ? (
         applications.length === 0 ? (
-          <EmptyState
+          <JobBoardEmptyState
             icon={Send}
             title={t("job_board.empty_applications")}
-            message={t("job_board.empty_applications_msg")}
+            bullets={jobBoardCopy.emptyApplicationsBullets}
             ctaLabel={t("job_board.browse_jobs")}
             ctaHref="/job-board"
+            secondaryCtaLabel="เปิดตัวกรองหมวดงาน"
+            analyticsContext="empty_applications"
+            experimentCopy={jobBoardCopy}
+            onSecondaryClick={() => {
+              const suggested = suggestCategoryFromHistory(
+                applications,
+                savedJobs,
+                routingCategories,
+              );
+              setSubTab("all");
+              if (suggested) {
+                setFilters((f) => ({ ...f, category: suggested }));
+              }
+              setShowFilterSheet(true);
+            }}
           />
         ) : (
           <div className="space-y-4">
@@ -697,31 +1361,80 @@ export const JobBoard: React.FC = () => {
               <Link
                 key={app.id}
                 to={app.status === "hired" ? `/job-board/${app.job_id}/manage` : `/job-board/${app.job_id}`}
-                className="luxury-card rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-gold/20 transition-colors block"
+                className="luxury-card rounded-2xl p-5 flex flex-col gap-3 hover:border-gold/20 transition-colors block"
               >
+                <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-slate-100 text-lg truncate">{app.title}</h3>
                   <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-400">
                     <span className={`px-2 py-0.5 rounded-lg ${app.status === "hired" ? "bg-emerald-500/20 text-emerald-400" : app.status === "shortlisted" ? "bg-amber-500/20 text-amber-400" : "bg-slate-700/50"}`}>
-                      {app.status}
+                        {getStatusLabelTh(app.status)}
                     </span>
                     <span className="text-amber-400">฿{app.min_budget?.toLocaleString()} – ฿{app.max_budget?.toLocaleString()}</span>
                     <span className="text-slate-500">{app.employer_name}</span>
                   </div>
                 </div>
-                <ChevronRight size={18} className="text-amber-400 shrink-0" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <ChevronRight size={18} className="text-amber-400" />
+                    <div className="flex flex-wrap gap-1.5 justify-end">
+                      {(() => {
+                        const badges: { label: string; href: string }[] = [];
+                        const unread = unreadMap[String(app.job_id)] || 0;
+                        if (unread > 0) {
+                          badges.push({
+                            label: `มีแชทใหม่ ${unread > 9 ? "9+" : unread}`,
+                            href: `/job-board/${app.job_id}/chat/${myUserId}`,
+                          });
+                        }
+                        const escrowStatus = app.escrow_status || "none";
+                        if (app.status === "hired" && escrowStatus !== "held" && escrowStatus !== "released") {
+                          badges.push({
+                            label: "รอโอนเงินค้ำ",
+                            href: `/job-board/${app.job_id}/manage?tab=escrow`,
+                          });
+                        }
+                        if (app.review_pending) {
+                          badges.push({
+                            label: "รอให้คะแนน",
+                            href: `/job-board/${app.job_id}/manage?tab=review`,
+                          });
+                        }
+                        return badges.slice(0, 2).map((b) => (
+                          <RouterLink
+                            key={b.label}
+                            to={b.href}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25"
+                          >
+                            {b.label}
+                          </RouterLink>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                </div>
+                {app.status !== "rejected" && (
+                  <ApplicationTimeline
+                    status={app.status}
+                    jobStatus={app.job_status}
+                    viewedAt={app.viewed_at}
+                    compact
+                  />
+                )}
               </Link>
             ))}
           </div>
         )
       ) : subTab === "saved" ? (
         savedJobs.length === 0 ? (
-          <EmptyState
+          <JobBoardEmptyState
             icon={Bookmark}
             title={t("job_board.empty_saved")}
-            message={t("job_board.empty_saved_msg")}
+            bullets={jobBoardCopy.emptySavedBullets}
             ctaLabel={t("job_board.browse_jobs")}
             ctaHref="/job-board"
+            analyticsContext="empty_saved"
+            experimentCopy={jobBoardCopy}
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -731,6 +1444,7 @@ export const JobBoard: React.FC = () => {
                 job={job as any}
                 workerGrade={workerGrade}
                 savedIds={savedIds}
+                appliedIds={appliedJobIds}
                 token={token}
                 onSaveChange={handleSaveChange}
               />
@@ -738,12 +1452,16 @@ export const JobBoard: React.FC = () => {
           </div>
         )
       ) : jobs.length === 0 ? (
-        <EmptyState
+        <JobBoardEmptyState
           icon={Inbox}
           title={t("job_board.no_jobs")}
-          message={t("job_board.empty_all_msg")}
+          bullets={jobBoardCopy.emptyAllBullets}
           ctaLabel={t("job_board.post_first")}
           ctaHref="/create-job-advance"
+          secondaryCtaLabel="เปิดตัวกรอง"
+          analyticsContext="empty_all_jobs"
+          experimentCopy={jobBoardCopy}
+          onSecondaryClick={() => setShowFilterSheet(true)}
           dataTour="job-board-post"
         />
       ) : (
@@ -754,6 +1472,7 @@ export const JobBoard: React.FC = () => {
               job={job as any}
               workerGrade={workerGrade}
               savedIds={savedIds}
+              appliedIds={appliedJobIds}
               token={token}
               onSaveChange={handleSaveChange}
             />
@@ -761,6 +1480,13 @@ export const JobBoard: React.FC = () => {
         </div>
       )}
       </div>
+
+      <JobBoardActionSheet
+        open={actionSheet.open}
+        onClose={() => setActionSheet((s) => ({ ...s, open: false }))}
+        title={actionSheet.title}
+        items={actionSheet.side === "my-jobs" ? employerActionItems : talentActionItems}
+      />
     </div>
   );
 };

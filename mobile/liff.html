@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AQOND Service</title>
+    
+    <!-- 1. โหลด LIFF SDK ปกติ -->
+    <script src="https://static.line-ncdn.net/lib/liff/2.23.0/sdk.js"></script>
+    
+    <!-- 2. Mock LIFF สำหรับ Local Development (แยกออกมา) -->
+    <script>
+        // ตรวจสอบว่าเป็น localhost หรือไม่
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+
+        if (isLocalhost) {
+            // สร้าง Mock LIFF
+            window.liff = {
+                init: async (config) => {
+                    console.log('[MOCK LIFF] init()', config);
+                    console.log('✅ Running in LOCAL MODE - Mock LIFF enabled');
+                    return Promise.resolve();
+                },
+                isLoggedIn: () => {
+                    return true;
+                },
+                login: async () => {
+                    console.log('[MOCK LIFF] login()');
+                    return Promise.resolve();
+                },
+                getProfile: async () => {
+                    console.log('[MOCK LIFF] getProfile()');
+                    return {
+                        userId: 'U123456789',
+                        displayName: 'Test User',
+                        pictureUrl: 'https://via.placeholder.com/150',
+                        statusMessage: 'Testing'
+                    };
+                },
+                getDecodedIDToken: () => {
+                    return { sub: 'U123456789' };
+                },
+                isInClient: () => {
+                    return false;
+                },
+                sendMessages: async (messages) => {
+                    console.log('[MOCK LIFF] sendMessages:', messages);
+                    alert('Mock: ส่งข้อความแล้ว\n' + JSON.stringify(messages[0], null, 2));
+                    return Promise.resolve();
+                },
+                closeWindow: () => {
+                    console.log('[MOCK LIFF] closeWindow()');
+                    alert('Mock: ปิดหน้าต่าง (ใน LINE จะปิดจริงๆ)');
+                },
+                getAccessToken: async () => {
+                    return 'mock-access-token';
+                },
+                getOS: () => {
+                    return 'web';
+                }
+            };
+        }
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 16px;
+            padding-bottom: 80px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .header {
+            background: linear-gradient(135deg, #06C755 0%, #00B956 100%);
+            color: white;
+            padding: 24px 20px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(6, 199, 85, 0.3);
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .user-info {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .user-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #06C755;
+        }
+        .user-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+        .user-greeting {
+            font-size: 13px;
+            color: #666;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            padding-left: 4px;
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .service-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .service-card:active {
+            transform: scale(0.96);
+            border-color: #06C755;
+        }
+        .service-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+        .service-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        .service-price {
+            color: #06C755;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .menu-section {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 14px 0;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+        }
+        .menu-item:last-child {
+            border-bottom: none;
+        }
+        .menu-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-right: 14px;
+            background: #f5f5f5;
+        }
+        .menu-text {
+            flex: 1;
+        }
+        .menu-title {
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
+            margin-bottom: 2px;
+        }
+        .menu-subtitle {
+            font-size: 12px;
+            color: #999;
+        }
+        .menu-arrow {
+            color: #ccc;
+            font-size: 18px;
+        }
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #06C755;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            background: #fff5f5;
+            color: #e53e3e;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <div>กำลังโหลด...</div>
+        </div>
+    </div>
+
+    <script>
+        // LIFF ID (ใช้เฉพาะตอน Deploy จริง)
+        const LIFF_ID = "2010669198-mUvd2o8k";
+
+        // Initialize LIFF
+        async function initializeLIFF() {
+            try {
+                await liff.init({
+                    liffId: LIFF_ID,
+                    withLoginOnExternalBrowser: true
+                });
+                
+                if (!liff.isLoggedIn()) {
+                    await liff.login();
+                    return;
+                }
+                
+                const profile = await liff.getProfile();
+                renderApp(profile);
+                
+            } catch (error) {
+                console.error('LIFF error:', error);
+                document.getElementById('app').innerHTML = `
+                    <div class="error-message">
+                        <div style="font-size: 40px; margin-bottom: 10px;"></div>
+                        <div>เกิดข้อผิดพลาด</div>
+                        <div style="font-size: 12px; margin-top: 10px; color: #999;">${error.message || 'กรุณาลองใหม่อีกครั้ง'}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderApp(profile) {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="container">
+                    <div class="user-info">
+                        <img src="${profile.pictureUrl || 'https://via.placeholder.com/48'}" 
+                             alt="Profile" class="user-avatar" 
+                             onerror="this.src='https://via.placeholder.com/48'">
+                        <div>
+                            <div class="user-name">${profile.displayName}</div>
+                            <div class="user-greeting">สวัสดีครับ 👋</div>
+                        </div>
+                    </div>
+                    
+                    <div class="header">
+                        <h1>🛠️ AQOND Service</h1>
+                        <p>เลือกบริการที่คุณต้องการ</p>
+                    </div>
+                    
+                    <div class="section-title">บริการยอดนิยม</div>
+                    <div class="service-grid">
+                        <div class="service-card" onclick="selectService('aircon', 'ล้างแอร์', '500-800')">
+                            <div class="service-icon">❄️</div>
+                            <div class="service-name">ล้างแอร์</div>
+                            <div class="service-price">฿500-800</div>
+                        </div>
+                        <div class="service-card" onclick="selectService('haircut', 'ตัดผม', '300-500')">
+                            <div class="service-icon">✂️</div>
+                            <div class="service-name">ตัดผม</div>
+                            <div class="service-price">฿300-500</div>
+                        </div>
+                        <div class="service-card" onclick="selectService('cleaning', 'ทำความสะอาด', '800-1500')">
+                            <div class="service-icon">🧹</div>
+                            <div class="service-name">ทำความสะอาด</div>
+                            <div class="service-price">฿800-1,500</div>
+                        </div>
+                        <div class="service-card" onclick="selectService('food', 'สั่งอาหาร', '50+')">
+                            <div class="service-icon"></div>
+                            <div class="service-name">สั่งอาหาร</div>
+                            <div class="service-price">฿50+</div>
+                        </div>
+                    </div>
+                    
+                    <div class="section-title">เมนูอื่นๆ</div>
+                    <div class="menu-section">
+                        <div class="menu-item" onclick="selectService('job', 'หางาน', '')">
+                            <div class="menu-icon"></div>
+                            <div class="menu-text">
+                                <div class="menu-title">หางาน/รับงาน</div>
+                                <div class="menu-subtitle">Fastwork-style job board</div>
+                            </div>
+                            <div class="menu-arrow">›</div>
+                        </div>
+                        <div class="menu-item" onclick="selectService('marketplace', 'ตลาดสินค้า', '')">
+                            <div class="menu-icon">🛍️</div>
+                            <div class="menu-text">
+                                <div class="menu-title">ตลาดสินค้า</div>
+                                <div class="menu-subtitle">Shopee-style marketplace</div>
+                            </div>
+                            <div class="menu-arrow">›</div>
+                        </div>
+                        <div class="menu-item" onclick="selectService('booking', 'จองคิว', '')">
+                            <div class="menu-icon"></div>
+                            <div class="menu-text">
+                                <div class="menu-title">จองคิว</div>
+                                <div class="menu-subtitle">ดูการจองของฉัน</div>
+                            </div>
+                            <div class="menu-arrow">›</div>
+                        </div>
+                        <div class="menu-item" onclick="selectService('support', 'ช่วยเหลือ', '')">
+                            <div class="menu-icon"></div>
+                            <div class="menu-text">
+                                <div class="menu-title">ช่วยเหลือ</div>
+                                <div class="menu-subtitle">ติดต่อเจ้าหน้าที่</div>
+                            </div>
+                            <div class="menu-arrow">›</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function selectService(type, name, price) {
+            const message = `ฉันสนใจ: ${name}${price ? ` (ราคา ฿${price})` : ''}\nกรุณาติดต่อกลับ`;
+            
+            if (liff.isInClient()) {
+                liff.sendMessages([{
+                    type: 'text',
+                    text: message
+                }]).then(() => {
+                    setTimeout(() => {
+                        liff.closeWindow();
+                    }, 500);
+                }).catch(err => {
+                    alert('ส่งข้อความแล้ว: ' + message);
+                });
+            } else {
+                alert('เลือก: ' + name + '\n(ใน LINE จะส่งข้อความอัตโนมัติ)');
+            }
+        }
+
+        // เริ่มต้นแอป
+        initializeLIFF();
+    </script>
+    
+</body>
+</html>

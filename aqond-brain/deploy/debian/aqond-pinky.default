@@ -1,0 +1,4 @@
+# คัดลอกไปที่ /etc/default/aqond-pinky บน Debian
+# แก้ path ถ้าโปรเจกต์ไม่ได้อยู่ที่ /opt/aqond-brain
+
+# PINKY_WATCH_INTERVAL=120

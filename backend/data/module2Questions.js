@@ -4,6 +4,8 @@
  * correct: 'a'|'b'|'c'|'d' — ตัวเลือกที่ถูกต้อง (ไม่ส่งออกไปยัง client)
  */
 
+import { PublicTransport, Messenger } from './module2TransportExams.js';
+
 const MODULE2_QUESTIONS = {
 
   // ══════════════════════════════════════════════
@@ -12162,6 +12164,9 @@ const MODULE2_QUESTIONS = {
     },
   ],
 
+  PublicTransport,
+  Messenger,
+
 }; // end MODULE2_QUESTIONS
 
 /**
@@ -12171,6 +12176,8 @@ const MODULE2_QUESTIONS = {
 const CATEGORY_ALIASES = {
   'Pet Care': 'PetCare',
   'Driving': 'Driver',
+  'Public Transport': 'PublicTransport',
+  'Messenger': 'Messenger',
   'Photography': 'Photographer',
   'Babysitter': 'Babysitting',
   'Tutoring': 'Tutoring',   // ตรงกันอยู่แล้ว

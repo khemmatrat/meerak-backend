@@ -21,7 +21,7 @@ async function getActiveBudget(pool) {
     );
     const row = r.rows?.[0];
     if (!row) return null;
-  const available = parseFloat(row.total_allocated || 0) - parseFloat(row.total_spent || 0);
+    const available = parseFloat(row.total_allocated || 0) - parseFloat(row.total_spent || 0);
     return {
       id: row.id,
       campaignName: row.campaign_name,
@@ -64,7 +64,7 @@ async function ensureReferralCode(pool, userId) {
       );
       const check = await pool.query('SELECT 1 FROM users WHERE referral_code = $1 AND id != $2', [code, userId]);
       if (!check.rows?.length) return code;
-    } catch (_) {}
+    } catch (_) { }
   }
   return null;
 }
@@ -79,18 +79,63 @@ async function resolveCodeToUserId(pool, code) {
 
 /** Record referral on signup: ref=code in query/body */
 async function recordReferralOnSignup(pool, refereeId, referralCode) {
-  const referrerId = await resolveCodeToUserId(pool, referralCode);
-  if (!referrerId || String(referrerId) === String(refereeId)) return;
+  const codeRaw = referralCode != null ? String(referralCode).trim() : '';
+  if (!codeRaw) return;
+
+  const referrerId = await resolveCodeToUserId(pool, codeRaw);
+  if (!referrerId) {
+    console.warn('[Referral] recordReferralOnSignup invalid_or_unknown_code', {
+      refereeId: String(refereeId),
+      codeLength: codeRaw.length,
+    });
+    return;
+  }
+  if (String(referrerId) === String(refereeId)) {
+    console.warn('[Referral] recordReferralOnSignup self_referral_skipped', {
+      refereeId: String(refereeId),
+    });
+    return;
+  }
+
   try {
     await pool.query(
       `INSERT INTO provider_referrals (referrer_id, referred_id, referral_code)
        VALUES ($1, $2, $3)
        ON CONFLICT (referrer_id, referred_id) DO NOTHING`,
-      [referrerId, refereeId, referralCode.trim().toUpperCase()]
+      [referrerId, refereeId, codeRaw.toUpperCase()]
     );
   } catch (e) {
-    console.warn('[Referral] recordReferralOnSignup:', e?.message);
+    console.error('[Referral] recordReferralOnSignup insert_failed', {
+      refereeId: String(refereeId),
+      referrerId,
+      pgCode: e?.code,
+      message: e?.message,
+    });
+    throw e;
   }
+}
+
+/**
+ * Public snapshot for clients — same rate semantics as processReferralPayout (active budget row vs default).
+ * Does not change payout math; read-only.
+ */
+async function getReferralCampaignPublicSnapshot(pool) {
+  const budget = await getActiveBudget(pool);
+  const defaultPct = DEFAULT_REFERRAL_RATE * 100;
+  if (budget && budget.isActive) {
+    return {
+      effectiveCommissionRatePct: budget.commissionRatePct,
+      campaignActive: true,
+      campaignName: budget.campaignName || null,
+      rateSource: 'marketing_budget',
+    };
+  }
+  return {
+    effectiveCommissionRatePct: defaultPct,
+    campaignActive: false,
+    campaignName: null,
+    rateSource: 'default',
+  };
 }
 
 /** Get first_job_at for referee — when they completed their first job */
@@ -159,8 +204,12 @@ async function processReferralPayout(pool, refereeId, jobId, grossAmount, jobCom
     );
     if (exists.rows?.length) return;
 
-    // Circuit Breaker: งบไม่พอ → log + queue pending, ไม่จ่าย (เฉพาะเมื่อมี marketing_budgets)
-    if (budget && budget.availableBalance < commissionAmount) {
+    // Circuit Breaker: งบไม่พอ → queue pending (เฉพาะเมื่อ admin ตั้งงบ allocated > 0)
+    if (
+      budget &&
+      budget.totalAllocated > 0 &&
+      budget.availableBalance < commissionAmount
+    ) {
       const ledgerId = `L-REF-EXH-${jobId}-${referrerId}-${Date.now()}`;
       await pool.query(
         `INSERT INTO payment_ledger_audit (id, event_type, payment_id, gateway, job_id, amount, currency, status, bill_no, transaction_no, user_id, metadata)
@@ -242,6 +291,54 @@ async function onJobCompleted(pool, refereeId, jobId, grossAmount, completedAt =
   } catch (e) {
     console.warn('[Referral] onJobCompleted:', e?.message);
   }
+}
+
+/** Recent cash commission rows for referrer dashboard */
+async function getReferralEarningsRecent(pool, userId, limit = 20) {
+  const r = await pool.query(
+    `SELECT re.commission_amount, re.gross_amount, re.created_at, re.job_id,
+            u.full_name AS referee_name
+     FROM referral_earnings re
+     JOIN users u ON u.id = re.referee_id
+     WHERE re.referrer_id = $1
+     ORDER BY re.created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return (r.rows || []).map((row) => ({
+    jobId: String(row.job_id),
+    refereeName: row.referee_name || '—',
+    grossAmount: parseFloat(row.gross_amount || 0),
+    commissionAmount: parseFloat(row.commission_amount || 0),
+    createdAt: row.created_at,
+  }));
+}
+
+/** Pending commission queued when marketing budget was exhausted */
+async function getReferralPendingTotal(pool, userId) {
+  const r = await pool.query(
+    `SELECT COALESCE(SUM(commission_amount), 0)::numeric AS t
+     FROM referral_pending_payouts
+     WHERE referrer_id = $1 AND status = 'pending'`,
+    [userId]
+  );
+  return parseFloat(r.rows?.[0]?.t || 0);
+}
+
+/** Resolve referral code to user id + display name (signup UX) */
+async function resolveReferrerPublicByCode(pool, code) {
+  if (!code || typeof code !== 'string') return null;
+  const c = code.trim().toUpperCase();
+  const r = await pool.query(
+    `SELECT id, full_name, phone FROM users WHERE UPPER(referral_code) = $1 LIMIT 1`,
+    [c]
+  );
+  const row = r.rows?.[0];
+  if (!row) return null;
+  return {
+    userId: String(row.id),
+    displayName: row.full_name || row.phone || null,
+  };
 }
 
 /** Get referral stats for user */
@@ -360,13 +457,17 @@ async function processPendingPayouts(pool, limit = 50) {
 export {
   ensureReferralCode,
   resolveCodeToUserId,
+  resolveReferrerPublicByCode,
   recordReferralOnSignup,
+  getReferralCampaignPublicSnapshot,
   getRefereeFirstJobAt,
   setRefereeFirstJobAt,
   onJobCompleted,
   processReferralPayout,
   processPendingPayouts,
   getReferralStats,
+  getReferralEarningsRecent,
+  getReferralPendingTotal,
   getLeaderboard,
   getActiveBudget,
   DEFAULT_REFERRAL_RATE as REFERRAL_RATE,

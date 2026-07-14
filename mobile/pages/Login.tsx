@@ -1,32 +1,60 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { MockApi } from "../services/mockApi";
 import { useLanguage } from "../context/LanguageContext";
-import {
-  Globe,
-  User,
-  Briefcase,
-  AlertOctagon,
-  Shield,
-  Smartphone,
-  CheckCircle,
-  Clock,
-  Lock,
-} from "lucide-react";
-import { UserRole } from "../types";
-
-// Phase 1: Import new services - Firebase Phone Auth
-import { sendOTP, verifyOTP as verifyFirebaseOTP, resetPhoneAuth } from "../services/phoneAuth";
+import { Globe, Shield, Smartphone, Lock, Info, AlertCircle } from "lucide-react";
+import { UserProfile, UserRole } from "../types";
 import { GrandOpeningOverlay } from "../components/GrandOpeningOverlay";
 import { useMobileAppConfig } from "../context/MobileAppConfigContext";
 import { useNotification } from "../context/NotificationContext";
+import { normalizePhoneForApi } from "../services/phoneNormalize";
+import {
+  diagnoseLoginFailure,
+  hasPendingRegistrationForPhone,
+  pendingRegistrationPhone,
+  syncFirebaseOtpSessionToDraft,
+} from "../services/loginRecovery";
+
+function loginErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error ? String(err.message || "") : String(err || "");
+  if (/invalid phone or password/i.test(raw)) {
+    return "เบอร์โทรหรือรหัสผ่านไม่ถูกต้อง — หากยืนยัน OTP แล้วแต่ยังไม่เคยกดสมัครสมาชิกขั้นสุดท้าย ให้กลับไปสมัครต่อก่อนนะคะ";
+  }
+  if (/too many|429/i.test(raw)) {
+    return "ลองเข้าสู่ระบบหลายครั้ง รอประมาณ 1–2 นาทีแล้วลองใหม่ได้เลยค่ะ";
+  }
+  if (/network|connect|internet|ECONNREFUSED|เชื่อมต่อเซิร์ฟเวอร์/i.test(raw)) {
+    return "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่ค่ะ";
+  }
+  if (/ยังไม่ได้ตั้งรหัสผ่าน|สมัครสมาชิกก่อน/i.test(raw)) {
+    return "บัญชีนี้ยังไม่พร้อม — กดสมัครสมาชิกเพื่อเริ่มใช้งานได้เลยค่ะ";
+  }
+  if (/ระงับ|แบน|suspended|banned/i.test(raw)) {
+    return raw;
+  }
+  if (raw && !/failed|error|token|jwt|firebase|recaptcha/i.test(raw)) {
+    return raw;
+  }
+  return "เข้าสู่ระบบไม่สำเร็จชั่วคราว ลองอีกครั้งในอีกสักครู่ค่ะ";
+}
+
+function dashboardPath(user: UserProfile): string {
+  const role = String(user.role || "").toLowerCase();
+  if (role === UserRole.PROVIDER || role === "provider") {
+    return "/provider/dashboard";
+  }
+  return "/employer/dashboard";
+}
 
 export const Login: React.FC = () => {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resumePhone, setResumePhone] = useState<string | null>(null);
   const { login } = useAuth();
   const { t, language, setLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -34,121 +62,81 @@ export const Login: React.FC = () => {
   const { notify } = useNotification();
   const signupsEnabled = config.featureFlags.enableSignups;
 
-  // Simple OTP Gatekeeper Flow
-  const [step, setStep] = useState<"phone" | "otp" | "password">("phone");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpCountdown, setOtpCountdown] = useState(0);
-
-  // Countdown timer for OTP
   useEffect(() => {
-    if (otpCountdown > 0) {
-      const timer = setTimeout(() => setOtpCountdown(otpCountdown - 1), 1000);
-      return () => clearTimeout(timer);
+    const pending = pendingRegistrationPhone();
+    if (pending) {
+      setResumePhone(pending);
+      setPhone((prev) => prev || pending);
     }
-  }, [otpCountdown]);
+    syncFirebaseOtpSessionToDraft(pending || undefined);
+  }, []);
 
-  // Step 1: Send Firebase OTP (Gatekeeper)
-  const handleSendOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!phone || phone.trim().length < 9) {
-      setError('กรุณากรอกเบอร์โทรศัพท์ให้ครบ');
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const result = await sendOTP(phone);
-      
-      if (!result.success) {
-        setError(result.message);
-        return;
-      }
-      
-      setOtpCountdown(300); // 5 minutes
-      setStep('otp');
-      console.log('📱 Firebase OTP sent');
-      
-    } catch (err: any) {
-      console.error('Send OTP error:', err);
-      setError('ไม่สามารถส่ง OTP ได้ กรุณาลองใหม่');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Step 2: Verify OTP (Gatekeeper passed)
-  const handleVerifyOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!otpCode || otpCode.length !== 6) {
-      setError('กรุณากรอกรหัส OTP 6 หลัก');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await verifyFirebaseOTP(otpCode);
-
-      if (!result.success) {
-        setError(result.message);
-        setLoading(false);
-        return;
-      }
-
-      console.log('✅ Firebase OTP verified - Gatekeeper passed!');
-      // ใช้เบอร์จาก Firebase ที่ verify แล้ว (รูปแบบ +66812345678) แปลงเป็น 0812345678
-      if (result.phone) {
-        const p = result.phone.replace(/^\+/, '').replace(/\s/g, '');
-        const normalized = p.startsWith('66') && p.length >= 10 ? '0' + p.slice(2) : p.startsWith('0') ? p : '0' + p;
-        setPhone(normalized);
-      }
-      // Move to password step
-      setStep('password');
-      setLoading(false);
-
-    } catch (error: any) {
-      console.error('Verify OTP error:', error);
-      setError('รหัส OTP ไม่ถูกต้อง กรุณาลองใหม่');
-      setLoading(false);
-    }
-  };
-  
-  // Step 3: Login with existing Backend API
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!password) {
-      setError('กรุณากรอกรหัสผ่าน');
+
+    const normalizedPhone = normalizePhoneForApi(phone);
+    if (!normalizedPhone || normalizedPhone.length < 9) {
+      setError("กรุณากรอกเบอร์โทรศัพท์ให้ครบนะคะ (เช่น 0812345678)");
       return;
     }
-    
+    if (!password) {
+      setError("กรุณากรอกรหัสผ่านค่ะ");
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      // เรียก API เดิม (ไม่ส่ง Firebase data ไปเพราะ Backend ไม่ต้องการ)
-      const { token, user } = await MockApi.login(phone, password);
-      login(user, token);
-      handleLoginSuccess(user);
-    } catch (error: any) {
-      console.error('Login error:', error);
-      setError(error.message || 'เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบรหัสผ่าน');
+      const { token, user } = await MockApi.login(normalizedPhone, password);
+      flushSync(() => {
+        login(user, token);
+      });
+      notify("ยินดีต้อนรับกลับ — เข้าใช้งานได้เลยค่ะ", "success");
+      navigate(dashboardPath(user), { replace: true });
+    } catch (err: unknown) {
+      const loginCode = (err as Error & { loginCode?: string })?.loginCode;
+      const raw =
+        err instanceof Error ? String(err.message || "") : String(err || "");
+
+      if (
+        (/invalid phone or password/i.test(raw) ||
+          loginCode === "USER_NOT_FOUND" ||
+          loginCode === "INVALID_PASSWORD" ||
+          loginCode === "PASSWORD_NOT_SET") &&
+        signupsEnabled
+      ) {
+        syncFirebaseOtpSessionToDraft(normalizedPhone);
+        const kind = await diagnoseLoginFailure(normalizedPhone, loginCode);
+
+        if (kind === "no_account" || kind === "password_not_set") {
+          if (hasPendingRegistrationForPhone(normalizedPhone)) {
+            notify(
+              "พบการสมัครค้างอยู่ — พาไปขั้นสุดท้ายให้แล้วค่ะ",
+              "info",
+            );
+            navigate("/register", { replace: true });
+            return;
+          }
+          setError(
+            kind === "password_not_set"
+              ? "บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน — กดสมัครต่อเพื่อตั้งรหัสผ่านและเข้าใช้งาน"
+              : "ยังไม่มีบัญชีในระบบ — คุณอาจยืนยัน OTP แล้วแต่ยังไม่ได้กดสมัครสมาชิกขั้นสุดท้าย กดปุ่มด้านล่างเพื่อสมัครต่อ",
+          );
+          return;
+        }
+
+        if (kind === "wrong_password") {
+          setError(
+            "มีบัญชีจากเบอร์นี้แล้ว แต่รหัสผ่านไม่ตรง — ลองใหม่หรือกดลืมรหัสผ่าน",
+          );
+          return;
+        }
+      }
+
+      setError(loginErrorMessage(err));
     } finally {
       setLoading(false);
-    }
-  };
-  
-  // Navigate after successful login
-  const handleLoginSuccess = (user: any) => {
-    if (user.role === UserRole.PROVIDER) {
-      navigate("/provider/dashboard");
-    } else {
-      navigate("/employer/dashboard");
     }
   };
 
@@ -183,162 +171,110 @@ export const Login: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">
             {t("auth.welcome")}
           </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {step === "phone" ? t("auth.subtitle") : step === "otp" ? "กรอกรหัส OTP" : "กรอกรหัสผ่าน"}
+          <p className="text-gray-500 text-sm mt-1">{t("auth.subtitle")}</p>
+        </div>
+
+        {signupsEnabled && resumePhone ? (
+          <div className="mb-4 p-3 rounded-lg text-sm border bg-amber-50 text-amber-950 border-amber-200 flex items-start gap-2">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-amber-700" />
+            <div>
+              <p className="font-medium">พบการสมัครค้างอยู่ ({resumePhone})</p>
+              <p className="text-xs mt-1 text-amber-900">
+                ยืนยัน OTP แล้วแต่ยังไม่ได้สร้างบัญชี — กดสมัครต่อเพื่อเข้าใช้งานได้จริง
+              </p>
+              <Link
+                to="/register"
+                className="inline-block mt-2 text-xs font-semibold text-amber-900 underline"
+              >
+                ดำเนินการสมัครต่อ →
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mb-6 bg-sky-50 border border-sky-100 rounded-lg p-3 text-sm text-sky-900 flex items-start gap-2">
+          <Info size={16} className="text-sky-600 flex-shrink-0 mt-0.5" />
+          <p>
+            กรอกเบอร์โทรและรหัสผ่านที่ตั้งไวตอนสมัคร แล้วกดเข้าสู่ระบบได้เลย —
+            ไม่ต้องขอ OTP ซ้ำค่ะ
+            {signupsEnabled ? (
+              <>
+                {" "}
+                หากยืนยัน OTP แล้วแต่ยังเข้าไม่ได้ อาจยังไม่ได้กด{" "}
+                <strong>สมัครสมาชิก — ขั้นสุดท้าย</strong>{" "}
+                <Link to="/register" className="text-sky-700 underline font-medium">
+                  กลับไปสมัครต่อ
+                </Link>
+              </>
+            ) : null}
           </p>
         </div>
 
         {error && (
-          <div className="mb-6">
-            <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm border border-red-100 flex items-center">
-              <AlertOctagon className="mr-2 flex-shrink-0" size={18} />
-              <span>{error}</span>
-            </div>
+          <div className="mb-4 p-3 rounded-lg text-sm border text-center leading-relaxed bg-amber-50 text-amber-950 border-amber-200">
+            {error}
+            {signupsEnabled &&
+            /ยังไม่มีบัญชี|สมัครสมาชิกขั้นสุดท้าย/i.test(error) ? (
+              <div className="mt-3">
+                <Link
+                  to="/register"
+                  className="inline-block w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm"
+                >
+                  สมัครต่อ — ขั้นสุดท้าย
+                </Link>
+              </div>
+            ) : null}
           </div>
         )}
 
-        {/* reCAPTCHA Container (invisible) */}
-        <div id="recaptcha-container"></div>
-
-        {/* Step 1: Enter Phone Number */}
-        {step === "phone" && (
-          <form onSubmit={handleSendOTP} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Smartphone size={16} className="inline mr-1" />
-                {t("auth.phone")}
-              </label>
-              <input
-                type="tel"
-                required
-                className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition-all"
-                placeholder="0812345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                disabled={loading}
-              />
-              <p className="text-xs text-gray-500 mt-1 flex items-center">
-                <Shield size={12} className="mr-1" />
-                เราจะส่งรหัส OTP เพื่อยืนยันตัวตน
-              </p>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "กำลังส่ง OTP..." : "ส่งรหัส OTP"}
-            </button>
-          </form>
-        )}
-
-        {/* Step 2: Verify OTP */}
-        {step === "otp" && (
-          <form onSubmit={handleVerifyOTP} className="space-y-6">
-            {/* OTP Info */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm">
-              <div className="flex items-start mb-2">
-                <CheckCircle
-                  className="text-blue-600 mr-2 flex-shrink-0 mt-0.5"
-                  size={16}
-                />
-                <div>
-                  <p className="font-medium text-blue-900">
-                    รหัส OTP ถูกส่งไปยัง {phone}
-                  </p>
-                  <p className="text-blue-700 text-xs mt-1">
-                    กรุณาตรวจสอบ SMS ของคุณ
-                  </p>
-                </div>
-              </div>
-
-              {otpCountdown > 0 && (
-                <div className="flex items-center text-blue-600 text-xs mt-2">
-                  <Clock size={12} className="mr-1" />
-                  หมดอายุใน {Math.floor(otpCountdown / 60)}:
-                  {String(otpCountdown % 60).padStart(2, "0")}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Lock size={16} className="inline mr-1" />
-                กรอกรหัส OTP 6 หลัก
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                pattern="[0-9]{6}"
-                className="w-full px-4 py-3 border text-gray-900 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition-all text-center text-2xl tracking-widest font-mono"
-                placeholder="● ● ● ● ● ●"
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                autoFocus
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || otpCode.length !== 6}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "กำลังตรวจสอบ..." : "ยืนยัน OTP"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                resetPhoneAuth();
-                setStep('phone');
-                setOtpCode('');
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <Smartphone size={16} className="inline mr-1" />
+              {t("auth.phone")}
+            </label>
+            <input
+              type="tel"
+              required
+              inputMode="tel"
+              className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+              placeholder="0812345678"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              onBlur={() => {
+                const n = normalizePhoneForApi(phone);
+                if (n && n !== phone) setPhone(n);
               }}
-              className="w-full py-2 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-            >
-              ไม่ได้รับรหัส? ส่งใหม่อีกครั้ง
-            </button>
-          </form>
-        )}
-        
-        {/* Step 3: Enter Password */}
-        {step === "password" && (
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="bg-green-50 border border-green-100 rounded-lg p-4 text-sm mb-4">
-              <div className="flex items-center">
-                <CheckCircle className="text-green-600 mr-2" size={16} />
-                <p className="font-medium text-green-900">
-                  ยืนยันเบอร์โทรศัพท์สำเร็จ!
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Lock size={16} className="inline mr-1" />
-                รหัสผ่าน
-              </label>
-              <input
-                type="password"
-                required
-                className="w-full px-4 py-3 border text-gray-800 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition-all"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-              />
-            </div>
-
-            <button
-              type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
-            </button>
-          </form>
-        )}
+              autoComplete="tel"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <Lock size={16} className="inline mr-1" />
+              รหัสผ่าน
+            </label>
+            <input
+              type="password"
+              required
+              className="w-full px-4 py-3 border text-gray-800 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              autoComplete="current-password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+          </button>
+        </form>
 
         <div className="mt-6 text-center space-y-1">
           <p className="text-sm text-gray-600">
@@ -354,7 +290,10 @@ export const Login: React.FC = () => {
               <button
                 type="button"
                 onClick={() =>
-                  notify("การสมัครสมาชิกถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning")
+                  notify(
+                    "การสมัครสมาชิกถูกปิดชั่วคราวโดยผู้ดูแลระบบ",
+                    "warning",
+                  )
                 }
                 className="text-slate-400 cursor-not-allowed font-medium"
               >
@@ -363,19 +302,20 @@ export const Login: React.FC = () => {
             )}
           </p>
           <p className="text-sm text-gray-500">
-            <Link to="/forgot-password" className="text-amber-600 hover:underline">
+            <Link
+              to="/forgot-password"
+              className="text-sky-600 hover:underline"
+            >
               ลืมรหัสผ่าน
             </Link>
           </p>
         </div>
 
-        {/* Admin: ใช้แอป nexus-admin-core (แยกจากแอปหลัก) */}
         <div className="mt-8 pt-6 border-t border-gray-100 text-center">
           <span className="inline-flex items-center text-xs text-slate-400">
             <Shield size={12} className="mr-1" /> Admin Portal: AQOND ADMIN
           </span>
         </div>
-
       </div>
     </div>
   );

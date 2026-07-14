@@ -1,0 +1,46 @@
+{
+  "version": "3.0.0",
+  "prompt_version": "v3",
+  "engine": "prompt_composition_engine",
+  "default_language": "th",
+  "default_platform": "tiktok",
+  "default_business_type": "marketplace",
+  "default_campaign_goal": "quality",
+  "default_audience": "all",
+  "default_ai_provider": "grok",
+  "default_cta_intensity": "soft",
+  "default_format_preset": "ugc",
+  "composition_recipes": {
+    "ugc_lipsync": ["industry", "style", "audience", "scene", "motion", "spoken", "tone", "campaign", "offer", "cta", "platform", "provider_wrap"],
+    "tvc_multi_shot": []
+  },
+  "dimension_files": {
+    "business_types": "business-types.json",
+    "industries": "industries.json",
+    "audiences": "audiences.json",
+    "styles": "styles.json",
+    "campaign_goals": "campaign-goals.json",
+    "platforms": "platforms.json",
+    "cta_intensity": "cta-intensity.json",
+    "providers": "providers.json"
+  },
+  "library": {
+    "languages": "prompt-library/v3/languages",
+    "providers": "prompt-library/v3/providers"
+  },
+  "style_aliases": {
+    "ugc": "tiktok_creator",
+    "luxury": "luxury_brand"
+  },
+  "industry_aliases": {
+    "restaurant": "food",
+    "marketplace": "marketplace",
+    "beauty": "beauty",
+    "service": "services",
+    "automotive": "automotive",
+    "healthcare": "healthcare",
+    "recruitment": "recruitment",
+    "real_estate": "real_estate"
+  },
+  "layer_joiner": " "
+}

@@ -1,0 +1,99 @@
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ default 1 $svc.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "aqond.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $svc.port | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aqond.serviceAccountName" $ }}
+      priorityClassName: {{ if eq $svc.priority "hot" }}{{ $.Values.priorityClasses.hotPath }}{{ else }}{{ $.Values.priorityClasses.batch }}{{ end }}
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: {{ $name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $name }}
+          image: {{ include "aqond.image" (dict "Values" $.Values "name" $name) }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          {{- if gt ($svc.port | int) 0 }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+              protocol: TCP
+          {{- end }}
+          env:
+            {{- include "aqond.commonEnv" $ | nindent 12 }}
+            - name: PORT
+              value: {{ $svc.port | quote }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if and $svc.probes (gt ($svc.port | int) 0) }}
+          startupProbe:
+            httpGet:
+              path: {{ $svc.probes.path }}
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{ $svc.probes.path }}
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: {{ $svc.probes.path }}
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          {{- end }}
+          resources:
+            {{- if eq $svc.priority "hot" }}
+            {{- toYaml $.Values.resources.hot | nindent 12 }}
+            {{- else }}
+            {{- toYaml $.Values.resources.batch | nindent 12 }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- if eq $name "transcode-worker" }}
+      initContainers:
+        - name: wait-kafka
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redpanda 9092; do sleep 2; done']
+      {{- end }}
+{{- end }}
+{{- end }}

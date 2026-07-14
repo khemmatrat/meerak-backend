@@ -1,0 +1,43 @@
+{{- if .Values.autoscaling.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: order-svc-keda
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: order-svc
+  minReplicaCount: {{ .Values.autoscaling.keda.orderMinReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.keda.orderMaxReplicas }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus:9090
+        metricName: order_queue_depth
+        threshold: "{{ .Values.autoscaling.keda.flashQueueThreshold }}"
+        query: sum(order_queue_depth) or vector(0)
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: transcode-worker-keda
+  namespace: {{ .Values.global.namespace }}
+spec:
+  scaleTargetRef:
+    name: transcode-worker
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ .Values.kafka.brokers }}
+        consumerGroup: transcode-worker
+        topic: media.uploaded
+        lagThreshold: "5"
+{{- end }}

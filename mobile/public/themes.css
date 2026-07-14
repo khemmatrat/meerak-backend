@@ -604,7 +604,7 @@ html:not([data-theme]) .home-header .home-greeting,
 html:not([data-theme]) .home-header h1,
 html[data-theme="standard"] .home-header .home-greeting,
 html[data-theme="standard"] .home-header h1 {
-  color: #B8860B !important;
+  color: #065f46 !important;
 }
 /* คำอธิบายด้านล่าง — สีเข้ม */
 html[data-theme="vip-gold"] .home-header .text-slate-400,

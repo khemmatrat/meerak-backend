@@ -1,0 +1,85 @@
+{
+  "pass": true,
+  "passCount": 7,
+  "total": 7,
+  "backupDir": "G:\\meerak\\backend\\backups",
+  "checks": [
+    {
+      "id": "deploy_script_backup",
+      "label": "Deploy script สร้าง DB backup ก่อน migrate",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "hasPgDump": true,
+        "hasBackupDir": true,
+        "deployPs1Exists": true
+      }
+    },
+    {
+      "id": "rollback_docs",
+      "label": "Rollback instructions ใน COURSE_MARKETPLACE_DEPLOY.txt",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "hasGunzipRestore": true,
+        "hasSoftRollback": true
+      }
+    },
+    {
+      "id": "backup_dir",
+      "label": "Backup directory พร้อมใช้งาน",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "path": "G:\\meerak\\backend\\backups"
+      }
+    },
+    {
+      "id": "pg_dump_available",
+      "label": "pg_dump / docker postgres พร้อม backup",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "mode": "pg_dump_cli",
+        "version": "pg_dump (PostgreSQL) 18.1"
+      }
+    },
+    {
+      "id": "migration_runner",
+      "label": "Migration runner script มีอยู่",
+      "pass": true,
+      "detail": {
+        "path": "scripts/run-migration.js"
+      }
+    },
+    {
+      "id": "compose_deploy",
+      "label": "Docker compose deploy script มีอยู่",
+      "pass": true,
+      "detail": {
+        "path": "scripts/run-course-marketplace-on-server.sh"
+      }
+    },
+    {
+      "id": "recent_backup_or_dry_run",
+      "label": "มี backup ล่าสุด หรือ dry-run pg_dump สำเร็จ",
+      "pass": true,
+      "detail": {
+        "recentBackup": null,
+        "dryRun": {
+          "ok": true,
+          "mode": "pg_dump_cli",
+          "version": "pg_dump (PostgreSQL) 18.1"
+        },
+        "backupDir": "G:\\meerak\\backend\\backups"
+      }
+    }
+  ],
+  "rollbackSteps": [
+    "1. Stop traffic / maintenance notice if needed",
+    "2. gunzip -c backups/pre_course_marketplace_*.sql.gz | docker exec -i aqond-postgres psql -U meera meera_db",
+    "3. Redeploy previous backend-1.2 snapshot",
+    "4. docker compose -f docker-compose.golive.v12.yml up -d --force-recreate backend mobile admin"
+  ],
+  "generatedAt": "2026-06-17T09:59:03.104Z"
+}

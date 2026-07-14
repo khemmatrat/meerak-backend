@@ -19,6 +19,11 @@ export async function ensureKnowledgeBaseDraftsTable(pool) {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_kb_drafts_created ON knowledge_base_drafts(created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_kb_drafts_ticket ON knowledge_base_drafts(ticket_id)`);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_drafts_open_question
+      ON knowledge_base_drafts (lower(question), COALESCE(ticket_id, ''))
+      WHERE status IS NULL OR status = 'draft'
+    `);
     return true;
   } catch (e) {
     console.error('knowledgeBaseDrafts ensure:', e.message);
@@ -32,6 +37,7 @@ export async function insertKnowledgeDraft(pool, { ticket_id, question, draft_an
   const r = await pool.query(
     `INSERT INTO knowledge_base_drafts (ticket_id, question, draft_answer, category, status, created_by)
      VALUES ($1, $2, $3, $4, 'draft', $5)
+     ON CONFLICT DO NOTHING
      RETURNING id, created_at`,
     [
       ticket_id || null,

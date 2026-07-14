@@ -1,0 +1,569 @@
+/**
+ * Sprint 30b — FTX Home shell (AXS marketplace scope)
+ */
+
+.tt-shell.axs-marketplace .ftx-home-shell {
+  --ftx-header-bg: var(--axs-surface);
+}
+
+.tt-shell.axs-marketplace .ftx-header {
+  background: var(--ftx-header-bg);
+  border-bottom: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.ftx-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 4px;
+}
+
+.ftx-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--axs-text);
+  flex-shrink: 0;
+}
+
+.ftx-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.ftx-logo-text {
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-size: 1rem;
+  color: var(--axs-text);
+}
+
+.ftx-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ftx-header-icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--axs-border);
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.ftx-lang-btn {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.ftx-header-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--axs-text-muted);
+  padding: 6px 8px;
+  border-radius: 999px;
+}
+
+.ftx-header-link-accent {
+  color: var(--axs-primary-hover);
+  background: rgba(184, 134, 11, 0.1);
+}
+
+.ftx-header-search {
+  padding: 0 12px 8px;
+}
+
+.ftx-header-search .tt-header-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Welcome overlay */
+.ftx-welcome-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(28, 25, 23, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+}
+
+.ftx-welcome-sheet {
+  width: min(100%, 420px);
+  max-height: min(88vh, 640px);
+  overflow: auto;
+  background: var(--axs-surface);
+  border-radius: 20px 20px 16px 16px;
+  padding: 20px 16px 16px;
+  box-shadow: var(--axs-shadow-lg);
+  border: 1px solid var(--axs-border);
+  position: relative;
+}
+
+.ftx-welcome-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  cursor: pointer;
+  color: var(--axs-text-muted);
+}
+
+.ftx-welcome-kicker {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--axs-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ftx-welcome-title {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  color: var(--axs-text);
+}
+
+.ftx-welcome-sub {
+  margin: 0 0 14px;
+  font-size: 0.875rem;
+  color: var(--axs-text-muted);
+  line-height: 1.45;
+}
+
+.ftx-welcome-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.ftx-welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  text-decoration: none;
+  color: var(--axs-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.ftx-welcome-card span:first-child {
+  font-size: 1.25rem;
+}
+
+.ftx-welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ftx-welcome-primary,
+.ftx-welcome-secondary {
+  width: 100%;
+}
+
+.ftx-welcome-secondary {
+  background: var(--axs-surface-2) !important;
+  color: var(--axs-text) !important;
+}
+
+.ftx-welcome-skip {
+  border: none;
+  background: transparent;
+  color: var(--axs-text-muted);
+  font-size: 0.85rem;
+  padding: 8px;
+  cursor: pointer;
+}
+
+/* Smart Entry Wizard — Sprint 30c */
+.ftx-wizard-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--axs-bg);
+}
+
+.ftx-wizard-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--axs-text-muted);
+}
+
+.ftx-wizard-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+}
+
+.ftx-wizard-back,
+.ftx-wizard-skip-top {
+  border: none;
+  background: transparent;
+  color: var(--axs-text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.ftx-wizard-progress-wrap {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  overflow: hidden;
+}
+
+.ftx-wizard-progress {
+  height: 100%;
+  background: var(--axs-gradient-gold);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.ftx-wizard-body {
+  flex: 1;
+  padding: 16px 12px 88px;
+}
+
+.ftx-wizard-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--axs-primary);
+}
+
+.ftx-wizard-title {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+
+.ftx-wizard-sub {
+  margin: 0 0 14px;
+  color: var(--axs-text-muted);
+  font-size: 0.9rem;
+}
+
+.ftx-wizard-chip-grid,
+.ftx-wizard-interest-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ftx-wizard-chip,
+.ftx-wizard-interest {
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  border-radius: var(--axs-radius-card);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--axs-text);
+  font-size: 0.85rem;
+}
+
+.ftx-wizard-chip.active,
+.ftx-wizard-interest.active {
+  border-color: var(--axs-primary);
+  background: rgba(184, 134, 11, 0.08);
+}
+
+.ftx-wizard-interest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 84px;
+}
+
+.ftx-wizard-interest span:first-child {
+  font-size: 1.2rem;
+}
+
+.ftx-wizard-interest.primary em {
+  font-size: 0.65rem;
+  font-style: normal;
+  color: var(--axs-primary-hover);
+  font-weight: 700;
+}
+
+.ftx-wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.ftx-wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.ftx-wizard-field input,
+.ftx-wizard-field select {
+  border: 1px solid var(--axs-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--axs-surface-2);
+  color: var(--axs-text);
+  font: inherit;
+}
+
+.ftx-wizard-error {
+  color: var(--axs-danger);
+  font-size: 0.85rem;
+  margin-top: 10px;
+}
+
+.ftx-wizard-footer {
+  position: sticky;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding: 12px;
+  background: linear-gradient(180deg, transparent, var(--axs-bg) 24%);
+}
+
+.ftx-wizard-next {
+  width: 100%;
+}
+
+.ftx-wizard-hint {
+  padding: 24px;
+  text-align: center;
+}
+
+.ftx-wizard-link {
+  display: block;
+  text-align: center;
+  color: var(--axs-primary);
+}
+
+/* Feed strip (personalized home) */
+.ftx-home-feed-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 12px 12px;
+  padding: 14px 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: rgba(99, 102, 241, 0.08);
+  text-decoration: none;
+  color: inherit;
+}
+
+.ftx-home-feed-strip strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.ftx-home-feed-strip span:last-child {
+  font-size: 0.8rem;
+  color: var(--axs-text-muted);
+}
+
+/* Guided tour — Sprint 30d */
+.ftx-tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+
+.ftx-tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(28, 25, 23, 0.45);
+  pointer-events: auto;
+}
+
+.ftx-tour-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--axs-shadow-lg);
+  pointer-events: auto;
+}
+
+.ftx-tour-step {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  color: var(--axs-primary);
+  font-weight: 700;
+}
+
+.ftx-tour-title {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.ftx-tour-body {
+  margin: 0 0 12px;
+  font-size: 0.88rem;
+  color: var(--axs-text-muted);
+  line-height: 1.45;
+}
+
+.ftx-tour-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ftx-tour-next {
+  width: 100%;
+}
+
+.ftx-tour-skip {
+  border: none;
+  background: transparent;
+  color: var(--axs-text-muted);
+  font-size: 0.85rem;
+  padding: 6px;
+  cursor: pointer;
+}
+
+/* Jarvis proactive greet */
+.ftx-jarvis-greet {
+  position: fixed;
+  right: 12px;
+  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  left: 12px;
+  max-width: 360px;
+  margin-left: auto;
+  z-index: 55;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--axs-surface);
+  border: 1px solid rgba(184, 134, 11, 0.35);
+  box-shadow: var(--axs-shadow-md);
+}
+
+.ftx-jarvis-greet p {
+  margin: 0;
+  flex: 1;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ftx-jarvis-greet-icon-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ftx-jarvis-greet-open {
+  border: none;
+  background: rgba(184, 134, 11, 0.12);
+  color: var(--axs-primary-hover);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ftx-jarvis-greet-close {
+  border: none;
+  background: transparent;
+  color: var(--axs-text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+/* Discover cards — Sprint 30f */
+.ftx-discover {
+  padding: 0 12px 8px;
+}
+
+.ftx-discover-title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.ftx-discover-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ftx-discover-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  text-decoration: none;
+  color: var(--axs-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: var(--axs-shadow-sm);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.ftx-discover-card:active {
+  transform: scale(0.98);
+  border-color: rgba(184, 134, 11, 0.45);
+}
+
+.ftx-discover-card span:first-child,
+.ftx-discover-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #fffdf8 0%, #fef3c7 100%);
+  border: 1px solid rgba(201, 162, 39, 0.2);
+  flex-shrink: 0;
+}

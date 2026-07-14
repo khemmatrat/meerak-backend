@@ -12,6 +12,7 @@ import { dispatchCartUpdated, type ShopCartSummary } from '@/lib/shopCart';
 import { useShopCart } from '@/lib/useShopCart';
 import { recordCartAddTelemetry, recordProductTelemetry } from '@/lib/experience/scenarioTelemetry';
 import { PdpBuySheet } from '@/components/mobile/PdpBuySheet';
+import { IconLuxCart, IconLuxChat, IconLuxSearch } from '@/components/mobile/TtLuxuryIcons';
 
 type PdpDetail = {
   product: {
@@ -358,7 +359,9 @@ export function MobileProductClient(props: Props) {
           ‹
         </Link>
         <div className="tt-pdp-pro-search">
-          <span>🔍</span>
+          <span className="tt-pdp-pro-search-icon" aria-hidden>
+            <IconLuxSearch size={18} />
+          </span>
           <span className="tt-pdp-pro-search-text">{title.slice(0, 28)}</span>
         </div>
         <div className="tt-pdp-pro-header-actions">
@@ -366,7 +369,7 @@ export function MobileProductClient(props: Props) {
             ↗
           </button>
           <Link href="/m/cart" className="tt-pdp-pro-icon tt-pdp-pro-cart tt-mp-tool-wrap" aria-label="รถเข็น">
-            🛒
+            <IconLuxCart size={22} />
             {cartCount > 0 ? (
               <em className="tt-mp-tool-badge" data-testid="cart-count-badge">
                 {cartCount > 99 ? '99+' : cartCount}
@@ -722,11 +725,11 @@ export function MobileProductClient(props: Props) {
 
       <footer className="tt-pdp-pro-bar">
         <Link href={chatHref} className="tt-pdp-pro-bar-item">
-          <span>💬</span>
+          <IconLuxChat size={22} />
           <small>แชท</small>
         </Link>
         <button type="button" className="tt-pdp-pro-bar-item" disabled={adding} onClick={() => setBuySheet('cart')}>
-          <span>🛒</span>
+          <IconLuxCart size={22} />
           <small>รถเข็น</small>
         </button>
         <button

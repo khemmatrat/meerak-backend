@@ -40,6 +40,8 @@ let emailQueue = null;
 let pushQueue = null;
 let paymentRetryQueue = null;
 let videoWatermarkQueue = null;
+let adsCreativeTranscodeQueue = null;
+let aivosRuntimeJobsQueue = null;
 /**
  * Webhook intake -> worker fast-wake signal.
  * Source of truth is the DB queue (payment_webhook_jobs); this Bull queue is
@@ -49,7 +51,16 @@ let videoWatermarkQueue = null;
 let paymentWebhookQueue = null;
 
 export function getBullQueues() {
-  return { imageResizeQueue, emailQueue, pushQueue, paymentRetryQueue, videoWatermarkQueue, paymentWebhookQueue };
+  return {
+    imageResizeQueue,
+    emailQueue,
+    pushQueue,
+    paymentRetryQueue,
+    videoWatermarkQueue,
+    paymentWebhookQueue,
+    adsCreativeTranscodeQueue,
+    aivosRuntimeJobsQueue,
+  };
 }
 
 export function getPaymentWebhookQueue() {
@@ -110,6 +121,40 @@ export async function initBullQueues(pool) {
     paymentRetryQueue = new Bull('payment-retry', redisOpt);
     videoWatermarkQueue = new Bull('video-watermark', redisOpt);
 
+    videoWatermarkQueue = new Bull('video-watermark', redisOpt);
+    adsCreativeTranscodeQueue = new Bull('ads-creative-transcode', redisOpt);
+    aivosRuntimeJobsQueue = new Bull('aivos-runtime-jobs', redisOpt);
+
+    if (pool && process.env.AIVOS_RUNTIME_ENABLED === '1') {
+      aivosRuntimeJobsQueue.process(
+        Math.max(1, parseInt(process.env.AIVOS_RUNTIME_WORKER_CONCURRENCY || '2', 10)),
+        async (job) => {
+          const { jobId, traceId } = job.data || {};
+          if (!jobId) return { skipped: true, reason: 'missing_job_id' };
+          const { getAivosRuntime } = await import('./aivos/index.js');
+          const runtime = getAivosRuntime({ pool, syncExecute: true, forceNew: false });
+          const existing = await runtime.store.getJob(jobId);
+          if (!existing) return { skipped: true, reason: 'job_not_found', jobId };
+          const plan = await runtime.store.getPlanByJobId(jobId);
+          await runtime.executionRuntime.run({ jobId, plan, traceId: traceId || existing.trace_id });
+          await runtime.store.updateJob(jobId, { status: 'preview' });
+          return { ok: true, jobId };
+        },
+      );
+    }
+
+    adsCreativeTranscodeQueue.process(
+      Math.max(1, parseInt(process.env.ADS_CREATIVE_WORKER_CONCURRENCY || '2', 10)),
+      async (job) => {
+        const { processAdsCreativeTranscodeJob } = await import('./adsCreativeWorker.js');
+        const { uploadToS3 } = await import('./s3-client.js');
+        return processAdsCreativeTranscodeJob({
+          ...job.data,
+          uploadToS3,
+        });
+      },
+    );
+
     // Workers — process jobs
     imageResizeQueue.process(async (job) => {
       const { url, width, height } = job.data;
@@ -124,9 +169,10 @@ export async function initBullQueues(pool) {
     });
 
     pushQueue.process(async (job) => {
-      const { userId, title, body } = job.data;
-      console.log('[Queue] push:', userId, title);
-      return { done: true, job: job.id };
+      const data = job.data || {};
+      const { deliverAdvanceJobPush } = await import('./advanceJobPushDelivery.js');
+      const result = await deliverAdvanceJobPush(pool, data);
+      return { done: true, job: job.id, ...result };
     });
 
     paymentRetryQueue.process(async (job) => {
@@ -275,7 +321,10 @@ export async function initBullQueues(pool) {
       });
     }
 
-    console.log('✅ Bull queues initialized (image-resize, email, push, payment-retry, video-watermark, payment-webhook)');
+    const { createAqPushQueueAdapter } = await import('./advanceJobPushDelivery.js');
+    globalThis.__aqPushQueue = createAqPushQueueAdapter(pool, pushQueue);
+
+    console.log('✅ Bull queues initialized (image-resize, email, push, payment-retry, video-watermark, payment-webhook, ads-creative-transcode, aivos-runtime-jobs)');
     return true;
   } catch (err) {
     console.warn('⚠️ Bull queues init failed (Redis required):', err.message);
@@ -285,7 +334,16 @@ export async function initBullQueues(pool) {
 
 export async function getBullQueueStats() {
   const result = {};
-  for (const [name, q] of Object.entries({ imageResizeQueue, emailQueue, pushQueue, paymentRetryQueue, videoWatermarkQueue, paymentWebhookQueue })) {
+  for (const [name, q] of Object.entries({
+    imageResizeQueue,
+    emailQueue,
+    pushQueue,
+    paymentRetryQueue,
+    videoWatermarkQueue,
+    paymentWebhookQueue,
+    adsCreativeTranscodeQueue,
+    aivosRuntimeJobsQueue,
+  })) {
     if (!q) continue;
     try {
       const [waiting, active, completed, failed] = await Promise.all([
@@ -312,8 +370,30 @@ export async function getBullQueueStats() {
 }
 
 export async function addTestJob(queueName, data) {
-  const q = { imageResizeQueue, emailQueue, pushQueue, paymentRetryQueue }[queueName];
+  const q = { imageResizeQueue, emailQueue, pushQueue, paymentRetryQueue, adsCreativeTranscodeQueue }[
+    queueName
+  ];
   if (!q) throw new Error('Unknown queue');
   const job = await q.add(data);
   return job.id;
+}
+
+/**
+ * Enqueue async FFmpeg transcode for ad creatives (Phase 10 worker pool).
+ */
+export async function enqueueAdsCreativeTranscode(data) {
+  if (!adsCreativeTranscodeQueue) {
+    return { enqueued: false, reason: 'queue_not_initialized' };
+  }
+  try {
+    const job = await adsCreativeTranscodeQueue.add(data, {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 5000 },
+      removeOnComplete: 50,
+      removeOnFail: 100,
+    });
+    return { enqueued: true, jobId: String(job.id) };
+  } catch (e) {
+    return { enqueued: false, reason: e?.message || 'enqueue_failed' };
+  }
 }

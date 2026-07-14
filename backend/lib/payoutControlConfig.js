@@ -3,11 +3,14 @@
  * Used only for payout eligibility, POST /api/payouts/request, and mobile display.
  */
 
+import { normalizeWithdrawalFeePolicy } from './payoutWithdrawalFee.js';
+
 const KEYS = [
   'withdrawal_min_jobs',
   'withdrawal_min_balance_thb',
   'withdrawal_fee_standard_thb',
   'withdrawal_fee_instant_thb',
+  'withdrawal_fee_policy',
 ];
 
 /**
@@ -17,7 +20,8 @@ const KEYS = [
  *   withdrawal_min_balance_thb: number,
  *   withdrawal_fee_standard_thb: number,
  *   withdrawal_fee_instant_thb: number,
- *   min_payout_net_amount_thb: number
+ *   min_payout_net_amount_thb: number,
+ *   withdrawal_fee_policy: object,
  * }>}
  */
 export async function getPayoutWithdrawalThresholds(pool) {
@@ -30,6 +34,10 @@ export async function getPayoutWithdrawalThresholds(pool) {
   const map = {};
   for (const r of rows.rows || []) {
     let v = r.value_json;
+    if (r.key === 'withdrawal_fee_policy') {
+      map[r.key] = v;
+      continue;
+    }
     if (typeof v === 'string') {
       if (r.key === 'withdrawal_min_jobs') {
         v = parseInt(v, 10);
@@ -47,11 +55,16 @@ export async function getPayoutWithdrawalThresholds(pool) {
     0,
     Math.round((withdrawal_min_balance_thb - withdrawal_fee_standard_thb) * 100) / 100,
   );
+  const withdrawal_fee_policy = normalizeWithdrawalFeePolicy(map.withdrawal_fee_policy || null, {
+    withdrawal_fee_standard_thb,
+    withdrawal_fee_instant_thb,
+  });
   return {
     withdrawal_min_jobs,
     withdrawal_min_balance_thb,
     withdrawal_fee_standard_thb,
     withdrawal_fee_instant_thb,
     min_payout_net_amount_thb,
+    withdrawal_fee_policy,
   };
 }

@@ -272,10 +272,16 @@ function rowToApi(row) {
       : 0;
   const effFrom = effectivePromoValidFrom(row);
   const effUntil = effectivePromoValidUntil(row);
+  const imageVariantsRaw = row.image_variants;
+  const imageVariants =
+    imageVariantsRaw && typeof imageVariantsRaw === 'object'
+      ? imageVariantsRaw
+      : null;
   return {
     id: row.id,
     title: row.title,
     imageUrl: row.image_url,
+    imageVariants,
     actionUrl: row.action_url || '',
     order: parseInt(row.sort_order, 10) || 0,
     startDate,
@@ -303,6 +309,33 @@ function rowToApi(row) {
     placements: normPlacementsArray(row.placements),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
   };
+}
+
+function normalizeImageVariantsFromBody(body) {
+  if (!body || typeof body !== 'object') return undefined;
+  if (body.imageVariants === undefined && body.image_variants === undefined) {
+    return undefined;
+  }
+  const raw =
+    body.imageVariants !== undefined ? body.imageVariants : body.image_variants;
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return normalizeImageVariantsFromBody({ imageVariants: parsed });
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw !== 'object') return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const key = String(k || '').trim();
+    const val = v == null ? '' : String(v).trim();
+    if (!key || !val) continue;
+    out[key] = val;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /**
@@ -363,6 +396,19 @@ export function todayDateYmdBangkok() {
   const d = parts.find((p) => p.type === 'day')?.value;
   if (y && m && d) return `${y}-${m}-${d}`;
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Public banners จาก rowToApi — กรอง isActive + ช่วงแสดง startDate/end_date (YYYY-MM-DD)
+ */
+export function filterBannersPublicDisplayWindow(apiBanners, todayYmd = null) {
+  const today = todayYmd || todayDateYmdBangkok();
+  return (apiBanners || []).filter((b) => {
+    if (!b.isActive) return false;
+    if (b.startDate && String(b.startDate) > today) return false;
+    if (b.endDate && String(b.endDate) < today) return false;
+    return true;
+  });
 }
 
 /**
@@ -436,13 +482,14 @@ export async function createHomeBanner(pool, body) {
   const placementsParsed = parsePlacementsFromBody(body);
   const placementsDb = placementsParsed === undefined ? null : placementsParsed;
   const slideH = parseSlideHeightFromBody(body);
+  const imageVariants = normalizeImageVariantsFromBody(body);
 
   const startDateNorm = normalizeBannerDateForPg(pickBannerBodyDate(body, 'start'));
   const endDateNorm = normalizeBannerDateForPg(pickBannerBodyDate(body, 'end'));
 
   await pool.query(
     `INSERT INTO home_banners (
-       id, title, image_url, action_url, sort_order, start_date, end_date, is_active,
+       id, title, image_url, image_variants, action_url, sort_order, start_date, end_date, is_active,
        promo_code, discount_max_baht, discount_description,
        discount_mode, discount_percent, min_cumulative_topup_thb, first_paid_job_only,
        promo_valid_from, promo_valid_until, allowed_job_categories,
@@ -450,11 +497,12 @@ export async function createHomeBanner(pool, body) {
        placements,
        slide_height,
        updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW())`,
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW())`,
     [
       id,
       String(title),
       String(imageUrl),
+      imageVariants,
       actionUrl != null ? String(actionUrl) : '',
       parseInt(order, 10) || 0,
       startDateNorm,
@@ -498,6 +546,11 @@ export async function updateHomeBanner(pool, id, body) {
 
   const title = b.title !== undefined ? String(b.title) : cur.rows[0].title;
   const imageUrl = b.imageUrl !== undefined ? String(b.imageUrl) : cur.rows[0].image_url;
+  const imageVariantsParsed = normalizeImageVariantsFromBody(b);
+  const imageVariants =
+    imageVariantsParsed !== undefined
+      ? imageVariantsParsed
+      : cur.rows[0].image_variants;
   const actionUrl = b.actionUrl !== undefined ? String(b.actionUrl) : cur.rows[0].action_url;
   const sortOrder =
     b.order !== undefined ? parseInt(b.order, 10) || 0 : cur.rows[0].sort_order;
@@ -582,20 +635,21 @@ export async function updateHomeBanner(pool, id, body) {
 
   await pool.query(
     `UPDATE home_banners SET
-       title = $2, image_url = $3, action_url = $4, sort_order = $5,
-       start_date = $6, end_date = $7, is_active = $8,
-       promo_code = $9, discount_max_baht = $10, discount_description = $11,
-       discount_mode = $12, discount_percent = $13, min_cumulative_topup_thb = $14, first_paid_job_only = $15,
-       promo_valid_from = $16, promo_valid_until = $17, allowed_job_categories = $18,
-       promo_claims_enabled = $19,
-       placements = $20,
-       slide_height = $21,
+       title = $2, image_url = $3, image_variants = $4, action_url = $5, sort_order = $6,
+       start_date = $7, end_date = $8, is_active = $9,
+       promo_code = $10, discount_max_baht = $11, discount_description = $12,
+       discount_mode = $13, discount_percent = $14, min_cumulative_topup_thb = $15, first_paid_job_only = $16,
+       promo_valid_from = $17, promo_valid_until = $18, allowed_job_categories = $19,
+       promo_claims_enabled = $20,
+       placements = $21,
+       slide_height = $22,
        updated_at = NOW()
      WHERE id = $1`,
     [
       id,
       title,
       imageUrl,
+      imageVariants,
       actionUrl,
       sortOrder,
       startDate,

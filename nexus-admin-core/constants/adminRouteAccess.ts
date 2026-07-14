@@ -12,7 +12,12 @@ function normRole(role: string | undefined): AdminRole | "" {
 /** โมดูลการเงิน / การจ่าย / คอนฟิกเกตเวย์ — ไม่ให้ SUPPORT / DEVELOPER */
 const FINANCIAL_AND_PAYOUT = new Set<string>([
   "financial-audit",
+  "procurement-compliance",
   "financial-dashboard",
+  "tax-identity",
+  "provider-wht-review",
+  "tax-monthly-pack",
+  "etax-readiness",
   "payment-provider-gate",
   "finance-runtime-settings",
   "fare-pricing",
@@ -22,12 +27,18 @@ const FINANCIAL_AND_PAYOUT = new Set<string>([
   "aqond-gateway-console",
   "insurance-manager",
   "insurance-claims",
+  "prb-orders",
+  "gold-lotto",
+  "beauty-bookings",
+  "food-merchant-os",
   "stability-fund",
   "user-payouts",
   "payout-reconciliation",
   "revenue-dashboard",
+  "marketplace-commission",
   "financial-strategy",
   "director-welfare",
+  "partner-api",
 ]);
 
 /** ผู้ใช้ฝ่ายสนับสนุน — ไม่เห็น audit log ระบบ / รายงานส่งออกที่อ่อนไหว */
@@ -56,7 +67,7 @@ const AUDITOR_CONFIG_DENY = new Set<string>([
 export function canAccessAdminView(
   viewId: string,
   role: string | undefined,
-  permissions?: string[] | undefined
+  permissions?: string[] | undefined,
 ): boolean {
   const r = normRole(role);
   if (!r) return false;
@@ -70,16 +81,22 @@ export function canAccessAdminView(
       "dashboard",
       "users",
       "kyc-review",
+      "anti-bypass",
       "app-config",
       "support-center",
+      "support-cases",
       "docs",
       "integration-help",
     ]);
     if (baseKyc.has(viewId)) return true;
     if (perms.includes("FINANCIAL_AUDIT_READ")) {
-      if (viewId === "financial-audit" || viewId === "financial-dashboard") return true;
+      if (viewId === "financial-audit" || viewId === "financial-dashboard")
+        return true;
     }
-    if (perms.includes("PAYOUT_QUEUE_VIEW") || perms.includes("PAYOUT_APPROVE")) {
+    if (
+      perms.includes("PAYOUT_QUEUE_VIEW") ||
+      perms.includes("PAYOUT_APPROVE")
+    ) {
       if (viewId === "user-payouts") return true;
     }
     return false;
@@ -89,7 +106,7 @@ export function canAccessAdminView(
   if (viewId === "staff-management") return r === "ADMIN";
 
   /** ส่งอีเมลถึงผู้ใช้จาก backend — SUPER_ADMIN เท่านั้น */
-  if (viewId === "email-broadcast") return r === "SUPER_ADMIN";
+  if (viewId === "email-broadcast") return false;
 
   if (r === "SUPPORT") {
     if (FINANCIAL_AND_PAYOUT.has(viewId)) return false;

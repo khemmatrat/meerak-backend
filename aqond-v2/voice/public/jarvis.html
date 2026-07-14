@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis — AQOND</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #0f0f0f; color: #fff; min-height: 100vh; }
+    h1 { color: #fe2c55; font-size: 1.2rem; }
+    #log { height: 50vh; overflow-y: auto; border: 1px solid #333; border-radius: 12px; padding: 12px; margin: 12px 0; }
+    .bubble { margin: 8px 0; padding: 8px 12px; border-radius: 12px; background: #222; }
+    .bubble.me { background: #fe2c55; text-align: right; }
+    .bubble.jarvis { background: #1a3a2a; }
+    input, button { padding: 10px; border-radius: 8px; border: 1px solid #444; }
+    input { flex: 1; background: #222; color: #fff; }
+    footer { display: flex; gap: 8px; }
+    .products { display: grid; gap: 8px; margin-top: 8px; }
+    .card { background: #222; padding: 8px; border-radius: 8px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Jarvis — ผู้ช่วยซื้อของ AQOND</h1>
+  <div id="log"></div>
+  <div id="products" class="products"></div>
+  <footer>
+    <input id="input" placeholder="พูดหรือพิมพ์ เช่น อยากซื้อขวดนม..." />
+    <button id="send">ส่ง</button>
+  </footer>
+  <script>
+    const log = document.getElementById("log");
+    const ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/api/v1/voice/ws");
+    let sessionId = "jarvis-" + Math.random().toString(36).slice(2, 8);
+
+    function say(text, who) {
+      const d = document.createElement("div");
+      d.className = "bubble " + who;
+      d.textContent = text;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    ws.onopen = () => ws.send(JSON.stringify({ type: "start", session_id: sessionId, mode: "jarvis" }));
+    ws.onmessage = (ev) => {
+      const d = JSON.parse(ev.data);
+      if (d.greeting) say(d.greeting, "jarvis");
+      if (d.type === "thinking") say(d.text, "jarvis");
+      if (d.type === "jarvis_reply") say(d.text, "jarvis");
+      if (d.type === "products" && d.products) {
+        const box = document.getElementById("products");
+        box.innerHTML = "";
+        d.products.forEach(p => {
+          const c = document.createElement("div");
+          c.className = "card";
+          c.textContent = (p.title || p.name || "สินค้า") + " — " + Math.round((p.price_micro||0)/1e6) + " บาท";
+          box.appendChild(c);
+        });
+      }
+      if (d.type === "order_success") say("✅ สั่งซื้อสำเร็จ Order: " + (d.order?.order_id || ""), "jarvis");
+    };
+
+    document.getElementById("send").onclick = () => {
+      const t = document.getElementById("input").value.trim();
+      if (!t) return;
+      say(t, "me");
+      ws.send(JSON.stringify({ type: "text", session_id: sessionId, text: t, mode: "jarvis" }));
+      document.getElementById("input").value = "";
+    };
+  </script>
+</body>
+</html>

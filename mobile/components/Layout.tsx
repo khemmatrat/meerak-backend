@@ -1,0 +1,1124 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useMatch, useNavigate } from "react-router-dom";
+import {
+  Home,
+  Briefcase,
+  PlusCircle,
+  User,
+  LogOut,
+  Menu,
+  X,
+  ShieldCheck,
+  Globe,
+  CheckCircle,
+  AlertCircle,
+  Info,
+  Calendar,
+  CalendarCheck,
+  Users,
+  Settings,
+  Bell,
+  Sparkles,
+  Plus,
+  WifiOff,
+  Crown,
+  GraduationCap,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { useMobileAppConfig } from "../context/MobileAppConfigContext";
+import { useLanguage } from "../context/LanguageContext";
+import {
+  useNotification,
+  NotificationType,
+} from "../context/NotificationContext";
+import { MockApi } from "../services/mockApi";
+import { UserRole, UserNotification } from "../types";
+import { playNotificationChime } from "../utils/notificationChime";
+import {
+  playNotificationSound,
+  unlockNotificationSound,
+} from "../services/notificationSound";
+import { registerMobileFcmPush } from "../services/fcmRegistration";
+import {
+  getJobIdFromNotificationPayload,
+  shouldOpenJobChatForNotification,
+} from "../utils/notificationDeepLink";
+import { SafetyWidget } from "./SafetyWidget";
+import { CompassProgressStrip } from "./CompassProgressStrip";
+import { useTheme } from "../context/ThemeContext";
+import { VIPThemeProvider } from "../context/VIPThemeContext";
+import { VIPBadge, type VIPTier } from "./VIPBadge";
+import { UserDisplayBadge } from "./UserDisplayBadge";
+import { PostJobChoiceModal } from "./PostJobChoiceModal";
+import { PostJobGuideModal } from "./PostJobGuideModal";
+import { OnboardingGuide } from "./OnboardingGuide";
+import { TutorialOverlay } from "./TutorialOverlay";
+import { TalentTutorialOverlay } from "./TalentTutorialOverlay";
+import { useFloatingFabPrefs } from "../hooks/useFloatingFabPrefs";
+import { useLongPressHide } from "../hooks/useLongPressHide";
+import { hideFloatingVip } from "../utils/floatingFabPrefs";
+
+const VIP_TIERS: VIPTier[] = ["silver", "gold", "platinum"];
+
+function themeToTier(theme: string): VIPTier | undefined {
+  if (theme === "vip-silver") return "silver";
+  if (theme === "vip-gold") return "gold";
+  if (theme === "vip-platinum") return "platinum";
+  return undefined;
+}
+
+export const Layout: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { user, logout } = useAuth();
+  const { theme, setTheme, isCoach } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
+  const { toasts, removeToast, notify } = useNotification();
+  const { config: mobileAppConfig } = useMobileAppConfig();
+  const canPostJob = mobileAppConfig.featureFlags.enableJobPosting;
+  const paymentsEnabled = mobileAppConfig.featureFlags.enablePayments;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isVideoFeedRoute = !!useMatch({ path: "/video-feed", end: true });
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const [showPostJobChoice, setShowPostJobChoice] = React.useState(false);
+  const [showPostJobGuide, setShowPostJobGuide] = React.useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isPeaceMode, setIsPeaceMode] = useState(false);
+
+  // Notifications State (user + admin broadcast)
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [adminNotifications, setAdminNotifications] = useState<
+    {
+      id: string;
+      title: string;
+      message: string;
+      sentAt: string;
+      source?: string;
+      notificationType?: string;
+      jobId?: string | null;
+      data?: Record<string, unknown> | null;
+    }[]
+  >([]);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [recommendedCount, setRecommendedCount] = useState(0);
+  /** แสดงจุดแจ้งเตือนบน Profile เมื่อ KYC ถูกปฏิเสธหรือถูกสั่งกรอกใหม่ */
+  const [kycActionAttention, setKycActionAttention] = useState(false);
+  const fabPrefs = useFloatingFabPrefs();
+  const vipHidePress = useLongPressHide(() => {
+    hideFloatingVip();
+    notify("ซ่อนปุ่ม VIP แล้ว — เปิดได้ที่ ตั้งค่า → ปุ่มลอยบนหน้าจอ", "info");
+  });
+
+  const userVipTier = (
+    user?.vip_tier && user.vip_tier !== "none"
+      ? user.vip_tier.toLowerCase()
+      : null
+  ) as VIPTier | null;
+  const hasVip = userVipTier && VIP_TIERS.includes(userVipTier);
+  const effectiveThemeTier = themeToTier(theme);
+  const isStandardMode = theme === "standard";
+  const isPlatinumTheme = effectiveThemeTier === "platinum";
+  const isGoldTheme = effectiveThemeTier === "gold";
+  const isSilverTheme = effectiveThemeTier === "silver";
+
+  const setOverrideAndPersist = (tier: "standard" | VIPTier | null) => {
+    if (tier === "standard") setTheme("standard");
+    else if (tier === "silver") setTheme("vip-silver");
+    else if (tier === "gold") setTheme("vip-gold");
+    else if (tier === "platinum") setTheme("vip-platinum");
+    else if (tier && userVipTier)
+      setTheme(
+        userVipTier === "platinum"
+          ? "vip-platinum"
+          : userVipTier === "gold"
+            ? "vip-gold"
+            : "vip-silver",
+      );
+  };
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Power to the User: Peace Mode — Calm UI state
+  useEffect(() => {
+    if (!user?.id) {
+      setIsPeaceMode(false);
+      return;
+    }
+    const refresh = () => {
+      MockApi.getModeStatus()
+        .then((s) => setIsPeaceMode(s?.is_peace_mode ?? false))
+        .catch(() => setIsPeaceMode(false));
+    };
+    refresh();
+    window.addEventListener("peace-mode-changed", refresh);
+    return () => window.removeEventListener("peace-mode-changed", refresh);
+  }, [user?.id]);
+
+  // Theme: applied by ThemeContext via data-theme on document.documentElement
+
+  // ✅ เพิ่มสถานะเพื่อป้องกันโหลดซ้ำ
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isDataLoading, setIsDataLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    registerMobileFcmPush(user.id).catch(() => {});
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setIsDataLoaded(false);
+      return;
+    }
+
+    // ✅ ถ้ากำลังโหลดอยู่ ห้ามโหลดซ้ำ
+    if (isDataLoading) return;
+
+    const fetchData = async () => {
+      if (isDataLoading) return; // Double check
+      setIsDataLoading(true);
+
+      try {
+        const [notifs, adminList, kycSt] = await Promise.all([
+          MockApi.getNotifications().catch(() => []),
+          MockApi.getLatestAdminNotifications(5, user?.id).catch(() => []),
+          MockApi.checkKYCStatus().catch(() => null),
+        ]);
+        setNotifications(notifs);
+        setAdminNotifications(adminList || []);
+        setUnreadCount(notifs.filter((n) => !n.is_read).length);
+        const ky = String(kycSt?.kycStatus || "").toLowerCase();
+        setKycActionAttention(
+          ky === "rejected" || ky === "resubmission_required",
+        );
+
+        const recommended = await MockApi.getRecommendedJobs().catch((err) => {
+          console.warn(
+            "⚠️ Failed to fetch recommended jobs, skipping:",
+            err.message,
+          );
+          return [];
+        });
+        setRecommendedCount(recommended.length);
+        setIsDataLoaded(true);
+      } catch (error: any) {
+        if (
+          error?.response?.status === 401 ||
+          error?.response?.status === 403
+        ) {
+          console.error("🔴 Auth error in Layout fetchData, stopping polling");
+          setIsDataLoading(false);
+          return;
+        }
+        console.warn("⚠️ Layout fetchData error:", error?.message);
+      } finally {
+        setIsDataLoading(false);
+      }
+    };
+
+    // ✅ โหลดครั้งแรกทันที
+    if (!isDataLoaded) {
+      fetchData();
+    }
+
+    // ✅ Polling ทุก 30 วินาที (เพิ่มจาก 5 เป็น 30 วินาที)
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]); // ✅ ใช้ user.id แทน user object
+
+  /** รีเฟรชสถานะ KYC เมื่อกลับมาแอป / สลับแท็บ (debounce) */
+  useEffect(() => {
+    if (!user?.id) {
+      setKycActionAttention(false);
+      return;
+    }
+    let t: number;
+    const bump = () => {
+      if (document.visibilityState !== "visible") return;
+      window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        MockApi.checkKYCStatus()
+          .then((st) => {
+            const ky = String(st?.kycStatus || "").toLowerCase();
+            setKycActionAttention(
+              ky === "rejected" || ky === "resubmission_required",
+            );
+          })
+          .catch(() => {});
+      }, 900);
+    };
+    document.addEventListener("visibilitychange", bump);
+    window.addEventListener("focus", bump);
+    return () => {
+      document.removeEventListener("visibilitychange", bump);
+      window.removeEventListener("focus", bump);
+      window.clearTimeout(t);
+    };
+  }, [user?.id]);
+  useEffect(() => {
+    if (!user?.id) return;
+    const cleanupRef = { current: null as (() => void) | null };
+    import("../services/socketService")
+      .then(({ joinBiddingRooms, onOutbid, getSocket }) => {
+        joinBiddingRooms(user.id);
+        const handleOutbid = (data: {
+          offer_id: string;
+          new_high_amount: number;
+          your_previous_amount: number;
+          message: string;
+        }) => {
+          notify(
+            `🔥 ${data.message} ยอดใหม่ ${data.new_high_amount.toLocaleString()} THB (คุณเคยบิด ${data.your_previous_amount.toLocaleString()} THB)`,
+            "info",
+          );
+        };
+        onOutbid(handleOutbid);
+        cleanupRef.current = () => getSocket().off("outbid");
+      })
+      .catch(() => {});
+    return () => cleanupRef.current?.();
+  }, [user?.id, notify]);
+
+  const mergedNotifications: UserNotification[] = useMemo(() => {
+    const fromLatestApi = adminNotifications.map((a): UserNotification => {
+      const resolvedJobId =
+        a.source === "postgres"
+          ? getJobIdFromNotificationPayload({
+              jobId: a.jobId ?? null,
+              notificationType: a.notificationType,
+              data: a.data ?? null,
+            })
+          : null;
+      if (resolvedJobId) {
+        const openChat = shouldOpenJobChatForNotification({
+          notificationType: a.notificationType,
+          data: a.data ?? null,
+          source: a.source,
+        });
+        return {
+          id: a.id,
+          title: a.title,
+          message: a.message,
+          type: "system" as const,
+          is_read: false,
+          created_at: a.sentAt,
+          related_id: resolvedJobId,
+          data: {
+            fromPostgres: true,
+            openJobChat: openChat,
+            notificationType: a.notificationType,
+          },
+        };
+      }
+      return {
+        id: a.id,
+        title: a.title,
+        message: a.message,
+        type: "admin_broadcast" as const,
+        is_read: true,
+        created_at: a.sentAt,
+      };
+    });
+    return [...fromLatestApi, ...notifications].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }, [adminNotifications, notifications]);
+
+  const latestBellIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user?.id) {
+      latestBellIdRef.current = null;
+      return;
+    }
+    const top = mergedNotifications[0];
+    const topId = top?.id;
+    if (!topId) return;
+    if (latestBellIdRef.current === null) {
+      latestBellIdRef.current = topId;
+      return;
+    }
+    if (topId === latestBellIdRef.current) return;
+    latestBellIdRef.current = topId;
+
+    const wantSound = user.notifications_enabled !== false && !isPeaceMode;
+    const vis =
+      typeof document !== "undefined" ? document.visibilityState : "hidden";
+    if (!wantSound || vis !== "visible") return;
+    if (top.type === "admin_broadcast") {
+      void playNotificationSound();
+    } else {
+      playNotificationChime();
+    }
+  }, [mergedNotifications, user?.id, user?.notifications_enabled, isPeaceMode]);
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  const handlePostJobClick = () => {
+    if (!canPostJob) {
+      notify("การโพสต์งานถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning");
+      return;
+    }
+    try {
+      const seen = localStorage.getItem("post_job_guide_seen");
+      if (!seen) {
+        setShowPostJobGuide(true);
+      } else {
+        setShowPostJobChoice(true);
+      }
+    } catch (_) {
+      setShowPostJobChoice(true);
+    }
+  };
+
+  const handleNotifClick = async (n: UserNotification) => {
+    if (n.type === "admin_broadcast") {
+      setShowNotifDropdown(false);
+      return;
+    }
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "1d8d58",
+      },
+      body: JSON.stringify({
+        sessionId: "1d8d58",
+        runId: "notif-verify",
+        hypothesisId: "H-click-nav",
+        location: "Layout.tsx:handleNotifClick",
+        message: "Notification row clicked",
+        data: {
+          type: n.type,
+          related_id: n.related_id,
+          job_id: n.job_id,
+          openJobChat: !!n.data?.openJobChat,
+          fromPostgres: !!n.data?.fromPostgres,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    if (!n.data?.fromPostgres) {
+      await MockApi.markNotificationRead(n.id).catch(() => {});
+      setNotifications((prev) =>
+        prev.map((item) =>
+          item.id === n.id ? { ...item, is_read: true } : item,
+        ),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+    setShowNotifDropdown(false);
+
+    const jobId = String(n.related_id || n.job_id || "").trim() || "";
+    const openChat = n.data?.openJobChat === true;
+    // #region agent log
+    fetch("http://127.0.0.1:7638/ingest/0fd4d8e7-61a2-4558-83aa-540c669e45fd", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "1d8d58",
+      },
+      body: JSON.stringify({
+        sessionId: "1d8d58",
+        runId: "notif-verify",
+        hypothesisId: "H-click-nav-result",
+        location: "Layout.tsx:handleNotifClick:after-parse",
+        message: "Navigate target derived",
+        data: { jobId: jobId ? "[set]" : "", openChat },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    if (!jobId) return;
+    navigate(openChat ? `/jobs/${jobId}#chat` : `/jobs/${jobId}`);
+  };
+
+  const NavItem = ({
+    to,
+    icon: Icon,
+    label,
+    badge,
+  }: {
+    to: string;
+    icon: any;
+    label: string;
+    badge?: number;
+  }) => {
+    const isActive =
+      to === "/courses"
+        ? location.pathname === "/courses" || location.pathname.startsWith("/courses/")
+        : location.pathname === to;
+    return (
+      <Link
+        to={to}
+        className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors relative ${
+          isActive
+            ? "bg-slate-700/60 text-white"
+            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+        }`}
+        onClick={() => setIsMenuOpen(false)}
+      >
+        <div className="relative">
+          <Icon size={20} />
+          {badge && badge > 0 ? (
+            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-charcoal-900">
+              {badge}
+            </span>
+          ) : null}
+        </div>
+        <span className="font-medium">{label}</span>
+      </Link>
+    );
+  };
+
+  const MobileNavItem = ({
+    to,
+    icon: Icon,
+    label,
+    badge,
+    attentionDot,
+  }: {
+    to: string;
+    icon: any;
+    label: string;
+    badge?: number;
+    attentionDot?: boolean;
+  }) => {
+    const isActive =
+      to === "/courses"
+        ? location.pathname === "/courses" || location.pathname.startsWith("/courses/")
+        : location.pathname === to;
+    return (
+      <Link
+        to={to}
+        className={`flex flex-col items-center justify-center w-full h-full space-y-1 relative transition-colors ${
+          isActive ? "text-white" : "text-slate-500"
+        }`}
+      >
+        <div className="relative">
+          <Icon size={24} />
+          {badge && badge > 0 ? (
+            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-charcoal-900">
+              {badge}
+            </span>
+          ) : null}
+          {attentionDot && !(badge && badge > 0) ? (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-charcoal-900" />
+          ) : null}
+        </div>
+        <span className="text-[10px] font-medium">{label}</span>
+      </Link>
+    );
+  };
+
+  const getToastIcon = (type: NotificationType) => {
+    switch (type) {
+      case "success":
+        return <CheckCircle size={20} className="text-emerald-500" />;
+      case "error":
+        return <AlertCircle size={20} className="text-red-500" />;
+      case "warning":
+        return <AlertCircle size={20} className="text-amber-500" />;
+      default:
+        return <Info size={20} className="text-blue-500" />;
+    }
+  };
+
+  /* พื้นหลัง layout/main ตาม Luxury Palette (60-30-10) */
+  const getLayoutBg = () => {
+    switch (effectiveThemeTier) {
+      case "platinum":
+        return "#F8F9FA"; /* Soft Graphite */
+      case "gold":
+        return "#FDFBF7"; /* Champagne Cream */
+      case "silver":
+        return "#1e293b"; /* Deep Charcoal */
+      default:
+        return "#f8fafc"; /* Off-White / Slate-50 */
+    }
+  };
+  const layoutBg = getLayoutBg();
+  const mainBg = getLayoutBg();
+
+  return (
+    <div
+      className={`min-h-screen w-full flex flex-col relative md:pb-0 ${
+        isVideoFeedRoute ? "h-[100dvh] overflow-hidden bg-black pb-0" : "pb-20"
+      }`}
+      style={{ background: isVideoFeedRoute ? "#000" : layoutBg }}
+      onClickCapture={unlockNotificationSound}
+      onTouchStartCapture={unlockNotificationSound}
+    >
+      {/* Onboarding Guide — แสดงครั้งแรกที่ผู้ใช้เปิดแอปหลัง login */}
+      <OnboardingGuide />
+      {/* AQOND Academy — Joyride + Chai AI Helper when in guided mode */}
+      <TutorialOverlay />
+      {/* AQOND Talent Academy — for provider/Talent */}
+      <TalentTutorialOverlay />
+
+      {/* Offline Banner */}
+      {isOffline && (
+        <div className="bg-red-600 text-white text-xs font-bold text-center py-1 flex items-center justify-center sticky top-0 z-[60]">
+          <WifiOff size={14} className="mr-2" /> No Internet Connection
+        </div>
+      )}
+
+      {/* Toast Container */}
+      <div className="fixed top-20 right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-[min(100vw-2rem,420px)]">
+        {toasts.filter(Boolean).map((toast) => (
+          <div
+            key={toast.id}
+            className="bg-charcoal-800/95 backdrop-blur-md border border-violet-500/25 shadow-xl rounded-2xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3 min-w-[min(300px,100%)] animate-in slide-in-from-right pointer-events-auto"
+            style={{
+              boxShadow:
+                "0 4px 24px rgba(0,0,0,0.3), 0 0 20px rgba(139,92,246,0.12), inset 0 1px 1px rgba(255,255,255,0.08)",
+            }}
+          >
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              {getToastIcon(toast.type)}
+              <p className="text-sm font-medium text-slate-100 flex-1 leading-snug whitespace-pre-line">
+                {toast.message}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.action?.onClick();
+                    removeToast(toast.id);
+                  }}
+                  className="rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-violet-500/25 transition hover:brightness-110 active:scale-[0.98]"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => removeToast(toast.id)}
+                className="text-slate-500 hover:text-slate-200 p-1"
+                aria-label="Dismiss"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Top Navigation - hidden on Video Feed for immersive TikTok-style viewing */}
+      {!isVideoFeedRoute ? (
+      <nav className="nav-glass sticky top-0 z-50 w-full">
+        <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center">
+              <Link to="/" className="flex-shrink-0 flex items-center gap-2">
+                <img
+                  src="/logo.png"
+                  alt="AQOND"
+                  className="h-12 w-auto object-contain"
+                  width={48}
+                  height={48}
+                />
+                {/* ไม่ใช้ text-transparent อย่างเดียว — ถ้า gradient ไม่ถูก build ชื่อ AQOND จะหาย */}
+                <span className="font-extrabold tracking-[0.3em] ml-[0.2em] text-emerald-700 drop-shadow-[0_2px_4px_rgba(0,0,0,0.15)]">
+                  AQOND
+                </span>
+              </Link>
+            </div>
+
+            {/* Desktop Menu */}
+            <div className="hidden md:flex items-center space-x-2">
+              <NavItem to="/" icon={Home} label={t("nav.home")} />
+              <NavItem to="/job-board" icon={Briefcase} label={t("nav.jobs")} />
+              <NavItem to="/courses" icon={GraduationCap} label={t("nav.courses")} />
+              <NavItem to="/talents" icon={Users} label={t("nav.talents")} />
+              <NavItem
+                to="/my-jobs"
+                icon={Calendar}
+                label={t("nav.my_jobs")}
+                badge={recommendedCount}
+              />
+              <NavItem
+                to="/my-bookings"
+                icon={CalendarCheck}
+                label={t("nav.my_bookings")}
+              />
+
+              {/* Post Job: กด (+) เลือก Match หรือ Advance */}
+              <button
+                type="button"
+                onClick={handlePostJobClick}
+                disabled={!canPostJob}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl mx-2 ${
+                  effectiveThemeTier === "platinum"
+                    ? "btn-create-job-platinum"
+                    : effectiveThemeTier === "gold"
+                      ? "btn-gold-exclusive"
+                      : effectiveThemeTier === "silver"
+                        ? "btn-silver-exclusive"
+                        : "btn-standard"
+                } ${!canPostJob ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                <PlusCircle
+                  size={20}
+                  color={
+                    effectiveThemeTier === "platinum"
+                      ? "#fff"
+                      : effectiveThemeTier === "gold"
+                        ? "#0c0d0f"
+                        : effectiveThemeTier === "silver"
+                          ? "#0f172a"
+                          : "#fff"
+                  }
+                />
+                <span className="font-bold">{t("nav.post")}</span>
+              </button>
+              {/* Notification Bell */}
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                  className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-700/50 transition-colors relative"
+                >
+                  <Bell size={20} />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-charcoal-900"></span>
+                  )}
+                </button>
+
+                {showNotifDropdown && (
+                  <div className="layout-notif-dropdown absolute right-0 mt-2 w-80 rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 border border-slate-600/50 shadow-xl">
+                    <div className="layout-notif-dropdown-header p-3 border-b border-slate-600/50 flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-slate-100">
+                        {t("notif.title")}
+                      </h3>
+                      {unreadCount > 0 && (
+                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {mergedNotifications.length === 0 ? (
+                        <div className="p-6 text-center text-slate-500 text-sm">
+                          {t("notif.empty")}
+                        </div>
+                      ) : (
+                        mergedNotifications.map((n) => (
+                          <div
+                            key={n.id}
+                            onClick={() => handleNotifClick(n)}
+                            className={`layout-notif-item p-3 border-b border-slate-600/40 cursor-pointer hover:opacity-90 transition-opacity ${!n.is_read ? "bg-slate-700/40" : "bg-transparent"} ${n.type === "admin_broadcast" ? "bg-indigo-900/30" : ""}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`mt-1 p-1.5 rounded-full flex-shrink-0 ${n.type === "admin_broadcast" ? "bg-indigo-500/30 text-indigo-300" : !n.is_read ? "bg-slate-500/40 text-slate-200" : "bg-slate-600/40 text-slate-400"}`}
+                              >
+                                {n.type === "admin_broadcast" ? (
+                                  <Bell size={14} />
+                                ) : n.type === "job_match" ? (
+                                  <Sparkles size={14} />
+                                ) : (
+                                  <Info size={14} />
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p
+                                    className={`text-sm ${!n.is_read ? "font-bold text-slate-100" : "font-medium text-slate-300"}`}
+                                  >
+                                    {n.title}
+                                  </p>
+                                  {n.type === "admin_broadcast" && (
+                                    <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.5 rounded">
+                                      จากแอดมิน
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                                  {n.message}
+                                </p>
+                                <p className="text-[10px] text-slate-500 mt-1">
+                                  {new Date(n.created_at).toLocaleString(
+                                    "th-TH",
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="w-px h-6 bg-slate-600 mx-2"></div>
+              <Link
+                to="/profile"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors relative ${
+                  location.pathname === "/profile"
+                    ? "bg-slate-700/60 text-white"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                }`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <div className="relative">
+                  <User size={20} />
+                  {kycActionAttention ? (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-charcoal-900" />
+                  ) : null}
+                </div>
+                <span className="font-medium flex items-center gap-1.5">
+                  {t("nav.profile")}{" "}
+                  <UserDisplayBadge
+                    vipTier={user?.vip_tier}
+                    isCoach={isCoach}
+                    size="sm"
+                  />
+                </span>
+              </Link>
+              {paymentsEnabled ? (
+                <Link
+                  to="/vip"
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
+                    location.pathname === "/vip"
+                      ? "btn-gold-black"
+                      : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                  }`}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <Crown
+                    size={20}
+                    color={location.pathname === "/vip" ? "#0c0d0f" : undefined}
+                  />
+                  <span className="font-medium">VIP</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    notify("การชำระเงินถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning")
+                  }
+                  className="flex items-center space-x-2 px-4 py-2 rounded-xl text-slate-500 opacity-60 cursor-not-allowed"
+                >
+                  <Crown size={20} />
+                  <span className="font-medium">VIP</span>
+                </button>
+              )}
+
+              <div className="relative flex items-center ml-2 border-l pl-4 border-gold-transparent">
+                <Globe
+                  size={16}
+                  className="text-slate-500 absolute left-6 pointer-events-none"
+                />
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as any)}
+                  className="pl-8 pr-3 py-1.5 border border-slate-600 rounded-xl bg-charcoal-800 text-sm text-slate-300 focus:ring-slate-500 focus:border-slate-500 appearance-none cursor-pointer hover:bg-charcoal-700 outline-none"
+                >
+                  <option value="en">English</option>
+                  <option value="th">ไทย</option>
+                  <option value="zh">中文</option>
+                  <option value="ja">日本語</option>
+                  <option value="fr">Français</option>
+                  <option value="ru">Русский</option>
+                </select>
+              </div>
+
+              <Link
+                to="/settings"
+                className="ml-2 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-700/50 transition-colors"
+              >
+                <Settings size={20} />
+              </Link>
+            </div>
+
+            {/* Mobile Header Right Actions */}
+            <div className="flex items-center md:hidden space-x-2">
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotifDropdown(!showNotifDropdown);
+                  }}
+                  className="relative z-[61] text-gray-500 p-1 -m-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                  aria-expanded={showNotifDropdown}
+                  aria-haspopup="true"
+                >
+                  <Bell size={20} />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-charcoal-900" />
+                  )}
+                </button>
+
+                {/* Mobile: ใช้ fixed + inset ให้อยู่ใน viewport — ไม่ล้นมุมจอ */}
+                {showNotifDropdown && (
+                  <>
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-[55] bg-black/30 md:hidden"
+                      aria-label="Close"
+                      onClick={() => setShowNotifDropdown(false)}
+                    />
+                    <div
+                      className="layout-notif-dropdown fixed z-[60] md:hidden left-3 right-3 rounded-2xl max-h-[min(65vh,calc(100dvh-5rem))] overflow-y-auto overflow-x-hidden border border-slate-200/80 dark:border-slate-600/50 shadow-2xl bg-white dark:bg-charcoal-900"
+                      style={{
+                        top: "max(4.25rem, calc(env(safe-area-inset-top, 0px) + 3.75rem))",
+                      }}
+                    >
+                      <div className="layout-notif-dropdown-header p-3 border-b border-slate-200 dark:border-slate-600/50 font-bold text-sm flex justify-between text-slate-800 dark:text-slate-100">
+                        <span>{t("notif.title")}</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowNotifDropdown(false)}
+                          className="text-slate-500 hover:text-slate-800 dark:text-slate-400 p-1"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      {mergedNotifications.length === 0 ? (
+                        <div className="p-6 text-center text-slate-500 text-sm">
+                          {t("notif.empty")}
+                        </div>
+                      ) : (
+                        mergedNotifications.map((n) => (
+                          <div
+                            key={n.id}
+                            onClick={() => handleNotifClick(n)}
+                            className={`layout-notif-item p-3 border-b border-slate-200/80 dark:border-slate-600/40 cursor-pointer ${!n.is_read ? "bg-slate-50 dark:bg-slate-700/40" : ""} ${n.type === "admin_broadcast" ? "bg-indigo-50 dark:bg-indigo-900/30" : ""}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <p
+                                className={`text-sm text-slate-800 dark:text-slate-200 ${!n.is_read ? "font-bold" : ""}`}
+                              >
+                                {n.title}
+                              </p>
+                              {n.type === "admin_broadcast" && (
+                                <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.5 rounded">
+                                  จากแอดมิน
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                              {n.message}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <Link to="/settings" className="text-slate-400 hover:text-white">
+                <Settings size={20} />
+              </Link>
+              <div className="relative flex items-center">
+                <Globe
+                  size={16}
+                  className="text-slate-500 absolute left-2 pointer-events-none"
+                />
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as any)}
+                  className="pl-7 pr-2 py-1 border border-gold-transparent rounded-xl bg-charcoal-800 text-xs text-slate-300 appearance-none cursor-pointer"
+                >
+                  <option value="en">EN</option>
+                  <option value="th">TH</option>
+                  <option value="zh">CN</option>
+                  <option value="ja">JP</option>
+                  <option value="fr">FR</option>
+                  <option value="ru">RU</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+      ) : null}
+
+      {/* Main Content - full width wrapper, content max-w for readability; no white gaps */}
+      <main
+        className={`flex min-h-0 flex-1 w-full flex-col ${
+          isVideoFeedRoute
+            ? "h-[100dvh] overflow-hidden bg-black text-white"
+            : "scroll-pt-24"
+        }`}
+        style={{ background: isVideoFeedRoute ? undefined : mainBg }}
+      >
+        <div
+          className={
+            isVideoFeedRoute
+              ? "w-full max-w-none px-0 py-0 h-full min-h-0 flex flex-col overflow-hidden"
+              : `w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 ${
+                  effectiveThemeTier === "silver" ? "text-slate-100" : "text-gray-900"
+                }`
+          }
+        >
+          <VIPThemeProvider
+            tier={
+              theme === "standard"
+                ? "none"
+                : (effectiveThemeTier ?? user?.vip_tier ?? "none")
+            }
+          >
+            <div
+              className={
+                isVideoFeedRoute
+                  ? "flex h-full min-h-0 flex-1 flex-col"
+                  : "min-h-full"
+              }
+            >
+            {isPeaceMode && (
+              <div className="mb-4 rounded-xl bg-slate-200/80 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200 px-4 py-3 text-sm border border-slate-300/50 dark:border-slate-600/50">
+                <span className="font-medium">โหมดสงบ</span> — คุณกำลังพักผ่อน
+                ไม่มีการแจ้งเตือนงานใหม่ และไม่แสดงในผลค้นหา
+              </div>
+            )}
+            {!location.pathname.startsWith("/compass") &&
+              !location.pathname.startsWith("/onboarding/compass") && (
+                <CompassProgressStrip />
+              )}
+            {children}
+            </div>
+          </VIPThemeProvider>
+        </div>
+      </main>
+
+      {/* Post Job Guide: คู่มือก่อนโพสต์ (แสดงครั้งแรก) */}
+      <PostJobGuideModal
+        isOpen={showPostJobGuide}
+        onClose={() => setShowPostJobGuide(false)}
+        onComplete={() => setShowPostJobChoice(true)}
+      />
+
+      {/* Post Job Choice: Match vs Advance (shared desktop + mobile) */}
+      <PostJobChoiceModal
+        isOpen={showPostJobChoice}
+        onClose={() => setShowPostJobChoice(false)}
+        onShowGuide={() => {
+          setShowPostJobChoice(false);
+          setShowPostJobGuide(true);
+        }}
+      />
+
+      {/* Safety Widget (Global) */}
+      <SafetyWidget />
+
+      {/* Mobile: VIP FAB — hidden on Video Feed for immersive viewing */}
+      {!isVideoFeedRoute && fabPrefs.showVip ? (
+        paymentsEnabled ? (
+          <Link
+            to="/vip"
+            title="กดค้างเพื่อซ่อนปุ่ม"
+            {...vipHidePress}
+            onClick={(e) => {
+              if (vipHidePress.consumeSuppressClick()) {
+                e.preventDefault();
+              }
+            }}
+            className={`fixed left-4 bottom-20 z-[60] w-11 h-11 rounded-[50px] flex items-center justify-center active:scale-95 transition-transform md:hidden ${
+              effectiveThemeTier === "gold"
+                ? "btn-gold-exclusive"
+                : effectiveThemeTier === "silver"
+                  ? "btn-silver-exclusive"
+                  : "btn-gold-black"
+            }`}
+            aria-label="VIP Membership"
+          >
+            <Crown
+              size={20}
+              color={effectiveThemeTier === "silver" ? "#0f172a" : "#0c0d0f"}
+            />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            title="กดค้างเพื่อซ่อนปุ่ม"
+            {...vipHidePress}
+            onClick={() => {
+              if (vipHidePress.consumeSuppressClick()) return;
+              notify("การชำระเงินถูกปิดชั่วคราวโดยผู้ดูแลระบบ", "warning");
+            }}
+            className="fixed left-4 bottom-20 z-[60] w-11 h-11 rounded-[50px] flex items-center justify-center opacity-50 md:hidden bg-slate-700 text-slate-300"
+            aria-label="VIP — ปิดชั่วคราว"
+          >
+            <Crown size={20} />
+          </button>
+        )
+      ) : null}
+
+      {/* Mobile Bottom Navigation — hidden on Video Feed (TikTok-style full screen) */}
+      {!isVideoFeedRoute ? (
+      <div className="nav-bottom-glass fixed bottom-0 left-0 z-50 w-full h-16 md:hidden flex items-center justify-around px-1 pb-safe">
+        <MobileNavItem to="/" icon={Home} label={t("nav.home")} />
+        <MobileNavItem to="/job-board" icon={Briefcase} label={t("nav.find")} />
+        <MobileNavItem to="/courses" icon={GraduationCap} label={t("nav.courses")} />
+        <button
+          type="button"
+          onClick={handlePostJobClick}
+          disabled={!canPostJob}
+          className={`flex items-center justify-center active:scale-95 transition-all flex-shrink-0 w-11 h-11 min-h-[2.75rem] min-w-[2.75rem] rounded-full ${
+            effectiveThemeTier === "platinum"
+              ? "btn-create-job-platinum"
+              : effectiveThemeTier === "gold"
+                ? "btn-gold-exclusive"
+                : effectiveThemeTier === "silver"
+                  ? "btn-silver-exclusive"
+                  : "btn-standard"
+          } ${!canPostJob ? "opacity-50 cursor-not-allowed" : ""}`}
+          aria-label="โพสต์งาน"
+        >
+          <PlusCircle
+            size={22}
+            color={
+              effectiveThemeTier === "platinum"
+                ? "#fff"
+                : effectiveThemeTier === "gold"
+                  ? "#0c0d0f"
+                  : effectiveThemeTier === "silver"
+                    ? "#0f172a"
+                    : "#fff"
+            }
+          />
+        </button>
+        <MobileNavItem to="/talents" icon={Users} label={t("nav.talents")} />
+        <MobileNavItem
+          to="/my-jobs"
+          icon={Calendar}
+          label={t("nav.my_jobs")}
+          badge={recommendedCount}
+        />
+        <MobileNavItem
+          to="/my-bookings"
+          icon={CalendarCheck}
+          label={t("nav.my_bookings")}
+        />
+        <MobileNavItem
+          to="/profile"
+          icon={User}
+          label={t("nav.profile")}
+          attentionDot={kycActionAttention}
+        />
+      </div>
+      ) : null}
+    </div>
+  );
+};

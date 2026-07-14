@@ -1,0 +1,116 @@
+{
+  "name": "AQOND Order SLA → REFUND",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order/sla/start",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook Order Shipped",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://marketplace-web:8080/logistics/pickup",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-Bagisto-Sync-Secret", "value": "={{$env.BAGISTO_WEBHOOK_SECRET}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"order_id\": $json.order_id, \"carrier_code\": $json.carrier_code || \"kerry\", \"tracking_id\": $json.tracking_id, \"sla_hours\": $json.sla_hours || 48 }"
+      },
+      "name": "Mark Shipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.sla?.sla_hours || 48 }}",
+        "unit": "hours"
+      },
+      "name": "Wait SLA Window",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://marketplace-web:8080/orders/{{ $('Mark Shipped').item.json.order.order_id }}/sla-status",
+        "method": "GET"
+      },
+      "name": "Check SLA Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.breached }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF Breached",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://marketplace-web:8080/orders/{{ $('Mark Shipped').item.json.order.order_id }}/sla/process-breach",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-Bagisto-Sync-Secret", "value": "={{$env.BAGISTO_WEBHOOK_SECRET}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"actor\": \"n8n-sla\" }"
+      },
+      "name": "Process Refund",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 220]
+    }
+  ],
+  "connections": {
+    "Webhook Order Shipped": {
+      "main": [[{ "node": "Mark Shipped", "type": "main", "index": 0 }]]
+    },
+    "Mark Shipped": {
+      "main": [[{ "node": "Wait SLA Window", "type": "main", "index": 0 }]]
+    },
+    "Wait SLA Window": {
+      "main": [[{ "node": "Check SLA Status", "type": "main", "index": 0 }]]
+    },
+    "Check SLA Status": {
+      "main": [[{ "node": "IF Breached", "type": "main", "index": 0 }]]
+    },
+    "IF Breached": {
+      "main": [
+        [{ "node": "Process Refund", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {},
+  "meta": {
+    "description": "P6: POST /webhook/order/sla/start { order_id, carrier_code, sla_hours? }. After SLA wait, if breached → ai judge + escrow REFUND. Smoke test uses force=1 on process-breach directly."
+  }
+}

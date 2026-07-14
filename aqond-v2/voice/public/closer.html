@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AQOND Live Closer</title>
+  <style>
+    :root { --bg: #0b1020; --card: #151d30; --text: #e8edf5; --muted: #8fa3bf; --accent: #7c3aed; --user: #1e3a5f; --bot: #14532d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #243049; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .badge { font-size: 0.75rem; background: #4c1d95; color: #ddd6fe; padding: 0.2rem 0.55rem; border-radius: 999px; }
+    main { flex: 1; max-width: 720px; width: 100%; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    #log { flex: 1; overflow-y: auto; background: var(--card); border: 1px solid #243049; border-radius: 12px; padding: 1rem; min-height: 320px; }
+    .msg { margin-bottom: 0.65rem; padding: 0.55rem 0.75rem; border-radius: 10px; max-width: 90%; font-size: 0.92rem; line-height: 1.45; }
+    .msg.user { background: var(--user); margin-left: auto; }
+    .msg.bot { background: var(--bot); }
+    .msg.sys { background: #334155; color: var(--muted); font-size: 0.8rem; max-width: 100%; }
+    .row { display: flex; gap: 0.5rem; }
+    input, select { flex: 1; padding: 0.6rem; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: var(--text); }
+    button { padding: 0.6rem 1rem; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #334155; }
+    button:disabled { opacity: 0.5; }
+    #status { color: var(--muted); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>Live Closer</strong> <span class="badge">P5 Voice AI</span></div>
+    <a href="/api/v1/live/studio" style="color:#c4b5fd;text-decoration:none">← Studio</a>
+  </header>
+  <main>
+    <div class="row">
+      <input id="productId" placeholder="external_id สินค้า (จาก shop)" />
+      <button type="button" id="btnConnect" class="secondary">เชื่อมต่อ</button>
+    </div>
+    <div id="log"></div>
+    <div class="row">
+      <input id="input" placeholder="พิมพ์ข้อความ เช่น ลดราคาได้ไหม / เอาเลย" disabled />
+      <button type="button" id="btnSend" disabled>ส่ง</button>
+      <button type="button" id="btnInterrupt" class="secondary" disabled>ขัดจังหวะ</button>
+    </div>
+    <div id="status">ยังไม่เชื่อมต่อ</div>
+  </main>
+  <script>
+    const log = document.getElementById("log");
+    const params = new URLSearchParams(location.search);
+    if (params.get("product")) document.getElementById("productId").value = params.get("product");
+
+    let ws = null;
+    let sessionId = "closer-" + crypto.randomUUID().slice(0, 8);
+
+    function addMsg(text, cls) {
+      const d = document.createElement("div");
+      d.className = "msg " + cls;
+      d.textContent = text;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function wsUrl() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      return proto + "//" + location.host + "/api/v1/voice/ws";
+    }
+
+    document.getElementById("btnConnect").addEventListener("click", () => {
+      if (ws) ws.close();
+      ws = new WebSocket(wsUrl());
+      document.getElementById("status").textContent = "กำลังเชื่อมต่อ…";
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          type: "start",
+          session_id: sessionId,
+          external_id: document.getElementById("productId").value.trim() || undefined,
+          room_name: params.get("room") || undefined,
+        }));
+      };
+      ws.onmessage = (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.type === "ready") {
+          document.getElementById("status").textContent = "พร้อม · session " + sessionId;
+          document.getElementById("input").disabled = false;
+          document.getElementById("btnSend").disabled = false;
+          document.getElementById("btnInterrupt").disabled = false;
+          addMsg("เชื่อมต่อ Live Closer แล้ว — ถามราคา/สั่งซื้อได้", "sys");
+          if (data.context?.title) addMsg("สินค้า: " + data.context.title + " · " + data.context.price_thb + " THB", "sys");
+        } else if (data.type === "reply") {
+          addMsg(data.text, "bot");
+          if (data.order) addMsg("✓ Order " + data.order.order_id + " · Escrow " + data.order.escrow_status, "sys");
+          if (data.checkout_error) addMsg("Checkout: " + data.checkout_error, "sys");
+        } else if (data.type === "interrupted") {
+          addMsg("(ขัดจังหวะการตอบ)", "sys");
+        } else if (data.type === "error") {
+          addMsg("Error: " + data.message, "sys");
+        }
+      };
+      ws.onclose = () => {
+        document.getElementById("status").textContent = "ตัดการเชื่อมต่อ";
+        document.getElementById("input").disabled = true;
+        document.getElementById("btnSend").disabled = true;
+      };
+    });
+
+    function sendText() {
+      const text = document.getElementById("input").value.trim();
+      if (!text || !ws || ws.readyState !== 1) return;
+      addMsg(text, "user");
+      ws.send(JSON.stringify({ type: "text", session_id: sessionId, text }));
+      document.getElementById("input").value = "";
+    }
+
+    document.getElementById("btnSend").addEventListener("click", sendText);
+    document.getElementById("input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+    document.getElementById("btnInterrupt").addEventListener("click", () => {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "interrupt", session_id: sessionId }));
+    });
+  </script>
+</body>
+</html>

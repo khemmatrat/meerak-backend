@@ -7,17 +7,16 @@ import { readCartScope } from '@/lib/cartOwner';
 import { useShopCart } from '@/lib/useShopCart';
 import {
   IconHome,
-  IconSearch,
-  IconTabCart,
   IconTabFeed,
   IconTabUser,
 } from '@/components/mobile/TtTrackIcons';
+import { IconLuxCart, IconLuxSearch } from '@/components/mobile/TtLuxuryIcons';
 
 const tabs = [
   { href: '/m/home', label: 'หน้าแรก', Icon: IconHome },
   { href: '/m/feed', label: 'Feed', Icon: IconTabFeed },
-  { href: '/m/search', label: 'ค้นหา', Icon: IconSearch },
-  { href: '/m/cart', label: 'รถเข็น', Icon: IconTabCart, cart: true },
+  { href: '/m/search', label: 'ค้นหา', Icon: IconLuxSearch },
+  { href: '/m/cart', label: 'รถเข็น', Icon: IconLuxCart, cart: true },
   { href: '/m/account', label: 'ฉัน', Icon: IconTabUser },
 ] as const;
 

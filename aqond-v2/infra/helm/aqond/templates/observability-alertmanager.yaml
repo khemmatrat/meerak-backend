@@ -1,0 +1,62 @@
+{{- if .Values.observability.alertmanager }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  alertmanager.yml: |
+    route:
+      receiver: default
+      group_by: [alertname, service]
+    receivers:
+      - name: default
+        webhook_configs:
+          - url: http://notify-service:8096/api/v1/notify/alerts
+            send_resolved: true
+    inhibit_rules:
+      - source_match: { severity: critical }
+        target_match: { severity: warning }
+        equal: [service]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+{{- end }}

@@ -1,0 +1,7 @@
+{
+  "trigger": "spy_report_updated",
+  "source_file": "pipeline/spy_report.json",
+  "created_at": "2026-03-18T16:18:09.706789+00:00",
+  "action": "review_spy_report",
+  "message": "Navy 2.0 อัปเดตรายงานข่าวกรองแล้ว — โปรดตรวจสอบความเรียบร้อยและลำดับความสำคัญ"
+}

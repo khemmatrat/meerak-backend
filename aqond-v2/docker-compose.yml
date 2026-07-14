@@ -1,0 +1,1787 @@
+networks:
+  aqond-network:
+    driver: bridge
+
+# Data on E: via AQOND_DATA_ROOT in infra/.env (default E:/aqond-data)
+
+services:
+  # =========================================================================
+  # P0: Central Postgres (multi-database via init script)
+  # =========================================================================
+  aqond-db:
+    image: postgres:15-alpine
+    container_name: aqond-v2-db
+    env_file:
+      - ./infra/.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin_boss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      POSTGRES_DB: postgres
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/01-init-multiple-dbs.sh:ro
+    networks:
+      - aqond-network
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin_boss} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    restart: unless-stopped
+
+  aqond-redis:
+    image: redis:7-alpine
+    container_name: aqond-v2-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  aqond-mongo:
+    profiles:
+      - optional
+    image: mongo:6
+    container_name: aqond-v2-mongo
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  # =========================================================================
+  # P1: Kong API Gateway (DB-less declarative)
+  # =========================================================================
+  kong:
+    image: kong:3.4
+    container_name: aqond-v2-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      KONG_PLUGINS: bundled
+    volumes:
+      - ./gateway/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P2a: MinIO object storage (product images)
+  # =========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: aqond-v2-minio
+    command: server /data --console-address ":9001"
+    env_file:
+      - ./infra/.env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aqond_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in infra/.env}
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: aqond-v2-minio-init
+    depends_on:
+      - minio
+    env_file:
+      - ./infra/.env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aqond_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-aqond-products}
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb -p local/$$MINIO_BUCKET || true;
+      mc anonymous set download local/$$MINIO_BUCKET;
+      mc mb -p local/aqond-videos || true;
+      echo MinIO bucket ready: $$MINIO_BUCKET + aqond-videos;
+      "
+    networks:
+      - aqond-network
+    restart: "no"
+
+  # =========================================================================
+  # P2: Marketplace catalog sync (Bagisto-ready bridge)
+  # =========================================================================
+  marketplace-web:
+    build:
+      context: ./marketplace
+      dockerfile: Dockerfile
+    container_name: aqond-v2-marketplace
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8080
+      AQOND_ENV: ${AQOND_ENV:-development}
+      DB_HOST: aqond-db
+      DB_DATABASE: bagisto
+      DB_USERNAME: ${POSTGRES_USER:-admin_boss}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      BAGISTO_WEBHOOK_SECRET: ${BAGISTO_WEBHOOK_SECRET}
+      BAGISTO_APP_URL: ${BAGISTO_APP_URL:-}
+      BAGISTO_AQOND_SYNC_KEY: ${BAGISTO_WEBHOOK_SECRET}
+      ESCROW_SERVICE_URL: http://escrow-service:8091
+      ESCROW_API_KEY: ${ESCROW_API_KEY}
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      P6_SLA_HOURS: ${P6_SLA_HOURS:-48}
+      ANALYTICS_URL: http://analytics-service:8095
+      ANALYTICS_API_KEY: ${ANALYTICS_API_KEY}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      escrow-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # P2b: MySQL + Bagisto mirror bridge (optional profile)
+  # Enable: docker compose --profile p2b-bagisto up -d
+  # =========================================================================
+  bagisto-mysql:
+    profiles:
+      - p2b-bagisto
+    image: mysql:8.0
+    container_name: aqond-v2-bagisto-mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4
+    env_file:
+      - ./infra/.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in infra/.env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bagisto}
+      MYSQL_USER: ${MYSQL_USER:-bagisto}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in infra/.env}
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/mysql-bagisto:/var/lib/mysql
+      - ./infra/mysql-bagisto/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/mysql-bagisto/healthcheck-grants.sh:/usr/local/bin/aqond-mysql-ready.sh:ro
+    networks:
+      - aqond-network
+    ports:
+      - "3307:3306"
+    healthcheck:
+      # First init on E: bind mount can take 10-15 min on Windows; also ensures bagisto@% grants
+      test: ["CMD-SHELL", "bash /usr/local/bin/aqond-mysql-ready.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 600s
+    restart: unless-stopped
+
+  # P2b+ Full Bagisto Laravel (admin + storefront) — shares bagisto-mysql
+  bagisto-app:
+    profiles:
+      - p2b-bagisto
+    image: webkul/bagisto:2.4.3
+    container_name: aqond-v2-bagisto-app
+    env_file:
+      - ./infra/.env
+    environment:
+      APP_URL: ${BAGISTO_ADMIN_URL:-http://localhost:8099}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${BAGISTO_LARAVEL_APP_KEY:-}
+      DB_HOST: bagisto-mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE:-bagisto}
+      DB_USERNAME: ${MYSQL_USER:-bagisto}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_AUTOSTART: "false"
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/bagisto-app:/var/www/html/storage
+    networks:
+      - aqond-network
+    ports:
+      - "8099:80"
+    depends_on:
+      bagisto-mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  bagisto-bridge:
+    profiles:
+      - p2b-bagisto
+    build:
+      context: ./marketplace/bagisto-bridge
+    container_name: aqond-v2-bagisto-bridge
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8089
+      MYSQL_HOST: bagisto-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bagisto}
+      MYSQL_USER: ${MYSQL_USER:-bagisto}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      BAGISTO_AQOND_SYNC_KEY: ${BAGISTO_WEBHOOK_SECRET}
+    networks:
+      - aqond-network
+    depends_on:
+      bagisto-mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  escrow-service:
+    build:
+      context: ./marketplace/escrow-service
+    container_name: aqond-v2-escrow
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8091
+      AQOND_ENV: ${AQOND_ENV:-development}
+      PGHOST: aqond-db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: escrow
+      ESCROW_API_KEY: ${ESCROW_API_KEY}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P3: CMS / Strapi sync stub
+  # =========================================================================
+  cms-service:
+    build:
+      context: ./cms
+    container_name: aqond-v2-cms
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8094
+      AQOND_ENV: ${AQOND_ENV:-development}
+      CMS_API_KEY: ${CMS_API_KEY}
+      BAGISTO_WEBHOOK_URL: http://marketplace-web:8080/internal/sync-product
+      BAGISTO_WEBHOOK_SECRET: ${BAGISTO_WEBHOOK_SECRET}
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      AI_ONBOARD_TIMEOUT_MS: ${AI_ONBOARD_TIMEOUT_MS:-600000}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      MINIO_BUCKET: ${MINIO_BUCKET:-aqond-products}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aqond_minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    networks:
+      - aqond-network
+    depends_on:
+      - marketplace-web
+      - ai-core
+      - minio
+      - minio-init
+    restart: unless-stopped
+
+  # =========================================================================
+  # P4: LiveKit + token service
+  # =========================================================================
+  livekit:
+    image: livekit/livekit-server:v1.5
+    container_name: aqond-v2-livekit
+    command: --config /livekit.yaml --dev
+    volumes:
+      - ./live/livekit.yaml:/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50010:50000-50010/udp"
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  live-token-service:
+    build:
+      context: ./live/token-service
+    container_name: aqond-v2-live-token
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8092
+      AQOND_ENV: ${AQOND_ENV:-development}
+      LIVE_MERCHANT_API_KEY: ${LIVE_MERCHANT_API_KEY}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-dev-livekit-secret-min-32-chars-ok}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      LIVEKIT_HTTP_URL: http://livekit:7880
+      MARKETPLACE_URL: http://marketplace-web:8080
+      NOTIFY_SERVICE_URL: http://notify-service:8096
+      NOTIFY_API_KEY: ${NOTIFY_API_KEY}
+      LIVE_COMMERCE_URL: http://live-commerce-svc:8097
+    networks:
+      - aqond-network
+    depends_on:
+      - livekit
+      - marketplace-web
+      - notify-service
+      - aqond-db
+    restart: unless-stopped
+
+  live-commerce-svc:
+    build:
+      context: ./live/commerce-service
+    container_name: aqond-v2-live-commerce
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8097
+      PGHOST: aqond-db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: commerce
+      REDIS_HOST: aqond-redis
+      ORDER_SERVICE_URL: http://order-svc:8113
+      CATALOG_SERVICE_URL: http://catalog-svc:8110
+      ADDRESS_SERVICE_URL: http://address-svc:8128
+      SHIPPING_SERVICE_URL: http://shipping-svc:8127
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      LIVE_MERCHANT_API_KEY: ${LIVE_MERCHANT_API_KEY}
+      LIVE_TOKEN_URL: http://live-token-service:8092
+    ports:
+      - "8097:8097"
+    networks:
+      - aqond-network
+    depends_on:
+      - aqond-db
+      - aqond-redis
+      - ai-core
+    restart: unless-stopped
+
+  # =========================================================================
+  # P5: Voice Live Closer (WebSocket + ai-core Hermes / GPU-ready)
+  # =========================================================================
+  voice-service:
+    build:
+      context: ./voice
+    container_name: aqond-v2-voice
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8090
+      AQOND_ENV: ${AQOND_ENV:-development}
+      VOICE_MODEL: ${VOICE_MODEL:-cpu-stub}
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      MARKETPLACE_URL: http://marketplace-web:8080
+      ORDER_SERVICE_URL: http://order-svc:8113
+      SEARCH_SERVICE_URL: http://search-svc:8122
+    ports:
+      - "8090:8090"
+    networks:
+      - aqond-network
+    depends_on:
+      - ai-core
+      - marketplace-web
+    restart: unless-stopped
+
+  # =========================================================================
+  # Chat stub (existing custom chat integration point)
+  # =========================================================================
+  chat-service:
+    build:
+      context: ./chat
+    container_name: aqond-v2-chat
+    environment:
+      PORT: 8093
+      LIVE_COMMERCE_URL: http://live-commerce-svc:8097
+    networks:
+      - aqond-network
+    depends_on:
+      - live-commerce-svc
+    restart: unless-stopped
+
+  # =========================================================================
+  # P6: n8n automation + lightweight notify
+  # =========================================================================
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: aqond-v2-n8n
+    env_file:
+      - ./infra/.env
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: aqond-db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-admin_boss}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      WEBHOOK_URL: http://kong:8000/api/v1/automation
+      BAGISTO_WEBHOOK_SECRET: ${BAGISTO_WEBHOOK_SECRET}
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/n8n:/home/node/.n8n
+      - ./automation/n8n-workflows:/import:ro
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notify-service:
+    build:
+      context: ./notifications
+    container_name: aqond-v2-notify
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8096
+      AQOND_ENV: ${AQOND_ENV:-development}
+      NOTIFY_API_KEY: ${NOTIFY_API_KEY}
+      REDIS_URL: redis://aqond-redis:6379
+    networks:
+      - aqond-network
+    depends_on:
+      - aqond-redis
+    restart: unless-stopped
+
+  # =========================================================================
+  # P8: Hermes AI Core (Ollama + orchestration)
+  # =========================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aqond-v2-ollama
+    env_file:
+      - ./infra/.env
+    environment:
+      # Override Windows host path from .env — container must use bind mount path
+      OLLAMA_MODELS: /root/.ollama
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - aqond-network
+    restart: unless-stopped
+    # GPU profile: deploy on separate server and set OLLAMA_HOST to external IP
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  ai-core:
+    build:
+      context: ./infra/ai-core
+    container_name: aqond-v2-ai-core
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8100
+      AQOND_ENV: ${AQOND_ENV:-development}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL_CHAT: ${OLLAMA_MODEL_CHAT:-hermes3:3b}
+      OLLAMA_MODEL_VISION: ${OLLAMA_MODEL_VISION:-moondream}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-540000}
+      AI_MAX_CONCURRENT: ${AI_MAX_CONCURRENT:-1}
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      PGHOST: aqond-db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ai
+      SLA_USE_RULES_ONLY: ${SLA_USE_RULES_ONLY:-0}
+      VOICE_USE_RULES_ONLY: ${VOICE_USE_RULES_ONLY:-0}
+      CREW_USE_RULES_ONLY: ${CREW_USE_RULES_ONLY:-0}
+    networks:
+      - aqond-network
+    depends_on:
+      ollama:
+        condition: service_started
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P7: Analytics + CrewAI re-rank (PostHog-lite)
+  # =========================================================================
+  analytics-service:
+    build:
+      context: ./analytics
+    container_name: aqond-v2-analytics
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8095
+      AQOND_ENV: ${AQOND_ENV:-development}
+      PGHOST: aqond-db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: analytics
+      ANALYTICS_API_KEY: ${ANALYTICS_API_KEY}
+      ANALYTICS_PUBLIC_INGEST: ${ANALYTICS_PUBLIC_INGEST:-1}
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      ai-core:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # P9-P22: Go commerce core + Redpanda + Hermes orchestrator
+  # docker compose --env-file infra/.env --profile dev-lite up -d
+  # Bagisto bridge (p2b-bagisto) DEPRECATED — use catalog-svc instead (P15)
+  # =========================================================================
+  redpanda:
+    profiles:
+      - dev-lite
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    container_name: aqond-v2-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --overprovisioned
+      - --set redpanda.auto_create_topics_enabled=true
+    ports:
+      - "19092:19092"
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  redpanda-console:
+    profiles:
+      - dev-lite
+    image: docker.redpanda.com/redpandadata/console:v2.7.2
+    container_name: aqond-v2-redpanda-console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8088:8080"
+    networks:
+      - aqond-network
+    depends_on:
+      - redpanda
+    restart: unless-stopped
+
+  foundation-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/foundation-svc/Dockerfile
+    container_name: aqond-v2-foundation
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8101
+      KAFKA_BROKERS: redpanda:9092
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 2
+      USE_CITUS: ${USE_CITUS:-0}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  catalog-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/catalog-svc/Dockerfile
+    container_name: aqond-v2-catalog
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8110
+      PGHOST: aqond-db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: commerce
+      PGREADHOST: aqond-db
+      REDIS_ADDR: aqond-redis:6379
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  inventory-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/inventory-svc/Dockerfile
+    container_name: aqond-v2-inventory
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8111
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ADDR: aqond-redis:6379
+      INV_SHARD_BUCKETS: 8
+      READ_CACHE_TTL_MS: 500
+      PGREADHOST: aqond-db
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  wallet-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/wallet-svc/Dockerfile
+    container_name: aqond-v2-wallet
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8112
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      WALLET_API_KEY: ${ESCROW_API_KEY}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  order-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/order-svc/Dockerfile
+    container_name: aqond-v2-order
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8113
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BROKERS: redpanda:9092
+      INVENTORY_SERVICE_URL: http://inventory-svc:8111
+      WALLET_SERVICE_URL: http://wallet-svc:8112
+      WALLET_API_KEY: ${ESCROW_API_KEY}
+      ORDER_QUEUE_CAPACITY: 256
+      ORDER_TOPIC_PARTITIONS: 4
+      REDIS_ADDR: aqond-redis:6379
+      RATE_BUYER_PER_MIN: 30
+      RATE_MERCHANT_PER_MIN: 600
+      FLASH_ADMIT_BATCH: 10
+      FLASH_QUEUE_REQUIRED: 0
+      PGREADHOST: aqond-db
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+      inventory-svc:
+        condition: service_started
+      wallet-svc:
+        condition: service_started
+    restart: unless-stopped
+
+  readmodel-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/readmodel-svc/Dockerfile
+    container_name: aqond-v2-readmodel
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8114
+      PGHOST: aqond-db
+      PGREADHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ADDR: aqond-redis:6379
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # P33-P45: ScyllaDB + Feed/Video/Recommendations (dev-lite)
+  # =========================================================================
+  scylla:
+    profiles:
+      - dev-lite
+    image: scylladb/scylla:5.4
+    container_name: aqond-v2-scylla
+    command: --smp 1 --memory 750M --overprovisioned 1 --api-address 0.0.0.0
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/scylla:/var/lib/scylla
+    ports:
+      - "9042:9042"
+    networks:
+      - aqond-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+    restart: unless-stopped
+
+  cdn-edge:
+    profiles:
+      - dev-lite
+    image: nginx:1.25-alpine
+    container_name: aqond-v2-cdn
+    volumes:
+      - ./infra/nginx/cdn.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8098:8098"
+    networks:
+      - aqond-network
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+  feed-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/feed-svc/Dockerfile
+    container_name: aqond-v2-feed
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8115
+      SCYLLA_HOSTS: scylla:9042
+      SCYLLA_KEYSPACE: feed
+      KAFKA_BROKERS: redpanda:9092
+      REDIS_ADDR: aqond-redis:6379
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REC_SERVICE_URL: http://rec-svc:8117
+      HOT_AUTHOR_THRESHOLD: 10000
+      FANOUT_WORKERS: 4
+      FEED_CACHE_TTL_SEC: 30
+    networks:
+      - aqond-network
+    depends_on:
+      scylla:
+        condition: service_healthy
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  video-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/video-svc/Dockerfile
+    container_name: aqond-v2-video
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8116
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BROKERS: redpanda:9092
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aqond_minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_VIDEO_BUCKET: aqond-videos
+      CDN_BASE_URL: http://localhost:8098/cdn
+      CDN_SIGNING_SECRET: ${CDN_SIGNING_SECRET:-dev-cdn-sign-secret}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  transcode-worker:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/transcode-worker/Dockerfile
+    container_name: aqond-v2-transcode
+    env_file:
+      - ./infra/.env
+    environment:
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BROKERS: redpanda:9092
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aqond_minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_VIDEO_BUCKET: aqond-videos
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      TRANSCODE_STUB: 1
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      redpanda:
+        condition: service_started
+      ai-core:
+        condition: service_started
+    restart: unless-stopped
+
+  rec-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/rec-svc/Dockerfile
+    container_name: aqond-v2-rec
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8117
+      PGHOST: aqond-db
+      PGREADHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ADDR: aqond-redis:6379
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # P81-P110: Payments, Search, Recsys/Ads, Trust & Safety (Epoch 7)
+  # =========================================================================
+  payment-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/payment-svc/Dockerfile
+    container_name: aqond-v2-payment
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8120
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      SETTLEMENT_CURRENCY: THB
+      FRAUD_ENFORCE: 1
+      FRAUD_BLOCK_THRESHOLD: 85
+      AQOND_DEFAULT_REGION: TH
+      PAYSO_ENABLED: ${PAYSO_ENABLED:-0}
+      ORDER_SERVICE_URL: http://order-svc:8113
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  checkout-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/checkout-svc/Dockerfile
+    container_name: aqond-v2-checkout
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8121
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      PAYMENT_SERVICE_URL: http://payment-svc:8120
+      ORDER_SERVICE_URL: http://order-svc:8113
+      ADDRESS_URL: http://address-svc:8128
+      PAYSO_ENABLED: ${PAYSO_ENABLED:-0}
+      REDIS_ADDR: aqond-redis:6379
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      payment-svc:
+        condition: service_started
+      order-svc:
+        condition: service_started
+    restart: unless-stopped
+
+  search-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/search-svc/Dockerfile
+    container_name: aqond-v2-search
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8122
+      PGHOST: aqond-db
+      PGREADHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ADDR: aqond-redis:6379
+      KAFKA_BROKERS: redpanda:9092
+      SEARCH_BACKEND: postgres
+      SEARCH_CONSUMER: 1
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  recsys-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/recsys-svc/Dockerfile
+    container_name: aqond-v2-recsys
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8125
+      PGHOST: aqond-db
+      PGREADHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ADDR: aqond-redis:6379
+      RANKER_ENABLED: 1
+      AD_FREQ_CAP: 3
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  reviews-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/reviews-svc/Dockerfile
+    container_name: aqond-v2-reviews
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8123
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  trust-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/trust-svc/Dockerfile
+    container_name: aqond-v2-trust
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8124
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BROKERS: redpanda:9092
+      AI_CORE_URL: http://ai-core:8100
+      TRUST_CONSUMER: 1
+      MODERATION_TOPICS: media.ready,posts.created,reviews.created
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # P111-P140: Epoch 8 global expansion / cross-border / i18n / compliance
+  # =========================================================================
+  locale-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/locale-svc/Dockerfile
+    container_name: aqond-v2-locale
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8126
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  shipping-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/shipping-svc/Dockerfile
+    container_name: aqond-v2-shipping
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8127
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_DEFAULT_REGION: TH
+      DEFAULT_DUTY_BPS: 500
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  address-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/address-svc/Dockerfile
+    container_name: aqond-v2-address
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8128
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  compliance-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/compliance-svc/Dockerfile
+    container_name: aqond-v2-compliance
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8129
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  policy-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/policy-svc/Dockerfile
+    container_name: aqond-v2-policy
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8130
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/notification-svc/Dockerfile
+    container_name: aqond-v2-notification
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8131
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P141-P170: Epoch 9 headless storefront + BFF + cart + settings
+  # =========================================================================
+  bff-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/bff-svc/Dockerfile
+    container_name: aqond-v2-bff
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8132
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+      CATALOG_URL: http://catalog-svc:8110
+      SEARCH_URL: http://search-svc:8122
+      LOCALE_URL: http://locale-svc:8126
+      CART_URL: http://cart-svc:8133
+      CHECKOUT_URL: http://checkout-svc:8121
+      ORDER_URL: http://order-svc:8113
+      FEED_URL: http://feed-svc:8115
+      RECSYS_URL: http://recsys-svc:8125
+      REVIEWS_URL: http://reviews-svc:8123
+      SHIPPING_URL: http://shipping-svc:8127
+      ADDRESS_URL: http://address-svc:8128
+      POLICY_URL: http://policy-svc:8130
+      SETTINGS_URL: http://settings-svc:8134
+      PROMOTIONS_URL: http://promotions-svc:8136
+      COUPON_URL: http://coupon-svc:8137
+      ACCOUNT_URL: http://account-svc:8138
+      COINS_URL: http://coins-svc:8139
+      CREATOR_URL: http://creator-svc:8140
+      FOOD_URL: http://food-svc:8141
+      DISPATCH_URL: http://dispatch-svc:8142
+      MERCHANT_OPS_URL: http://merchant-ops-svc:8143
+      NOTIFICATION_URL: http://notification-svc:8131
+      KONG_INTERNAL_URL: http://kong:8000
+      KONG_JWT_SECRET: ${KONG_JWT_SECRET:-${MEERAK_JWT_SECRET}}
+      AQOND_OTP_DEV_EXPOSE: ${AQOND_OTP_DEV_EXPOSE:-1}
+      AQOND_SMS_PROVIDER: ${AQOND_SMS_PROVIDER:-log}
+      CLOUD2_BACKEND_URL: ${CLOUD2_BACKEND_URL:-http://host.docker.internal:3001}
+      WALLET_URL: http://wallet-svc:8112
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      cart-svc:
+        condition: service_started
+      settings-svc:
+        condition: service_started
+      promotions-svc:
+        condition: service_started
+      coupon-svc:
+        condition: service_started
+      account-svc:
+        condition: service_started
+      coins-svc:
+        condition: service_started
+      creator-svc:
+        condition: service_started
+      food-svc:
+        condition: service_started
+      dispatch-svc:
+        condition: service_started
+    restart: unless-stopped
+
+  food-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/food-svc/Dockerfile
+    container_name: aqond-v2-food
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8141
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dispatch-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/dispatch-svc/Dockerfile
+    container_name: aqond-v2-dispatch
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8142
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      ORDER_URL: http://order-svc:8113
+      PAYMENT_URL: http://payment-svc:8120
+      NOTIFICATION_URL: http://notification-svc:8131
+      REDIS_ADDR: aqond-redis:6379
+      DISPATCH_AUTO_MATCH: "1"
+      DISPATCH_MODE: ${DISPATCH_MODE:-v2}
+      KONG_INTERNAL_URL: http://kong:8000
+      CLOUD2_BACKEND_URL: ${CLOUD2_BACKEND_URL:-http://host.docker.internal:3001}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      order-svc:
+        condition: service_started
+    restart: unless-stopped
+
+  merchant-ops-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/merchant-ops-svc/Dockerfile
+    container_name: aqond-v2-merchant-ops
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8143
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cart-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/cart-svc/Dockerfile
+    container_name: aqond-v2-cart
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8133
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SHARD_COUNT: 1
+      SHIPPING_URL: http://shipping-svc:8127
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  settings-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/settings-svc/Dockerfile
+    container_name: aqond-v2-settings
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8134
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  storefront:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: apps/storefront/Dockerfile
+      args:
+        BFF_URL: http://kong:8000/api/v1/bff
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${NEXT_PUBLIC_FIREBASE_VAPID_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-aqond-production.firebaseapp.com}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-aqond-production}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-aqond-production.firebasestorage.app}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-187301416431}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-1:187301416431:web:774a67a1d8554faccbfa1a}
+    container_name: aqond-v2-storefront
+    env_file:
+      - ./infra/.env
+    environment:
+      BFF_URL: http://kong:8000/api/v1/bff
+      NEXT_PUBLIC_BFF_URL: http://127.0.0.1:8000/api/v1/bff
+      AQOND_REGION: TH
+      NEXT_PUBLIC_AQOND_REGION: TH
+      AQOND_LOCALE: th-TH
+      KONG_JWT_SECRET: ${KONG_JWT_SECRET:-${MEERAK_JWT_SECRET}}
+      MEERAK_JWT_SECRET: ${MEERAK_JWT_SECRET}
+    ports:
+      - "3000:3000"
+    networks:
+      - aqond-network
+    depends_on:
+      - bff-svc
+      - kong
+    restart: unless-stopped
+
+  # =========================================================================
+  # P171-P200: Epoch 10 SRE / scale / readiness
+  # =========================================================================
+  sre-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/sre-svc/Dockerfile
+    container_name: aqond-v2-sre
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8135
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P201-P230: Epoch 11 production EXP track services
+  # =========================================================================
+  promotions-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/promotions-svc/Dockerfile
+    container_name: aqond-v2-promotions
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8136
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  coupon-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/coupon-svc/Dockerfile
+    container_name: aqond-v2-coupon
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8137
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  account-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/account-svc/Dockerfile
+    container_name: aqond-v2-account
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8138
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  coins-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/coins-svc/Dockerfile
+    container_name: aqond-v2-coins
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8139
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  creator-svc:
+    profiles:
+      - dev-lite
+    build:
+      context: .
+      dockerfile: services/creator-svc/Dockerfile
+    container_name: aqond-v2-creator
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8140
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AQOND_DEFAULT_REGION: TH
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # P46-P60: Citus sharding + Redis Cluster (dev-lite)
+  # Enable Citus: USE_CITUS=1 on Go services after migrate-commerce-to-citus.ps1
+  # =========================================================================
+  citus-worker-1:
+    profiles:
+      - dev-lite
+    image: citusdata/citus:12.1
+    container_name: aqond-v2-citus-w1
+    env_file:
+      - ./infra/.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin_boss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: commerce
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/citus-worker-1:/var/lib/postgresql/data
+    networks:
+      - aqond-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin_boss} -d commerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  citus-worker-2:
+    profiles:
+      - dev-lite
+    image: citusdata/citus:12.1
+    container_name: aqond-v2-citus-w2
+    env_file:
+      - ./infra/.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin_boss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: commerce
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/citus-worker-2:/var/lib/postgresql/data
+    networks:
+      - aqond-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin_boss} -d commerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  citus-coordinator:
+    profiles:
+      - dev-lite
+    image: citusdata/citus:12.1
+    container_name: aqond-v2-citus-coord
+    env_file:
+      - ./infra/.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin_boss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: commerce
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${AQOND_DATA_ROOT:-E:/aqond-data}/citus-coordinator:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - aqond-network
+    depends_on:
+      citus-worker-1:
+        condition: service_healthy
+      citus-worker-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin_boss} -d commerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: unless-stopped
+
+  redis-node-1:
+    profiles:
+      - dev-lite
+    image: redis:7-alpine
+    container_name: aqond-v2-redis-n1
+    command: redis-server --port 6379 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  redis-node-2:
+    profiles:
+      - dev-lite
+    image: redis:7-alpine
+    container_name: aqond-v2-redis-n2
+    command: redis-server --port 6379 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  redis-node-3:
+    profiles:
+      - dev-lite
+    image: redis:7-alpine
+    container_name: aqond-v2-redis-n3
+    command: redis-server --port 6379 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    networks:
+      - aqond-network
+    restart: unless-stopped
+
+  hermes-orchestrator:
+    profiles:
+      - dev-lite
+    build:
+      context: ./hermes-orchestrator
+    container_name: aqond-v2-hermes
+    env_file:
+      - ./infra/.env
+    environment:
+      PORT: 8120
+      PGHOST: aqond-db
+      PGDATABASE: commerce
+      PGUSER: ${POSTGRES_USER:-admin_boss}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://aqond-redis:6379/1
+      KAFKA_BROKERS: redpanda:9092
+      AI_CORE_URL: http://ai-core:8100
+      AI_CORE_API_KEY: ${AI_CORE_API_KEY}
+      HERMES_API_KEY: ${AI_CORE_API_KEY}
+      HERMES_USE_RULES_ONLY: ${HERMES_USE_RULES_ONLY:-1}
+      CATALOG_SERVICE_URL: http://catalog-svc:8110
+      ORDER_SERVICE_URL: http://order-svc:8113
+    networks:
+      - aqond-network
+    depends_on:
+      aqond-db:
+        condition: service_healthy
+      aqond-redis:
+        condition: service_started
+      redpanda:
+        condition: service_started
+      ai-core:
+        condition: service_started
+    restart: unless-stopped

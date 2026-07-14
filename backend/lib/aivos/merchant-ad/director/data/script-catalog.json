@@ -1,0 +1,19 @@
+{
+  "version": "3.0.0",
+  "engine": "script_strategy_engine",
+  "default_language": "th",
+  "default_script_type": "ugc",
+  "format_to_script_type": {
+    "ugc_lipsync": "ugc",
+    "tvc_multi_shot": "tvc"
+  },
+  "layer_order": ["business", "strategy", "emotion", "hook", "pain", "solution", "offer", "cta"],
+  "config_files": {
+    "marketing_strategies": "marketing-strategies.json",
+    "emotional_strategies": "emotional-strategies.json",
+    "business_strategy_map": "business-strategy-map.json",
+    "script_types": "script-types.json",
+    "script_segments": "script-segments.json"
+  },
+  "layer_joiner_th": " "
+}

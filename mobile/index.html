@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      /* localhost: storefront SW เคย cache Discover ที่ / — ล้างก่อนโหลด mobile */
+      (function () {
+        var h = location.hostname;
+        if (h !== "localhost" && h !== "127.0.0.1" && h !== "192.168.1.33") return;
+        if (!navigator.serviceWorker) return;
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) {
+            r.unregister();
+          });
+        });
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) {
+              caches.delete(k);
+            });
+          });
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>aqond - Professional Services Platform</title>
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Tailwind: ใช้ @tailwind ใน index.css (Vite/PostCSS) — ห้าม cdn.tailwindcss.com คู่กัน (โปรดักชัน + ชนกับ bundle) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700;900&family=Google+Sans+Flex:opsz,wght@14..144,100..900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link 
+      rel="stylesheet" 
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+
+    <style>
+      body { font-family: 'Inter', 'Sarabun', system-ui, sans-serif; }
+      /* Playfair Display ONLY for VIP Platinum — NOT Standard */
+      html[data-theme="vip-platinum"] .font-platinum-heading { font-family: 'Playfair Display', 'Montserrat', serif; }
+      /* Platinum: Logo Silver-Chrome (subtle, no gradient) */
+      html[data-theme="vip-platinum"] .nav-glass a[href="/"] span.font-extrabold {
+        color: #0f172a !important;
+        letter-spacing: 0.35em !important;
+      }
+      .cinzel-decorative-regular { font-family: "Cinzel Decorative", serif; font-weight: 400; font-style: normal; }
+      .cinzel-decorative-bold { font-family: "Cinzel Decorative", serif; font-weight: 700; font-style: normal; }
+      .cinzel-decorative-black { font-family: "Cinzel Decorative", serif; font-weight: 900; font-style: normal; }
+      /* Logo: Google Sans Flex ExtraBold 800 — ตัวอักษรสีขาว ขอบน้ำเงินหนา เงาสีเทา 80° */
+      .logo-aqond-text {
+        font-family: "Google Sans Flex", sans-serif;
+        font-optical-sizing: auto;
+        font-weight: 800;
+        font-style: normal;
+        font-variation-settings: "slnt" 0, "wdth" 100, "GRAD" 0, "ROND" 0;
+        letter-spacing: 1.25rem;
+        color: #ffffff;
+        -webkit-text-stroke: 1px #2563eb;
+        text-shadow:
+          2px 6px 8px rgba(100, 116, 139, 0.5),
+          1px 5px 6px rgba(71, 85, 105, 0.4);
+      }
+      /* Custom Scrollbar for Chat */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+    </style>
+    <!-- ห้าม import map หรือ Tailwind CDN: ใช้แค่ Vite bundle + index.css (@tailwindcss/vite) -->
+<link rel="stylesheet" href="/globals.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="/themes.css">
+<link rel="stylesheet" href="/training-themes.css">
+<link rel="stylesheet" href="/job-detail-clean-pro.css">
+</head>
+  <body class="antialiased font-sans min-h-screen m-0 p-0" id="theme-root">
+    <div id="root" class="min-h-screen w-full"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

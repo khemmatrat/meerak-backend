@@ -11,7 +11,9 @@
  *
  * Env (optional):
  *   PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER — custom header name (lowercase) for signature, same as server.js wallet handler
- *   PAYMENT_WEBHOOK_STRICT=1 — in production, if no primary secret is configured, verification fails closed (instead of skipped)
+ *   PAYMENT_WEBHOOK_STRICT=1 — hardening flag; kept for backward compatibility (production already fails closed by default)
+ *   DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK=1 — explicit, dangerous opt-in to accept unverified webhooks in production
+ *     when no secret is configured (ignored when PAYMENT_WEBHOOK_STRICT=1). Default is fail-closed.
  *
  * Route → signature header resolution (must match server.js only; see table WEBHOOK_SIGNATURE_HEADER_SOURCES below).
  * Algorithms: HMAC-SHA256 over raw body bytes; compare with crypto.timingSafeEqual on hex digests when possible.
@@ -154,7 +156,16 @@ export function verifyPaymentWebhookSignature(input) {
   const next = resolveNextWebhookSecret();
 
   if (!primary) {
-    if (isProd && strict) {
+    // Finding B: fail-closed by default in production. Accepting unverified webhooks is only
+    // possible via an explicit, clearly-named opt-in — never implicitly because a secret is absent.
+    const allowUnverified =
+      String(process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK || '').trim() === '1';
+
+    if (isProd) {
+      // strict is the strongest signal and can never be overridden by the opt-in.
+      if (allowUnverified && !strict) {
+        return { ok: true, key_version: 'skipped_no_secret_dangerous_optin', retryable };
+      }
       return {
         ok: false,
         key_version: 'none',
@@ -162,9 +173,8 @@ export function verifyPaymentWebhookSignature(input) {
         retryable,
       };
     }
-    if (isProd && !strict) {
-      return { ok: true, key_version: 'skipped_no_secret', retryable };
-    }
+
+    // Non-production (dev/test): skip verification for convenience.
     return { ok: true, key_version: 'skipped_no_secret', retryable };
   }
 

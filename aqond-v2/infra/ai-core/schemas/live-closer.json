@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["reply_th", "offer_discount_pct", "should_create_order"],
+  "properties": {
+    "reply_th": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "offer_discount_pct": { "type": "number", "minimum": 0, "maximum": 30 },
+    "should_create_order": { "type": "boolean" },
+    "product_id": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

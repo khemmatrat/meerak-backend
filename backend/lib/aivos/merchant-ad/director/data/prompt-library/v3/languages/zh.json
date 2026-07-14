@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "zh",
+  "spoken_instruction": "用自然清晰的中文普通话讲解，UGC博主风格。",
+  "placeholder_spoken": "大家好！{shop}推荐{product}。{offer} {cta}",
+  "motion_hint": "手机自拍，自然走向镜头。",
+  "tone_hint": "亲切、口语化、有说服力。"
+}

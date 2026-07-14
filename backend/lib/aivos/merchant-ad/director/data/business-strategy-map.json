@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "by_industry": {
+    "food": { "primary": "sell_memory", "secondary": "sell_happiness" },
+    "beauty": { "primary": "sell_confidence", "secondary": "sell_beauty" },
+    "skincare": { "primary": "sell_confidence", "secondary": "sell_beauty" },
+    "fashion": { "primary": "sell_beauty", "secondary": "sell_confidence" },
+    "services": { "primary": "sell_time", "secondary": "sell_freedom" },
+    "home_services": { "primary": "sell_time", "secondary": "sell_freedom" },
+    "technician": { "primary": "sell_freedom", "secondary": "sell_confidence" },
+    "real_estate": { "primary": "sell_hope", "secondary": "sell_luxury" },
+    "automotive": { "primary": "sell_freedom", "secondary": "sell_value" },
+    "healthcare": { "primary": "sell_health", "secondary": "sell_hope" },
+    "marketplace": { "primary": "sell_time", "secondary": "sell_value" },
+    "general": { "primary": "sell_value", "secondary": "sell_hope" }
+  },
+  "by_business_type": {
+    "food_shop": { "primary": "sell_memory", "secondary": "sell_happiness" },
+    "service_provider": { "primary": "sell_time", "secondary": "sell_confidence" },
+    "marketplace": { "primary": "sell_time", "secondary": "sell_value" },
+    "_default": { "primary": "sell_value", "secondary": "sell_hope" }
+  }
+}

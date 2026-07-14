@@ -1,0 +1,34 @@
+# P77: Chaos Mesh experiment — kill order-svc pod during steady state
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: order-svc-pod-kill
+  namespace: aqond-dev
+spec:
+  action: pod-kill
+  mode: one
+  duration: "30s"
+  selector:
+    namespaces:
+      - aqond-dev
+    labelSelectors:
+      app.kubernetes.io/component: order-svc
+  scheduler:
+    cron: "@every 24h"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: inventory-latency
+  namespace: aqond-dev
+spec:
+  action: delay
+  mode: one
+  delay:
+    latency: "200ms"
+  duration: "60s"
+  selector:
+    namespaces:
+      - aqond-dev
+    labelSelectors:
+      app.kubernetes.io/component: inventory-svc

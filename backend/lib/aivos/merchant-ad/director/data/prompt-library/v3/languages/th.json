@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "lang": "th",
+  "spoken_instruction": "พูดภาษาไทยชัดเจน น้ำเสียงเป็นกันเอง เหมาะกับ UGC",
+  "placeholder_spoken": "สวัสดีค่ะ วันนี้{shop} มี{product} มาแนะนำ {offer} {cta}",
+  "motion_hint": "กล้องมือถือ selfie เดินเข้าหากล้องอย่างเป็นธรรมชาติ",
+  "tone_hint": "อบอุ่น เป็นกันเอง ลงท้าย นะคะ/ครับ"
+}

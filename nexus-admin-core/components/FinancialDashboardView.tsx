@@ -20,12 +20,25 @@ import {
   ChevronRight,
 } from "lucide-react";
 import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   getFinancialDashboard,
   getFinancialAudit,
   getPlatformRevenues,
   getAdminToken,
 } from "../services/adminApi";
-import { getRevenueFourBumps, type RevenueFourBumpsResponse } from "../services/financialService";
+import {
+  getRevenueFourBumps,
+  type RevenueFourBumpsResponse,
+} from "../services/financialService";
 import type {
   FinancialDashboardResponse,
   FinancialAuditTransactionRow,
@@ -84,12 +97,32 @@ export const FinancialDashboardView: React.FC = () => {
     revenue_b_deposit_margin?: number;
     revenue_c_withdrawal_margin?: number;
     by_source: Record<string, number>;
-    recent: Array<{ id: string; transaction_id: string; source_type: string; amount: number; gross_amount: number; created_at: string | null }>;
+    daily_trend?: Array<{
+      date: string;
+      revenue_a_commission: number;
+      revenue_b_deposit_margin: number;
+      revenue_c_withdrawal_margin: number;
+      total_margin_thb: number;
+      total_with_commission_thb: number;
+    }>;
+    recent: Array<{
+      id: string;
+      transaction_id: string;
+      source_type: string;
+      amount: number;
+      gross_amount: number;
+      created_at: string | null;
+    }>;
     days: number;
   } | null>(null);
-  const [revenueRange, setRevenueRange] = useState<"today" | "week" | "month">("month");
+  const [revenueRange, setRevenueRange] = useState<"today" | "week" | "month">(
+    "month",
+  );
+  const [trendWindowDays, setTrendWindowDays] = useState<7 | 30>(30);
   const useBackend = !!getAdminToken();
-  const [fourBumps, setFourBumps] = useState<RevenueFourBumpsResponse | null>(null);
+  const [fourBumps, setFourBumps] = useState<RevenueFourBumpsResponse | null>(
+    null,
+  );
 
   const fetchData = async () => {
     if (!useBackend) {
@@ -111,7 +144,7 @@ export const FinancialDashboardView: React.FC = () => {
               platform_balance: audit.platform_balance,
               transactions: audit.transactions || [],
             }
-          : null
+          : null,
       );
     } catch (e) {
       console.error("Financial dashboard error:", e);
@@ -151,11 +184,11 @@ export const FinancialDashboardView: React.FC = () => {
     let list = [...transactions];
     if (txTypeFilter)
       list = list.filter((t) =>
-        String(t.type).toLowerCase().includes(txTypeFilter.toLowerCase())
+        String(t.type).toLowerCase().includes(txTypeFilter.toLowerCase()),
       );
     if (txStatusFilter)
       list = list.filter(
-        (t) => String(t.status).toLowerCase() === txStatusFilter.toLowerCase()
+        (t) => String(t.status).toLowerCase() === txStatusFilter.toLowerCase(),
       );
     if (txSearch.trim()) {
       const q = txSearch.toLowerCase();
@@ -163,7 +196,7 @@ export const FinancialDashboardView: React.FC = () => {
         (t) =>
           t.userId?.toLowerCase().includes(q) ||
           t.id?.toLowerCase().includes(q) ||
-          t.note?.toLowerCase().includes(q)
+          t.note?.toLowerCase().includes(q),
       );
     }
     return list;
@@ -172,8 +205,21 @@ export const FinancialDashboardView: React.FC = () => {
   const totalTxPages = Math.max(1, Math.ceil(filteredTx.length / PAGE_SIZE));
   const paginatedTx = useMemo(
     () => filteredTx.slice((txPage - 1) * PAGE_SIZE, txPage * PAGE_SIZE),
-    [filteredTx, txPage]
+    [filteredTx, txPage],
   );
+
+  const trendData = useMemo(() => {
+    const list = revenueData?.daily_trend || [];
+    if (!list.length) return [];
+    const windowed = trendWindowDays === 7 ? list.slice(-7) : list.slice(-30);
+    return windowed.map((d) => ({
+      ...d,
+      label: new Date(d.date).toLocaleDateString("th-TH", {
+        month: "short",
+        day: "numeric",
+      }),
+    }));
+  }, [revenueData, trendWindowDays]);
 
   const handleExportTransactions = () => {
     const header = "ID,User,Type,Amount,Status,FraudScore,Time,Note\n";
@@ -182,7 +228,7 @@ export const FinancialDashboardView: React.FC = () => {
         (t) =>
           `${t.id},${t.userId},${t.type},${t.amount},${t.status},${
             t.fraudScore
-          },${t.timestamp || ""},${t.note || ""}`
+          },${t.timestamp || ""},${t.note || ""}`,
       )
       .join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
@@ -208,8 +254,10 @@ export const FinancialDashboardView: React.FC = () => {
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
         <h2 className="text-2xl font-bold mb-2">Financial Dashboard</h2>
         <p className="text-indigo-100">
-          ข้อมูลการเงินหลัก • KPIs • ธุรกรรม • เงินประกันงาน • คลังประกัน (60/40) •
-          ค่าคอมมิชชั่น • ค่าใช้จ่าย • ตั้งอัตราประกันแยกตามหมวดงานได้ที่เมนู &quot;จัดการประกันงาน (Insurance)&quot;
+          ข้อมูลการเงินหลัก • KPIs • ธุรกรรม • เงินประกันงาน • คลังประกัน
+          (60/40) • ค่าคอมมิชชั่น • ค่าใช้จ่าย •
+          ตั้งอัตราประกันแยกตามหมวดงานได้ที่เมนู &quot;จัดการประกันงาน
+          (Insurance)&quot;
         </p>
       </div>
 
@@ -314,7 +362,9 @@ export const FinancialDashboardView: React.FC = () => {
               <label className="text-sm text-slate-600">ช่วงเวลา</label>
               <select
                 value={revenueRange}
-                onChange={(e) => setRevenueRange(e.target.value as "today" | "week" | "month")}
+                onChange={(e) =>
+                  setRevenueRange(e.target.value as "today" | "week" | "month")
+                }
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
               >
                 <option value="today">วันนี้</option>
@@ -355,47 +405,195 @@ export const FinancialDashboardView: React.FC = () => {
       {tab === "revenue-insights" && (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Income Categorization (Revenue A/B/C)</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-4">
+              Income Categorization (Revenue A/B/C)
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                <p className="text-xs text-blue-600 uppercase font-medium">Revenue A — Commission</p>
-                <p className="text-2xl font-bold text-blue-800">฿{(revenueData?.revenue_a_commission ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-slate-500 mt-1">ค่าคอมมิชชั่นงาน, Booking fee, VIP</p>
+                <p className="text-xs text-blue-600 uppercase font-medium">
+                  Revenue A — Commission
+                </p>
+                <p className="text-2xl font-bold text-blue-800">
+                  ฿
+                  {(revenueData?.revenue_a_commission ?? 0).toLocaleString(
+                    undefined,
+                    { minimumFractionDigits: 2 },
+                  )}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  ค่าคอมมิชชั่นงาน, Booking fee, VIP
+                </p>
               </div>
               <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
-                <p className="text-xs text-amber-600 uppercase font-medium">Revenue B — Deposit Margin</p>
-                <p className="text-2xl font-bold text-amber-800">฿{(revenueData?.revenue_b_deposit_margin ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-slate-500 mt-1">ส่วนต่างเติมเงิน TrueMoney/Card</p>
+                <p className="text-xs text-amber-600 uppercase font-medium">
+                  Revenue B — Deposit Margin
+                </p>
+                <p className="text-2xl font-bold text-amber-800">
+                  ฿
+                  {(revenueData?.revenue_b_deposit_margin ?? 0).toLocaleString(
+                    undefined,
+                    { minimumFractionDigits: 2 },
+                  )}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  ส่วนต่างเติมเงิน TrueMoney/Card
+                </p>
               </div>
               <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
-                <p className="text-xs text-emerald-600 uppercase font-medium">Revenue C — Withdrawal Margin</p>
-                <p className="text-2xl font-bold text-emerald-800">฿{(revenueData?.revenue_c_withdrawal_margin ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-slate-500 mt-1">ส่วนต่างค่าถอน (35-30, 50-30)</p>
+                <p className="text-xs text-emerald-600 uppercase font-medium">
+                  Revenue C — Withdrawal Margin
+                </p>
+                <p className="text-2xl font-bold text-emerald-800">
+                  ฿
+                  {(
+                    revenueData?.revenue_c_withdrawal_margin ?? 0
+                  ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  ส่วนต่างค่าถอน (35-30, 50-30)
+                </p>
               </div>
             </div>
-            <p className="text-sm text-slate-500 mt-3">ช่วง {revenueData?.days ?? 30} วันล่าสุด</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Total Fee Margin (B+C)</h3>
-            <p className="text-3xl font-bold text-emerald-600">
-              ฿{(revenueData?.total_margin_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            <p className="text-sm text-slate-500 mt-3">
+              ช่วง {revenueData?.days ?? 30} วันล่าสุด
             </p>
           </div>
-          {revenueData?.by_source && Object.keys(revenueData.by_source).length > 0 && (
-            <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">By Source</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {Object.entries(revenueData.by_source).map(([k, v]) => (
-                  <div key={k} className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500 uppercase">{k.replace(/_/g, " ")}</p>
-                    <p className="font-bold text-slate-800">฿{Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
+          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">
+              Total Fee Margin (B+C)
+            </h3>
+            <p className="text-3xl font-bold text-emerald-600">
+              ฿
+              {(revenueData?.total_margin_thb ?? 0).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+              })}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-lg font-bold text-slate-800">
+                Daily Trend (Interactive)
+              </h3>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setTrendWindowDays(7)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    trendWindowDays === 7
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  7 วัน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendWindowDays(30)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    trendWindowDays === 30
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  30 วัน
+                </button>
               </div>
             </div>
-          )}
+            {trendData.length > 0 ? (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={trendData}
+                    margin={{ top: 8, right: 12, left: 6, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="label"
+                      stroke="#64748b"
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis
+                      stroke="#64748b"
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(v) => `฿${Number(v).toLocaleString()}`}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [
+                        `฿${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+                        "",
+                      ]}
+                      labelFormatter={(_, payload) =>
+                        payload?.[0]?.payload?.date || ""
+                      }
+                      contentStyle={{
+                        borderRadius: 10,
+                        borderColor: "#cbd5e1",
+                      }}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue_a_commission"
+                      name="Revenue A Commission"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total_margin_thb"
+                      name="Fee Margin (B+C)"
+                      stroke="#059669"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total_with_commission_thb"
+                      name="Total (A+B+C)"
+                      stroke="#7c3aed"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="py-8 text-sm text-slate-500">
+                ยังไม่มีข้อมูล trend รายวันในช่วงที่เลือก
+              </p>
+            )}
+          </div>
+          {revenueData?.by_source &&
+            Object.keys(revenueData.by_source).length > 0 && (
+              <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-800 mb-4">
+                  By Source
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {Object.entries(revenueData.by_source).map(([k, v]) => (
+                    <div key={k} className="p-3 bg-slate-50 rounded-lg">
+                      <p className="text-xs text-slate-500 uppercase">
+                        {k.replace(/_/g, " ")}
+                      </p>
+                      <p className="font-bold text-slate-800">
+                        ฿
+                        {Number(v).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Recent Revenue Events</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-4">
+              Recent Revenue Events
+            </h3>
             <div className="max-h-64 overflow-y-auto">
               {revenueData?.recent?.length ? (
                 <table className="w-full text-sm">
@@ -410,16 +608,35 @@ export const FinancialDashboardView: React.FC = () => {
                   <tbody className="divide-y divide-slate-100">
                     {revenueData.recent.map((r) => (
                       <tr key={r.id}>
-                        <td className="px-3 py-2">{r.source_type?.replace(/_/g, " ")}</td>
-                        <td className="px-3 py-2 text-right font-medium">฿{r.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2 text-right text-slate-500">฿{r.gross_amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2 text-slate-500 text-xs">{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
+                        <td className="px-3 py-2">
+                          {r.source_type?.replace(/_/g, " ")}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">
+                          ฿
+                          {r.amount?.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-500">
+                          ฿
+                          {r.gross_amount?.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-3 py-2 text-slate-500 text-xs">
+                          {r.created_at
+                            ? new Date(r.created_at).toLocaleString()
+                            : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
-                <p className="text-slate-500 py-4">ยังไม่มีข้อมูล — กำไรจากค่าธรรมเนียมจะแสดงเมื่อมีการถอน (margin 5/20 บาท) หรือเติมผ่าน TrueMoney/Card</p>
+                <p className="text-slate-500 py-4">
+                  ยังไม่มีข้อมูล — กำไรจากค่าธรรมเนียมจะแสดงเมื่อมีการถอน
+                  (margin 5/20 บาท) หรือเติมผ่าน TrueMoney/Card
+                </p>
               )}
             </div>
           </div>
@@ -478,7 +695,9 @@ export const FinancialDashboardView: React.FC = () => {
                       minimumFractionDigits: 2,
                     })}
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-2">เท่ากับรายได้รวมเมื่อยังไม่หักค่าใช้จ่ายในหน้านี้</p>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    เท่ากับรายได้รวมเมื่อยังไม่หักค่าใช้จ่ายในหน้านี้
+                  </p>
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex items-center gap-3 mb-2">
@@ -535,7 +754,10 @@ export const FinancialDashboardView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-2xl font-bold text-slate-800">
-                    ฿{Number(vipAdminFundBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ฿
+                    {Number(vipAdminFundBalance).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     12.5% จาก gross profit VIP
@@ -546,24 +768,45 @@ export const FinancialDashboardView: React.FC = () => {
               {data?.wallet_deposit_channels?.length ? (
                 <div className="mt-6 bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                   <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                    <h3 className="font-bold text-slate-800">Wallet Deposit by Channel</h3>
-                    <p className="text-xs text-slate-500 mt-1">ใช้ตรวจสอบยอดเครดิตจาก PaySo/Card/TrueMoney/Mobile Banking/Manual</p>
+                    <h3 className="font-bold text-slate-800">
+                      Wallet Deposit by Channel
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      ใช้ตรวจสอบยอดเครดิตจาก PaySo/Card/TrueMoney/Mobile
+                      Banking/Manual
+                    </p>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 text-slate-600">
                         <tr>
-                          <th className="px-4 py-2 text-left font-semibold">Channel</th>
-                          <th className="px-4 py-2 text-right font-semibold">Entries</th>
-                          <th className="px-4 py-2 text-right font-semibold">Net Wallet Credit</th>
+                          <th className="px-4 py-2 text-left font-semibold">
+                            Channel
+                          </th>
+                          <th className="px-4 py-2 text-right font-semibold">
+                            Entries
+                          </th>
+                          <th className="px-4 py-2 text-right font-semibold">
+                            Net Wallet Credit
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {data.wallet_deposit_channels.map((r) => (
                           <tr key={r.source_type}>
-                            <td className="px-4 py-2 uppercase">{r.source_type}</td>
-                            <td className="px-4 py-2 text-right">{r.entry_count}</td>
-                            <td className="px-4 py-2 text-right font-medium">฿{Number(r.net_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2 uppercase">
+                              {r.source_type}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {r.entry_count}
+                            </td>
+                            <td className="px-4 py-2 text-right font-medium">
+                              ฿
+                              {Number(r.net_amount || 0).toLocaleString(
+                                undefined,
+                                { minimumFractionDigits: 2 },
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -574,48 +817,88 @@ export const FinancialDashboardView: React.FC = () => {
 
               {/* 4 เด้งรายได้ — สรุปจาก payment_ledger_audit (metadata) */}
               <div className="mt-6 bg-white rounded-xl border border-indigo-100 shadow-sm p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-1">รายได้แยก 4 เด้ง (Ledger)</h3>
+                <h3 className="text-lg font-bold text-slate-800 mb-1">
+                  รายได้แยก 4 เด้ง (Ledger)
+                </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  Markup (employer) · Handling 8% · Commission (VIP tier) · ค่าธรรมเนียมถอน — ยอดรวมสะสมจาก audit (ไม่รวมแถว demo)
+                  Markup (employer) · Handling 8% · Commission (VIP tier) ·
+                  ค่าธรรมเนียมถอน — ยอดรวมสะสมจาก audit (ไม่รวมแถว demo)
                 </p>
                 {fourBumps ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-                      <p className="text-[11px] font-semibold uppercase text-indigo-600">① Markup</p>
+                      <p className="text-[11px] font-semibold uppercase text-indigo-600">
+                        ① Markup
+                      </p>
                       <p className="text-xl font-bold text-slate-900 mt-1">
-                        ฿{fourBumps.markup_payment_employer.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿
+                        {fourBumps.markup_payment_employer.toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2 },
+                        )}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-                      <p className="text-[11px] font-semibold uppercase text-amber-700">② Handling</p>
+                      <p className="text-[11px] font-semibold uppercase text-amber-700">
+                        ② Handling
+                      </p>
                       <p className="text-xl font-bold text-slate-900 mt-1">
-                        ฿{fourBumps.handling_fee_from_job.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿
+                        {fourBumps.handling_fee_from_job.toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2 },
+                        )}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-                      <p className="text-[11px] font-semibold uppercase text-emerald-700">③ Commission</p>
+                      <p className="text-[11px] font-semibold uppercase text-emerald-700">
+                        ③ Commission
+                      </p>
                       <p className="text-xl font-bold text-slate-900 mt-1">
-                        ฿{fourBumps.commission_vip_tier.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿
+                        {fourBumps.commission_vip_tier.toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2 },
+                        )}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-                      <p className="text-[11px] font-semibold uppercase text-violet-700">④ Withdrawal fee</p>
+                      <p className="text-[11px] font-semibold uppercase text-violet-700">
+                        ④ Withdrawal fee
+                      </p>
                       <p className="text-xl font-bold text-slate-900 mt-1">
-                        ฿{fourBumps.withdrawal_fees.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿
+                        {fourBumps.withdrawal_fees.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500">ไม่สามารถโหลดสรุป 4 เด้งได้</p>
+                  <p className="text-sm text-slate-500">
+                    ไม่สามารถโหลดสรุป 4 เด้งได้
+                  </p>
                 )}
                 {fourBumps?.mapping_note && (
-                  <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">{fourBumps.mapping_note}</p>
+                  <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">
+                    {fourBumps.mapping_note}
+                  </p>
                 )}
                 <p className="text-[11px] text-slate-600 mt-4">
-                  <strong>ความสอดคล้องยอด Talent:</strong> ตอนจ่ายงาน Match / Advance ระบบเพิ่ม{" "}
-                  <code className="bg-slate-100 px-1 rounded">wallet_pending</code> ด้วย{" "}
-                  <code className="bg-slate-100 px-1 rounded">provider_receive / talentNet</code> หลังหัก handling + commission
-                  แล้ว (ดู <code className="bg-slate-100 px-1 rounded">payment_details</code> ในงาน)
+                  <strong>ความสอดคล้องยอด Talent:</strong> ตอนจ่ายงาน Match /
+                  Advance ระบบเพิ่ม{" "}
+                  <code className="bg-slate-100 px-1 rounded">
+                    wallet_pending
+                  </code>{" "}
+                  ด้วย{" "}
+                  <code className="bg-slate-100 px-1 rounded">
+                    provider_receive / talentNet
+                  </code>{" "}
+                  หลังหัก handling + commission แล้ว (ดู{" "}
+                  <code className="bg-slate-100 px-1 rounded">
+                    payment_details
+                  </code>{" "}
+                  ในงาน)
                 </p>
               </div>
 
@@ -785,8 +1068,8 @@ export const FinancialDashboardView: React.FC = () => {
                                       r.status === "matched"
                                         ? "bg-emerald-100 text-emerald-700"
                                         : r.status === "mismatch_found"
-                                        ? "bg-amber-100 text-amber-700"
-                                        : "bg-slate-100 text-slate-600"
+                                          ? "bg-amber-100 text-amber-700"
+                                          : "bg-slate-100 text-slate-600"
                                     }`}
                                   >
                                     {r.status}
@@ -799,7 +1082,7 @@ export const FinancialDashboardView: React.FC = () => {
                                   {r.mismatch_count ?? 0}
                                 </td>
                               </tr>
-                            )
+                            ),
                           )}
                           {(!data.reconciliation_runs ||
                             data.reconciliation_runs.length === 0) && (
@@ -879,8 +1162,8 @@ export const FinancialDashboardView: React.FC = () => {
                                 t.status === "COMPLETED"
                                   ? "bg-emerald-100 text-emerald-700"
                                   : t.status === "FLAGGED"
-                                  ? "bg-rose-100 text-rose-700"
-                                  : "bg-slate-100 text-slate-600"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-slate-100 text-slate-600"
                               }`}
                             >
                               {t.status}
@@ -1010,10 +1293,10 @@ export const FinancialDashboardView: React.FC = () => {
                             t.status === "COMPLETED"
                               ? "bg-emerald-100 text-emerald-700"
                               : t.status === "FLAGGED"
-                              ? "bg-rose-100 text-rose-700"
-                              : t.status === "PENDING"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-100 text-slate-600"
+                                ? "bg-rose-100 text-rose-700"
+                                : t.status === "PENDING"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-slate-100 text-slate-600"
                           }`}
                         >
                           {t.status}

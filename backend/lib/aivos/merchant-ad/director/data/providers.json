@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "dimension": "ai_provider",
+  "entries": {
+    "grok": {
+      "label": "xAI Grok Imagine Video",
+      "technical_suffix": "Preserve subject identity from reference frame. Realistic lip sync. Authentic UGC creator aesthetic. No on-screen text."
+    },
+    "veo": {
+      "label": "Google Veo",
+      "technical_suffix": "Cinematic realism, preserve subject identity, natural motion."
+    },
+    "runway": {
+      "label": "Runway",
+      "technical_suffix": "High quality motion, preserve reference subject."
+    },
+    "kling": {
+      "label": "Kling",
+      "technical_suffix": "Natural human motion, lip sync when script provided."
+    },
+    "generic": {
+      "label": "Generic video AI",
+      "technical_suffix": "Preserve reference identity, natural motion, mobile ad quality."
+    },
+    "openai": {
+      "label": "OpenAI Video",
+      "technical_suffix": "Realistic motion, faithful to reference image."
+    },
+    "_default": {
+      "label": "Generic video AI",
+      "technical_suffix": "Preserve reference identity, natural motion, mobile ad quality."
+    }
+  }
+}

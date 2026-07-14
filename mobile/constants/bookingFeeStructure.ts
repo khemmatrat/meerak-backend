@@ -1,8 +1,6 @@
 /**
- * Booking Fee Structure — LOCKED REFERENCE
- * Aligned with backend/lib/financialEngine.js
- * Markup Fee (Employer pays on deposit): None 8% | Silver 7% | Gold 6% | Platinum 5%
- * Sourcing: 8% fixed | Commission: None 32% | Silver 28% | Gold 24% | Platinum 20%
+ * Slot-based Talent Booking fee helpers (Profile A).
+ * Defaults match backend/lib/bookingFeeConfig.js — override via GET /api/payments/fee-config.
  */
 
 const BOOKING_MARKUP_RATE: Record<string, number> = {
@@ -21,9 +19,54 @@ const BOOKING_COMMISSION_RATE: Record<string, number> = {
 
 const BOOKING_SOURCING_RATE = 0.08;
 
+export type SlotBookingFeeConfig = {
+  platformFee?: Record<string, number>;
+  commissionBooking?: Record<string, number>;
+  bookingSourcingPercent?: number;
+  biddingFeePercent?: number;
+};
+
 function normalizeTier(tier: string | null | undefined): string {
   const t = (tier || "none").toString().toLowerCase().trim();
   return ["silver", "gold", "platinum"].includes(t) ? t : "none";
+}
+
+function tierPercentRate(
+  map: Record<string, number> | undefined,
+  tier: string,
+  fallbackDecimal: number,
+): number {
+  if (!map) return fallbackDecimal;
+  const pct = Number(map[tier] ?? map.none);
+  return Number.isFinite(pct) ? pct / 100 : fallbackDecimal;
+}
+
+function markupRate(tier: string, config?: SlotBookingFeeConfig): number {
+  if (config?.platformFee) {
+    return tierPercentRate(
+      config.platformFee,
+      tier,
+      BOOKING_MARKUP_RATE[tier] ?? 0.08,
+    );
+  }
+  return BOOKING_MARKUP_RATE[tier] ?? 0.08;
+}
+
+function commissionRate(tier: string, config?: SlotBookingFeeConfig): number {
+  if (config?.commissionBooking) {
+    return tierPercentRate(
+      config.commissionBooking,
+      tier,
+      BOOKING_COMMISSION_RATE[tier] ?? 0.32,
+    );
+  }
+  return BOOKING_COMMISSION_RATE[tier] ?? 0.32;
+}
+
+function sourcingRate(config?: SlotBookingFeeConfig): number {
+  const pct = config?.bookingSourcingPercent;
+  if (pct != null && Number.isFinite(Number(pct))) return Number(pct) / 100;
+  return BOOKING_SOURCING_RATE;
 }
 
 /**
@@ -32,13 +75,15 @@ function normalizeTier(tier: string | null | undefined): string {
  */
 export function calcBookingEmployerTotal(
   depositAmount: number,
-  bookerVipTier?: string | null
+  bookerVipTier?: string | null,
+  config?: SlotBookingFeeConfig,
 ): { totalToPay: number; markupAmount: number; markupRate: number } {
   const tier = normalizeTier(bookerVipTier);
-  const markupRate = BOOKING_MARKUP_RATE[tier] ?? 0.08;
-  const markupAmount = Math.round((depositAmount * markupRate) * 100) / 100;
-  const totalToPay = Math.round((depositAmount * (1 + markupRate)) * 100) / 100;
-  return { totalToPay, markupAmount, markupRate };
+  const markupRateVal = markupRate(tier, config);
+  const markupAmount = Math.round(depositAmount * markupRateVal * 100) / 100;
+  const totalToPay =
+    Math.round(depositAmount * (1 + markupRateVal) * 100) / 100;
+  return { totalToPay, markupAmount, markupRate: markupRateVal };
 }
 
 /**
@@ -48,25 +93,30 @@ export function calcBookingEmployerTotal(
 export function calcBookingTalentBreakdown(
   depositAmount: number,
   finalBidPrice?: number,
-  talentVipTier?: string | null
+  talentVipTier?: string | null,
+  config?: SlotBookingFeeConfig,
 ): {
   depositAmount: number;
   sourcingFee: number;
   commission: number;
   talentPayout: number;
   commissionRate: number;
+  sourcingRate: number;
 } {
   const amount = finalBidPrice ?? depositAmount;
   const tier = normalizeTier(talentVipTier);
-  const commissionRate = BOOKING_COMMISSION_RATE[tier] ?? 0.32;
-  const sourcingFee = Math.round((depositAmount * BOOKING_SOURCING_RATE) * 100) / 100;
-  const commission = Math.round((depositAmount * commissionRate) * 100) / 100;
-  const talentPayout = Math.round((depositAmount - sourcingFee - commission) * 100) / 100;
+  const commissionRateVal = commissionRate(tier, config);
+  const sourcingRateVal = sourcingRate(config);
+  const sourcingFee = Math.round(depositAmount * sourcingRateVal * 100) / 100;
+  const commission = Math.round(depositAmount * commissionRateVal * 100) / 100;
+  const talentPayout =
+    Math.round((depositAmount - sourcingFee - commission) * 100) / 100;
   return {
     depositAmount,
     sourcingFee,
     commission,
     talentPayout,
-    commissionRate,
+    commissionRate: commissionRateVal,
+    sourcingRate: sourcingRateVal,
   };
 }

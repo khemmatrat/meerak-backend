@@ -1,0 +1,21 @@
+# AI Operations — กฎเหล็ก (Strict Rules)
+
+## ขอบเขตการทำงาน (Scope)
+- **ทำงานได้เฉพาะภายในโฟลเดอร์ `aqond-brain/` เท่านั้น**
+
+## ห้ามโดยเด็ดขาด (Strictly Forbidden)
+- **ห้ามแก้ไข** ไฟล์ใดๆ ใน `/app`, `/admin`, `/backend`, `/api`
+- **ห้าม Import** โมดูลหรือโค้ดจาก `/app`, `/admin`, `/backend`, `/api` เข้ามาใน aqond-brain
+- **ห้ามขยับ/ย้าย** ไฟล์ใดๆ ออกจากหรือเข้าไปในโฟลเดอร์ดังกล่าว
+
+## โครงสร้าง aqond-brain
+- `pipeline/` — งานที่ส่งต่อกัน (Minnie → Rocky → Thomas)
+- `scripts/` — สคริปต์ .py (report_to_discord.py, สคริปต์ Navy ฯลฯ)
+- `config/` — API Keys, Webhook URLs, **Minnie Content Standard** (ตัวอย่าง + โครง)
+- `logs/` — ประวัติการทำงานของ AI แต่ละตัว
+
+## Minnie (Content)
+- **มาตรฐาน (ตัวอย่างที่ Minnie ทำไว้):** **config/minnie_content_system_standard.html** — ใช้เป็นต้นแบบหยิบนำมาใช้ได้ และ **ครีเอตชิ้นใหม่ได้แต่ต้องรักษาโครงรูปนี้ไว้**
+- โครงที่ต้องคงไว้: (1) 7 ชุด Prompt/วัน — Hook Story, Myth Busting, Number Post, Before & After, Tips List, Trending, Engagement Bait (2) รูปแบบคอนเทนต์ × Platform (3) ตาราง Prompt×Platform (4) Weekly Calendar (5) กฎการใช้ (6) Template Discord #minnie-content
+
+AI ทุกตัวที่เข้ามาทำงานในโฟลเดอร์นี้ต้องปฏิบัติตามกฎข้างต้นโดยเคร่งครัด

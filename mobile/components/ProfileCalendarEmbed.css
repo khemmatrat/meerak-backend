@@ -1,0 +1,109 @@
+/* Premium Calendar — FullCalendar overrides (Luxury UI) */
+/* Remove harsh borders, glassmorphism base */
+
+.profile-calendar-premium .fc {
+  --fc-border-color: transparent;
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: transparent;
+  --fc-today-bg-color: transparent;
+}
+
+.profile-calendar-premium .fc-theme-standard td,
+.profile-calendar-premium .fc-theme-standard th {
+  border: none !important;
+}
+
+.profile-calendar-premium .fc-scrollgrid {
+  border: none !important;
+}
+
+.profile-calendar-premium .fc-daygrid-day-frame {
+  min-height: 80px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.profile-calendar-premium .fc-col-header-cell {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.5rem 0;
+  font-weight: 400;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.profile-calendar-premium .fc-daygrid-day-number {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #475569;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  margin: 0.25rem;
+}
+
+.profile-calendar-premium .fc-day-today .fc-daygrid-day-number {
+  background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.95) 100%);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
+  color: #059669;
+  font-weight: 500;
+}
+
+.profile-calendar-premium .fc-day-today .fc-daygrid-day-frame {
+  background: linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(248,250,252,0.7) 100%);
+}
+
+/* Event pills — Soft Glow */
+.profile-calendar-premium .fc-event {
+  border: none !important;
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.profile-calendar-premium .fc-event.fc-event-job {
+  background: #d1fae5 !important;
+  color: #047857 !important;
+  border-left: 4px solid #10b981 !important;
+}
+
+.profile-calendar-premium .fc-event.fc-event-booking {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-left: 4px solid #0ea5e9 !important;
+}
+
+.profile-calendar-premium .fc-event.fc-event-availability {
+  background: #fffbeb !important;
+  color: #b45309 !important;
+  border: 1px dashed #fcd34d !important;
+  border-left: 4px solid #f59e0b !important;
+  border-radius: 0.5rem !important;
+}
+
+/* Mobile: hide event text, show dots only */
+@media (max-width: 640px) {
+  .profile-calendar-premium.profile-calendar-mobile .fc-event-title {
+    display: none !important;
+  }
+  .profile-calendar-premium.profile-calendar-mobile .fc-event {
+    min-width: 8px !important;
+    min-height: 8px !important;
+    width: 8px !important;
+    height: 8px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    border-left: none !important;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .profile-calendar-premium.profile-calendar-mobile .fc-event.fc-event-job {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  }
+  .profile-calendar-premium.profile-calendar-mobile .fc-event.fc-event-booking {
+    box-shadow: 0 0 8px rgba(14, 165, 233, 0.6);
+  }
+  .profile-calendar-premium.profile-calendar-mobile .fc-event.fc-event-availability {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+  }
+}

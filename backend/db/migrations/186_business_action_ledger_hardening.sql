@@ -95,8 +95,13 @@ COMMENT ON TABLE outbound_domain_events IS
 -- Ledger net = SUM(credit amounts) − SUM(debit amounts) for rows with user_id set.
 -- Reconciliation jobs should alert on ABS(balance_delta) > tolerance.
 -- Note: legacy rows without user_id/wallet linkage are excluded from the aggregate.
+--
+-- PostgreSQL: CREATE OR REPLACE VIEW cannot remove columns from an existing view.
+-- If an older definition had extra columns, OR REPLACE fails with
+-- "cannot drop columns from view" — drop first, then create.
+DROP VIEW IF EXISTS v_wallet_balance_reconciliation CASCADE;
 
-CREATE OR REPLACE VIEW v_wallet_balance_reconciliation AS
+CREATE VIEW v_wallet_balance_reconciliation AS
 SELECT
   w.id                    AS wallet_id,
   w.user_id,

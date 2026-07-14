@@ -8,6 +8,7 @@ import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 import { searchFaq } from './faqKnowledge.js';
 import { maskPiiForLlm, maskMessagesArrayForLlm } from './piiMask.js';
+import { resolveSystemSupportKnowledge } from './systemSupportKnowledge.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '..', '.env') });
@@ -99,15 +100,88 @@ ${antiLoopHint ? `\n\n⚠️ สำคัญ: ${antiLoopHint}` : ''}
 /**
  * Rule-based fallback (ใช้เมื่อ AI ล่มหรือไม่มี GEMINI_API_KEY)
  */
+function buildRateLimitUnlockLink() {
+  const base =
+    process.env.APP_BASE_URL ||
+    process.env.FRONTEND_BASE_URL ||
+    process.env.MOBILE_WEB_BASE_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://app.aqond.com' : 'http://localhost:3000');
+  return `${String(base).replace(/\/$/, '')}/settings?unlock_rate_limit=1`;
+}
+
+function quickActionsForRule(rule) {
+  if (rule === 'rate_limit_self_unlock') {
+    return [
+      { id: 'self_unlock_rate_limit', label: 'ปลดล็อก Rate Limit', type: 'self_unlock_rate_limit', url: buildRateLimitUnlockLink() },
+      { id: 'retry_last_action', label: 'ลองทำรายการอีกครั้ง', type: 'retry_guidance' },
+      { id: 'escalate_admin', label: 'ยังไม่หาย ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' },
+    ];
+  }
+  if (rule === 'forbidden_help') {
+    return [
+      { id: 'refresh_session', label: 'ออกเข้าใหม่ / รีเฟรชสิทธิ์', type: 'refresh_session' },
+      { id: 'check_account_status', label: 'ตรวจสถานะบัญชี', type: 'check_account_status' },
+      { id: 'escalate_admin', label: 'ยังติด 403 ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' },
+    ];
+  }
+  return [];
+}
+
+function diagnosticSummaryForRule(rule) {
+  if (rule === 'rate_limit_self_unlock') {
+    return 'AI ตรวจพบปัญหา 429 Rate Limit และแนะนำ self-unlock แบบจำกัด 3 ครั้งต่อวันต่อบัญชี';
+  }
+  if (rule === 'forbidden_help') {
+    return 'AI ตรวจพบปัญหา 403 Forbidden และแนะนำตรวจ session, account status, dispute/payment lock';
+  }
+  return null;
+}
+
+function kbQuickActions() {
+  return [
+    { id: 'kb_helpful', label: 'ช่วยได้', type: 'feedback_helpful' },
+    { id: 'kb_not_helpful', label: 'ยังไม่ตรง ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' },
+  ];
+}
+
+function noAnswerQuickActions() {
+  return [
+    { id: 'escalate_admin', label: 'ส่งให้เจ้าหน้าที่ตอบ', type: 'feedback_not_helpful' },
+    { id: 'save_as_kb_draft', label: 'รอแอดมินเพิ่มเข้าคลังความรู้', type: 'open_ticket' },
+  ];
+}
+
+function systemKnowledgeQuickActions(topic) {
+  if (['sudden_owner_cancel_reroute', 'provider_cancel_reroute', 'provider_emergency_reroute'].includes(topic)) {
+    return [
+      { id: 'open_job_detail', label: 'เปิดรายละเอียดงาน', type: 'open_job_detail' },
+      { id: 'urgent_reroute', label: 'ต้องการจับคู่ใหม่ด่วน', type: 'open_ticket' },
+      { id: 'report_problem', label: 'รายงานปัญหา / เหตุฉุกเฉิน', type: 'open_ticket' },
+      { id: 'feedback_not_helpful', label: 'ยังไม่ได้รับการช่วยเหลือ', type: 'feedback_not_helpful' },
+    ];
+  }
+  if (topic === 'insurance_claim_how_to') {
+    return [
+      { id: 'open_job_detail', label: 'ไปหน้ารายละเอียดงาน', type: 'open_job_detail' },
+      { id: 'report_problem', label: 'รายงานปัญหา / Dispute', type: 'open_ticket' },
+      { id: 'feedback_not_helpful', label: 'ยังไม่เจอปุ่ม ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' },
+    ];
+  }
+  return [
+    { id: 'open_job_detail', label: 'ไปหน้ารายละเอียดงาน', type: 'open_job_detail' },
+    { id: 'feedback_not_helpful', label: 'ยังไม่เข้าใจ ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' },
+  ];
+}
+
 function getRuleBasedReply(text, last5Messages, jobInfo) {
   const latestMsg = (text || '').toLowerCase();
   const ctx = (last5Messages || []).map((m) => `${m.sender}: ${(m.message || '').slice(0, 200)}`).join(' | ');
   const fullCtx = [text || '', ctx, jobInfo ? `Job #${jobInfo.id}: ${jobInfo.title || ''} ${jobInfo.category || ''} ${jobInfo.status || ''}` : ''].filter(Boolean).join(' ').toLowerCase();
 
-  if (/429|rate limit|ถูกล็อก|ลองใหม่อีก|too many request/.test(fullCtx)) {
-    return `สวัสดีครับ สำหรับข้อความ **429 (Rate Limit)** ระบบจำกัดจำนวนครั้งในการลองเพื่อความปลอดภัย\n\n**วิธีแก้:**\n1. รอเวลาตามที่แอปแจ้ง (มัก 1–15 นาที) แล้วลองเข้าสู่ระบบใหม่\n2. ถ้าลืมรหัสผ่าน: กด "ลืมรหัสผ่าน" ที่หน้า Login เพื่อรีเซ็ตรหัส\n3. ถ้ายังติดอยู่: แจ้งเบอร์โทรหรืออีเมลที่ใช้สมัครมา เราจะตรวจสอบและปลดล็อกให้\n\nหากทำตามแล้วยังไม่ได้ผล แจ้งเพิ่มได้เลยครับ เราจะดำเนินการให้จนแก้ไขสิ้นสุด`;
+  if (/429|rate limit|ถูกล็อก|ลองใหม่อีก|too many request/.test(latestMsg)) {
+    return `สวัสดีครับ สำหรับข้อความ **429 (Rate Limit)** ระบบจำกัดจำนวนครั้งในการลองเพื่อความปลอดภัย\n\nกดลิงก์นี้เพื่อปลดล็อกด้วยตัวเองได้ทันที: ${buildRateLimitUnlockLink()}\n\nระบบให้ปลดล็อกเองได้สูงสุด **3 ครั้งต่อวันต่อบัญชี** หลังปลดล็อกแล้วให้กลับไปลองทำรายการเดิมอีกครั้ง\n\nถ้าสิทธิ์วันนี้ครบแล้วหรือยังกดไม่ได้ แจ้งทีมงานได้เลยครับ เราจะตรวจสอบและปลดล็อกให้`;
   }
-  if (/403|forbidden|ไม่มีสิทธิ์|เข้าถึงไม่ได้|payment.*lock|เงินถูกล็อก/.test(fullCtx)) {
+  if (/403|forbidden|ไม่มีสิทธิ์|เข้าถึงไม่ได้|payment.*lock|เงินถูกล็อก/.test(latestMsg)) {
     return `สวัสดีครับ สำหรับข้อความ **403 (Forbidden / ไม่มีสิทธิ์)**\n\n**กรณีทั่วไป:**\n• ตรวจสอบว่าเข้าสู่ระบบแล้ว และบัญชีไม่ถูกระงับ\n• ลองออกจากระบบแล้วเข้าสู่ระบบใหม่\n\n**กรณี "เงินถูกล็อก" / ปล่อยเงินไม่ได้:**\n• ถ้ามีการยื่น Dispute งานนั้น ระบบจะล็อกเงินไว้จนกว่าแอดมินจะตัดสิน\n• รอทีมงานพิจารณา Dispute (24–48 ชม.) แล้วสถานะจะอัปเดต\n\nถ้าเป็นกรณีอื่น แจ้งรายละเอียด (เช่น หน้าที่เจอ งานที่เกี่ยวข้อง) เราจะตรวจและแก้ให้จนสิ้นสุดครับ`;
   }
   if (/ถอนเงิน|เงิน/.test(latestMsg)) return 'สำหรับเรื่องเงินและการถอน: การถอนเงินจะทำได้เมื่องานได้รับการอนุมัติและปล่อยเงินแล้วครับ คุณสามารถตรวจสอบสถานะได้ที่รายละเอียดงาน หากมี Dispute ระบบจะล็อกเงินไว้จนกว่าแอดมินจะพิจารณาครับ';
@@ -148,6 +222,57 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
     faqMatch = await searchFaq(pool, safeUserText);
   }
 
+  const latestContext = safeUserText.toLowerCase();
+  if (/429|rate limit|ถูกล็อก|ลองใหม่อีก|too many request/.test(latestContext)) {
+    return {
+      text: getRuleBasedReply(safeUserText, safeHistory, jobInfo),
+      source: 'rate_limit_self_unlock',
+      score: null,
+      ai_actions: ['rate_limit_self_unlock_link'],
+      quick_actions: quickActionsForRule('rate_limit_self_unlock'),
+      diagnostic_summary: diagnosticSummaryForRule('rate_limit_self_unlock'),
+    };
+  }
+  if (/403|forbidden|ไม่มีสิทธิ์|เข้าถึงไม่ได้|payment.*lock|เงินถูกล็อก/.test(latestContext)) {
+    return {
+      text: getRuleBasedReply(safeUserText, safeHistory, jobInfo),
+      source: 'forbidden_help',
+      score: null,
+      ai_actions: ['forbidden_help', 'check_session_or_account_status'],
+      quick_actions: quickActionsForRule('forbidden_help'),
+      diagnostic_summary: diagnosticSummaryForRule('forbidden_help'),
+    };
+  }
+
+  if (faqMatch && Number(faqMatch.score || 0) >= 0.72) {
+    return {
+      text: faqMatch.best_answer,
+      source: 'faq_match',
+      score: Math.round((faqMatch.score || 0) * 100),
+      ai_actions: ['answered_from_approved_knowledge_base'],
+      quick_actions: kbQuickActions(),
+      diagnostic_summary: `ตอบจากคลังความรู้ที่อนุมัติแล้ว: ${faqMatch.question}`,
+    };
+  }
+
+  const systemKnowledge = resolveSystemSupportKnowledge(safeUserText);
+  if (systemKnowledge && Number(systemKnowledge.confidence || 0) >= 0.85) {
+    const urgentReroute = String(systemKnowledge.key || '').includes('reroute');
+    return {
+      text: systemKnowledge.answer,
+      source: systemKnowledge.source,
+      score: Math.round((systemKnowledge.confidence || 0) * 100),
+      ai_actions: systemKnowledge.actions,
+      quick_actions: systemKnowledgeQuickActions(systemKnowledge.key),
+      diagnostic_summary: systemKnowledge.diagnosticSummary,
+      escalation: urgentReroute ? { level: 'urgent_reroute', reason: systemKnowledge.key } : null,
+      auto_save_knowledge: true,
+      draft_question: systemKnowledge.question,
+      draft_answer: systemKnowledge.answer,
+      draft_category: systemKnowledge.category,
+    };
+  }
+
   try {
     if (genAI && process.env.GEMINI_API_KEY) {
       const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
@@ -183,6 +308,9 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
           text: aiText,
           source: faqContext ? 'faq_match' : 'ai_generated',
           score: faqContext ? Math.round((faqContext.score || 0) * 100) : null,
+          ai_actions: faqContext ? ['answered_with_knowledge_context'] : ['ai_generated_answer'],
+          quick_actions: faqContext ? kbQuickActions() : [{ id: 'not_helpful', label: 'ยังไม่หาย ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' }],
+          diagnostic_summary: faqContext ? `ใช้คลังความรู้เป็น context: ${faqContext.question}` : null,
         };
       }
     }
@@ -193,10 +321,25 @@ async function getAutoReplyWithContext(pool, userText, last5Messages, jobInfo, t
   }
 
   const fallback = getRuleBasedReply(safeUserText, safeHistory, jobInfo);
+  if (!fallback) {
+    return {
+      text: 'คำถามนี้ยังไม่มีคำตอบที่ผ่านการอนุมัติในคลังความรู้ค่ะ รักษ์ส่งเรื่องให้เจ้าหน้าที่ช่วยตอบ และจะนำคำตอบที่ถูกต้องไปเสนอเป็น FAQ draft เพื่อใช้ตอบอัตโนมัติครั้งต่อไปค่ะ',
+      source: 'no_answer_kb_draft',
+      score: null,
+      ai_actions: ['no_approved_answer_found', 'create_knowledge_draft'],
+      quick_actions: noAnswerQuickActions(),
+      diagnostic_summary: 'ไม่พบคำตอบที่ match เพียงพอในคลังความรู้ และ AI ไม่มีคำตอบที่มั่นใจ',
+      needs_knowledge_draft: true,
+      draft_question: safeUserText,
+      draft_answer: 'รอเจ้าหน้าที่หรือเจ้าของระบบเพิ่มคำตอบที่ถูกต้อง',
+    };
+  }
   return {
-    text: fallback || 'สวัสดีครับ ขอบคุณที่ติดต่อเรา รักษ์รับเรื่องไว้แล้ว ทีมงานจะตรวจสอบและติดต่อกลับโดยเร็วครับ',
+    text: fallback,
     source: 'ai_generated',
     score: null,
+    ai_actions: ['rule_based_answer'],
+    quick_actions: [{ id: 'not_helpful', label: 'ยังไม่หาย ส่งให้เจ้าหน้าที่', type: 'feedback_not_helpful' }],
   };
 }
 

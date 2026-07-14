@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiTarget,
           changeOrigin: true,
+          // อัปโหลดรูปแบนเนอร์ (multipart) — รอ backend/S3 นานขึ้นได้
+          timeout: 120_000,
+          proxyTimeout: 120_000,
         },
       },
     },

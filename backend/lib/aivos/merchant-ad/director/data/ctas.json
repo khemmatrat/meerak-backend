@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "dimension": "cta",
+  "entries": {
+    "order_now": {
+      "label_th": "สั่งเลย",
+      "text_th": "สั่งเลยวันนี้ กดสั่งในแอป AQOND",
+      "text_en": "Order now in the AQOND app."
+    },
+    "dm": {
+      "label_th": "ทักแชท",
+      "text_th": "ทักแชทสอบถามได้เลยค่ะ",
+      "text_en": "Message us to order."
+    },
+    "visit": {
+      "label_th": "แวะร้าน",
+      "text_th": "แวะมาที่ร้านได้ทุกวัน",
+      "text_en": "Visit our shop today."
+    },
+    "book": {
+      "label_th": "จองคิว",
+      "text_th": "กดจองคิวในแอปได้เลย",
+      "text_en": "Book a slot in the app."
+    },
+    "call": {
+      "label_th": "โทรหาเรา",
+      "text_th": "โทรหาเราได้ตลอดเวลาทำการ",
+      "text_en": "Call us during business hours."
+    },
+    "_default": {
+      "label_th": "สั่งซื้อ",
+      "text_th": "กดสั่งซื้อในแอป AQOND ได้เลย",
+      "text_en": "Shop now in AQOND."
+    }
+  }
+}

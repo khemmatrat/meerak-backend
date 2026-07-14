@@ -1,0 +1,91 @@
+{{- if .Values.kong.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-declarative
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+data:
+  kong.yml: |
+{{ .Files.Get "files/kong-k8s.yml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kong
+spec:
+  replicas: {{ .Values.kong.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: kong
+  template:
+    metadata:
+      labels:
+        {{- include "aqond.labels" . | nindent 8 }}
+        app.kubernetes.io/component: kong
+    spec:
+      containers:
+        - name: kong
+          image: {{ .Values.kong.image }}
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong/kong.yml
+            - name: KONG_PROXY_LISTEN
+              value: "0.0.0.0:8000"
+            - name: KONG_ADMIN_LISTEN
+              value: "127.0.0.1:8001"
+            - name: KONG_PLUGINS
+              value: bundled
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: admin
+              containerPort: 8001
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8000
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-declarative
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "aqond.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: kong
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+{{- end }}

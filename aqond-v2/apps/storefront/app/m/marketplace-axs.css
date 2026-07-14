@@ -1,0 +1,264 @@
+/**
+ * AQOND Marketplace shell — AXS token bridge (Sprint 27 polish)
+ * Applied on `.tt-shell.axs-marketplace` — /m/home, /m/account, cart, search, etc.
+ * Vertical layouts (food/rider/merchant/admin) override via nested `.axs-*` scopes.
+ */
+@import '@aqond/ui/tokens.css';
+
+.tt-shell.axs-marketplace {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-bg-input: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-accent-text: #ffffff;
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+/* —— Bottom nav (gold default; food vertical overrides via :has(.axs-food)) —— */
+.tt-shell.axs-marketplace .tt-tabs {
+  background: var(--axs-surface);
+  border-top-color: var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.06);
+}
+
+.tt-shell.axs-marketplace .tt-tabs a.active,
+.tt-shell.axs-marketplace .tt-tabs a.active .tt-tab-icon,
+.tt-shell.axs-marketplace .tt-tabs a.active .tt-tab-label {
+  color: var(--axs-primary);
+}
+
+/* —— CTAs —— */
+.tt-shell.axs-marketplace .tt-btn-primary {
+  background: var(--axs-gradient-gold) !important;
+  color: #fff !important;
+  border: none;
+  border-radius: var(--axs-radius-button);
+  font-weight: 700;
+}
+
+.tt-shell.axs-marketplace .tt-btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+/* —— Home —— */
+.tt-shell.axs-marketplace .tt-header {
+  background: var(--axs-surface);
+  border-bottom-color: var(--axs-border);
+}
+
+.tt-shell.axs-marketplace .tt-cat-chip {
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  border-color: var(--axs-border);
+}
+
+.tt-shell.axs-marketplace .tt-cat-chip.active {
+  background: var(--axs-gradient-gold);
+  border-color: transparent;
+  color: #fff;
+}
+
+.tt-shell.axs-marketplace .tt-home-fresh-label {
+  color: var(--axs-primary-hover);
+}
+
+.tt-shell.axs-marketplace .tt-section-title {
+  color: var(--axs-text);
+}
+
+.tt-shell.axs-marketplace .tt-food-home-banner {
+  background: rgba(184, 134, 11, 0.1);
+  border-color: rgba(184, 134, 11, 0.28);
+  border-radius: var(--axs-radius-card);
+}
+
+.tt-shell.axs-marketplace .tt-food-home-banner strong {
+  color: var(--axs-primary-hover);
+}
+
+.tt-shell.axs-marketplace .tt-food-home-go {
+  color: var(--axs-primary);
+}
+
+/* —— Account / Me hub —— */
+.tt-shell.axs-marketplace .tt-mp-me-page {
+  background: var(--axs-bg);
+  min-height: 100%;
+}
+
+.tt-shell.axs-marketplace .tt-mp-account-header {
+  background: var(--axs-gradient-gold);
+  color: #fff;
+}
+
+.tt-shell.axs-marketplace .tt-mp-purchases,
+.tt-shell.axs-marketplace .tt-mp-service-rows,
+.tt-shell.axs-marketplace .tt-mp-email-banner,
+.tt-shell.axs-marketplace .tt-mp-promo-strip,
+.tt-shell.axs-marketplace .tt-mp-wallet-hub,
+.tt-shell.axs-marketplace .tt-mp-finance,
+.tt-shell.axs-marketplace .tt-mp-account-menu {
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+  border: 1px solid var(--axs-border);
+}
+
+.tt-shell.axs-marketplace .tt-mp-purchases-tab.active {
+  background: rgba(184, 134, 11, 0.1);
+  color: var(--axs-primary-hover);
+}
+
+.tt-shell.axs-marketplace .tt-mp-email-icon {
+  background: rgba(184, 134, 11, 0.15);
+  color: var(--axs-primary-hover);
+}
+
+.tt-shell.axs-marketplace .tt-mp-email-copy span {
+  color: var(--axs-primary);
+}
+
+.tt-shell.axs-marketplace .tt-mp-orders-back,
+.tt-shell.axs-marketplace .tt-mp-orders-cart {
+  color: var(--axs-primary);
+}
+
+/* —— Partner hub cards —— */
+.tt-shell.axs-marketplace .tt-hub-card {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.tt-shell.axs-marketplace .tt-hub-card.is-active {
+  border-color: var(--axs-primary);
+  box-shadow: 0 0 0 2px rgba(184, 134, 11, 0.15);
+}
+
+.tt-shell.axs-marketplace .tt-hub-pill.active {
+  background: rgba(184, 134, 11, 0.12);
+  color: var(--axs-primary-hover);
+}
+
+.tt-shell.axs-marketplace .tt-hub-pill.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tt-shell.axs-marketplace .tt-hub-cta {
+  color: var(--axs-primary);
+}
+
+/* —— Jarvis FAB —— */
+.tt-shell.axs-marketplace .jarvis-fab {
+  background: var(--axs-surface);
+  color: #fff;
+  box-shadow: var(--axs-shadow-md);
+  border: 2px solid rgba(184, 134, 11, 0.45);
+}
+
+.tt-shell.axs-marketplace .jarvis-badge.voice {
+  color: var(--axs-primary);
+}
+
+/* —— Cart / product accents —— */
+.tt-shell.axs-marketplace .tt-cart-line-price,
+.tt-shell.axs-marketplace .tt-link-accent {
+  color: var(--axs-primary);
+}
+
+.tt-shell.axs-marketplace .tt-loading {
+  color: var(--axs-text-muted);
+}
+
+.axs-marketplace-loading {
+  padding: var(--axs-space-4);
+}
+
+.axs-home-offline-banner {
+  margin: 0 16px 12px;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-md);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.axs-home-skeleton-chips {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.axs-home-skeleton-chip {
+  display: block;
+  width: 72px;
+  height: 32px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--axs-surface-2) 25%, var(--axs-surface) 50%, var(--axs-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: axs-home-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.axs-home-skeleton-card {
+  height: 120px;
+  margin: 0 16px 12px;
+  border-radius: var(--axs-radius-md);
+  background: linear-gradient(90deg, var(--axs-surface-2) 25%, var(--axs-surface) 50%, var(--axs-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: axs-home-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.axs-search-empty {
+  padding: 16px;
+}
+
+.axs-search-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.axs-search-empty-desc {
+  color: var(--axs-text-muted);
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+
+.axs-search-empty-section {
+  margin-bottom: 16px;
+}
+
+.axs-search-empty-label {
+  display: block;
+  font-size: 12px;
+  color: var(--axs-text-muted);
+  margin-bottom: 8px;
+}
+
+.axs-search-empty-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@keyframes axs-home-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

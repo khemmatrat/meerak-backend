@@ -1,105 +1,143 @@
-# Dependencies
-node_modules/
-*/node_modules/
+# =============================================================================
+# Meerak / AQOND — gitignore
+# อนุญาต: โค้ดเกือบทั้งหมด + README.md + .env.example (+ *.example ที่ชัดเจนว่าเป็นตัวอย่าง)
+# ห้าม: docs/, *.md (ยกเว้น README), *.txt, .env จริง, secrets, node_modules, build
+# =============================================================================
 
-# Build outputs
+# --- Dependencies ---
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# --- Python / brain temp ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+aqond-brain/.tmp_pip_xai/
+**/.tmp_pip*/
+
+# --- Build outputs ---
 dist/
 build/
 .next/
 out/
+coverage/
+.turbo/
+*.tsbuildinfo
 
-# Environment files (ห้าม push — มีรหัสผ่าน/API key จริง)
+# --- Language / tool caches (ห้ามขึ้น git) ---
+.gocache/
+**/.gocache/
+.gomodcache/
+**/.gomodcache/
+.go/
+**/pkg/mod/
+.cache/
+**/.cache/
+.npm/
+**/.npm/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+*.pyc
+.parcel-cache/
+**/.parcel-cache/
+.vercel/
+**/.vercel/
+android/.gradle/
+**/.gradle/
+**/local.properties
+**/DerivedData/
+aqond-v2/.bin/
+aqond-v2/bin/
+aqond-v2/_restore-snapshots/
+**/_restore-snapshots/
+
+# --- Environment / secrets (ห้ามหลุดขึ้น git โดยเด็ดขาด) ---
 .env
 .env.*
 !.env.example
-!.env.golive.example
+!.env.*.example
 !.env.payment.example
-.env.local
-.env.development
-.env.production
-.env.*.local
-backend/.env
-nexus-admin-core/.env
-nexus-admin-core/.env.local
-landing-aqond/.env
-mobile/.env
-functions/.env
+!.env.golive.example
 **/.env
+!**/.env.example
+!**/.env.*.example
+*.pem
+*.p12
+*.pfx
+*serviceAccount*.json
+*firebase-adminsdk*.json
+**/credentials.json
+**/google-credentials.json
+# mobile/Android release signing (ห้าม)
+**/*.keystore
+**/*.jks
+**/keystore.properties
+**/local.properties
+aqond-key.jks
+**/aqond-key.jks
 
-# Generated PDFs (certified statements)
-backend/uploads/statements/
+# --- Docs & prose (ยกเว้น README.md เท่านั้น) ---
+docs/
+**/*.md
+!**/README.md
+!**/Readme.md
+!**/readme.md
+**/*.txt
+!**/.env.example
+!**/.env.*.example
 
-# Logs
+# --- Logs / debug / agent ---
 *.log
 npm-debug.log*
-# Internal Gateway — BOT compliance JSON/CSV (generated; not public)
+debug-*.log
 backend/logs/gateway-compliance/*
 !backend/logs/gateway-compliance/.gitkeep
+backend/uploads/statements/
+backend/.data/
 
-# IDE
+# --- IDE / OS ---
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
 
-# Package locks (optional)
-backend/package-lock.json
-
-# --- ไม่ push ขึ้น GitHub (เก็บเฉพาะในเครื่อง, deploy ใช้แค่ backend + render.yaml) ---
-# ไฟล์ทดสอบ / ชั่วคราว
-TEST.html
-test-video.html
-test.jpg
-test.txt
-test_base64.txt
-test_document.txt
-# เอกสาร/ดีไซน์ (ไม่เกี่ยวกับการ deploy)
-*.md
-!/README.md
-!backend/*.md
-docs/
-PAYMENT_*.txt
-PRODUCTION_READINESS_FINAL.txt
-STEP0_REVIEW_AND_PHASES.txt
-FINAL_VERDICT_REAL_MONEY.txt
-LEDGER_AUDIT_*.txt
-SECURITY_NOTES.txt
-ENV_PRODUCTION_REAL_MONEY.example
-README-training.md
-metadata.json
-seed-data.ts
-# Root server (Render ใช้ backend/server.js)
-/server.js
-# Frontend (ไม่เกี่ยวกับ backend deploy)
-App.tsx
-index.css
-index.html
-index.tsx
-vite.config.ts
-tailwind.config.js
-tsconfig.json
-vite-env.d.ts
-types.ts
-.vite/
-components/
-# pages/  # เปิด track pages เพื่อ push Login.tsx และ frontend
-context/
-services/
-utils/
-src/
-# Admin app + Firebase + Docker (ไม่ใช้กับ Render backend)
-
-functions/
-.firebaserc
-firebase.json
-Dockerfile
-docker-compose.yml
-.dockerignore
+# --- Cursor local (ไม่ขึ้น git) ---
+.cursor/
 .cursorignore
-# Env ที่ไม่ควร push (มีแค่ใน Dashboard หรือ .env.local)
-.env.development
-.env.production
-# Root db (migration อยู่ที่ backend/db)
-/db/
+
+# --- Large / binary media (ห้ามขึ้น public GitHub — ทำให้ push พัง และมี exe ปน) ---
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv
+*.exe
+*.msi
+*.dmg
+*.apk
+*.aab
+*.iso
+*.7z
+*.rar
+aqond-brain/grokVideo/
+aqond-brain/output/
+aqond-brain/assets/scenes/
+mobile-1.2/
+dev-test-accounts/
+
+# --- Misc generated ---
+.vite/
+*.tgz
+*.zip
+TMP_*.js
+TMP_*.mjs
+.agent-tools/

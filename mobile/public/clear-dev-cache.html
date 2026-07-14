@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ล้าง cache dev — AQOND Mobile</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 28rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      .ok {
+        color: #047857;
+      }
+      .err {
+        color: #b45309;
+      }
+      a {
+        color: #059669;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ล้าง Service Worker / cache</h1>
+    <p id="status">กำลังล้าง…</p>
+    <p><a id="go" href="/#/welcome" hidden>ไปหน้า Welcome →</a></p>
+    <script>
+      (async function () {
+        const el = document.getElementById("status");
+        const go = document.getElementById("go");
+        const lines = [];
+        try {
+          if ("serviceWorker" in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) {
+              await r.unregister();
+            }
+            lines.push("ยกเลิก Service Worker แล้ว (" + regs.length + " ตัว)");
+          } else {
+            lines.push("ไม่มี Service Worker ในเบราว์เซอร์นี้");
+          }
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((k) => caches.delete(k)));
+            lines.push("ลบ cache แล้ว (" + keys.length + " รายการ)");
+          }
+          el.className = "ok";
+          el.textContent = lines.join(" · ") + " — กำลังเปิด Welcome…";
+          go.hidden = false;
+          setTimeout(function () {
+            window.location.replace("/#/welcome");
+          }, 800);
+        } catch (e) {
+          el.className = "err";
+          el.textContent =
+            "ล้างไม่สำเร็จ: " +
+            (e && e.message ? e.message : e) +
+            " — ลอง Incognito หรือ DevTools → Application → Clear site data";
+        }
+      })();
+    </script>
+  </body>
+</html>

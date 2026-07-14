@@ -11,6 +11,7 @@ import {
   createPaymentWebhookSignatureVerifierCallback,
   extractRawBodyAndHeadersFromJob,
 } from '../lib/paymentWebhookSecurity.js';
+import { confirmPaymentWebhook, setSignatureVerifier } from '../lib/paymentCoreConfirm.js';
 
 function assertEq(a, b, msg) {
   if (a !== b) {
@@ -31,7 +32,15 @@ const saved = {
   PAYMENT_GATEWAY_WEBHOOK_SECRET_NEXT: process.env.PAYMENT_GATEWAY_WEBHOOK_SECRET_NEXT,
   PAYMENT_WEBHOOK_STRICT: process.env.PAYMENT_WEBHOOK_STRICT,
   PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER: process.env.PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER,
+  DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK: process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK,
 };
+
+function clearWebhookSecretEnv() {
+  delete process.env.PAYMENT_WEBHOOK_SECRET;
+  delete process.env.PAYMENT_GATEWAY_WEBHOOK_SECRET;
+  delete process.env.PAYMENT_WEBHOOK_SECRET_NEXT;
+  delete process.env.PAYMENT_GATEWAY_WEBHOOK_SECRET_NEXT;
+}
 
 function restoreEnv() {
   for (const [k, v] of Object.entries(saved)) {
@@ -149,6 +158,75 @@ try {
   assertEq(rH.ok, true, 'custom header: ok');
   assertEq(rH.key_version, 'active', 'custom header: key_version');
   delete process.env.PAYMENT_GATEWAY_WEBHOOK_SIGNATURE_HEADER;
+
+  // ===========================================================================
+  // Finding B — Layer 1: verifyPaymentWebhookSignature fail-closed defaults
+  // ===========================================================================
+
+  // --- f) production + NO secret + no strict + no opt-in → FAIL-CLOSED (was fail-open) ---
+  clearWebhookSecretEnv();
+  delete process.env.PAYMENT_WEBHOOK_STRICT;
+  delete process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK;
+  process.env.NODE_ENV = 'production';
+  const rF = verifyPaymentWebhookSignature({ rawBody: bodyA, headers: {}, provider: 'payso' });
+  assertEq(rF.ok, false, 'f: prod no-secret default fails closed');
+  assertEq(rF.failure_code, 'SIGNATURE_REJECTED', 'f: failure_code');
+
+  // --- g) production + NO secret + strict → FAIL-CLOSED (unchanged) ---
+  process.env.PAYMENT_WEBHOOK_STRICT = '1';
+  const rG = verifyPaymentWebhookSignature({ rawBody: bodyA, headers: {}, provider: 'payso' });
+  assertEq(rG.ok, false, 'g: prod no-secret strict fails closed');
+  assertEq(rG.failure_code, 'SIGNATURE_REJECTED', 'g: failure_code');
+  delete process.env.PAYMENT_WEBHOOK_STRICT;
+
+  // --- h) production + NO secret + explicit dangerous opt-in → fail-open (only via opt-in) ---
+  process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK = '1';
+  const rH2 = verifyPaymentWebhookSignature({ rawBody: bodyA, headers: {}, provider: 'payso' });
+  assertEq(rH2.ok, true, 'h: prod no-secret + opt-in accepts');
+  assertEq(rH2.key_version, 'skipped_no_secret_dangerous_optin', 'h: key_version');
+
+  // --- i) production + NO secret + opt-in + strict → strict wins, FAIL-CLOSED ---
+  process.env.PAYMENT_WEBHOOK_STRICT = '1';
+  const rI = verifyPaymentWebhookSignature({ rawBody: bodyA, headers: {}, provider: 'payso' });
+  assertEq(rI.ok, false, 'i: strict overrides opt-in → fails closed');
+  assertEq(rI.failure_code, 'SIGNATURE_REJECTED', 'i: failure_code');
+  delete process.env.PAYMENT_WEBHOOK_STRICT;
+  delete process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK;
+
+  // --- j) non-production + NO secret → skipped (dev convenience, unchanged) ---
+  process.env.NODE_ENV = 'test';
+  const rJ2 = verifyPaymentWebhookSignature({ rawBody: bodyA, headers: {}, provider: 'payso' });
+  assertEq(rJ2.ok, true, 'j: non-prod no-secret skipped');
+  assertEq(rJ2.key_version, 'skipped_no_secret', 'j: key_version');
+
+  // ===========================================================================
+  // Finding B — Layer 2: paymentCoreConfirm._verifySignatureSafe fail-closed defaults
+  // Signature is Step 1 and short-circuits before any DB client use, so we pass a null client.
+  // ===========================================================================
+  const coreInput = {
+    // normalized intentionally missing payment_id so, if signature PASSES, we stop at validation
+    normalized: { amount: 100, status: 'CAPTURED' },
+    job: { provider: 'payso', payload_json: {}, headers_json: {} },
+    provider: 'payso',
+    eventId: 'evt-finding-b',
+    traceId: null,
+  };
+
+  // --- k) no verifier registered + no opt-in → FAIL-CLOSED at signature step (was ok:true 'unverified') ---
+  setSignatureVerifier(null);
+  delete process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK;
+  const rK = await confirmPaymentWebhook(null, coreInput);
+  assertEq(rK.ok, false, 'k: no verifier default fails closed');
+  assertEq(rK.failure_source, 'signature', 'k: failure_source');
+  assertEq(rK.failure_code, 'signature_verifier_not_configured', 'k: failure_code');
+
+  // --- l) no verifier + explicit dangerous opt-in → signature passes (failure moves to validation) ---
+  process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK = '1';
+  const rL = await confirmPaymentWebhook(null, coreInput);
+  assertEq(rL.ok, false, 'l: still fails (validation), but not at signature');
+  assertEq(rL.failure_source, 'validation', 'l: signature passed → failure_source=validation');
+  setSignatureVerifier(null);
+  delete process.env.DANGEROUSLY_ALLOW_UNVERIFIED_WEBHOOK;
 
   console.log('OK: test_payment_webhook_security.js — all checks passed');
 } finally {

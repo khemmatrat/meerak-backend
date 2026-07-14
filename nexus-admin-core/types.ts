@@ -1,11 +1,17 @@
-
 export enum AppStatus {
-  ACTIVE = 'ACTIVE',
-  MAINTENANCE = 'MAINTENANCE',
-  DEPRECATED = 'DEPRECATED'
+  ACTIVE = "ACTIVE",
+  MAINTENANCE = "MAINTENANCE",
+  DEPRECATED = "DEPRECATED",
 }
 
-export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT' | 'ACCOUNTANT' | 'DEVELOPER' | 'ADMIN' | 'AUDITOR' | 'STAFF_KYC';
+export type AdminRole =
+  | "SUPER_ADMIN"
+  | "SUPPORT"
+  | "ACCOUNTANT"
+  | "DEVELOPER"
+  | "ADMIN"
+  | "AUDITOR"
+  | "STAFF_KYC";
 
 export interface AdminUser {
   id: string;
@@ -22,7 +28,7 @@ export interface StaffProfile {
   name: string;
   email: string;
   role: AdminRole;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: "ACTIVE" | "SUSPENDED";
   lastLogin: string;
   addedAt: string;
   permissions: string[]; // List of modules they can access
@@ -33,8 +39,8 @@ export interface MobileUser {
   username: string;
   email: string;
   lastActive: string;
-  platform: 'iOS' | 'Android';
-  status: 'online' | 'offline' | 'banned' | 'frozen';
+  platform: "iOS" | "Android";
+  status: "online" | "offline" | "banned" | "frozen";
   totalSpent: number;
   lastIp: string;
 }
@@ -58,6 +64,12 @@ export interface MobileAppRemote {
   promoNoticeEn: string;
   showPromoFundBalance: boolean;
   complianceSupportEmail: string;
+  /**
+   * ขั้นต่ำที่เก็บใน DB — เซิร์ฟเวอร์ส่งให้แอปเป็น max(ค่านี้, ผู้ใช้ที่ active ~15 นาที) ในฟิลด์ homeDisplayedOnlineUsers
+   */
+  socialProofOnlineFloor?: number | null;
+  /** ไม่ใช้เก็บใน DB — โผล่ใน GET /api/app/config เท่านั้น */
+  homeDisplayedOnlineUsers?: number | null;
 }
 
 export interface ServerConfig {
@@ -73,7 +85,7 @@ export interface ServerConfig {
 }
 
 export interface SystemConfig {
-  environment: 'Development' | 'Staging' | 'Production';
+  environment: "Development" | "Staging" | "Production";
   debugMode: boolean;
   useFirebase: boolean;
   apiRateLimit: number;
@@ -94,9 +106,9 @@ export interface AnalyticsData {
 export interface SystemLog {
   id: string;
   timestamp: string;
-  level: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  level: "INFO" | "WARNING" | "ERROR" | "CRITICAL";
   message: string;
-  source: 'API' | 'DB' | 'AUTH' | 'SYSTEM' | 'SECURITY';
+  source: "API" | "DB" | "AUTH" | "SYSTEM" | "SECURITY";
   ip?: string;
   adminUser?: string;
 }
@@ -105,19 +117,21 @@ export interface PushNotification {
   id: string;
   title: string;
   message: string;
-  target: 'All' | 'Landing' | 'Mobile';
+  target: "All" | "Landing" | "Mobile";
   sentAt: string;
-  status: 'Sent' | 'Scheduled' | 'Failed';
+  status: "Sent" | "Scheduled" | "Failed";
   openRate: number;
 }
 
 /** Slug สำหรับฟิลด์ placements แบนเนอร์ — ต้องตรงกับ mobile + GET /api/banners?placement= */
-export type BannerPlacementSlug = 'home' | 'welcome' | 'job_detail';
+export type BannerPlacementSlug = "home" | "welcome" | "job_detail";
 
 export interface AppBanner {
   id: string;
   title: string;
   imageUrl: string;
+  /** Optional per-aspect image URLs (art-direction) */
+  imageVariants?: Record<string, string> | null;
   actionUrl: string;
   isActive: boolean;
   order: number;
@@ -128,12 +142,12 @@ export interface AppBanner {
   sheetOpens?: number;
   claims?: number;
   /** สัดว่นสไลด์: hero | strip | portrait — null = ค่า default จากแอป */
-  slideHeight?: 'hero' | 'strip' | 'portrait' | null;
+  slideHeight?: "hero" | "strip" | "portrait" | null;
   promoCode?: string | null;
   discountMaxBaht?: number | null;
   discountDescription?: string | null;
   /** fixed_baht = ลดเป็นบาท; percent = ลด % ของราคางาน จำกัดด้วย discountMaxBaht */
-  discountMode?: 'fixed_baht' | 'percent';
+  discountMode?: "fixed_baht" | "percent";
   discountPercent?: number | null;
   /** ยอดเติมเงินสะสมขั้นต่ำ (บาท) ก่อนรับโค้ด */
   minCumulativeTopupThb?: number;
@@ -153,7 +167,7 @@ export interface AppBanner {
 export interface ClusterNode {
   id: string;
   region: string;
-  status: 'Healthy' | 'High Load' | 'Critical' | 'Down';
+  status: "Healthy" | "High Load" | "Critical" | "Down";
   cpuUsage: number;
   memoryUsage: number;
   activeConnections: number;
@@ -169,10 +183,10 @@ export interface JobTransactionStats {
 
 export interface JobTransaction {
   id: string;
-  type: 'POST' | 'ACCEPT' | 'COMPLETE';
+  type: "POST" | "ACCEPT" | "COMPLETE";
   userId: string;
   jobId: string;
-  status: 'SUCCESS' | 'FAILED' | 'PROCESSING';
+  status: "SUCCESS" | "FAILED" | "PROCESSING";
   processingTimeMs: number;
   timestamp: string;
 }
@@ -181,7 +195,7 @@ export interface ShardStatus {
   id: string;
   name: string;
   range: string;
-  status: 'Online' | 'Rebalancing' | 'Offline';
+  status: "Online" | "Rebalancing" | "Offline";
   load: number;
   sizeGB: number;
   iops: number;
@@ -190,15 +204,15 @@ export interface ShardStatus {
 export interface DRStatus {
   primaryRegion: string;
   drRegion: string;
-  syncStatus: 'Synced' | 'Lagging' | 'Broken';
+  syncStatus: "Synced" | "Lagging" | "Broken";
   rpoSeconds: number;
   lastBackup: string;
-  activeRegion: 'Primary' | 'DR';
+  activeRegion: "Primary" | "DR";
 }
 
 export interface CircuitBreaker {
   service: string;
-  state: 'CLOSED' | 'OPEN' | 'HALF-OPEN';
+  state: "CLOSED" | "OPEN" | "HALF-OPEN";
   failureRate: number;
   lastTripTime: string | null;
   /** Backend service key (e.g. payment_gateway) for trip/reset API */
@@ -209,8 +223,8 @@ export interface FinancialTransaction {
   id: string;
   userId: string;
   amount: number;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'JOB_PAYMENT';
-  status: 'COMPLETED' | 'PENDING' | 'FLAGGED' | 'FAILED';
+  type: "DEPOSIT" | "WITHDRAWAL" | "JOB_PAYMENT";
+  status: "COMPLETED" | "PENDING" | "FLAGGED" | "FAILED";
   fraudScore: number;
   timestamp: string;
   note?: string;
@@ -218,19 +232,19 @@ export interface FinancialTransaction {
 
 export interface ApiEndpointMetric {
   path: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: "GET" | "POST" | "PUT" | "DELETE";
   rpm: number;
   p95Latency: number;
   errorRate: number;
-  status: 'HEALTHY' | 'DEGRADED' | 'DOWN';
+  status: "HEALTHY" | "DEGRADED" | "DOWN";
 }
 
 export interface WafEvent {
   id: string;
   ip: string;
   country: string;
-  attackType: 'SQL Injection' | 'XSS' | 'DDoS' | 'Bot' | 'Ping Flood';
-  action: 'BLOCKED' | 'CHALLENGED';
+  attackType: "SQL Injection" | "XSS" | "DDoS" | "Bot" | "Ping Flood";
+  action: "BLOCKED" | "CHALLENGED";
   timestamp: string;
 }
 
@@ -240,7 +254,7 @@ export interface WorkerQueueStats {
   activeJobs: number;
   completedPerMin: number;
   failedRate: number;
-  status: 'OPERATIONAL' | 'CONGESTED' | 'STALLED';
+  status: "OPERATIONAL" | "CONGESTED" | "STALLED";
 }
 
 export interface IpBlockEntry {
@@ -250,15 +264,15 @@ export interface IpBlockEntry {
   blockedAt: string;
   expiresAt: string;
   blockedBy: string;
-  status: 'Active' | 'Expired';
+  status: "Active" | "Expired";
 }
 
 export interface SecurityRule {
   id: string;
   name: string;
-  type: 'Geo-Block' | 'Rate-Limit' | 'Signature' | 'Bot-Protection';
+  type: "Geo-Block" | "Rate-Limit" | "Signature" | "Bot-Protection";
   target: string;
-  action: 'BLOCK' | 'CHALLENGE' | 'ALLOW';
+  action: "BLOCK" | "CHALLENGE" | "ALLOW";
   isEnabled: boolean;
   hits: number;
 }
@@ -267,16 +281,16 @@ export interface SupportTicket {
   id: string;
   userId: string;
   subject: string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   lastUpdated: string;
-  category: 'Billing' | 'Technical' | 'Account' | 'General';
+  category: "Billing" | "Technical" | "Account" | "General";
   assignedTo?: string;
 }
 
 export interface ChatMessage {
   id: string;
-  sender: 'USER' | 'ADMIN' | 'BOT';
+  sender: "USER" | "ADMIN" | "BOT";
   message: string;
   timestamp: string;
 }
@@ -291,14 +305,14 @@ export interface AutoReplyRule {
 export interface ReportTemplate {
   id: string;
   name: string;
-  type: 'FINANCIAL' | 'USER_GROWTH' | 'SYSTEM_HEALTH' | 'AUDIT_LOG';
-  format: 'PDF' | 'CSV' | 'XLSX';
-  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'MANUAL';
+  type: "FINANCIAL" | "USER_GROWTH" | "SYSTEM_HEALTH" | "AUDIT_LOG";
+  format: "PDF" | "CSV" | "XLSX";
+  frequency: "DAILY" | "WEEKLY" | "MONTHLY" | "MANUAL";
   lastGenerated: string;
 }
 
 export interface ScalingPolicy {
-  mode: 'MANUAL' | 'AUTO_SAVER' | 'AUTO_BALANCED' | 'AUTO_PERFORMANCE';
+  mode: "MANUAL" | "AUTO_SAVER" | "AUTO_BALANCED" | "AUTO_PERFORMANCE";
   minInstances: number;
   maxInstances: number;
   cpuThresholdUp: number;
@@ -317,7 +331,12 @@ export interface CostMetric {
 export interface DocArticle {
   id: string;
   title: string;
-  category: 'General' | 'Security' | 'Operations' | 'Infrastructure' | 'Support';
+  category:
+    | "General"
+    | "Security"
+    | "Operations"
+    | "Infrastructure"
+    | "Support";
   content: string;
   lastUpdated: string;
 }
@@ -325,8 +344,8 @@ export interface DocArticle {
 export interface LegalRequest {
   id: string;
   userId: string;
-  type: 'PDPA_EXPORT' | 'PDPA_DELETE' | 'LAW_ENFORCEMENT' | 'DISPUTE';
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'REJECTED';
+  type: "PDPA_EXPORT" | "PDPA_DELETE" | "LAW_ENFORCEMENT" | "DISPUTE";
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "REJECTED";
   requestDate: string;
   deadline: string;
   documents?: string[];
@@ -336,7 +355,7 @@ export interface LegalDoc {
   id: string;
   title: string;
   version: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   lastUpdated: string;
   effectiveDate: string;
 }
@@ -349,9 +368,9 @@ export interface PayoutRequest {
   bankName: string;
   accountNumber: string;
   riskScore: number; // 0-100
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: "PENDING" | "APPROVED" | "REJECTED";
   requestedAt: string;
-  kycStatus: 'VERIFIED' | 'PENDING' | 'FAILED';
+  kycStatus: "VERIFIED" | "PENDING" | "FAILED";
 }
 
 export interface CapitalAllocation {
@@ -387,28 +406,28 @@ export interface PersonalSettlementAccount {
   updatedAt: string;
 }
 
-export type ManualSettlementDirection = 'INBOUND' | 'OUTBOUND';
+export type ManualSettlementDirection = "INBOUND" | "OUTBOUND";
 
 /** QR = สแกนจ่ายเข้า / แสดง QR รับ · Mobile banking = โอนผ่านแอปธนาคาร */
 export type ManualSettlementChannel =
-  | 'QR_PROMPTPAY'
-  | 'QR_BANK_STATIC'
-  | 'MOBILE_BANKING_TRANSFER'
-  | 'OTHER';
+  | "QR_PROMPTPAY"
+  | "QR_BANK_STATIC"
+  | "MOBILE_BANKING_TRANSFER"
+  | "OTHER";
 
 export interface ManualSettlementRecord {
   id: string;
   direction: ManualSettlementDirection;
   channel: ManualSettlementChannel;
   amount: number;
-  currency: 'THB';
+  currency: "THB";
   /** อ้างอิงงาน / ผู้ใช้ / คำอธิบายสั้นๆ */
   referenceLabel: string;
   /** เลขอ้างอิงจากสลิป / SMS */
   bankReference?: string;
   /** วันที่-เวลาโอน (ที่เห็นบนสลิป) */
   transferAt?: string;
-  status: 'PENDING_RECONCILE' | 'MATCHED' | 'FLAGGED';
+  status: "PENDING_RECONCILE" | "MATCHED" | "FLAGGED";
   notes?: string;
   /** URL สลิป (S3) หรือลิงก์ภายนอก */
   slipUrl?: string;
