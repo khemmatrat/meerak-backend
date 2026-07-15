@@ -58,6 +58,15 @@ import {
   resolveM2Category,
 } from './lib/compassOnboarding.js';
 import {
+  upsertProgressFromStatus,
+  touchProgress as touchPartnerOnboardingProgress,
+} from './lib/partnerOnboardingProgress.js';
+import {
+  listTools as listHermesTools,
+  proposeTool as proposeHermesTool,
+  confirmTool as confirmHermesTool,
+} from './lib/hermesToolRegistry.js';
+import {
   getGrowthStatus,
   syncReferralMilestones,
   markWalletActivated,
@@ -395,6 +404,7 @@ import { attachFoodMerchantAdminRoutes } from './lib/foodMerchantAdminRoutes.js'
 import { attachMarketplaceCommissionAdminRoutes } from './lib/marketplaceCommissionAdminRoutes.js';
 import { attachExperienceRoutes } from './lib/experience/experienceRoutes.js';
 import { attachJarvisRoutes } from './lib/jarvis/jarvisRoutes.js';
+import { attachAqondOsAiRoutes } from './lib/aqondOsAiRoutes.js';
 import { unlockBeautyPayouts } from './lib/beautyBookingService.js';
 import { registerWalletLiquidityAdminRoutes } from './lib/walletLiquidityAdminRoutes.js';
 import { registerUserFinancialMovementsAdminRoutes } from './lib/userFinancialMovementsAdminRoutes.js';
@@ -2864,6 +2874,11 @@ attachExperienceRoutes(app, {
 });
 
 attachJarvisRoutes(app, {
+  pool,
+  optionalAuth,
+});
+
+attachAqondOsAiRoutes(app, {
   pool,
   optionalAuth,
 });
@@ -31378,6 +31393,104 @@ app.get('/api/admin/compass/user-status', adminAuthMiddleware, async (req, res) 
   } catch (e) {
     console.error('admin compass user-status error:', e);
     res.status(500).json({ error: 'Failed to get compass status' });
+  }
+});
+
+// ============ Partner onboarding progress (Hermes voice onboarding — Phase 0) ============
+// Sequence source of truth = compassOnboarding.buildSteps(); this endpoint also persists a
+// snapshot + last_activity_at (rider | merchant | partner_skill) for cross-session awareness.
+app.get('/api/partner-onboarding/progress', async (req, res) => {
+  try {
+    const userId = req.query.userId || req.user?.id;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await buildCompassStatus(pool, String(userId));
+    if (!status?.found) {
+      return res.json({ found: false, zone: null, steps: [], nextAction: status?.nextAction || null });
+    }
+    // Persist snapshot (best-effort; degrades if migration not yet applied)
+    const persisted = await upsertProgressFromStatus(pool, status, {
+      firebaseUid: req.query.firebaseUid || null,
+    });
+    res.json({
+      found: true,
+      zone: status.zone,
+      primaryIntent: status.primaryIntent,
+      currentStep: status.nextAction?.id || null,
+      nextAction: status.nextAction,
+      steps: status.steps,
+      progress: status.progress,
+      allDone: status.allDone,
+      persisted: !!persisted,
+      lastActivityAt: persisted?.last_activity_at || null,
+    });
+  } catch (e) {
+    console.error('partner-onboarding progress error:', e);
+    res.status(500).json({ error: 'Failed to get onboarding progress' });
+  }
+});
+
+// Bump last_activity_at so the (Phase 3) nudge cron does not fire on active users.
+app.post('/api/partner-onboarding/progress/touch', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.query.userId || req.user?.id;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const status = await buildCompassStatus(pool, String(userId));
+    if (!status?.found) return res.json({ ok: false, found: false });
+    // Ensure a row exists then touch (upsert already sets last_activity_at = now()).
+    const persisted = await upsertProgressFromStatus(pool, status, {
+      firebaseUid: req.body?.firebaseUid || null,
+    });
+    const zone = req.body?.zone || status.zone;
+    await touchPartnerOnboardingProgress(pool, { userId: status.userId, zone });
+    res.json({ ok: true, zone, currentStep: status.nextAction?.id || null, persisted: !!persisted });
+  } catch (e) {
+    console.error('partner-onboarding touch error:', e);
+    res.status(500).json({ error: 'Failed to touch onboarding progress' });
+  }
+});
+
+// ============ Hermes Tool Registry (Phase 2 — fill Group A, consent + audit) ============
+// Every requiresConsent tool: propose (consent card) -> confirm (execute). Both write audit_log.
+app.get('/api/hermes/tools', (req, res) => {
+  res.json({ tools: listHermesTools() });
+});
+
+app.post('/api/hermes/tools/propose', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'userId required' });
+    const consent = proposeHermesTool(pool, {
+      toolId: req.body?.toolId,
+      userId: String(userId),
+      params: req.body?.params || {},
+      actorRole: 'User',
+      ipAddress: getClientIp(req),
+    });
+    res.json({ success: true, consent });
+  } catch (e) {
+    const st = e?.status || 500;
+    if (st >= 500) console.error('hermes tools propose error:', e);
+    res.status(st).json({ success: false, error: e?.message || 'propose_failed' });
+  }
+});
+
+app.post('/api/hermes/tools/confirm', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'userId required' });
+    const out = await confirmHermesTool(pool, {
+      proposalId: req.body?.proposalId,
+      userId: String(userId),
+      decision: req.body?.decision === 'reject' ? 'reject' : 'approve',
+      token: req.headers?.authorization || null,
+      actorRole: 'User',
+      ipAddress: getClientIp(req),
+    });
+    res.json({ success: true, ...out });
+  } catch (e) {
+    const st = e?.status || 500;
+    if (st >= 500) console.error('hermes tools confirm error:', e);
+    res.status(st).json({ success: false, error: e?.message || 'confirm_failed' });
   }
 });
 

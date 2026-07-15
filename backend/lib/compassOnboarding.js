@@ -116,6 +116,53 @@ function categoryPackComplete(pack, primaryIntent) {
   });
 }
 
+/** merchant/seller intent — buildSteps คืนชุด step ร้านค้า (ไม่ใช่ track rider/provider) */
+function isMerchantIntent(primaryIntent) {
+  return primaryIntent === 'open_shop' || primaryIntent === 'merchant';
+}
+
+/** zone สำหรับ partner_onboarding_progress (rider | merchant | partner_skill) */
+function resolvePartnerZone(primaryIntent) {
+  if (primaryIntent === 'rider_delivery' || primaryIntent === 'delivery') return 'rider';
+  if (isMerchantIntent(primaryIntent)) return 'merchant';
+  return 'partner_skill';
+}
+
+/** merchant onboarding steps — shop status อยู่คนละ service (commerce) จึงยังไม่ mark done จาก DB นี้ */
+function buildMerchantSteps(status) {
+  const { kycSubmitted, kycStatus, merchantShopReady, merchantShopApproved } = status;
+  return [
+    {
+      id: 'create_shop',
+      label: 'สร้างร้านค้า',
+      done: !!merchantShopReady,
+      href: '/m/merchant/shops',
+      minutes: 3,
+    },
+    {
+      id: 'shop_setup',
+      label: 'ตั้งค่าร้าน / เมนู',
+      done: !!merchantShopReady && !!merchantShopApproved,
+      href: '/m/merchant',
+      minutes: 10,
+    },
+    {
+      id: 'personal_kyc',
+      label: 'ยืนยันตัวตน (ก่อนถอนเงิน)',
+      done: kycSubmitted,
+      href: '/kyc?compass=1&step=personal',
+      minutes: 4,
+    },
+    {
+      id: 'shop_go_live',
+      label: 'เปิดร้านรับออเดอร์',
+      done: !!merchantShopApproved && kycStatus === 'approved',
+      href: '/m/merchant',
+      minutes: 0,
+    },
+  ];
+}
+
 function buildSteps(status) {
   const {
     primaryIntent,
@@ -132,6 +179,11 @@ function buildSteps(status) {
 
   if (!surveyDone) {
     return [{ id: 'survey', label: 'บอกเป้าหมายของคุณ', done: false, href: '/onboarding/compass' }];
+  }
+
+  // merchant/seller — flow ร้านค้า (ไม่พึ่ง compassMode เพราะ open_shop ไม่ได้อยู่ใน track เดิม)
+  if (isMerchantIntent(primaryIntent)) {
+    return buildMerchantSteps(status);
   }
 
   if (!compassMode) {
@@ -354,15 +406,19 @@ export async function buildCompassStatus(pool, userId) {
 
   const steps = buildSteps(inner);
   const next = pickNextStep(steps);
-  const allDone =
-    surveyDone &&
-    (!user.compass_mode ||
-      (steps.every((s) => s.done || s.id === 'kyc_review') &&
-        (kycStatus === 'approved' || kycStatus === 'pending') &&
-        steps.find((s) => s.id === 'module3')?.done));
+  const isMerchant = resolvePartnerZone(primaryIntent) === 'merchant';
+  const allDone = isMerchant
+    ? surveyDone && steps.every((s) => s.done)
+    : surveyDone &&
+      (!user.compass_mode ||
+        (steps.every((s) => s.done || s.id === 'kyc_review') &&
+          (kycStatus === 'approved' || kycStatus === 'pending') &&
+          steps.find((s) => s.id === 'module3')?.done));
 
   return {
     found: true,
+    userId: user.id,
+    zone: resolvePartnerZone(primaryIntent),
     surveyDone,
     compassMode: !!user.compass_mode,
     compassCompleted: !!user.onboarding_compass_completed_at || (!user.compass_mode && surveyDone),
@@ -499,4 +555,6 @@ export {
   resolveM2Category,
   derivePrimaryIntent,
   marketplaceHref,
+  isMerchantIntent,
+  resolvePartnerZone,
 };
