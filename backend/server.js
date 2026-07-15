@@ -67,6 +67,11 @@ import {
   confirmTool as confirmHermesTool,
 } from './lib/hermesToolRegistry.js';
 import {
+  runNudgeCycle as runOnboardingNudgeCycle,
+  setNudgeOptOut as setOnboardingNudgeOptOut,
+  setLineConsent as setOnboardingLineConsent,
+} from './lib/partnerOnboardingNudge.js';
+import {
   getGrowthStatus,
   syncReferralMilestones,
   markWalletActivated,
@@ -31494,6 +31499,60 @@ app.post('/api/hermes/tools/confirm', async (req, res) => {
   }
 });
 
+// ============ Onboarding nudge — opt-out + LINE consent + admin run-once (Phase 3) ============
+// Opt-out: user disables onboarding nudges (all zones). Always honored by the cron.
+app.post('/api/partner-onboarding/nudge/opt-out', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'userId required' });
+    const optOut = req.body?.opt_out === false ? false : true;
+    const rows = await setOnboardingNudgeOptOut(pool, String(userId), optOut);
+    auditService.log(String(userId), optOut ? 'ONBOARDING_NUDGE_OPT_OUT' : 'ONBOARDING_NUDGE_OPT_IN',
+      { entityName: 'partner_onboarding', entityId: 'nudge', new: { opt_out: optOut } },
+      { actorRole: 'User', ipAddress: getClientIp(req) });
+    res.json({ success: true, opt_out: optOut, zones: rows.map((r) => r.zone) });
+  } catch (e) {
+    console.error('nudge opt-out error:', e);
+    res.status(500).json({ success: false, error: 'opt_out_failed' });
+  }
+});
+
+// LINE messaging consent — explicit: user agrees to receive onboarding messages via LINE.
+app.post('/api/partner-onboarding/line-consent', async (req, res) => {
+  try {
+    const userId = req.body?.userId || req.user?.id;
+    const lineUserId = req.body?.lineUserId || req.body?.line_user_id;
+    if (!userId) return res.status(401).json({ error: 'userId required' });
+    if (req.body?.consent !== true) {
+      return res.status(400).json({ error: 'consent must be true (explicit opt-in required)' });
+    }
+    if (!lineUserId) return res.status(400).json({ error: 'lineUserId required' });
+    const rows = await setOnboardingLineConsent(pool, String(userId), String(lineUserId));
+    auditService.log(String(userId), 'ONBOARDING_LINE_CONSENT',
+      { entityName: 'partner_onboarding', entityId: 'line',
+        new: { line_user_id_suffix: String(lineUserId).slice(-4), scopes: ['onboarding_nudge', 'status_update'] } },
+      { actorRole: 'User', ipAddress: getClientIp(req) });
+    res.json({ success: true, connected: rows.length > 0 });
+  } catch (e) {
+    console.error('line-consent error:', e);
+    res.status(500).json({ success: false, error: 'line_consent_failed' });
+  }
+});
+
+// Admin: run one nudge cycle now (force bypasses NUDGE_ENABLED gate).
+app.post('/api/admin/partner-onboarding/nudge/run-once', adminAuthMiddleware, async (req, res) => {
+  try {
+    const summary = await runOnboardingNudgeCycle(pool, {
+      force: true,
+      dryRun: req.body?.dryRun === true,
+    });
+    res.json({ success: true, summary });
+  } catch (e) {
+    console.error('nudge run-once error:', e);
+    res.status(500).json({ success: false, error: e?.message || 'nudge_run_failed' });
+  }
+});
+
 // ============ Growth Engine (viral milestones, entitlements, intent) ============
 app.get('/api/growth/status', async (req, res) => {
   try {
@@ -35809,6 +35868,24 @@ server.listen(PORT, async () => {
       console.log("✅ admin_live_events + kyc_supplement_requests + kyc_status check: ensured");
     } catch (e) {
       console.warn("  admin_live_events:", e?.message || e);
+    }
+    // Partner onboarding progress + nudge cron (Phase 0/3)
+    try {
+      const { ensurePartnerOnboardingSchema } = await import('./lib/partnerOnboardingProgress.js');
+      await ensurePartnerOnboardingSchema(pool);
+      console.log("✅ partner_onboarding_progress table: ensured");
+      if (process.env.NUDGE_ENABLED === '1') {
+        const { runNudgeCycle } = await import('./lib/partnerOnboardingNudge.js');
+        const everyMin = Number(process.env.NUDGE_CRON_MINUTES || 60);
+        setInterval(() => {
+          void runNudgeCycle(pool).catch((e) => console.warn('nudge cron:', e?.message));
+        }, Math.max(5, everyMin) * 60 * 1000);
+        console.log(`✅ onboarding nudge cron: enabled (every ${everyMin}m)`);
+      } else {
+        console.log("ℹ️ onboarding nudge cron: disabled (set NUDGE_ENABLED=1 to enable)");
+      }
+    } catch (e) {
+      console.warn("  partner_onboarding_progress:", e?.message || e);
     }
     // Sync users.name from full_name for u.name/w.name/cl.name compatibility
     try {
