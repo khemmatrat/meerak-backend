@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import { MockApi } from "../services/mockApi";
 import {
   sendOTP,
@@ -9,6 +10,11 @@ import {
   getFreshPhoneAuthIdToken,
   warmRecaptchaVerifier,
 } from "../services/phoneAuth";
+import {
+  clearForgotPasswordDraft,
+  loadForgotPasswordDraft,
+  saveForgotPasswordDraft,
+} from "../services/forgotPasswordSession";
 import {
   Lock,
   Smartphone,
@@ -38,6 +44,12 @@ export const ForgotPassword: React.FC = () => {
   useEffect(() => {
     resetPhoneAuth();
     void warmRecaptchaVerifier();
+    // กู้คืนหลัง Android kill WebView — ถ้ายืนยัน OTP แล้ว พากลับมาตั้งรหัสผ่านต่อ
+    const draft = loadForgotPasswordDraft();
+    if (draft) {
+      setPhone((prev) => prev || draft.phone);
+      setStep("password");
+    }
   }, []);
 
   useEffect(() => {
@@ -71,6 +83,50 @@ export const ForgotPassword: React.FC = () => {
     document.addEventListener("focusin", onFocusIn);
     return () => document.removeEventListener("focusin", onFocusIn);
   }, []);
+
+  /** ปุ่ม back ของ Android: ถอยทีละ step แทนหลุดทั้ง flow */
+  const stepRef = useRef(step);
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+  useEffect(() => {
+    if (typeof window === "undefined" || !Capacitor.isNativePlatform()) return;
+    let handler: { remove: () => Promise<void> } | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { App: CapApp } = await import("@capacitor/app");
+        const h = await CapApp.addListener("backButton", ({ canGoBack }) => {
+          if (cancelled) return;
+          const s = stepRef.current;
+          if (s === "otp") {
+            setStep("phone");
+            setError(null);
+          } else if (s === "password") {
+            setStep("otp");
+            setError(null);
+          } else if (s === "success") {
+            navigate("/login", { replace: true });
+          } else if (canGoBack) {
+            window.history.back();
+          } else {
+            void CapApp.exitApp();
+          }
+        });
+        if (cancelled) {
+          h.remove().catch(() => {});
+          return;
+        }
+        handler = h;
+      } catch (e) {
+        console.warn("[ForgotPassword backButton]", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      handler?.remove().catch(() => {});
+    };
+  }, [navigate]);
 
   // Step 1: ตรวจสอบเบอร์ในระบบ แล้วส่ง OTP
   const handleCheckPhone = async (e: React.FormEvent) => {
@@ -115,6 +171,7 @@ export const ForgotPassword: React.FC = () => {
       if (result.firebase_token) {
         setFirebaseToken(result.firebase_token);
       }
+      let resolvedPhone = phone.trim();
       if (result.phone) {
         const p = result.phone.replace(/^\+/, "").replace(/\s/g, "");
         const normalized =
@@ -123,8 +180,10 @@ export const ForgotPassword: React.FC = () => {
             : p.startsWith("0")
               ? p
               : "0" + p;
+        resolvedPhone = normalized;
         setPhone(normalized);
       }
+      saveForgotPasswordDraft({ phone: resolvedPhone });
       setStep("password");
     } catch (err: any) {
       setError(err.message || "รหัส OTP ไม่ถูกต้อง กรุณาลองใหม่");
@@ -153,6 +212,7 @@ export const ForgotPassword: React.FC = () => {
       setError("หมดเวลายืนยันเบอร์แล้ว กรุณาขอรหัส OTP ใหม่ตั้งแต่ขั้นตอนแรก");
       setStep("phone");
       resetPhoneAuth();
+      clearForgotPasswordDraft();
       return;
     }
     setLoading(true);
@@ -160,6 +220,7 @@ export const ForgotPassword: React.FC = () => {
       await MockApi.resetPassword(phone, newPassword, idToken);
       // Clear forgot-password session immediately after success
       resetPhoneAuth();
+      clearForgotPasswordDraft();
       setFirebaseToken("");
       setOtpCode("");
       setNewPassword("");

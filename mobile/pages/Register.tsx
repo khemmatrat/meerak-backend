@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate, Link, useSearchParams, useLocation } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { MockApi, registerViaBackendApi } from "../services/mockApi";
@@ -279,6 +280,48 @@ export const Register: React.FC = () => {
     };
     document.addEventListener("focusin", onFocusIn);
     return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
+  /** ปุ่ม back ของ Android: ถอยทีละ step แทนหลุดทั้ง flow (กันข้อมูลหาย) */
+  const stepRef = useRef(step);
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+  useEffect(() => {
+    if (typeof window === "undefined" || !Capacitor.isNativePlatform()) return;
+    let handler: { remove: () => Promise<void> } | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { App: CapApp } = await import("@capacitor/app");
+        const h = await CapApp.addListener("backButton", ({ canGoBack }) => {
+          if (cancelled) return;
+          const s = stepRef.current;
+          if (s === "otp") {
+            setStep("phone");
+            setError("");
+          } else if (s === "details") {
+            setStep("otp");
+            setError("");
+          } else if (canGoBack) {
+            window.history.back();
+          } else {
+            void CapApp.exitApp();
+          }
+        });
+        if (cancelled) {
+          h.remove().catch(() => {});
+          return;
+        }
+        handler = h;
+      } catch (e) {
+        console.warn("[Register backButton]", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      handler?.remove().catch(() => {});
+    };
   }, []);
 
   /** กู้คืนหลัง Android kill WebView — อย่าให้ user ไป login โดยไม่มีบัญชีใน DB */
