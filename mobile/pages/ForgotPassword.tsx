@@ -139,7 +139,15 @@ export const ForgotPassword: React.FC = () => {
     setLoading(true);
     try {
       await MockApi.resetPassword(phone, newPassword, idToken);
+      // Clear forgot-password session immediately after success
+      resetPhoneAuth();
+      setFirebaseToken("");
+      setOtpCode("");
+      setNewPassword("");
+      setConfirmPassword("");
       setStep("success");
+      // Navigate to login after a brief success ack (no auto JWT session)
+      window.setTimeout(() => navigate("/login", { replace: true }), 1200);
     } catch (err: any) {
       setError(err.message || "ตั้งรหัสผ่านใหม่ไม่สำเร็จ");
     } finally {
@@ -209,6 +217,8 @@ export const ForgotPassword: React.FC = () => {
               <input
                 type="tel"
                 required
+                inputMode="tel"
+                autoComplete="tel"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                 placeholder="08xxxxxxxx"
                 value={phone}
@@ -249,6 +259,8 @@ export const ForgotPassword: React.FC = () => {
                 required
                 maxLength={6}
                 pattern="[0-9]{6}"
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-center text-2xl tracking-widest font-mono"
                 placeholder="●●●●●●"
                 value={otpCode}
@@ -360,6 +372,7 @@ export const ForgotPassword: React.FC = () => {
                 <p className="font-medium">ตั้งรหัสผ่านใหม่สำเร็จ</p>
                 <p className="mt-1">
                   คุณสามารถใช้รหัสผ่านใหม่เข้าสู่ระบบได้เลย
+                  — กำลังพาไปหน้าเข้าสู่ระบบ…
                 </p>
               </div>
             </div>

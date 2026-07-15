@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { flushSync } from "react-dom";
-import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useNavigate, Link, useSearchParams, useLocation } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { MockApi, registerViaBackendApi } from "../services/mockApi";
@@ -148,6 +148,7 @@ export const Register: React.FC = () => {
   const { notify } = useNotification();
   const { t, language, setLanguage } = useLanguage();
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const [searchParams] = useSearchParams();
   const [embeddedBrowser, setEmbeddedBrowser] = useState(false);
   const [manualRefCode, setManualRefCode] = useState("");
@@ -192,8 +193,18 @@ export const Register: React.FC = () => {
 
       const rawNext = searchParams.get("next");
       let dest = getPostRegisterPath(searchParams);
-      if (dest === "/") {
-        dest = "/onboarding/compass";
+      const fromState = (routeLocation.state as { from?: string } | null)?.from;
+      if (
+        fromState &&
+        typeof fromState === "string" &&
+        fromState.startsWith("/") &&
+        fromState !== "/welcome" &&
+        fromState !== "/login" &&
+        fromState !== "/register"
+      ) {
+        dest = fromState;
+      } else if (dest === "/" || dest === "/home") {
+        dest = "/home";
       }
       if (rawNext) {
         try {
@@ -632,6 +643,8 @@ export const Register: React.FC = () => {
               <input
                 type="tel"
                 required
+                inputMode="tel"
+                autoComplete="tel"
                 className="w-full px-4 py-2.5 border text-gray-800 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                 placeholder="0812345678"
                 value={phone}
@@ -692,6 +705,8 @@ export const Register: React.FC = () => {
                 required
                 maxLength={6}
                 pattern="[0-9]{6}"
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 className="w-full px-4 py-3 border border-gray-300 text-gray-800 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-center text-2xl tracking-widest font-mono"
                 placeholder="● ● ● ● ● ●"
                 value={otpCode}
@@ -797,6 +812,7 @@ export const Register: React.FC = () => {
               <input
                 type="text"
                 required
+                autoComplete="name"
                 className="w-full px-4 py-2.5 border text-gray-800 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                 placeholder="ชื่อ-นามสกุล"
                 value={formData.name}
@@ -812,6 +828,7 @@ export const Register: React.FC = () => {
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 className="w-full px-4 py-2.5 border text-gray-800 border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                 placeholder="••••••••"
                 value={formData.password}
