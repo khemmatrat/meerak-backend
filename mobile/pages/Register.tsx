@@ -262,6 +262,25 @@ export const Register: React.FC = () => {
     setEmbeddedBrowser(isLikelyEmbeddedInAppBrowser());
   }, []);
 
+  /** Android WebView ไม่เลื่อน input ที่ focus ให้พ้นคีย์บอร์ดเองเหมือน iOS — บังคับเลื่อนหลังคีย์บอร์ดเปิด */
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT")
+      ) {
+        window.setTimeout(() => {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, 300);
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   /** กู้คืนหลัง Android kill WebView — อย่าให้ user ไป login โดยไม่มีบัญชีใน DB */
   useEffect(() => {
     const draft = loadRegistrationDraft();

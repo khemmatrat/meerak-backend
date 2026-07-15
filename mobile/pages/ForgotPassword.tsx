@@ -53,6 +53,25 @@ export const ForgotPassword: React.FC = () => {
     }
   }, [otpCountdown]);
 
+  /** Android WebView ไม่เลื่อน input ที่ focus ให้พ้นคีย์บอร์ดเองเหมือน iOS — บังคับเลื่อนหลังคีย์บอร์ดเปิด */
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT")
+      ) {
+        window.setTimeout(() => {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, 300);
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   // Step 1: ตรวจสอบเบอร์ในระบบ แล้วส่ง OTP
   const handleCheckPhone = async (e: React.FormEvent) => {
     e.preventDefault();
