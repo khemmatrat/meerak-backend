@@ -3,9 +3,12 @@ import path from 'path';
 
 const PRESENCE_FILE = path.join(process.cwd(), '.data', 'dev', 'rider-presence.json');
 
+export type RiderAvailability = 'online' | 'break' | 'offline';
+
 export type RiderPresence = {
   rider_id: string;
   online: boolean;
+  availability?: RiderAvailability;
   lat?: number;
   lng?: number;
   speed_kmh?: number;
@@ -35,21 +38,37 @@ export async function getRiderPresence(riderId: string): Promise<RiderPresence |
   return store.riders[riderId] || null;
 }
 
-export async function setRiderOnline(riderId: string, online: boolean) {
+function resolveAvailability(online: boolean, availability?: RiderAvailability): RiderAvailability {
+  if (!online) return 'offline';
+  if (availability === 'break') return 'break';
+  return 'online';
+}
+
+export async function setRiderAvailability(riderId: string, availability: RiderAvailability) {
   const store = await readStore();
   const prev = store.riders[riderId];
+  const online = availability !== 'offline';
   store.riders[riderId] = {
     rider_id: riderId,
     online,
+    availability,
     lat: prev?.lat,
     lng: prev?.lng,
     speed_kmh: prev?.speed_kmh,
     battery_pct: prev?.battery_pct,
+    heading: prev?.heading,
     current_job_id: online ? prev?.current_job_id : undefined,
     updated_at: new Date().toISOString(),
   };
   await writeStore(store);
   return store.riders[riderId];
+}
+
+export async function setRiderOnline(riderId: string, online: boolean) {
+  const store = await readStore();
+  const prev = store.riders[riderId];
+  const availability = resolveAvailability(online, online ? prev?.availability : 'offline');
+  return setRiderAvailability(riderId, availability);
 }
 
 export async function updateRiderTelemetry(
@@ -66,9 +85,12 @@ export async function updateRiderTelemetry(
 ) {
   const store = await readStore();
   const prev = store.riders[riderId];
+  const online = input.online ?? prev?.online ?? false;
+  const availability = resolveAvailability(online, prev?.availability);
   store.riders[riderId] = {
     rider_id: riderId,
-    online: input.online ?? prev?.online ?? false,
+    online,
+    availability,
     lat: input.lat ?? prev?.lat,
     lng: input.lng ?? prev?.lng,
     speed_kmh: input.speed_kmh ?? prev?.speed_kmh,
