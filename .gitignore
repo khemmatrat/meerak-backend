@@ -83,12 +83,16 @@ aqond-v2/_restore-snapshots/
 aqond-key.jks
 **/aqond-key.jks
 
-# --- Docs & prose (ยกเว้น README.md เท่านั้น) ---
-docs/
+# --- Docs & prose (ยกเว้น README.md + system bootstrap เท่านั้น) ---
+docs/*
+!docs/aqond-os/
+docs/aqond-os/*
+!docs/aqond-os/AGENT_BOOTSTRAP.md
 **/*.md
 !**/README.md
 !**/Readme.md
 !**/readme.md
+!docs/aqond-os/AGENT_BOOTSTRAP.md
 **/*.txt
 !**/.env.example
 !**/.env.*.example
