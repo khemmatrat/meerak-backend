@@ -395,10 +395,28 @@ export async function getRiderCodStatus(pool, riderId) {
   return {
     rider_id: riderId,
     outstanding_micro: Number(acct?.outstanding_micro || 0),
-    limit_micro: Number(acct?.limit_micro || codTierLimitMicro('')),
+    limit_micro: Number(acct?.limit_micro || codTierLimitMicro(acct?.tier || '')),
+    available_cod_limit_micro: Math.max(
+      0,
+      Number(acct?.limit_micro || codTierLimitMicro(acct?.tier || '')) -
+        Number(acct?.outstanding_micro || 0),
+    ),
     status: acct?.status || 'active',
     tier: acct?.tier || null,
     open_holds: holdsQ.rows || [],
+    /** OpenAPI alias */
+    cod_outstanding: Number(acct?.outstanding_micro || 0) / 100,
+    cod_limit: Number(acct?.limit_micro || codTierLimitMicro(acct?.tier || '')) / 100,
+    available_cod_limit:
+      Math.max(
+        0,
+        Number(acct?.limit_micro || codTierLimitMicro(acct?.tier || '')) -
+          Number(acct?.outstanding_micro || 0),
+      ) / 100,
+    pending_deposit_micro: (holdsQ.rows || [])
+      .filter((h) => h.status === 'collected')
+      .reduce((s, h) => s + Number(h.amount_micro || 0), 0),
+    provisional: true,
   };
 }
 

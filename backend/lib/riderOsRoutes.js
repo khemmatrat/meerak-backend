@@ -454,6 +454,55 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
     }
   });
 
+  /** OpenAPI alias — same payload as /cod/status */
+  app.get('/api/rider-os/cod/summary', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const status = await getRiderCodStatus(pool, String(riderId));
+      res.json(status);
+    } catch (e) {
+      console.error('GET /api/rider-os/cod/summary', e);
+      res.status(500).json({ error: 'cod_summary_failed' });
+    }
+  });
+
+  /** Reserve COD cap after storefront accept (dispatch-svc path bypasses /jobs/:id/accept). */
+  app.post('/api/rider-os/jobs/:id/cod/reserve', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const jobId = String(req.params.id || '').trim();
+      const amtMicro = Number(req.body?.amount_micro ?? req.body?.amountMicro ?? 0);
+      const pm = String(req.body?.payment_method || req.body?.paymentMethod || '').toLowerCase();
+      if (pm !== 'cod' && pm !== '') {
+        return res.json({ ok: true, skipped: true, reason: 'not_cod' });
+      }
+      if (amtMicro <= 0) {
+        return res.status(400).json({ error: 'amount_micro_required' });
+      }
+      const cod = await assignCodHold(pool, {
+        riderId: String(riderId),
+        userId,
+        jobId,
+        orderId: req.body?.order_id || req.body?.orderId || null,
+        amountMicro: amtMicro,
+        grade: rider?.grade,
+      });
+      if (!cod.ok) return res.status(422).json(cod);
+      res.json(cod);
+    } catch (e) {
+      console.error('POST /api/rider-os/jobs/:id/cod/reserve', e);
+      res.status(500).json({ error: 'cod_reserve_failed' });
+    }
+  });
+
   app.post('/api/rider-os/jobs/:id/cod/collected', authenticateToken, async (req, res) => {
     try {
       const userId = String(req.user?.id || '').trim();
