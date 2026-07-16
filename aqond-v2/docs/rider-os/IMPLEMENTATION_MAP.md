@@ -12,11 +12,12 @@ Surface: **storefront `/m/rider/*` only** (no native parity).
 | Radius expand 3→5→8 km | `dispatch_match.go` — `dispatchRadiusStepsKm()`, `pickBestRiderWithRadiusExpand()` |
 | COD tier cap filter | `dispatch_match.go` — queries `commerce.rider_cod_accounts`, platinum cap **20k THB provisional** |
 | Auto-assign + pending_accept | `automatch.go` |
+| Sequential offer queue (top 5 × 15s) | `offer_queue.go` — `DISPATCH_OFFER_TIMEOUT_SEC`, `DISPATCH_MAX_OFFERS_PER_ROUND`; `POST /jobs/:id/reject` |
 | Timeout rematch (max 5) | `rematch.go` |
 | Manual batch (ops) | `ops_tier2.go` — `/v1/dispatch/batches` |
 | Legacy nearest | `DISPATCH_SCORE_MODE=nearest` in `tracking.go` |
 
-**Not yet:** Redis geo index, sequential multi-rider offer queue (UI has 15s modal; backend assigns one rider), full VRP auto-batch, heading telemetry in score.
+**Not yet:** Redis geo index, full VRP auto-batch, heading telemetry in score.
 
 Reference pseudo-code from spec → use Go files above as source of truth.
 
