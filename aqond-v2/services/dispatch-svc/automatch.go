@@ -8,8 +8,11 @@ import (
 
 func (a *app) loadActiveRiders(ctx context.Context) []riderRow {
 	rows, err := a.pool.Query(ctx, `
-		SELECT id, display_name, phone, vehicle, plate, rating, review_count, grade, lat, lng, load_count
-		FROM commerce.dispatch_riders WHERE active=TRUE`)
+		SELECT id, display_name, phone, vehicle, plate, rating, review_count, grade,
+		       lat, lng, load_count,
+		       COALESCE(kyc_status, 'pending'), COALESCE(suspended, FALSE)
+		FROM commerce.dispatch_riders
+		WHERE active=TRUE AND COALESCE(suspended, FALSE)=FALSE`)
 	if err != nil {
 		return nil
 	}
@@ -17,7 +20,9 @@ func (a *app) loadActiveRiders(ctx context.Context) []riderRow {
 	var out []riderRow
 	for rows.Next() {
 		var r riderRow
-		if rows.Scan(&r.ID, &r.DisplayName, &r.Phone, &r.Vehicle, &r.Plate, &r.Rating, &r.ReviewCount, &r.Grade, &r.Lat, &r.Lng, &r.LoadCount) == nil {
+		r.MaxLoad = 3
+		if rows.Scan(&r.ID, &r.DisplayName, &r.Phone, &r.Vehicle, &r.Plate, &r.Rating, &r.ReviewCount,
+			&r.Grade, &r.Lat, &r.Lng, &r.LoadCount, &r.KycStatus, &r.Suspended) == nil {
 			out = append(out, r)
 		}
 	}
@@ -32,6 +37,11 @@ func (a *app) autoMatchJobExcluding(ctx context.Context, jobID string, pickupLat
 	if os.Getenv("DISPATCH_AUTO_MATCH") == "0" {
 		return
 	}
+	j, _ := a.loadJob(ctx, jobID)
+	if j.ID == "" {
+		j.PickupLat = pickupLat
+		j.PickupLng = pickupLng
+	}
 	riders := a.loadActiveRiders(ctx)
 	if excludeRiderID != "" {
 		filtered := riders[:0]
@@ -42,8 +52,9 @@ func (a *app) autoMatchJobExcluding(ctx context.Context, jobID string, pickupLat
 		}
 		riders = filtered
 	}
-	riderID := pickBestRider(riders, pickupLat, pickupLng)
+	riderID, _ := a.pickBestRiderWithRadiusExpand(ctx, riders, j)
 	if riderID == "" {
+		a.logEvent(ctx, jobID, "finding_rider", "system", "no_rider_in_radius", nil, nil)
 		return
 	}
 	_, _ = a.pool.Exec(ctx, `
@@ -54,7 +65,7 @@ func (a *app) autoMatchJobExcluding(ctx context.Context, jobID string, pickupLat
 		jobID, riderID)
 	_, _ = a.pool.Exec(ctx, `UPDATE commerce.dispatch_riders SET load_count = load_count + 1 WHERE id=$1`, riderID)
 	a.logEvent(ctx, jobID, "pending_accept", riderID, "auto_match", nil, nil)
-	j, _ := a.loadJob(ctx, jobID)
+	j, _ = a.loadJob(ctx, jobID)
 	a.firePhaseNotifications(ctx, j, "pending_accept")
 	a.pushTracking(ctx, j.OrderID)
 }

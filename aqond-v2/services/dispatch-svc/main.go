@@ -40,10 +40,12 @@ type jobRow struct {
 }
 
 type riderRow struct {
-	ID, DisplayName, Phone, Vehicle, Plate, Grade string
-	Rating                                        float64
-	ReviewCount, LoadCount                        int
-	Lat, Lng                                      *float64
+	ID, DisplayName, Phone, Vehicle, Plate, Grade, KycStatus string
+	Rating                                                     float64
+	ReviewCount, LoadCount, MaxLoad                            int
+	Lat, Lng                                                   *float64
+	Heading                                                    float64
+	Suspended                                                  bool
 }
 
 var riderPhaseFlow = []string{
