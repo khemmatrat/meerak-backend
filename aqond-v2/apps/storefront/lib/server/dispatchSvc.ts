@@ -1,22 +1,17 @@
 import { dispatchApi } from '@/lib/server-env';
 import type { RiderTrackingView } from '@/lib/server/riderTracking';
+import { shouldUseDispatchFallback } from '@/lib/server/dispatchMode';
 import { upstreamAuthHeaders, type UpstreamAuth } from '@/lib/server/upstreamAuth';
 import {
   localAcceptDispatchJob,
   localAdvanceDispatchPhase,
   localCreateDispatchJob,
   localListDispatchJobs,
+  localRejectDispatchJob,
   type LocalDispatchJob,
 } from '@/lib/server/localDispatch';
 
 const TIMEOUT_MS = 4000;
-
-function localDevFallback(): boolean {
-  return (
-    process.env.AQOND_LOCAL_DEV === '1' ||
-    process.env.NEXT_PUBLIC_AQOND_LOCAL_DEV === '1'
-  );
-}
 
 async function dispatchFetch<T>(
   path: string,
@@ -83,7 +78,7 @@ export async function createDispatchJob(input: {
     body: JSON.stringify(input),
   }, { ...auth, userId: auth?.userId || input.buyer_id || input.merchant_id });
   if (upstream) return upstream;
-  if (!localDevFallback()) return null;
+  if (!shouldUseDispatchFallback()) return null;
   return localCreateDispatchJob(input);
 }
 
@@ -98,8 +93,28 @@ export async function listDispatchJobs(opts: { rider_id?: string; status?: strin
   const suffix = q.toString() ? `?${q}` : '';
   const upstream = await dispatchFetch<{ jobs: DispatchJob[]; source?: string }>(`/v1/dispatch/jobs${suffix}`);
   if (upstream) return upstream;
-  if (!localDevFallback()) return null;
+  if (!shouldUseDispatchFallback()) return null;
   return localListDispatchJobs(opts) as { jobs: LocalDispatchJob[]; source: string };
+}
+
+export async function rejectDispatchJob(
+  jobId: string,
+  riderId: string,
+  reason: string,
+  auth?: UpstreamAuth,
+) {
+  const upstream = await dispatchFetch<{ ok: boolean; job?: DispatchJob }>(
+    `/v1/dispatch/jobs/${jobId}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ rider_id: riderId, reason }),
+      headers: { 'X-Rider-Id': riderId },
+    },
+    { ...auth, userId: auth?.userId || riderId },
+  );
+  if (upstream) return upstream;
+  if (!shouldUseDispatchFallback()) return null;
+  return localRejectDispatchJob(jobId, riderId, reason);
 }
 
 export async function acceptDispatchJob(jobId: string, riderId: string, auth?: UpstreamAuth) {
@@ -109,7 +124,7 @@ export async function acceptDispatchJob(jobId: string, riderId: string, auth?: U
     headers: { 'X-Rider-Id': riderId },
   }, { ...auth, userId: auth?.userId || riderId });
   if (upstream) return upstream;
-  if (!localDevFallback()) return null;
+  if (!shouldUseDispatchFallback()) return null;
   return localAcceptDispatchJob(jobId, riderId);
 }
 
@@ -124,9 +139,10 @@ export async function advanceDispatchPhase(
     { ...auth, userId: auth?.userId || body.rider_id },
   );
   if (upstream) return upstream;
-  if (!localDevFallback()) return null;
+  if (!shouldUseDispatchFallback()) return null;
   const local = await localAdvanceDispatchPhase(jobId, body);
   if (!local) return null;
+  if ('error' in local && local.error) return local;
   return { job: local.job };
 }
 
@@ -165,6 +181,4 @@ export function dispatchTrackWsUrl(orderId: string): string {
   return `${base}?order_id=${encodeURIComponent(orderId)}`;
 }
 
-export function shouldUseDispatchFallback(): boolean {
-  return localDevFallback();
-}
+export { shouldUseDispatchFallback } from '@/lib/server/dispatchMode';

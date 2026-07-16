@@ -13,6 +13,8 @@ export type RiderProfile = {
   active?: boolean;
   suspended?: boolean;
   earnings_micro?: number;
+  /** KYC selfie — verified face capture only */
+  profile_photo_url?: string | null;
 };
 
 export function loadRiderId(): string {
@@ -25,13 +27,37 @@ export function saveRiderId(id: string) {
   else localStorage.removeItem(RIDER_KEY);
 }
 
-export async function fetchRiderProfile(userId: string): Promise<RiderProfile | null> {
-  const res = await fetch(`/api/rider/me?user_id=${encodeURIComponent(userId)}`, { cache: 'no-store' });
+export async function fetchRiderProfile(userId: string, token?: string): Promise<RiderProfile | null> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  headers['X-User-Id'] = userId;
+
+  const res = await fetch(`/api/rider/me?user_id=${encodeURIComponent(userId)}`, {
+    cache: 'no-store',
+    headers,
+  });
   if (res.status === 404) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return null;
   if (!data.rider_id) return null;
-  return data as RiderProfile;
+
+  let profile_photo_url: string | null = data.profile_photo_url || null;
+  if (!profile_photo_url) {
+    try {
+      const pr = await fetch(`/api/rider/portrait?user_id=${encodeURIComponent(userId)}`, {
+        cache: 'no-store',
+        headers,
+      });
+      if (pr.ok) {
+        const pd = await pr.json();
+        profile_photo_url = pd.portrait_url || null;
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  return { ...(data as RiderProfile), profile_photo_url };
 }
 
 export function riderKycLabel(kyc?: string, active?: boolean): string {
@@ -41,6 +67,16 @@ export function riderKycLabel(kyc?: string, active?: boolean): string {
   if (s === 'rejected') return 'ไม่ผ่านการยืนยัน';
   return 'ยังไม่ยืนยันตัวตน';
 }
+
+export type RiderAvailability = 'online' | 'break' | 'offline';
+
+export const RIDER_REJECT_REASONS = [
+  { id: 'too_far', label: 'ไกลเกินไป' },
+  { id: 'low_pay', label: 'ค่าจ้างต่ำเกินไป' },
+  { id: 'traffic', label: 'จราจรหนาแน่น' },
+  { id: 'busy', label: 'ยุ่งอยู่ / มีงานอื่น' },
+  { id: 'other', label: 'อื่นๆ' },
+] as const;
 
 export type RiderJob = {
   id: string;
@@ -53,7 +89,7 @@ export type RiderJob = {
   address?: string;
   amount_micro?: number;
   payment_method?: string;
-  job_type?: 'food' | 'parcel';
+  job_type?: 'food' | 'parcel' | 'passenger';
   pickup_lat?: number;
   pickup_lng?: number;
   dropoff_lat?: number;
@@ -62,6 +98,7 @@ export type RiderJob = {
 
 export type RiderDashboard = {
   online: boolean;
+  availability?: RiderAvailability;
   gps_ok: boolean;
   today: {
     earnings_micro: number;
@@ -69,6 +106,19 @@ export type RiderDashboard = {
     active_jobs: number;
     acceptance_rate: number;
     cancel_rate: number;
+  };
+  week?: {
+    trips: number;
+    earnings_micro: number;
+    week_start?: string;
+  };
+  retention?: {
+    streak_days: number;
+    tier_id: string;
+    tier_label: string;
+    completed_trips: number;
+    avg_rating: number | null;
+    trips_to_next_tier: number | null;
   };
   current_job?: { id: string; order_id: string; phase: string } | null;
   wallet: { earnings_micro: number; withdrawable_micro: number; bonus_micro: number };
@@ -88,13 +138,36 @@ export async function fetchRiderDashboard(riderId: string): Promise<RiderDashboa
 }
 
 export async function setRiderOnlineStatus(riderId: string, online: boolean) {
+  const availability: RiderAvailability = online ? 'online' : 'offline';
+  return setRiderAvailability(riderId, availability);
+}
+
+export async function setRiderAvailability(
+  riderId: string,
+  availability: RiderAvailability,
+  opts?: {
+    face_session_token?: string;
+    device_fingerprint?: string;
+    lat?: number;
+    lng?: number;
+    user_id?: string;
+  },
+) {
   const res = await fetch('/api/rider/status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Rider-Id': riderId },
-    body: JSON.stringify({ rider_id: riderId, online }),
+    body: JSON.stringify({ rider_id: riderId, availability, ...opts }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'อัปเดตสถานะไม่สำเร็จ');
+  if (!res.ok) {
+    const msg =
+      data.code === 'face_daily_required' || data.code === 'face_verify_required'
+        ? 'ต้องสแกนหน้าเช้านี้ (ตอกบัตรเข้างาน) ก่อนเปิดออนไลน์'
+        : data.code === 'face_strict_due' || data.code === 'face_reverify_due'
+          ? `ครบรอบตรวจเข้มงวด — สแกนหน้าอีกครั้ง`
+          : data.error || data.code || 'อัปเดตสถานะไม่สำเร็จ';
+    throw new Error(msg);
+  }
   return data;
 }
 
@@ -116,28 +189,72 @@ export async function sendRiderTelemetry(
   });
 }
 
+export async function fetchOpenRiderJobs() {
+  const res = await fetch('/api/rider/jobs?status=open', { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'โหลดงานไม่สำเร็จ');
+  return data as { jobs: RiderJob[]; source?: string };
+}
+
 export async function fetchRiderJobs(riderId: string, mode: 'open' | 'mine' = 'mine') {
-  const q = mode === 'open' ? 'status=open' : `rider_id=${encodeURIComponent(riderId)}`;
+  if (mode === 'open') return fetchOpenRiderJobs();
+  const q = `rider_id=${encodeURIComponent(riderId)}`;
   const res = await fetch(`/api/rider/jobs?${q}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'โหลดงานไม่สำเร็จ');
   return data as { jobs: RiderJob[] };
 }
 
-export async function acceptRiderJob(jobId: string, riderId: string) {
+export async function rejectRiderJob(jobId: string, riderId: string, reason: string) {
+  const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rider_id: riderId, reason }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'ปฏิเสธงานไม่สำเร็จ');
+  return data;
+}
+
+export async function acceptRiderJob(
+  jobId: string,
+  riderId: string,
+  opts?: {
+    face_session_token?: string;
+    device_fingerprint?: string;
+    lat?: number;
+    lng?: number;
+    job_type?: string;
+    payment_method?: string;
+    amount_micro?: number;
+    user_id?: string;
+  },
+) {
   const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rider_id: riderId }),
+    body: JSON.stringify({ rider_id: riderId, ...opts }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'รับงานไม่สำเร็จ');
+  if (!res.ok) {
+    const msg =
+      data.code === 'face_passenger_verify_required'
+        ? 'ต้องยืนยันใบหน้าก่อนรับงานผู้โดยสาร'
+        : data.code === 'face_high_cod_verify_required'
+          ? 'ต้องสแกนหน้าเช้านี้ก่อนรับงาน COD มูลค่าสูง'
+          : data.code === 'face_strict_due' || data.code === 'face_reverify_due'
+            ? 'ครบรอบตรวจเข้มงวด — สแกนหน้าอีกครั้ง'
+            : data.code === 'face_daily_required'
+              ? 'ต้องสแกนหน้าเช้านี้ (ตอกบัตรเข้างาน)'
+              : data.message || data.error || data.code || 'รับงานไม่สำเร็จ';
+    throw new Error(msg);
+  }
   return data;
 }
 
 export async function advanceRiderJob(
   jobId: string,
-  body: { phase?: string; rider_id?: string; photo_url?: string },
+  body: { phase?: string; rider_id?: string; photo_url?: string; lat?: number; lng?: number },
 ) {
   const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/phase`, {
     method: 'POST',
@@ -145,7 +262,7 @@ export async function advanceRiderJob(
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'อัปเดตสถานะไม่สำเร็จ');
+  if (!res.ok) throw new Error(data.message || data.error || 'อัปเดตสถานะไม่สำเร็จ');
   return data as { job: RiderJob; tracking?: RiderTrackingView };
 }
 
