@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { getRiderKycPortrait } from './riderKycPortrait.js';
 import { compareRiderFaces, riderFaceMatchThreshold } from './riderFaceMatch.js';
 import { notifyRiderFaceIncident } from './riderFaceAlerts.js';
+import { detectRiderUniform } from './riderUniformCheck.js';
 
 const REQUIRED_LIVENESS_STEPS = ['center', 'turn_left', 'turn_right', 'blink'];
 
@@ -525,6 +526,17 @@ export async function verifyAndIssueRiderFaceSession(pool, {
     throw err;
   }
 
+  // Uniform / PPE check — same selfie, different model, NEVER blocks. Only a
+  // manual-review flag when we are highly confident a required item is missing.
+  let uniformResult = { checked: false, flagged: false, flags: [] };
+  if (DAILY_PURPOSES.has(normalizedPurpose) || STRICT_PURPOSES.has(normalizedPurpose)) {
+    try {
+      uniformResult = await detectRiderUniform({ selfieBase64 });
+    } catch {
+      uniformResult = { checked: false, flagged: false, flags: [] };
+    }
+  }
+
   const workday = currentWorkdayKey();
   const sessionId = randomUUID();
   let expiresAt;
@@ -561,6 +573,11 @@ export async function verifyAndIssueRiderFaceSession(pool, {
     tz: riderFaceDailyTz(),
     clock_in: true,
     strict_satisfies_daily: normalizedPurpose === 'strict',
+    uniform: {
+      checked: !!uniformResult.checked,
+      flagged: !!uniformResult.flagged,
+      flags: uniformResult.flags || [],
+    },
   };
 
   await insertSession(pool, {
@@ -582,6 +599,33 @@ export async function verifyAndIssueRiderFaceSession(pool, {
     metadata: sessionMeta,
   });
 
+  // Uniform flag → low-severity manual-review incident. Non-blocking: the
+  // session is already issued above; this never affects go-online.
+  if (uniformResult.flagged) {
+    try {
+      await recordIncident(pool, {
+        user_id: userId,
+        rider_id: riderId,
+        incident_type: 'uniform_flag',
+        severity: 'low',
+        session_id: sessionId,
+        device_fingerprint: deviceFingerprint || null,
+        bind_lat: lat ?? null,
+        bind_lng: lng ?? null,
+        rider_suspended: false,
+        metadata: {
+          purpose: sessionPurpose,
+          flags: uniformResult.flags,
+          helmet: uniformResult.helmet || null,
+          uniform: uniformResult.uniform || null,
+          mode: uniformResult.mode,
+        },
+      });
+    } catch {
+      /* flag recording must not affect verification */
+    }
+  }
+
   return {
     ok: true,
     session_token: token,
@@ -594,6 +638,11 @@ export async function verifyAndIssueRiderFaceSession(pool, {
     id_card_match_score: idCardMatchScore,
     expires_at: expiresAt.toISOString(),
     strict_interval_days: riderFaceStrictReverifyDaysForLevel(verifyLevel),
+    uniform: {
+      checked: !!uniformResult.checked,
+      flagged: !!uniformResult.flagged,
+      flags: uniformResult.flags || [],
+    },
   };
 }
 

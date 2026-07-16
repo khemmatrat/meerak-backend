@@ -33,6 +33,13 @@ import {
   checkRiderFaceAction,
   listRiderFaceIncidents,
 } from './riderFaceSession.js';
+import { checkRiderDocExpiry } from './riderDocGate.js';
+import {
+  assignCodHold,
+  markCodCollected,
+  markCodDeposited,
+  getRiderCodStatus,
+} from './riderCodLedger.js';
 
 function dispatchBase() {
   return (process.env.DISPATCH_SVC_URL || process.env.DISPATCH_API_URL || '').replace(/\/$/, '');
@@ -395,10 +402,92 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
           message: r.data?.message || 'รับงานไม่สำเร็จ',
         });
       }
-      res.json({ success: true, job: r.data?.job || r.data });
+
+      // COD reservation (PROVISIONAL) — best-effort. Reserves the COD amount
+      // against the rider tier cap; does not reverse the dispatch accept on cap
+      // failure (returns a warning instead) to avoid orphaned dispatch state.
+      let codWarning = null;
+      try {
+        const job = r.data?.job || r.data || {};
+        const pm = String(
+          req.body?.payment_method || req.body?.paymentMethod || job.payment_method || '',
+        ).toLowerCase();
+        const amtMicro = Number(
+          req.body?.amount_micro ?? req.body?.amountMicro ?? job.amount_micro ?? 0,
+        );
+        if (pm === 'cod' && amtMicro > 0) {
+          const cod = await assignCodHold(pool, {
+            riderId: String(riderId),
+            userId,
+            jobId,
+            orderId: job.order_id || job.orderId || null,
+            amountMicro: amtMicro,
+            grade: rider?.grade,
+          });
+          if (!cod.ok) codWarning = cod;
+        }
+      } catch (codErr) {
+        console.warn('[rider-os] COD reservation skipped:', codErr?.message || codErr);
+      }
+
+      res.json({ success: true, job: r.data?.job || r.data, ...(codWarning ? { cod_warning: codWarning } : {}) });
     } catch (e) {
       console.error('POST /api/rider-os/jobs/:id/accept', e);
       res.status(500).json({ error: 'accept_failed' });
+    }
+  });
+
+  // ---- COD (cash on delivery) — PROVISIONAL (awaiting business sign-off) ----
+
+  app.get('/api/rider-os/cod/status', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const status = await getRiderCodStatus(pool, String(riderId));
+      res.json(status);
+    } catch (e) {
+      console.error('GET /api/rider-os/cod/status', e);
+      res.status(500).json({ error: 'cod_status_failed' });
+    }
+  });
+
+  app.post('/api/rider-os/jobs/:id/cod/collected', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const jobId = String(req.params.id || '').trim();
+      const result = await markCodCollected(pool, { jobId });
+      if (!result.ok) return res.status(409).json(result);
+      res.json(result);
+    } catch (e) {
+      console.error('POST /api/rider-os/jobs/:id/cod/collected', e);
+      res.status(500).json({ error: 'cod_collected_failed' });
+    }
+  });
+
+  app.post('/api/rider-os/cod/deposit', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const jobId = String(req.body?.job_id || req.body?.jobId || '').trim();
+      if (!jobId) return res.status(400).json({ error: 'job_id_required' });
+      const method = req.body?.method ? String(req.body.method) : null;
+      const reference = req.body?.reference ? String(req.body.reference) : null;
+      const result = await markCodDeposited(pool, { jobId, method, reference });
+      if (!result.ok) return res.status(409).json(result);
+      res.json(result);
+    } catch (e) {
+      console.error('POST /api/rider-os/cod/deposit', e);
+      res.status(500).json({ error: 'cod_deposit_failed' });
     }
   });
 
@@ -411,6 +500,16 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
       if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
 
       const online = req.body?.online !== false;
+
+      // Document expiry lock — runs BEFORE the face gate. Cheaper (DB only) and
+      // better UX: an expired ID/licence bars operating regardless of identity,
+      // so block here before asking for a selfie.
+      if (online) {
+        const docGate = await checkRiderDocExpiry(pool, userId);
+        if (!docGate.ok) {
+          return res.status(403).json(docGate);
+        }
+      }
 
       // Face gate — บังคับสแกนหน้า (ตอกบัตรเช้า / strict) ก่อนเปิดออนไลน์
       if (online) {
