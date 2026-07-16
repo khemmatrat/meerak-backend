@@ -15,6 +15,7 @@ import { requiresDeliveryPhoto, formatProofTimestamp } from '@/lib/riderDelivery
 import { useRider } from '@/components/mobile/RiderShell';
 import { RiderActiveMap } from '@/components/mobile/RiderActiveMap';
 import { RiderSosButton } from '@/components/mobile/RiderSosButton';
+import { RiderIssueSheet } from '@/components/mobile/RiderIssueSheet';
 import { RiderCodCollectPanel } from '@/components/mobile/RiderCodCollectPanel';
 import type { ChatMessage } from '@/lib/server/riderTracking';
 
@@ -195,7 +196,7 @@ export default function RiderActiveJobPage() {
     setBusy(true);
     try {
       const data = await sendRiderJobChat(job.order_id, chatText.trim());
-      setTracking((prev) => ({ ...prev, chat_messages: data.chat_messages }));
+      setTracking((prev) => ({ ...prev, chat_messages: data.chat_messages as ChatMessage[] }));
       setChatText('');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'ส่งแชทไม่สำเร็จ');

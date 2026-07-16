@@ -1637,6 +1637,487 @@ body.tt-embed .axs-rider .tt-rider-premium-body {
   margin-top: 8px;
 }
 
+/* ---- COD dashboard v2 (redesign) ---- */
+.tt-rider-cod-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tt-rider-cod-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tt-rider-cod-top h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #111827;
+}
+
+.tt-rider-cod-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-refresh {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  font-size: 1.25rem;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.tt-rider-cod-refresh.spinning {
+  animation: tt-rider-cod-spin 0.8s linear infinite;
+}
+
+@keyframes tt-rider-cod-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tt-rider-cod-hero--v2 {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.25);
+}
+
+.tt-rider-cod-hero-glow {
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+.tt-rider-cod-util-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+.tt-rider-cod-hero-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.tt-rider-cod-hero-stats span {
+  display: block;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.tt-rider-cod-hero-stats strong {
+  font-size: 1.05rem;
+}
+
+.tt-rider-cod-actions--v2 .tt-rider-cod-action-card--tap {
+  text-decoration: none;
+  color: inherit;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.tt-rider-cod-actions--v2 .tt-rider-cod-action-card--tap:hover,
+.tt-rider-cod-actions--v2 .tt-rider-cod-action-card--tap:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border-color: #93c5fd;
+}
+
+.tt-rider-cod-action-card--deposit {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.tt-rider-cod-action-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.tt-rider-cod-action-meta {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-quick h2,
+.tt-rider-cod-section-head h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.tt-rider-cod-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.tt-rider-cod-quick-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.tt-rider-cod-quick-nav a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  text-decoration: none;
+  color: #111827;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.tt-rider-cod-quick-nav a:last-child {
+  border-bottom: none;
+}
+
+.tt-rider-cod-quick-nav a:hover {
+  background: #eff6ff;
+}
+
+.tt-rider-cod-txn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tt-rider-cod-txn {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tt-rider-cod-txn:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+.tt-rider-cod-txn-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tt-rider-cod-txn-sub {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-txn-when {
+  font-size: 0.75rem;
+}
+
+.tt-rider-cod-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.tt-rider-cod-badge--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tt-rider-cod-badge--collected {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.tt-rider-cod-badge--done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.tt-rider-cod-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: #6b7280;
+}
+
+.tt-rider-cod-empty-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tt-rider-cod-alert {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.tt-rider-cod-alert--warn {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.tt-rider-cod-alert--err {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.tt-rider-cod-skeleton .tt-rider-cod-skel-line,
+.tt-rider-cod-skeleton .tt-rider-cod-skel-hero,
+.tt-rider-cod-skeleton .tt-rider-cod-skel-card {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: tt-rider-cod-shimmer 1.2s infinite;
+  border-radius: 12px;
+}
+
+.tt-rider-cod-skel-line--title {
+  height: 28px;
+  width: 55%;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-skel-hero {
+  height: 160px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-skel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-skel-card {
+  height: 88px;
+}
+
+.tt-rider-cod-skel-card--tall {
+  height: 120px;
+}
+
+@keyframes tt-rider-cod-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.tt-rider-cod-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+}
+
+.tt-rider-cod-modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 20px 20px 16px 16px;
+  padding: 18px 16px 20px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.tt-rider-cod-modal-head h3 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.tt-rider-cod-modal-head p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-modal-warn {
+  color: #b45309 !important;
+}
+
+.tt-rider-cod-deposit-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.tt-rider-cod-deposit-opt {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.tt-rider-cod-deposit-opt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tt-rider-cod-deposit-opt strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.tt-rider-cod-deposit-opt p {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-deposit-opt-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.tt-rider-cod-bank-card {
+  margin: 12px 0;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.tt-rider-cod-bank-card div {
+  margin-bottom: 10px;
+}
+
+.tt-rider-cod-bank-card dt {
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.tt-rider-cod-bank-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.tt-rider-cod-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.88rem;
+}
+
+.tt-rider-cod-bank-amt {
+  font-size: 1.35rem !important;
+  color: #2563eb;
+}
+
+.tt-rider-cod-copy {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.tt-rider-cod-modal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tt-rider-cod-btn-primary,
+.tt-rider-cod-btn-secondary {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+}
+
+.tt-rider-cod-btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.tt-rider-cod-btn-primary--inline {
+  display: inline-block;
+  margin-top: 12px;
+  text-decoration: none;
+  text-align: center;
+}
+
+.tt-rider-cod-btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.tt-rider-cod-modal-close {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+}
+
+.tt-rider-cod-success {
+  text-align: center;
+  padding: 16px 8px;
+}
+
+.tt-rider-cod-success-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tt-rider-cod-back {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: #2563eb;
+  text-decoration: none;
+  margin-bottom: 4px;
+}
+
 .tt-rider-err {
   color: #dc2626;
   font-size: 0.9rem;

@@ -15,6 +15,11 @@ export type LocalDispatchJob = DispatchJob & {
   dropoff_lat?: number;
   dropoff_lng?: number;
   rider_id?: string;
+  delivery_proof_url?: string;
+  delivery_proof_at?: string;
+  delivery_proof_lat?: number;
+  delivery_proof_lng?: number;
+  updated_at?: string;
 };
 
 type JobStore = { jobs: LocalDispatchJob[] };
@@ -83,6 +88,7 @@ export async function localCreateDispatchJob(input: {
     pickup_lng: pickup.lng,
     dropoff_lat: dropoff.lat,
     dropoff_lng: dropoff.lng,
+    updated_at: new Date().toISOString(),
   };
   store.jobs.unshift(job);
   await writeJobs(store);
@@ -141,9 +147,27 @@ export async function localAcceptDispatchJob(jobId: string, riderId: string) {
   const store = await readJobs();
   const job = store.jobs.find((j) => j.id === jobId);
   if (!job || job.status !== 'open') return null;
+
+  try {
+    const { consumeRiderCreditForJob } = await import('@/lib/server/riderCreditLine');
+    await consumeRiderCreditForJob({
+      rider_id: riderId,
+      job_id: job.id,
+      order_id: job.order_id,
+      job_amount_micro: job.amount_micro || 0,
+    });
+  } catch (e: unknown) {
+    const code = e instanceof Error && 'code' in e ? String((e as { code?: string }).code) : '';
+    if (code === 'insufficient_credit') {
+      return { error: 'insufficient_credit', message: 'เครดิตไม่พอรับงาน — เติมเครดิตหรือส่งงานให้ครบเพื่อหักคืน' } as const;
+    }
+    throw e;
+  }
+
   job.status = 'assigned';
   job.phase = 'rider_assigned';
   job.rider_id = riderId;
+  job.updated_at = new Date().toISOString();
   await writeJobs(store);
 
   await appendAqondEvent({
@@ -173,6 +197,28 @@ export async function localAcceptDispatchJob(jobId: string, riderId: string) {
   return { job };
 }
 
+export async function localRejectDispatchJob(
+  jobId: string,
+  riderId: string,
+  reason: string,
+) {
+  const store = await readJobs();
+  const job = store.jobs.find((j) => j.id === jobId);
+  if (!job || job.status !== 'open') return null;
+
+  await appendAqondEvent({
+    order_id: job.order_id,
+    event_type: 'dispatch.rider_rejected',
+    source: 'dispatch-svc',
+    job_id: job.id,
+    rider_id: riderId,
+    merchant_id: job.merchant_id,
+    payload: { reason, local: true },
+  });
+
+  return { ok: true, job };
+}
+
 const PHASE_FLOW = [
   'rider_assigned',
   'rider_picked_up',
@@ -184,18 +230,48 @@ const PHASE_FLOW = [
 
 export async function localAdvanceDispatchPhase(
   jobId: string,
-  body: { phase?: string; rider_id?: string },
+  body: {
+    phase?: string;
+    rider_id?: string;
+    photo_url?: string;
+    lat?: number;
+    lng?: number;
+  },
 ) {
   const store = await readJobs();
   const job = store.jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
-  if (body.phase) {
-    job.phase = body.phase;
-  } else {
-    const idx = PHASE_FLOW.indexOf(job.phase);
-    job.phase = PHASE_FLOW[Math.min(idx + 1, PHASE_FLOW.length - 1)] || job.phase;
+  const nextPhase =
+    body.phase ||
+    (() => {
+      const idx = PHASE_FLOW.indexOf(job.phase);
+      return PHASE_FLOW[Math.min(idx + 1, PHASE_FLOW.length - 1)] || job.phase;
+    })();
+
+  const { validateRiderPhaseAdvance } = await import('@/lib/riderDeliveryProof');
+  const check = validateRiderPhaseAdvance({
+    job_type: job.job_type,
+    phase: job.phase,
+    next_phase: nextPhase,
+    proof: job,
+    photo_url: body.photo_url,
+  });
+  if (!check.ok) {
+    return { error: check.code, message: check.message } as const;
   }
+
+  if (nextPhase === 'photo_proof' && body.photo_url) {
+    job.delivery_proof_url = body.photo_url;
+    job.delivery_proof_at = new Date().toISOString();
+    if (body.lat != null && body.lng != null) {
+      job.delivery_proof_lat = body.lat;
+      job.delivery_proof_lng = body.lng;
+    }
+  }
+
+  job.phase = nextPhase;
+  job.updated_at = new Date().toISOString();
   if (job.phase === 'rider_picked_up' || job.phase === 'en_route') job.status = 'active';
   if (job.phase === 'rider_completed') job.status = 'completed';
 
@@ -223,7 +299,21 @@ export async function localAdvanceDispatchPhase(
       job_id: job.id,
       rider_id: job.rider_id,
       merchant_id: job.merchant_id,
+      payload: {
+        local: true,
+        delivery_proof_at: job.delivery_proof_at,
+        has_photo: !!job.delivery_proof_url,
+      },
     });
+    if (job.rider_id) {
+      const { settleRiderJobEarning } = await import('@/lib/server/riderCreditLine');
+      await settleRiderJobEarning({
+        rider_id: job.rider_id,
+        job_id: job.id,
+        order_id: job.order_id,
+        job_amount_micro: job.amount_micro || 0,
+      }).catch(() => null);
+    }
   }
 
   return { job };

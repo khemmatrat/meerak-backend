@@ -15,7 +15,9 @@ function check(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   if (!check(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const dash = await adminDashboard();
+  const dash = (await adminDashboard()) as Awaited<ReturnType<typeof adminDashboard>> & {
+    stuck_dispatch?: unknown[];
+  };
   try {
     const { dispatchApi } = await import('@/lib/server-env');
     const res = await fetch(dispatchApi('/v1/dispatch/ops/stuck'), {

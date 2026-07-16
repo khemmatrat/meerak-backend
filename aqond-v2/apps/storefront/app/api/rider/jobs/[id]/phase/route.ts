@@ -11,5 +11,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!data) {
     return NextResponse.json({ error: 'dispatch_unavailable' }, { status: 503 });
   }
+  if ('error' in data && data.error) {
+    return NextResponse.json(data, { status: 400 });
+  }
   return NextResponse.json(data);
 }

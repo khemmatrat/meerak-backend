@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dispatchApi } from '@/lib/server-env';
+import { allowLocalDev, dispatchApi, meerakBackendBase } from '@/lib/server-env';
+import { localGetRiderByUserId, localRiderToProfile } from '@/lib/server/localDispatchRiders';
 import { upstreamAuthFromRequest, upstreamAuthHeaders } from '@/lib/server/upstreamAuth';
+
+async function fetchKycPortrait(auth: ReturnType<typeof upstreamAuthFromRequest>, userId: string) {
+  try {
+    const base = meerakBackendBase();
+    const res = await fetch(`${base}/api/rider-os/kyc/portrait`, {
+      headers: upstreamAuthHeaders({ ...auth, userId }),
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return data.portrait_url || null;
+  } catch {
+    return null;
+  }
+}
 
 /** GET dispatch rider profile by user_id (for partner hub status). */
 export async function GET(req: NextRequest) {
@@ -16,8 +32,25 @@ export async function GET(req: NextRequest) {
       headers: upstreamAuthHeaders({ ...auth, userId: auth.userId || userId }),
     });
     const data = await res.json().catch(() => ({}));
-    return NextResponse.json(data, { status: res.status });
+    if (res.ok && data.rider_id) {
+      const portrait = await fetchKycPortrait(auth, userId);
+      return NextResponse.json(
+        { ...data, profile_photo_url: portrait || data.profile_photo_url || null },
+        { status: res.status },
+      );
+    }
   } catch {
-    return NextResponse.json({ error: 'dispatch_unavailable' }, { status: 503 });
+    /* fall through to local */
   }
+
+  if (allowLocalDev()) {
+    const local = await localGetRiderByUserId(userId);
+    if (local) {
+      const portrait = (await fetchKycPortrait(auth, userId)) || local.profile_photo_url || null;
+      return NextResponse.json({ ...localRiderToProfile(local), profile_photo_url: portrait });
+    }
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  return NextResponse.json({ error: 'dispatch_unavailable' }, { status: 503 });
 }

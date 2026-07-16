@@ -231,6 +231,8 @@ export async function foodMerchantOsRiders() {
 
   const { listOnlineRiders } = await import('@/lib/server/riderPresence');
   const onlineRiders = await listOnlineRiders();
+  const { getRiderOpsSummary } = await import('@/lib/server/riderOpsDashboard');
+  const ops = await getRiderOpsSummary();
 
   return {
     ok: true,
@@ -239,6 +241,7 @@ export async function foodMerchantOsRiders() {
       active_deliveries: activeJobs.length,
       riders_online: onlineRiders.length || riders.size,
     },
+    ops,
     jobs: allJobs.slice(0, 40),
     riders: [...riders.values()],
     recent_events: riderEvents.slice(0, 30),

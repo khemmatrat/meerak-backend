@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { mintServiceJwt } from '@/lib/server/serviceJwt';
+import { mintBackendJwt, mintServiceJwt } from '@/lib/server/serviceJwt';
 
 export type UpstreamAuth = {
   authorization?: string;
@@ -38,7 +38,9 @@ export function upstreamAuthHeaders(auth?: UpstreamAuth): Record<string, string>
   if (bearer) {
     h.Authorization = bearer.startsWith('Bearer ') ? bearer : `Bearer ${bearer}`;
   } else if (auth.userId) {
-    const tok = mintServiceJwt(auth.userId, auth.sessionId);
+    const backendTok = mintBackendJwt(auth.userId);
+    const kongTok = mintServiceJwt(auth.userId, auth.sessionId);
+    const tok = backendTok || kongTok;
     if (tok) h.Authorization = `Bearer ${tok}`;
   }
   return h;

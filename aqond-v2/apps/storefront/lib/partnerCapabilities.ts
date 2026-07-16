@@ -73,7 +73,7 @@ export async function loadPartnerCapabilities(
   const mStatus = merchantStatus(dash);
   const dStatus = riderStatus(rider);
   const shopHref = mStatus === 'active' ? '/m/merchant/orders' : '/m/merchant/shops';
-  const deliveryHref = dStatus === 'active' ? '/m/rider/home' : '/m/rider/signup';
+  const deliveryHref = dStatus === 'active' ? '/storefront/rider-os/home' : '/storefront/rider-os/signup';
 
   return [
     {

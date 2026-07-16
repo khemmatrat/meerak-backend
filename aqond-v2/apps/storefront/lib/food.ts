@@ -196,7 +196,7 @@ export async function placeFoodExpressOrder(opts: {
   });
 
   const orderId = result.order_id || result.id;
-  // Phase 4: tracking via dispatch-svc when merchant marks ready (not at checkout).
+  // Dispatch job is created at checkout (local dev) or via dispatch-svc when merchant advances fulfillment.
 
   return {
     orderId,

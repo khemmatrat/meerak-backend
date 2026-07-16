@@ -1,4 +1,4 @@
-import type { AuthSession } from '@/lib/auth';
+import type { AuthState } from '@/lib/bff';
 
 export type RiderCodHold = {
   id: string;
@@ -25,7 +25,7 @@ export type RiderCodSummary = {
   provisional?: boolean;
 };
 
-function authHeaders(auth?: AuthSession | null): Record<string, string> {
+function authHeaders(auth?: AuthState | null): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth?.token) h.Authorization = `Bearer ${auth.token}`;
   if (auth?.userId) h['x-user-id'] = auth.userId;
@@ -33,7 +33,7 @@ function authHeaders(auth?: AuthSession | null): Record<string, string> {
   return h;
 }
 
-export async function fetchRiderCodSummary(auth?: AuthSession | null): Promise<RiderCodSummary> {
+export async function fetchRiderCodSummary(auth?: AuthState | null): Promise<RiderCodSummary> {
   const res = await fetch('/api/rider/cod/summary', {
     cache: 'no-store',
     headers: authHeaders(auth),
@@ -60,7 +60,7 @@ export function emptyRiderCodSummary(riderId: string): RiderCodSummary {
 export async function markRiderCodCollected(
   jobId: string,
   input: { amount_micro?: number; method?: string; photo_url?: string },
-  auth?: AuthSession | null,
+  auth?: AuthState | null,
 ) {
   const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/cod/collected`, {
     method: 'POST',
@@ -74,7 +74,7 @@ export async function markRiderCodCollected(
 
 export async function submitRiderCodDeposit(
   input: { job_id: string; method?: string; reference?: string },
-  auth?: AuthSession | null,
+  auth?: AuthState | null,
 ) {
   const res = await fetch('/api/rider/cod/deposit', {
     method: 'POST',

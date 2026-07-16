@@ -2,11 +2,11 @@ import { createDispatchJob } from '@/lib/server/dispatchSvc';
 import type { MerchantOrderView } from '@/lib/server/merchantOrders';
 
 function itemsSummary(order: MerchantOrderView) {
-  const items = Array.isArray(order.items) ? order.items : [];
+  const items: Array<{ title?: string; product_id?: string; qty?: number }> = Array.isArray(order.items)
+    ? (order.items as Array<{ title?: string; product_id?: string; qty?: number }>)
+    : [];
   const summary = items
-    .map((it: { title?: string; product_id?: string; qty?: number }) =>
-      `${it.title || it.product_id || 'item'} x${it.qty || 1}`,
-    )
+    .map((it) => `${it.title || it.product_id || 'item'} x${it.qty || 1}`)
     .join(', ');
   return summary || `ออเดอร์ #${order.order_id.slice(-6)}`;
 }

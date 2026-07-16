@@ -7,6 +7,7 @@ import { decrementDevProductStock } from '@/lib/server/localCatalogStock';
 import { appendAqondEvent } from '@/lib/server/aqondEventBus';
 import { recordAffiliateConversion } from '@/lib/server/affiliateStats';
 import { resolvePromoDiscount } from '@/lib/server/couponClient';
+import { handoffCustomerOrderToDispatch, handoffStoredOrderToDispatch } from '@/lib/server/orderDispatchHandoff';
 import type { PaymentMethodId } from '@/lib/payment';
 
 type CheckoutBody = {
@@ -267,6 +268,18 @@ export async function POST(req: NextRequest) {
           actor: body.buyer_id,
           payload: { order_type: body.order_type, amount_micro: totalMicro },
         }).catch(() => null);
+        await handoffCustomerOrderToDispatch({
+          order_id: orderId,
+          buyer_id: body.buyer_id,
+          merchant_id: body.merchant_id,
+          amount_micro: totalMicro,
+          items: body.items,
+          recipient: body.recipient,
+          phone: body.phone,
+          order_type: body.order_type,
+          carrier_id: body.carrier_id,
+          merchant_name: body.merchant_name,
+        }).catch(() => null);
       }
       const label = orderId ? await createShippingLabel(orderId, body, totalMicro) : null;
       if (body.creator_id && body.items[0]) {
@@ -378,6 +391,8 @@ export async function POST(req: NextRequest) {
   if (body.creator_id && body.items[0]) {
     await recordAffiliateConversion(body.creator_id, body.items[0].product_id, totalMicro).catch(() => null);
   }
+
+  await handoffStoredOrderToDispatch(local.order_id).catch(() => null);
 
   const finalPaymentAction = buildPaymentAction(method, local.order_id, totalMicro);
   const paymentActionOut =

@@ -99,12 +99,3 @@ export default function OnboardingIntentPage() {
     </>
   );
 }
-
-export function shouldShowOnboardingIntent(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return !localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return false;
-  }
-}

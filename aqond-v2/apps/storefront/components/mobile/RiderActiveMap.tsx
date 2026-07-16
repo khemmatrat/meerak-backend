@@ -2,6 +2,7 @@
 
 import { useId, useMemo } from 'react';
 import { mapPointToCoords, mapPointToPercent, routeCurvePath } from '@/lib/foodTracking';
+import { navTargetForPhase, openExternalNav } from '@/lib/riderNavExternal';
 
 type Props = {
   pickup: { lat: number; lng: number; label?: string };
@@ -32,24 +33,23 @@ export function RiderActiveMap({ pickup, dropoff, rider, phase }: Props) {
       ? 'นำทางไปร้าน'
       : 'นำทางไปลูกค้า';
 
-  const openNav = () => {
-    const target =
-      phase === 'rider_assigned' || phase === 'finding_rider' || phase === 'food_ready'
-        ? pickup
-        : dropoff;
-    window.open(
-      `https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lng}`,
-      '_blank',
-    );
-  };
+  const target = navTargetForPhase(phase, pickup, dropoff);
 
   return (
     <div className="tt-rider-active-map-wrap">
       <div className="tt-rider-jobs-map-head">
         <span className="tt-rider-map-title">{navLabel}</span>
-        <button type="button" className="tt-rider-nav-ext-btn" onClick={openNav}>
-          เปิดแผนที่ ↗
-        </button>
+        <div className="tt-rider-nav-ext-group">
+          <button type="button" className="tt-rider-nav-ext-btn" onClick={() => openExternalNav('google', target)}>
+            Google
+          </button>
+          <button type="button" className="tt-rider-nav-ext-btn" onClick={() => openExternalNav('waze', target)}>
+            Waze
+          </button>
+          <button type="button" className="tt-rider-nav-ext-btn" onClick={() => openExternalNav('apple', target)}>
+            Apple
+          </button>
+        </div>
       </div>
       <div className="tt-rider-jobs-map" style={{ height: 200 }}>
         <div className="tt-rider-map-terrain" aria-hidden />
