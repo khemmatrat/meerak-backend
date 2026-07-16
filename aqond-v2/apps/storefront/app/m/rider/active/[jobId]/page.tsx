@@ -11,8 +11,11 @@ import {
   sendRiderTelemetry,
   RIDER_PHASE_LABELS,
 } from '@/lib/rider';
+import { requiresDeliveryPhoto, formatProofTimestamp } from '@/lib/riderDeliveryProof';
 import { useRider } from '@/components/mobile/RiderShell';
 import { RiderActiveMap } from '@/components/mobile/RiderActiveMap';
+import { RiderSosButton } from '@/components/mobile/RiderSosButton';
+import { RiderCodCollectPanel } from '@/components/mobile/RiderCodCollectPanel';
 import type { ChatMessage } from '@/lib/server/riderTracking';
 
 type RiderJob = {
@@ -32,6 +35,10 @@ type RiderJob = {
   pickup_lng?: number;
   dropoff_lat?: number;
   dropoff_lng?: number;
+  delivery_proof_url?: string;
+  delivery_proof_at?: string;
+  delivery_proof_lat?: number;
+  delivery_proof_lng?: number;
 };
 
 export default function RiderActiveJobPage() {
@@ -46,6 +53,7 @@ export default function RiderActiveJobPage() {
   const [chatText, setChatText] = useState('');
   const [photoPreview, setPhotoPreview] = useState('');
   const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [issueOpen, setIssueOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
@@ -97,11 +105,21 @@ export default function RiderActiveJobPage() {
     return () => clearInterval(t);
   }, [job, jobId, riderId]);
 
-  const advance = async (phase?: string, photo_url?: string) => {
+  const advance = async (
+    phase?: string,
+    photo_url?: string,
+    gps?: { lat: number; lng: number },
+  ) => {
     setBusy(true);
     setErr('');
     try {
-      const res = await advanceRiderJob(jobId, { phase, rider_id: riderId, photo_url });
+      const res = await advanceRiderJob(jobId, {
+        phase,
+        rider_id: riderId,
+        photo_url,
+        lat: gps?.lat,
+        lng: gps?.lng,
+      });
       setJob(res.job);
       if (res.tracking) setTracking(res.tracking);
       if (res.job?.status === 'completed') {
@@ -122,7 +140,7 @@ export default function RiderActiveJobPage() {
     reader.onload = () => {
       const url = String(reader.result || '');
       setPhotoPreview(url);
-      void advance('photo_proof', url);
+      void advance('photo_proof', url, riderPos || undefined);
     };
     reader.readAsDataURL(file);
   };
@@ -192,6 +210,41 @@ export default function RiderActiveJobPage() {
     window.location.href = `tel:${phone}`;
   };
 
+  const reportIssue = async (issueId: string) => {
+    setIssueOpen(false);
+    setBusy(true);
+    setErr('');
+    try {
+      const labels: Record<string, string> = {
+        customer_no_answer: 'ลูกค้าไม่รับสาย',
+        merchant_closed: 'ร้านปิดของหมด',
+        wrong_pin: 'พิกัดผิด',
+        vehicle_breakdown: 'รถเสีย',
+      };
+      const res = await fetch('/api/ai/rider-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: labels[issueId] || issueId,
+          rider_id: riderId,
+          job_id: jobId,
+          order_id: job?.order_id,
+          phase: job?.phase,
+          lat: riderPos?.lat,
+          lng: riderPos?.lng,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'แจ้งปัญหาไม่สำเร็จ');
+      setErr('');
+      alert(data.reply_th || 'บันทึกปัญหาแล้ว — ทีมซัพพอร์ตจะติดตาม');
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'แจ้งปัญหาไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!job) {
     return (
       <div className="tt-rider-active-page">
@@ -204,6 +257,12 @@ export default function RiderActiveJobPage() {
   const next = nextRiderAction(job.phase);
   const messages = tracking?.chat_messages || [];
   const customerLabel = job.recipient_name || 'ลูกค้า';
+  const needsFoodProof = requiresDeliveryPhoto(job.job_type);
+  const proofUrl = photoPreview || job.delivery_proof_url;
+  const isCod =
+    String(job.payment_method || 'cod').toLowerCase() === 'cod' || !job.payment_method;
+  const showCodCollect =
+    isCod && (job.phase === 'cod_payment' || job.phase === 'handoff' || next?.phase === 'cod_payment');
 
   return (
     <div className="tt-rider-active-page">
@@ -230,6 +289,21 @@ export default function RiderActiveJobPage() {
         สถานะ: <strong>{RIDER_PHASE_LABELS[job.phase] || job.phase}</strong>
       </p>
 
+      {needsFoodProof && job.status !== 'completed' && !job.delivery_proof_url && (
+        <p className="tt-rider-proof-required">
+          📷 งานอาหาร — ต้องถ่ายรูปหลักฐานส่งของพร้อมตำแหน่ง GPS ก่อนปิดงาน
+        </p>
+      )}
+
+      {job.delivery_proof_at && (
+        <p className="tt-hint tt-rider-proof-meta">
+          หลักฐานบันทึกเมื่อ {formatProofTimestamp(job.delivery_proof_at)}
+          {job.delivery_proof_lat != null && job.delivery_proof_lng != null
+            ? ` · GPS ${job.delivery_proof_lat.toFixed(5)}, ${job.delivery_proof_lng.toFixed(5)}`
+            : ''}
+        </p>
+      )}
+
       <div className="tt-merchant-actions" style={{ marginTop: 12, flexWrap: 'wrap' }}>
         {job.customer_phone && (
           <button type="button" className="tt-btn-ghost tt-merchant-btn" onClick={callCustomer}>
@@ -239,7 +313,31 @@ export default function RiderActiveJobPage() {
         <button type="button" className="tt-btn-ghost tt-merchant-btn" onClick={() => setChatOpen((v) => !v)}>
           💬 แชท{messages.length ? ` (${messages.length})` : ''}
         </button>
+        <button type="button" className="tt-btn-ghost tt-merchant-btn" onClick={() => setIssueOpen(true)}>
+          🆘 ขอความช่วยเหลือ
+        </button>
       </div>
+
+      <div className="tt-rider-active-safety" style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <RiderSosButton
+          riderId={riderId}
+          jobId={jobId}
+          orderId={job.order_id}
+          phase={job.phase}
+          lat={riderPos?.lat}
+          lng={riderPos?.lng}
+        />
+        <p className="tt-hint" style={{ margin: 0, flex: 1 }}>
+          แชร์ทริป: ส่งลิงก์ติดตามให้ครอบครัวผ่านแชทลูกค้า (เร็วๆ นี้)
+        </p>
+      </div>
+
+      <RiderIssueSheet
+        open={issueOpen}
+        phase={job.phase}
+        onClose={() => setIssueOpen(false)}
+        onSelect={(id) => void reportIssue(id)}
+      />
 
       {chatOpen && (
         <div className="tt-rider-chat-panel" style={{ marginTop: 12 }}>
@@ -265,14 +363,23 @@ export default function RiderActiveJobPage() {
         </div>
       )}
 
-      {photoPreview && (
+      {proofUrl && (
         <div className="tt-delivery-photo" style={{ marginTop: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoPreview} alt="หลักฐานการส่ง" style={{ maxWidth: '100%', borderRadius: 8 }} />
+          <img src={proofUrl} alt="หลักฐานการส่ง" style={{ maxWidth: '100%', borderRadius: 8 }} />
         </div>
       )}
 
       {err && <p className="tt-error-inline">{err}</p>}
+
+      {showCodCollect && (
+        <RiderCodCollectPanel
+          jobId={jobId}
+          orderId={job.order_id}
+          amountMicro={job.amount_micro}
+          onCollected={() => reload()}
+        />
+      )}
 
       <div className="tt-rider-voice-bar">
         <button

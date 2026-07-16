@@ -5,24 +5,34 @@
 @import '@aqond/ui/tokens.css';
 
 .axs-rider {
-  --tt-bg: var(--axs-bg);
-  --tt-bg-elevated: var(--axs-surface);
-  --tt-border: var(--axs-border);
-  --tt-text: var(--axs-text);
-  --tt-muted: var(--axs-text-muted);
-  --tt-accent: var(--axs-primary);
-  --tt-accent-dark: var(--axs-primary-hover);
-  --tt-success: var(--axs-success);
-  --tt-danger: var(--axs-danger);
+  --tt-bg: #fffbf5;
+  --tt-bg-elevated: #ffffff;
+  --tt-border: #e8d5b7;
+  --tt-text: #1f2937;
+  --tt-muted: #6b7280;
+  --tt-accent: #059669;
+  --tt-accent-dark: #047857;
+  --tt-success: #059669;
+  --tt-danger: #dc2626;
   --tt-font: var(--axs-font-sans);
   min-height: 100vh;
   font-family: var(--axs-font-sans);
+  background: #fffbf5;
+  color: #1f2937;
 }
 
 /* —— Shell —— */
 .axs-rider .tt-rider-premium {
-  background: var(--axs-bg);
-  color: var(--axs-text);
+  background: #fffbf5;
+  color: #1f2937;
+}
+
+body.tt-embed .axs-rider .tt-rider-premium-header {
+  display: none;
+}
+
+body.tt-embed .axs-rider .tt-rider-premium-body {
+  padding-top: 0;
 }
 
 .axs-rider .tt-rider-premium-header {
@@ -52,7 +62,18 @@
 }
 
 .axs-rider .tt-rider-os-nav a.active {
-  color: var(--axs-primary);
+  color: #047857;
+  background: rgba(5, 150, 105, 0.1);
+  border-radius: 12px;
+}
+
+.axs-rider .tt-rider-os-nav a.active .tt-rider-os-nav-icon {
+  color: #047857;
+}
+
+.axs-rider .tt-rider-quick-card-icon {
+  background: rgba(5, 150, 105, 0.1);
+  color: #047857;
 }
 
 .axs-rider .tt-rider-fcm-banner {
@@ -113,9 +134,24 @@
   box-shadow: 0 0 0 4px rgba(184, 134, 11, 0.2);
 }
 
-.axs-rider .tt-rider-gps-badge.ok {
-  background: rgba(21, 128, 61, 0.1);
-  color: var(--axs-success);
+.axs-rider .tt-rider-home-onboard {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-rider .tt-rider-home-gps-hint {
+  color: var(--axs-text-muted, rgba(255, 255, 255, 0.85));
+}
+
+.axs-rider .tt-rider-home-onboard-title {
+  color: var(--axs-primary-hover);
+}
+
+.axs-rider .tt-rider-home-onboard-cta {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
 }
 
 .axs-rider .tt-rider-stat-card,
@@ -176,6 +212,32 @@
   border-radius: var(--axs-radius-card);
 }
 
+.axs-rider .tt-rider-settings-meta {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+}
+
+.axs-rider .tt-rider-back-card {
+  background: var(--axs-surface);
+  border-color: var(--axs-border);
+  border-radius: var(--axs-radius-card);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-rider .tt-rider-back-card:hover {
+  border-color: rgba(5, 150, 105, 0.35);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.12);
+}
+
+.axs-rider .tt-rider-back-card-icon {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+}
+
+.axs-rider .tt-rider-back-card-text strong {
+  color: #065f46;
+}
+
 /* —— Map / Active —— */
 .axs-rider .tt-rider-map-sheet {
   background: var(--axs-surface);
@@ -216,4 +278,1371 @@
   flex-wrap: wrap;
   gap: var(--axs-space-2);
   align-items: center;
+}
+
+/* Leaflet map tab (ported from mobile ProviderMap) */
+.tt-rider-dev-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.tt-rider-dev-exit {
+  border: 1px solid #fcd34d;
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.tt-rider-dev-signup-bypass {
+  width: 100%;
+  margin-bottom: 14px;
+  border: 2px solid #fcd34d;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.tt-rider-dev-signup-bypass:active {
+  transform: scale(0.98);
+}
+
+.tt-rider-map-page--leaflet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tt-rider-map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tt-rider-map-online {
+  border: 1px solid var(--axs-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tt-rider-map-online.on {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
+}
+
+.tt-rider-map-pin-confirm {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  background: #059669;
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.tt-provider-rider-map .leaflet-container {
+  font-family: inherit;
+}
+
+/* —— Rider OS cream dashboard (match mobile RiderOsDashboard) —— */
+.ros-cream-page {
+  background: #fffbf5;
+  min-height: 100%;
+  padding-bottom: 8px;
+}
+
+.ros-cream-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
+.ros-card {
+  border-radius: 16px;
+  border: 1px solid rgba(167, 243, 208, 0.9);
+  background: #fff;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.ros-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 12px;
+  background: linear-gradient(135deg, #fff 0%, #f0fdf4 100%);
+}
+
+.ros-profile-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.ros-profile-sub {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 2px 0 0;
+}
+
+.ros-online-btn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #4b5563;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ros-online-btn.on {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+}
+
+.ros-online-btn:disabled {
+  opacity: 0.5;
+}
+
+.ros-map-card {
+  overflow: hidden;
+  padding: 0;
+}
+
+.ros-map-shell {
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+}
+
+.ros-map-shell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ecfdf5;
+  background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%);
+}
+
+.ros-map-shell-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ros-map-shell-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.ros-map-shell-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #065f46;
+}
+
+.ros-map-shell-sub {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.ros-map-gps-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: #fff;
+  color: #2563eb;
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+  flex-shrink: 0;
+}
+
+.ros-map-shell-body {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.ros-map-leaflet,
+.ros-map-shell-body .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 220px;
+  z-index: 1;
+}
+
+.ros-map-radar {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 450;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ros-map-radar-ring {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 999px;
+  border: 2px solid rgba(52, 211, 153, 0.45);
+  background: rgba(16, 185, 129, 0.06);
+  animation: ros-radar-ping 2.4s ease-out infinite;
+}
+
+.ros-map-radar-ring.delay {
+  width: 200px;
+  height: 200px;
+  animation-delay: 0.5s;
+}
+
+.ros-map-radar-core {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 0 4px #fff, 0 0 16px rgba(16, 185, 129, 0.55);
+}
+
+@keyframes ros-radar-ping {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+.ros-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border-top: 1px solid #ecfdf5;
+}
+
+.ros-map-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.ros-map-legend-item .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.ros-map-legend-item .dot.slate {
+  background: #475569;
+}
+
+.ros-map-legend-item .dot.amber {
+  background: #f59e0b;
+}
+
+.ros-map-legend-item .dot.emerald {
+  background: #059669;
+}
+
+.ros-map-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.ros-pin-confirm {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  background: #059669;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.2);
+}
+
+.ros-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.ros-tab {
+  flex: 1;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 8px;
+}
+
+.ros-tab.active {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+}
+
+.ros-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ros-job-row,
+.ros-repeat-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+}
+
+.ros-job-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ros-job-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.ros-job-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
+.ros-job-price {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #047857;
+}
+
+.ros-accept-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: #059669;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.ros-accept-btn:disabled {
+  opacity: 0.5;
+}
+
+.ros-accepted-mark {
+  flex-shrink: 0;
+  color: #059669;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  padding-top: 4px;
+}
+
+.ros-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.ros-repeat-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ros-repeat-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ros-repeat-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.ros-repeat-btn:disabled {
+  opacity: 0.5;
+}
+
+/* —— Rider KYC wizard —— */
+.tt-rider-kyc-page .tt-rider-kyc-body {
+  padding: 16px;
+}
+
+.tt-rider-kyc-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+.tt-rider-kyc-step-tab {
+  border: 1px solid var(--axs-border, #e5e7eb);
+  background: var(--axs-surface, #fff);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tt-rider-kyc-step-tab.active {
+  background: rgba(184, 134, 11, 0.15);
+  border-color: var(--axs-primary, #b8860b);
+  color: var(--axs-primary-hover, #8b6914);
+}
+
+.tt-rider-kyc-step-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tt-rider-kyc-field {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--axs-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--axs-surface, #fff);
+}
+
+.tt-rider-kyc-field-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tt-rider-kyc-ok {
+  color: #16a34a;
+  font-size: 12px;
+}
+
+.tt-rider-kyc-upload-btn {
+  margin-top: 8px;
+  width: 100%;
+  border: 1px dashed var(--axs-primary, #b8860b);
+  background: rgba(184, 134, 11, 0.06);
+  border-radius: 10px;
+  padding: 10px;
+  font-weight: 600;
+  color: var(--axs-primary-hover, #8b6914);
+}
+
+.tt-rider-kyc-preview-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.tt-rider-kyc-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.tt-rider-kyc-nav .tt-btn-primary,
+.tt-rider-kyc-nav .tt-btn-secondary {
+  flex: 1;
+}
+
+.tt-rider-kyc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-weight: 600;
+}
+
+.tt-rider-kyc-date {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tt-rider-kyc-date .tt-input {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.tt-rider-kyc-status-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.tt-rider-profile-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.tt-rider-face-capture {
+  margin: 12px 0;
+}
+
+.tt-rider-face-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #111;
+}
+
+.tt-rider-face-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.tt-rider-face-oval {
+  position: absolute;
+  inset: 12% 18%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+
+.tt-rider-face-oval.ok {
+  border-color: #22c55e;
+}
+
+.tt-rider-face-hint {
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  margin: 10px 0 4px;
+}
+
+.tt-rider-face-capture-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.tt-rider-face-preview {
+  width: 100%;
+  max-width: 280px;
+  border-radius: 16px;
+  display: block;
+  margin: 0 auto 8px;
+}
+
+.tt-rider-face-capture-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #111;
+}
+
+.tt-rider-face-capture-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.tt-rider-face-capture-oval {
+  position: absolute;
+  inset: 12% 18%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+
+.tt-rider-face-liveness {
+  padding: 8px 0 4px;
+}
+
+.tt-rider-face-liveness-title {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tt-rider-face-liveness-step {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.tt-rider-face-liveness-bar {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.tt-rider-face-liveness-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #22c55e);
+  transition: width 0.25s ease;
+}
+
+.tt-rider-face-liveness-hint {
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+.tt-rider-face-liveness-manual {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.tt-rider-face-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.tt-rider-face-modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: 92vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 20px 20px 12px 12px;
+  padding: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.tt-rider-face-modal-header {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.tt-rider-face-modal-header h3 {
+  margin: 0 24px 6px 0;
+  font-size: 1.05rem;
+}
+
+.tt-rider-face-modal-strong {
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.tt-rider-face-modal-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.tt-rider-face-modal-busy,
+.tt-rider-face-modal-err {
+  text-align: center;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.tt-rider-face-modal-err {
+  color: #dc2626;
+}
+
+/* —— Job offer modal (Module 1) —— */
+.tt-rider-offer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+}
+
+.tt-rider-offer-modal {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 20px 20px 16px 16px;
+  padding: 20px 18px 24px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.tt-rider-offer-modal--urgent {
+  border: 2px solid #f59e0b;
+}
+
+.tt-rider-offer-timer {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+}
+
+.tt-rider-offer-timer-ring {
+  width: 56px;
+  height: 56px;
+  transform: rotate(-90deg);
+}
+
+.tt-rider-offer-timer-bg {
+  fill: none;
+  stroke: #e5e7eb;
+  stroke-width: 3;
+}
+
+.tt-rider-offer-timer-fill {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.tt-rider-offer-timer-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.tt-rider-offer-kicker {
+  text-align: center;
+  font-weight: 700;
+  color: #b45309;
+  margin: 0 0 4px;
+}
+
+.tt-rider-offer-title {
+  text-align: center;
+  font-size: 1.35rem;
+  margin: 0 0 8px;
+}
+
+.tt-rider-offer-items {
+  text-align: center;
+  color: #6b7280;
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+}
+
+.tt-rider-offer-route {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-offer-stop {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.tt-rider-offer-stop p {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: #374151;
+}
+
+.tt-rider-offer-pin {
+  font-size: 1.25rem;
+}
+
+.tt-rider-offer-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  font-size: 0.8rem;
+  margin-bottom: 10px;
+}
+
+.tt-rider-offer-earn {
+  text-align: center;
+  font-size: 1rem;
+  margin: 0 0 16px;
+}
+
+.tt-rider-offer-earn strong {
+  color: #15803d;
+  font-size: 1.2rem;
+}
+
+.tt-rider-offer-pay {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.tt-rider-offer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+}
+
+.tt-rider-offer-reject,
+.tt-rider-offer-accept {
+  min-height: 52px;
+  border-radius: 14px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+}
+
+.tt-rider-offer-reject {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.tt-rider-offer-accept {
+  background: linear-gradient(180deg, #22c55e, #16a34a);
+  color: #fff;
+}
+
+/* —— External nav (Module 2) —— */
+.tt-rider-nav-ext-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* —— Missions / leaderboard (Module 4) —— */
+.tt-rider-missions-card,
+.tt-rider-leaderboard-card {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  background: #fff;
+}
+
+.tt-rider-missions-card h3,
+.tt-rider-leaderboard-card h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.tt-rider-mission-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tt-rider-mission-row {
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.tt-rider-mission-row.done {
+  opacity: 0.7;
+}
+
+.tt-rider-mission-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.tt-rider-mission-reward {
+  font-size: 0.75rem;
+  color: #15803d;
+  font-weight: 600;
+}
+
+.tt-rider-mission-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 99px;
+  margin: 6px 0 4px;
+  overflow: hidden;
+}
+
+.tt-rider-mission-bar span {
+  display: block;
+  height: 100%;
+  background: #d4af37;
+  border-radius: 99px;
+}
+
+.tt-rider-mission-progress {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.tt-rider-surge-hints {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.tt-rider-surge-title {
+  width: 100%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tt-rider-surge-chip {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: #f3f4f6;
+}
+
+.tt-rider-surge-chip.active {
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 700;
+}
+
+.tt-rider-leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tt-rider-leaderboard-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.85rem;
+}
+
+.tt-rider-leaderboard-row.self {
+  background: rgba(212, 175, 55, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.tt-rider-lb-rank {
+  font-weight: 800;
+}
+
+.tt-rider-lb-earn {
+  font-weight: 700;
+  color: #15803d;
+}
+
+/* —— SOS / issues (Module 5) —— */
+.tt-rider-sos-btn {
+  min-width: 72px;
+  min-height: 48px;
+  border-radius: 12px;
+  border: none;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 900;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.tt-rider-sos-btn.sent {
+  background: #6b7280;
+}
+
+.tt-rider-issue-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.tt-rider-issue-sheet {
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+}
+
+.tt-rider-issue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.tt-rider-issue-close {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.tt-rider-issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tt-rider-issue-item {
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.tt-rider-issue-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.tt-rider-issue-item span {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.tt-rider-issue-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+/* ---- COD dashboard (wireframe §4) ---- */
+.tt-rider-cod-page {
+  padding-bottom: 24px;
+}
+
+.tt-rider-cod-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.tt-rider-cod-link {
+  font-size: 0.85rem;
+  color: #2563eb;
+}
+
+.tt-rider-cod-hero {
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+  color: #fff;
+  border-radius: 16px;
+  padding: 20px 16px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-kicker {
+  margin: 0 0 4px;
+  opacity: 0.9;
+  font-size: 0.9rem;
+}
+
+.tt-rider-cod-amount {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.tt-rider-cod-meta {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.95;
+}
+
+.tt-rider-cod-util {
+  margin-top: 10px;
+}
+
+.tt-rider-cod-util-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+}
+
+.tt-rider-cod-util-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #fff;
+  transition: width 0.25s ease;
+}
+
+.tt-rider-cod-util-fill--warn {
+  background: #fecaca;
+}
+
+.tt-rider-cod-util-label {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  opacity: 0.9;
+}
+
+.tt-rider-cod-provisional {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.tt-rider-cod-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-action-card {
+  background: #f3f4f6;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tt-rider-cod-action-card--warn {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+
+.tt-rider-cod-deadline {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-section {
+  margin-top: 16px;
+}
+
+.tt-rider-cod-section h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.tt-rider-cod-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  background: #fff;
+}
+
+.tt-rider-cod-row p {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.tt-rider-cod-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tt-rider-cod-btn--link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.tt-rider-cod-methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tt-rider-cod-method {
+  flex: 1;
+  min-height: 48px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tt-rider-cod-method.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.tt-rider-cod-deposit-all {
+  width: 100%;
+  min-height: 52px;
+  border: none;
+  border-radius: 14px;
+  background: #059669;
+  color: #fff;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.tt-rider-cod-collect {
+  margin-top: 16px;
+  padding: 14px;
+  border: 2px solid #f59e0b;
+  border-radius: 14px;
+  background: #fffbeb;
+}
+
+.tt-rider-cod-collect-amt {
+  font-size: 1.75rem;
+  font-weight: 900;
+  margin: 8px 0;
+}
+
+.tt-rider-cod-field {
+  display: block;
+  margin: 10px 0;
+  font-size: 0.9rem;
+}
+
+.tt-rider-cod-proof-preview {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.tt-rider-err {
+  color: #dc2626;
+  font-size: 0.9rem;
+}
+
+.tt-rider-ok {
+  color: #059669;
+  font-size: 0.9rem;
 }
