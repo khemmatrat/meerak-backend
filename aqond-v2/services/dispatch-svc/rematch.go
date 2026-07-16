@@ -9,6 +9,9 @@ import (
 )
 
 func acceptTimeoutSec() int {
+	if sequentialOfferEnabled() {
+		return offerTimeoutSec()
+	}
 	if v := os.Getenv("DISPATCH_ACCEPT_TIMEOUT_SEC"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
@@ -65,7 +68,11 @@ func (a *app) processRematches(ctx context.Context) {
 			log.Printf("rematch %s: %v", jobID, err)
 			continue
 		}
-		a.autoMatchJobExcluding(ctx, jobID, lat, lng, prevRider)
+		if sequentialOfferEnabled() {
+			a.startSequentialOffer(ctx, jobID, prevRider)
+		} else {
+			a.autoMatchJobExcluding(ctx, jobID, lat, lng, prevRider)
+		}
 	}
 }
 

@@ -107,6 +107,11 @@ func pickBestRiderForJob(riders []riderRow, lat, lng float64) string {
 	return pickBestRider(riders, lat, lng)
 }
 
+func (a *app) rankCandidatesForJob(ctx context.Context, riders []riderRow, j jobRow, maxRadiusKm float64, limit int) []string {
+	filtered := a.filterCandidates(ctx, riders, j, maxRadiusKm)
+	return rankRidersScored(filtered, j.PickupLat, j.PickupLng, limit)
+}
+
 // pickBestRiderWithRadiusExpand tries DISPATCH_RADIUS_STEPS_KM in order.
 func (a *app) pickBestRiderWithRadiusExpand(ctx context.Context, riders []riderRow, j jobRow) (string, float64) {
 	steps := dispatchRadiusStepsKm()

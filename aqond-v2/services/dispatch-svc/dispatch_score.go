@@ -97,8 +97,17 @@ type scoredRider struct {
 }
 
 func pickBestRiderScored(riders []riderRow, lat, lng float64) string {
-	if len(riders) == 0 {
+	ranked := rankRidersScored(riders, lat, lng, 1)
+	if len(ranked) == 0 {
 		return ""
+	}
+	return ranked[0]
+}
+
+// rankRidersScored returns rider IDs best-first (Strategy B), capped at limit.
+func rankRidersScored(riders []riderRow, lat, lng float64, limit int) []string {
+	if len(riders) == 0 || limit <= 0 {
+		return nil
 	}
 	w := loadDispatchWeights()
 	scored := make([]scoredRider, 0, len(riders))
@@ -119,5 +128,12 @@ func pickBestRiderScored(riders []riderRow, lat, lng float64) string {
 		}
 		return scored[i].Dist < scored[j].Dist
 	})
-	return scored[0].ID
+	out := make([]string, 0, limit)
+	for i, s := range scored {
+		if i >= limit {
+			break
+		}
+		out = append(out, s.ID)
+	}
+	return out
 }

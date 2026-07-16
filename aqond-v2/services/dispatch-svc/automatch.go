@@ -37,6 +37,14 @@ func (a *app) autoMatchJobExcluding(ctx context.Context, jobID string, pickupLat
 	if os.Getenv("DISPATCH_AUTO_MATCH") == "0" {
 		return
 	}
+	if sequentialOfferEnabled() {
+		a.startSequentialOffer(ctx, jobID, excludeRiderID)
+		return
+	}
+	a.legacyAutoMatchJob(ctx, jobID, pickupLat, pickupLng, excludeRiderID)
+}
+
+func (a *app) legacyAutoMatchJob(ctx context.Context, jobID string, pickupLat, pickupLng float64, excludeRiderID string) {
 	j, _ := a.loadJob(ctx, jobID)
 	if j.ID == "" {
 		j.PickupLat = pickupLat
@@ -57,17 +65,7 @@ func (a *app) autoMatchJobExcluding(ctx context.Context, jobID string, pickupLat
 		a.logEvent(ctx, jobID, "finding_rider", "system", "no_rider_in_radius", nil, nil)
 		return
 	}
-	_, _ = a.pool.Exec(ctx, `
-		UPDATE commerce.dispatch_jobs
-		SET rider_id=$2, status='assigned', phase='pending_accept',
-		    auto_assigned_at=NOW(), updated_at=NOW()
-		WHERE id=$1 AND status IN ('open','assigned') AND phase IN ('finding_rider','pending_accept')`,
-		jobID, riderID)
-	_, _ = a.pool.Exec(ctx, `UPDATE commerce.dispatch_riders SET load_count = load_count + 1 WHERE id=$1`, riderID)
-	a.logEvent(ctx, jobID, "pending_accept", riderID, "auto_match", nil, nil)
-	j, _ = a.loadJob(ctx, jobID)
-	a.firePhaseNotifications(ctx, j, "pending_accept")
-	a.pushTracking(ctx, j.OrderID)
+	_ = a.assignPendingOffer(ctx, jobID, riderID)
 }
 
 func (a *app) pushTracking(ctx context.Context, orderID string) {

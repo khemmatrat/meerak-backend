@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aqond/aqond-v2/pkg/config"
@@ -27,6 +28,8 @@ type app struct {
 	http       *http.Client
 	redis      redis.UniversalClient
 	wsHub      *wsHub
+	offerRuns    sync.Map // jobID -> struct{}
+	offerSignals sync.Map // jobID -> chan bool
 }
 
 type jobRow struct {
@@ -277,6 +280,11 @@ func (a *app) jobSub(w http.ResponseWriter, r *http.Request) {
 				a.acceptJob(w, r, jobID)
 				return
 			}
+		case "reject":
+			if r.Method == http.MethodPost {
+				a.rejectJob(w, r, jobID)
+				return
+			}
 		case "phase":
 			if r.Method == http.MethodPost {
 				a.advancePhase(w, r, jobID)
@@ -347,10 +355,49 @@ func (a *app) acceptJob(w http.ResponseWriter, r *http.Request, jobID string) {
 			UPDATE commerce.dispatch_jobs SET phase='rider_assigned', auto_assigned_at=NULL, updated_at=NOW()
 			WHERE id=$1`, jobID)
 		a.logEvent(ctx, jobID, "rider_assigned", body.RiderID, "accepted", nil, nil)
+		a.signalOfferOutcome(jobID, true)
 		j, _ = a.loadJob(ctx, jobID)
 		a.firePhaseNotifications(ctx, j, "rider_assigned")
 		a.pushTracking(ctx, j.OrderID)
 		jsonOK(w, map[string]any{"job": jobMap(j)})
+		return
+	}
+	http.Error(w, "job_not_open", http.StatusConflict)
+}
+
+func (a *app) rejectJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	var body struct {
+		RiderID string `json:"rider_id"`
+		Reason  string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.RiderID == "" {
+		body.RiderID = r.Header.Get("X-Rider-Id")
+	}
+	if body.RiderID == "" {
+		http.Error(w, "rider_id required", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	j, err := a.loadJob(ctx, jobID)
+	if err != nil {
+		http.Error(w, "not_found", http.StatusNotFound)
+		return
+	}
+	if j.Status == "assigned" && j.Phase == "pending_accept" && j.RiderID == body.RiderID {
+		a.logEvent(ctx, jobID, "finding_rider", body.RiderID, "rejected:"+body.Reason, nil, nil)
+		if _, running := a.offerRuns.Load(jobID); running {
+			a.signalOfferOutcome(jobID, false)
+		} else {
+			_ = a.reopenJobAfterOfferDeclined(ctx, jobID, body.RiderID)
+			if sequentialOfferEnabled() {
+				a.startSequentialOffer(ctx, jobID, body.RiderID)
+			} else {
+				a.autoMatchJobExcluding(ctx, jobID, j.PickupLat, j.PickupLng, body.RiderID)
+			}
+		}
+		j, _ = a.loadJob(ctx, jobID)
+		jsonOK(w, map[string]any{"ok": true, "job": jobMap(j)})
 		return
 	}
 	http.Error(w, "job_not_open", http.StatusConflict)
