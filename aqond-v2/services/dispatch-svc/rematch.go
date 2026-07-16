@@ -57,21 +57,40 @@ func (a *app) processRematches(ctx context.Context) {
 	}
 	defer rows.Close()
 
+	// Collect first so we release the read connection before issuing writes.
+	type rematchRow struct {
+		jobID, prevRider string
+		lat, lng         float64
+	}
+	var pending []rematchRow
 	for rows.Next() {
-		var jobID, prevRider string
-		var lat, lng float64
+		var r rematchRow
 		var attempts int
-		if rows.Scan(&jobID, &prevRider, &lat, &lng, &attempts) != nil {
+		if rows.Scan(&r.jobID, &r.prevRider, &r.lat, &r.lng, &attempts) != nil {
 			continue
 		}
-		if err := a.reopenJobForRematch(ctx, jobID, prevRider); err != nil {
-			log.Printf("rematch %s: %v", jobID, err)
+		pending = append(pending, r)
+	}
+	rows.Close()
+
+	seq := sequentialOfferEnabled()
+	for _, r := range pending {
+		// When a sequential offer goroutine already owns this job it manages its
+		// own per-offer timeout and re-offer loop. Reopening here would race it:
+		// double-decrement rider load, thrash job state, and burn match_attempts.
+		if seq {
+			if _, running := a.offerRuns.Load(r.jobID); running {
+				continue
+			}
+		}
+		if err := a.reopenJobForRematch(ctx, r.jobID, r.prevRider); err != nil {
+			log.Printf("rematch %s: %v", r.jobID, err)
 			continue
 		}
-		if sequentialOfferEnabled() {
-			a.startSequentialOffer(ctx, jobID, prevRider)
+		if seq {
+			a.startSequentialOffer(ctx, r.jobID, r.prevRider)
 		} else {
-			a.autoMatchJobExcluding(ctx, jobID, lat, lng, prevRider)
+			a.autoMatchJobExcluding(ctx, r.jobID, r.lat, r.lng, r.prevRider)
 		}
 	}
 }

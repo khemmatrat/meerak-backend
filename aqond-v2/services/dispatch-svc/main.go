@@ -314,10 +314,10 @@ func (a *app) acceptJob(w http.ResponseWriter, r *http.Request, jobID string) {
 	}
 	ctx := r.Context()
 	var active, suspended bool
-	var kyc, riderUser string
+	var kyc, riderUser, grade string
 	if a.pool.QueryRow(ctx, `
-		SELECT active, suspended, kyc_status, COALESCE(user_id,'')
-		FROM commerce.dispatch_riders WHERE id=$1`, body.RiderID).Scan(&active, &suspended, &kyc, &riderUser) != nil {
+		SELECT active, suspended, kyc_status, COALESCE(user_id,''), COALESCE(grade,'')
+		FROM commerce.dispatch_riders WHERE id=$1`, body.RiderID).Scan(&active, &suspended, &kyc, &riderUser, &grade) != nil {
 		http.Error(w, "rider_not_found", http.StatusNotFound)
 		return
 	}
@@ -334,6 +334,25 @@ func (a *app) acceptJob(w http.ResponseWriter, r *http.Request, jobID string) {
 	if err != nil {
 		http.Error(w, "not_found", http.StatusNotFound)
 		return
+	}
+	// COD tier-cap hard block: dispatch-svc is the source of truth for
+	// assignment, so enforce the cap here rather than warn-only downstream.
+	// (Sequential offers pre-filter over-cap riders, but manual accept of an
+	// open job and outstanding changing between offer and accept both bypass it.)
+	if isCodJob(j) && j.AmountMicro > 0 {
+		limit := tierCodLimitMicro(grade)
+		outstanding := a.riderCodOutstandingMicro(ctx, body.RiderID)
+		if outstanding+j.AmountMicro > limit {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":             "cod_limit_exceeded",
+				"limit_micro":       limit,
+				"outstanding_micro": outstanding,
+				"amount_micro":      j.AmountMicro,
+			})
+			return
+		}
 	}
 	// Manual accept on open job
 	if j.Status == "open" {
