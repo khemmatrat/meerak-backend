@@ -93,6 +93,7 @@ docs/aqond-os/*
 !**/Readme.md
 !**/readme.md
 !docs/aqond-os/AGENT_BOOTSTRAP.md
+!aqond-v2/docs/rider-os/IMPLEMENTATION_MAP.md
 **/*.txt
 !**/.env.example
 !**/.env.*.example
