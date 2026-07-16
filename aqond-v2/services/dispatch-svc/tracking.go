@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"os"
 	"sort"
 )
 
@@ -201,6 +202,15 @@ func buildTrackingView(j jobRow, rider *riderRow, hasReview bool, chats []chatRo
 }
 
 func pickBestRider(riders []riderRow, lat, lng float64) string {
+	// Strategy B: weighted score (env-tunable). Falls back to same API surface as before.
+	if os.Getenv("DISPATCH_SCORE_MODE") == "nearest" {
+		return pickBestRiderNearest(riders, lat, lng)
+	}
+	return pickBestRiderScored(riders, lat, lng)
+}
+
+// pickBestRiderNearest — legacy Strategy A (distance + load tie-break).
+func pickBestRiderNearest(riders []riderRow, lat, lng float64) string {
 	if len(riders) == 0 {
 		return ""
 	}
