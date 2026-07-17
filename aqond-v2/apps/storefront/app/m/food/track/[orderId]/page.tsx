@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { shopChatHref } from '@/lib/shopChat';
 import { useAuth } from '@/lib/auth';
 import { connectDispatchTrackWs } from '@/lib/dispatchTrackWs';
 import type { RiderTrackingView } from '@/lib/server/riderTracking';
@@ -118,6 +119,15 @@ export default function FoodRiderTrackPage() {
             onChat={() => setChatOpen(true)}
             onCall={callRider}
           />
+
+          {tracking.merchant_id && (
+            <Link
+              href={shopChatHref(tracking.merchant_id, { orderId, reference: orderId.slice(-8) })}
+              className="tt-btn-ghost tt-track-merchant-chat"
+            >
+              💬 แชทร้าน
+            </Link>
+          )}
 
           {callHint && <p className="tt-chat-calling inline">{callHint}</p>}
 

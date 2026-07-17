@@ -26,9 +26,9 @@ S4,M1,S4-4,Review tip after confirm,frontend,components/mobile/TtDeliveryReviewP
 S4,M1,S4-5,Wire RiderIssueSheet,frontend,app/m/rider/active/[jobId]/page.tsx,Sheet opens,manual,done,2
 S4,M1,S4-6,Merchant chat from order,frontend,app/m/merchant/orders/page.tsx,Deep link chat,manual,done,2
 S4,M1,S4-7,M1 completion events,backend,lib/server/aqondEventBus.ts,review tip confirmed,event trace,done,2
-S5,M1,S5-1,E2E food happy path CI,test,e2e/food-happy-path.spec.ts,Green in CI,e2e,todo,8
-S5,M1,S5-2,Feature flags env docs,docs,.env.example,Flags documented,review,todo,2
-S5,M1,S5-3,Update gap matrix M1 rows,docs,gap-matrix-features.csv,M1 all check,diff review,todo,2
+S5,M1,S5-1,E2E food happy path CI,test,e2e/food-happy-path.spec.ts;scripts/food-happy-path.test.mjs,Green in CI,e2e,done,8
+S5,M1,S5-2,Feature flags env docs,docs,.env.example,Flags documented,review,done,2
+S5,M1,S5-3,Update gap matrix M1 rows,docs,gap-matrix-features.csv,M1 all check,diff review,done,2
 S6,M2,S6-1,trackOsProjection module,backend,lib/server/trackOsProjection.ts,Unified shape,unit,todo,8
 S6,M2,S6-2,Admin track BFF API,backend,app/api/admin/food/orders/[id]/track/route.ts,200 full payload,api test,todo,5
 S6,M2,S6-3,Timeline merge PG+live,backend,lib/server/orderTimeline.ts,No duplicate entries,unit,todo,5
