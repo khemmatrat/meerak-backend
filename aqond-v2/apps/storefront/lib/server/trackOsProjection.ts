@@ -8,6 +8,9 @@ import { enrichTrackingWithConfirm } from '@/lib/server/foodConfirmReceipt';
 import { getUnifiedOrderTimeline, type FoodTimelineEntry, type TimelineStep } from '@/lib/server/orderTimeline';
 import { listShopChatMessages } from '@/lib/server/shopChatStore';
 import { localListDispatchJobs } from '@/lib/server/localDispatch';
+import { listDisputesForOrder } from '@/lib/server/merchantDisputes';
+import { listIncidentsForOrder } from '@/lib/server/aiTier3Store';
+import { DISPUTE_STATUS_LABELS } from '@/lib/disputePolicy';
 
 export type TrackOsProof = {
   kind: 'packing' | 'pickup' | 'delivery';
@@ -30,6 +33,32 @@ export type TrackOsChatThread = {
   peer_label: string;
   buyer_id: string;
   messages: TrackOsChatMessage[];
+};
+
+export type TrackOsParty = {
+  id: string;
+  label: string;
+  role: 'customer' | 'merchant' | 'rider';
+  phone?: string;
+  name?: string;
+};
+
+export type TrackOsIssue = {
+  id: string;
+  category: string;
+  status: string;
+  title: string;
+  updated_at: string;
+  refund_amount_micro?: number;
+};
+
+export type TrackOsIncident = {
+  id: string;
+  category: string;
+  status: string;
+  transcript: string;
+  created_at: string;
+  rider_id?: string;
 };
 
 export type TrackOsProjection = {
@@ -83,6 +112,11 @@ export type TrackOsProjection = {
   };
   audit_events: FoodTimelineEntry[];
   realtime_seq: number;
+  parties: TrackOsParty[];
+  merchant_name?: string;
+  issues: TrackOsIssue[];
+  incidents: TrackOsIncident[];
+  dispatch_status: string;
 };
 
 async function loadChats(
@@ -130,6 +164,30 @@ async function loadChats(
   }
 
   return threads;
+}
+
+function loadCustomerRiderChat(
+  tracking: Record<string, unknown> | undefined,
+): TrackOsChatThread | null {
+  const messages = tracking?.chat_messages as Array<{
+    from?: string;
+    text?: string;
+    at?: string;
+    image_url?: string;
+  }> | undefined;
+  if (!messages?.length) return null;
+  return {
+    channel: 'customer_rider',
+    peer_label: 'ลูกค้า ↔ ไรเดอร์',
+    buyer_id: 'customer-rider-thread',
+    messages: messages.map((m, i) => ({
+      id: `cr-${i}`,
+      from: m.from || 'unknown',
+      text: m.text || '',
+      at: m.at || new Date().toISOString(),
+      image_url: m.image_url,
+    })),
+  };
 }
 
 function dedupeTimelineEntries(entries: FoodTimelineEntry[]): FoodTimelineEntry[] {
@@ -206,9 +264,61 @@ export async function buildTrackOsProjection(orderId: string): Promise<TrackOsPr
     undefined;
 
   const chats = merchantId ? await loadChats(merchantId, buyerId, riderId) : [];
+  const customerRider = loadCustomerRiderChat(tracking);
+  if (customerRider) chats.push(customerRider);
+
+  const disputes = await listDisputesForOrder(orderId);
+  const incidentsRaw = dispatchJob?.id
+    ? await listIncidentsForOrder(orderId)
+    : await listIncidentsForOrder(orderId);
 
   const riderProfile = tracking?.rider as { name?: string; phone?: string } | undefined;
+  const merchantName = (tracking?.merchant_name as string | undefined) || order?.merchant_name;
   const phase = String(tracking?.phase || timelineRaw.steps.find((s) => s.active)?.key || 'unknown');
+
+  const parties: TrackOsParty[] = [];
+  if (buyerId) {
+    parties.push({ id: buyerId, label: 'ลูกค้า', role: 'customer' });
+  }
+  if (merchantId) {
+    parties.push({
+      id: merchantId,
+      label: merchantName || merchantId,
+      role: 'merchant',
+      name: merchantName,
+    });
+  }
+  if (riderId) {
+    parties.push({
+      id: riderId,
+      label: riderProfile?.name || riderId,
+      role: 'rider',
+      name: riderProfile?.name,
+      phone: riderProfile?.phone,
+    });
+  }
+
+  const issues: TrackOsIssue[] = disputes.map((d) => ({
+    id: d.id,
+    category: d.category,
+    status: DISPUTE_STATUS_LABELS[d.status] || d.status,
+    title: d.title,
+    updated_at: d.updated_at,
+    refund_amount_micro: d.refund_amount_micro,
+  }));
+
+  const incidents: TrackOsIncident[] = incidentsRaw.map((i) => ({
+    id: i.id,
+    category: i.category,
+    status: i.status,
+    transcript: i.transcript,
+    created_at: i.created_at,
+    rider_id: i.rider_id,
+  }));
+
+  const dispatchStatus = dispatchJob
+    ? `${dispatchJob.status || 'unknown'} · ${dispatchJob.phase || '—'}`
+    : phase;
 
   return {
     order_id: orderId,
@@ -264,5 +374,10 @@ export async function buildTrackOsProjection(orderId: string): Promise<TrackOsPr
       : undefined,
     audit_events: mergedEvents,
     realtime_seq: mergedEvents.length,
+    parties,
+    merchant_name: merchantName,
+    issues,
+    incidents,
+    dispatch_status: dispatchStatus,
   };
 }

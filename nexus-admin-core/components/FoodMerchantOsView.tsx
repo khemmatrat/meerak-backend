@@ -10,14 +10,16 @@ import {
   getAdminFoodMerchants,
   getAdminFoodOrders,
   getAdminFoodRiders,
-  getAdminOrderTimeline,
+  getAdminFoodTrack,
+  getAdminFoodTrackStreamUrl,
   type AdminFoodDashboard,
   type AdminFoodMerchantRow,
   type AdminFoodOrderRow,
   type AdminFoodRidersPayload,
+  type AdminFoodTrackProjection,
   type AdminDispatchPipeline,
-  type AdminOrderTimeline,
 } from "../services/adminApi";
+import { TrackOsDetailPanel } from "./TrackOsDetailPanel";
 
 type TabId =
   | "dashboard"
@@ -91,8 +93,9 @@ export function FoodMerchantOsView({ onOpenUser }: Props) {
   const [ridersData, setRidersData] = useState<AdminFoodRidersPayload | null>(null);
   const [dispatchPipe, setDispatchPipe] = useState<AdminDispatchPipeline | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [orderTimeline, setOrderTimeline] = useState<AdminOrderTimeline | null>(null);
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [trackProjection, setTrackProjection] = useState<AdminFoodTrackProjection | null>(null);
+  const [trackLoading, setTrackLoading] = useState(false);
+  const [trackLive, setTrackLive] = useState(false);
   const [error, setError] = useState("");
 
   const reload = useCallback(async () => {
@@ -122,19 +125,51 @@ export function FoodMerchantOsView({ onOpenUser }: Props) {
     void reload();
   }, [reload]);
 
-  const openOrderTimeline = async (orderId: string) => {
-    setSelectedOrderId(orderId);
-    setTimelineLoading(true);
-    setOrderTimeline(null);
+  const loadTrackOs = useCallback(async (orderId: string) => {
+    setTrackLoading(true);
     try {
-      const tl = await getAdminOrderTimeline(orderId);
-      setOrderTimeline(tl);
+      const data = await getAdminFoodTrack(orderId);
+      setTrackProjection(data);
     } catch {
-      setOrderTimeline(null);
+      setTrackProjection(null);
     } finally {
-      setTimelineLoading(false);
+      setTrackLoading(false);
     }
+  }, []);
+
+  const openOrderTrack = async (orderId: string) => {
+    setSelectedOrderId(orderId);
+    await loadTrackOs(orderId);
   };
+
+  useEffect(() => {
+    if (!selectedOrderId) {
+      setTrackLive(false);
+      return;
+    }
+    setTrackLive(true);
+    const streamUrl = getAdminFoodTrackStreamUrl(selectedOrderId);
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(streamUrl);
+      es.onmessage = () => {
+        void loadTrackOs(selectedOrderId);
+      };
+      es.onerror = () => {
+        setTrackLive(false);
+      };
+    } catch {
+      setTrackLive(false);
+    }
+    const poll = window.setInterval(() => {
+      void loadTrackOs(selectedOrderId);
+    }, 8000);
+    return () => {
+      window.clearInterval(poll);
+      es?.close();
+      setTrackLive(false);
+    };
+  }, [selectedOrderId, loadTrackOs]);
 
   return (
     <div className="space-y-4">
@@ -263,7 +298,7 @@ export function FoodMerchantOsView({ onOpenUser }: Props) {
                   <tr
                     key={o.order_id}
                     className={`border-t border-slate-100 cursor-pointer hover:bg-emerald-50/50${selectedOrderId === o.order_id ? " bg-emerald-50" : ""}`}
-                    onClick={() => void openOrderTimeline(o.order_id)}
+                    onClick={() => void openOrderTrack(o.order_id)}
                   >
                     <td className="px-4 py-3 font-mono text-xs">{o.order_id.slice(0, 16)}…</td>
                     <td className="px-4 py-3">{o.merchant_name || o.merchant_id}</td>
@@ -289,48 +324,14 @@ export function FoodMerchantOsView({ onOpenUser }: Props) {
           </div>
 
           {selectedOrderId && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="text-sm font-bold text-slate-800">
-                Food Timeline — {selectedOrderId.slice(0, 20)}…
-              </h3>
-              {timelineLoading && <p className="mt-2 text-sm text-slate-500">กำลังโหลด…</p>}
-              {!timelineLoading && orderTimeline && (
-                <div className="mt-4 grid gap-6 lg:grid-cols-2">
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Order Lifecycle</p>
-                    <ol className="space-y-0 border-l-2 border-emerald-200 pl-4">
-                      {orderTimeline.food_timeline
-                        .filter((e) => e.kind === "lifecycle")
-                        .map((e) => (
-                          <li key={e.id} className="relative pb-4">
-                            <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                            <span className="font-mono text-xs text-slate-400">{e.time_label}</span>
-                            <p className="text-sm font-medium text-slate-800">{e.label}</p>
-                          </li>
-                        ))}
-                    </ol>
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Dispatch Timeline</p>
-                    <ol className="space-y-0 border-l-2 border-sky-200 pl-4">
-                      {orderTimeline.dispatch_timeline.map((e) => (
-                        <li key={e.id} className="relative pb-4">
-                          <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-sky-500" />
-                          <span className="font-mono text-xs text-slate-400">{e.time_label}</span>
-                          <p className="text-sm font-medium text-slate-800">{e.label}</p>
-                          {e.rider_id && (
-                            <p className="text-xs text-slate-500">ไรเดอร์: {e.rider_id.slice(0, 12)}…</p>
-                          )}
-                        </li>
-                      ))}
-                      {!orderTimeline.dispatch_timeline.length && (
-                        <li className="text-sm text-slate-500">ยังไม่มี dispatch event</li>
-                      )}
-                    </ol>
-                  </div>
-                </div>
-              )}
-            </div>
+            <TrackOsDetailPanel
+              orderId={selectedOrderId}
+              projection={trackProjection}
+              loading={trackLoading}
+              live={trackLive}
+              onRefresh={() => void loadTrackOs(selectedOrderId)}
+              onOpenUser={onOpenUser}
+            />
           )}
         </div>
       )}
@@ -363,6 +364,52 @@ export function FoodMerchantOsView({ onOpenUser }: Props) {
             <StatCard label="กำลังส่ง" value={ridersData.summary.active_deliveries} />
             <StatCard label="ไรเดอร์ออนไลน์" value={ridersData.summary.riders_online} />
           </div>
+
+          {ridersData.ops && (
+            <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <h3 className="mb-3 text-sm font-bold text-amber-900">Rider Ops — ต้องติดตาม</h3>
+              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                <StatCard
+                  label="ถอนค้างอนุมัติ"
+                  value={ridersData.ops.counts.pending_withdrawals}
+                />
+                <StatCard
+                  label="เครดิตใกล้หมด"
+                  value={ridersData.ops.counts.credit_stressed}
+                />
+                <StatCard
+                  label="งานค้าง (stuck)"
+                  value={ridersData.ops.counts.stuck_jobs}
+                  sub="ไม่มีความคืบหน้า >90 นาที"
+                />
+              </div>
+              {ridersData.ops.stuck_jobs.length > 0 && (
+                <div className="mb-3">
+                  <p className="mb-2 text-xs font-semibold text-slate-700">งาน stuck</p>
+                  <ul className="space-y-1 text-xs text-slate-600">
+                    {ridersData.ops.stuck_jobs.slice(0, 5).map((j) => (
+                      <li key={j.id}>
+                        #{j.order_id.slice(-8)} · {j.phase} · ค้าง {j.idle_minutes} นาที
+                        {j.rider_id ? ` · ${j.rider_id.slice(0, 10)}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {ridersData.ops.pending_withdrawals.length > 0 && (
+                <div className="mb-3">
+                  <p className="mb-2 text-xs font-semibold text-slate-700">ถอนเงินค้าง</p>
+                  <ul className="space-y-1 text-xs text-slate-600">
+                    {ridersData.ops.pending_withdrawals.slice(0, 5).map((w) => (
+                      <li key={w.payout_id}>
+                        {w.rider_id.slice(0, 12)} · {fmtThbMicro(w.amount_micro)} · {fmtDt(w.created_at)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
 
           <section>
             <h3 className="mb-3 text-sm font-bold text-slate-700">Dispatch Jobs</h3>

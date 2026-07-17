@@ -306,3 +306,14 @@ export async function getDisputeSummary(merchantId: string) {
   const heldTotal = open.reduce((s, c) => s + c.held_amount_micro, 0);
   return { total: cases.length, open_count: open.length, held_total_micro: heldTotal, cases };
 }
+
+export async function listDisputesForOrder(orderId: string): Promise<MerchantDisputeCase[]> {
+  const store = await readStore();
+  if (store.cases.length === 0) {
+    store.cases = seedCases();
+    await writeStore(store);
+  }
+  return store.cases
+    .filter((c) => c.order_id === orderId)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+}

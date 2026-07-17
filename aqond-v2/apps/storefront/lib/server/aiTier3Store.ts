@@ -247,6 +247,17 @@ export async function listRiderIncidents(jobId?: string, limit = 20) {
   return filtered.slice(-limit).reverse();
 }
 
+export async function listIncidentsForOrder(orderId: string, limit = 20): Promise<RiderVoiceIncident[]> {
+  const remote = await bffGet<{ incidents?: RiderVoiceIncident[] }>(
+    `/v1/ai/tier3/incidents?order_id=${encodeURIComponent(orderId)}`,
+  );
+  if (remote?.incidents?.length) {
+    return remote.incidents.filter((i) => i.order_id === orderId).slice(0, limit);
+  }
+  const store = await readJson<RiderVoiceIncident[]>(incidentsFile(), []);
+  return store.filter((i) => i.order_id === orderId).slice(-limit).reverse();
+}
+
 export async function getUserAiPreferences(userId: string): Promise<UserAiPreferences> {
   const remote = await bffGet<{ preferences?: UserAiPreferences }>(
     `/v1/ai/tier3/user-preferences?user_id=${encodeURIComponent(userId)}`,

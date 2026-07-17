@@ -123,6 +123,7 @@ async function request<T>(
         details?: string;
         message?: string;
         code?: string;
+        retryAfter?: number;
       } = {};
       try {
         if (text.startsWith("{")) err = JSON.parse(text);
@@ -134,11 +135,15 @@ async function request<T>(
       } catch {
         err = { error: res.statusText || `HTTP ${res.status}` };
       }
-      const msg = err.details
+      let msg = err.details
         ? `${err.error || res.statusText}: ${err.details}`
         : err.message && String(err.message).trim()
           ? [err.error, err.message].filter(Boolean).join(": ")
           : err.error || res.statusText || `HTTP ${res.status}`;
+      if (res.status === 429 && err.retryAfter) {
+        const mins = Math.ceil(Number(err.retryAfter) / 60);
+        msg = `${msg}${mins > 0 ? ` (retry ~${mins} min)` : ""}`;
+      }
       const e = new Error(msg) as Error & { status?: number; code?: string };
       e.status = res.status;
       e.code =
@@ -270,16 +275,20 @@ async function requestNoAuth<T>(
   });
   const text = await res.text();
   if (!res.ok) {
-    let err: { error?: string; details?: string } = {};
+    let err: { error?: string; details?: string; retryAfter?: number } = {};
     try {
       if (text.startsWith("{")) err = JSON.parse(text);
       else err = { error: text.slice(0, 200) };
     } catch {
       err = { error: res.statusText || `HTTP ${res.status}` };
     }
-    const msg = err.details
+    let msg = err.details
       ? `${err.error || res.statusText}: ${err.details}`
       : err.error || res.statusText || `HTTP ${res.status}`;
+    if (res.status === 429 && err.retryAfter) {
+      const mins = Math.ceil(Number(err.retryAfter) / 60);
+      msg = `${msg}${mins > 0 ? ` (retry ~${mins} min)` : ""}`;
+    }
     const e = new Error(msg) as Error & { status?: number };
     e.status = res.status;
     throw e;
@@ -2173,6 +2182,9 @@ export interface AdminKycLifecycle {
   resubmission_deadline: string | null;
   required_steps: string[];
   resubmit_trigger: string | null;
+  id_card_expiry_date?: string | null;
+  driver_license_expiry?: string | null;
+  is_rider_partner?: boolean;
 }
 
 export interface AdminKycSupplementRequest {
@@ -2401,6 +2413,8 @@ export interface KycSubmissionRow {
   phone: string | null;
   kyc_status: string;
   kyc_level: string | null;
+  kyc_resubmit_trigger?: string | null;
+  is_rider_partner?: boolean;
   created_at: string;
   doc_count: string;
   pending_docs: string;
@@ -2434,6 +2448,220 @@ export function getKycDetail(userId: string): Promise<KycDetailResponse> {
     "GET",
     `/api/admin/kyc/${encodeURIComponent(userId)}`,
   );
+}
+
+export interface AdminRiderOsProfile {
+  user_id: string;
+  rider: {
+    rider_id?: string;
+    display_name?: string;
+    phone?: string;
+    plate?: string;
+    kyc_status?: string;
+    active?: boolean;
+    suspended?: boolean;
+    earnings_micro?: number;
+  } | null;
+  kyc_status: string | null;
+  kyc_submission_id: string | null;
+  vehicles: Array<Record<string, unknown>>;
+  stats: { completed_trips: number; active_jobs: number };
+  channel: string;
+}
+
+export function getAdminRiderOsProfile(
+  userId: string,
+): Promise<AdminRiderOsProfile> {
+  return request<AdminRiderOsProfile>(
+    "GET",
+    `/api/admin/rider-os/users/${encodeURIComponent(userId)}`,
+  );
+}
+
+export interface AdminRiderCreditEntry {
+  id: string;
+  rider_id: string;
+  user_id?: string;
+  event_type: string;
+  direction: "credit" | "debit";
+  amount_micro: number;
+  balance_after_micro?: number;
+  job_id?: string | null;
+  order_id?: string | null;
+  payout_id?: string | null;
+  reason?: string;
+  actor_type?: string;
+  actor_id?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AdminRiderCreditsPayload {
+  rider: AdminRiderOsProfile["rider"];
+  summary: {
+    rider_id?: string;
+    user_id?: string;
+    credit_limit_micro?: number;
+    credit_used_micro?: number;
+    available_credit_micro?: number;
+    cash_balance_micro?: number;
+    balance_micro: number;
+    withdrawable_micro: number;
+    pending_withdraw_micro: number;
+    earned_micro: number;
+    completed_jobs: number;
+    source?: string;
+  } | null;
+  entries: AdminRiderCreditEntry[];
+  total: number;
+  source?: string;
+}
+
+export function getAdminRiderCredits(
+  userId: string,
+  limit = 50,
+): Promise<AdminRiderCreditsPayload> {
+  return request<AdminRiderCreditsPayload>(
+    "GET",
+    `/api/admin/rider-os/users/${encodeURIComponent(userId)}/credits?limit=${limit}`,
+  );
+}
+
+export function adminAdjustRiderCredits(
+  userId: string,
+  body: {
+    direction: "credit" | "debit";
+    amount_micro: number;
+    reason: string;
+  },
+): Promise<{ ok: boolean; summary: AdminRiderCreditsPayload["summary"] }> {
+  return request(
+    "POST",
+    `/api/admin/rider-os/users/${encodeURIComponent(userId)}/credits/adjust`,
+    body,
+  );
+}
+
+export function adminSetRiderCreditLimit(
+  userId: string,
+  body: { credit_limit_micro: number; reason: string },
+): Promise<{ ok: boolean; summary: AdminRiderCreditsPayload["summary"] }> {
+  return request(
+    "POST",
+    `/api/admin/rider-os/users/${encodeURIComponent(userId)}/credits/limit`,
+    body,
+  );
+}
+
+export function adminTopupRiderCredits(
+  userId: string,
+  body: { amount_micro: number; reason: string },
+): Promise<{ ok: boolean; summary: AdminRiderCreditsPayload["summary"] }> {
+  return request(
+    "POST",
+    `/api/admin/rider-os/users/${encodeURIComponent(userId)}/credits/topup`,
+    body,
+  );
+}
+
+export interface AdminRiderFaceIncident {
+  id: string;
+  user_id: string;
+  rider_id: string;
+  incident_type: string;
+  severity: string;
+  match_score?: number | null;
+  rider_suspended: boolean;
+  admin_notified: boolean;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export function getAdminRiderFaceIncidents(opts?: {
+  limit?: number;
+  rider_id?: string;
+}): Promise<{ incidents: AdminRiderFaceIncident[] }> {
+  const q = new URLSearchParams();
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  if (opts?.rider_id) q.set("rider_id", opts.rider_id);
+  const suffix = q.toString() ? `?${q}` : "";
+  return request("GET", `/api/admin/rider-os/face/incidents${suffix}`);
+}
+
+export interface RiderOsMetricsKpiRate {
+  value: number | null;
+  successful_dispatch_jobs?: number;
+  finding_rider_jobs?: number;
+  unmatched_jobs?: number;
+  accurate_collections?: number;
+  collected_holds?: number;
+  discrepant_collections?: number;
+  collected_micro?: number;
+  absolute_discrepancy_micro?: number;
+}
+
+export interface RiderOsMetricsDepositTime {
+  average_seconds: number | null;
+  p50_seconds: number | null;
+  p95_seconds: number | null;
+  deposited_holds?: number;
+  pending_deposit_holds?: number;
+  pending_deposit_micro?: number;
+  max_seconds?: number | null;
+}
+
+export interface RiderOsMetricsPayload {
+  ok?: boolean;
+  timezone: string;
+  from: string;
+  to: string;
+  metrics: {
+    dispatch_success_rate: RiderOsMetricsKpiRate;
+    cod_collection_accuracy: RiderOsMetricsKpiRate;
+    deposit_processing_time: RiderOsMetricsDepositTime;
+  };
+  breakdown?: {
+    by_job_type?: Array<{
+      job_type: string;
+      metrics: {
+        dispatch_success_rate: RiderOsMetricsKpiRate;
+        cod_collection_accuracy: RiderOsMetricsKpiRate;
+        deposit_processing_time: RiderOsMetricsDepositTime;
+      };
+    }>;
+    daily?: Array<Record<string, unknown>>;
+  };
+  data_quality?: {
+    legacy_jobs_without_search_event?: number;
+    duplicate_search_events?: number;
+    collection_amount_not_reported?: number;
+    invalid_deposit_duration_holds?: number;
+    cod_holds_without_dispatch_job?: number;
+  };
+  computed_at?: string | null;
+  provisional?: boolean;
+  error?: string;
+  hint?: string;
+}
+
+export function getAdminRiderOsMetrics(opts?: {
+  from?: string;
+  to?: string;
+  refresh?: boolean;
+}): Promise<RiderOsMetricsPayload> {
+  const q = new URLSearchParams();
+  if (opts?.from) q.set("from", opts.from);
+  if (opts?.to) q.set("to", opts.to);
+  if (opts?.refresh) q.set("refresh", "1");
+  const suffix = q.toString() ? `?${q}` : "";
+  return request<RiderOsMetricsPayload>("GET", `/api/admin/rider-os/metrics${suffix}`);
+}
+
+export function refreshAdminRiderOsMetrics(body?: {
+  from?: string;
+  to?: string;
+}): Promise<{ ok?: boolean; from?: string; to?: string }> {
+  return request("POST", "/api/admin/rider-os/metrics/refresh", body ?? {});
 }
 
 export interface KycOverviewResponse {
@@ -7915,6 +8143,35 @@ export type AdminFoodRidersPayload = {
   }>;
   riders: Array<{ rider_id: string; active_jobs: number; completed: number }>;
   recent_events: AdminFoodRiderEvent[];
+  ops?: {
+    pending_withdrawals: Array<{
+      rider_id: string;
+      payout_id: string;
+      amount_micro: number;
+      created_at: string;
+    }>;
+    credit_stressed: Array<{
+      rider_id: string;
+      available_pct: number;
+      credit_used_micro: number;
+      credit_limit_micro: number;
+    }>;
+    stuck_jobs: Array<{
+      id: string;
+      order_id: string;
+      rider_id?: string;
+      phase: string;
+      status: string;
+      merchant_name?: string;
+      idle_minutes: number;
+    }>;
+    counts: {
+      pending_withdrawals: number;
+      credit_stressed: number;
+      stuck_jobs: number;
+    };
+    source?: string;
+  };
 };
 
 export async function getAdminFoodRiders(): Promise<AdminFoodRidersPayload> {
@@ -7958,6 +8215,72 @@ export type AdminOrderTimeline = {
 
 export async function getAdminOrderTimeline(orderId: string): Promise<AdminOrderTimeline> {
   return request("GET", `/api/admin/food/orders/${encodeURIComponent(orderId)}/timeline`);
+}
+
+export type AdminFoodTrackProjection = {
+  ok?: boolean;
+  order_id: string;
+  generated_at: string;
+  phase: string;
+  status_th?: string;
+  merchant_name?: string;
+  dispatch_status: string;
+  realtime_seq: number;
+  order?: {
+    merchant_id: string;
+    buyer_id: string;
+    fulfillment_status?: string;
+    amount_micro?: number;
+    payment_method?: string;
+    delivered_at?: string;
+  };
+  dispatch_job?: {
+    id: string;
+    rider_id?: string;
+    phase?: string;
+    status?: string;
+  };
+  timeline: {
+    events: Array<{
+      id: string;
+      event_type: string;
+      label: string;
+      at: string;
+      time_label: string;
+      kind: string;
+      source: string;
+    }>;
+  };
+  proofs: Array<{ kind: string; label: string; url: string; at?: string }>;
+  chats: Array<{
+    channel: string;
+    peer_label: string;
+    messages: Array<{ id: string; from: string; text: string; at: string; image_url?: string }>;
+  }>;
+  confirm?: {
+    customer_confirmed_at?: string;
+    confirm_method?: string;
+    rider_delivered_at?: string;
+    auto_confirm_at?: string;
+  };
+  review?: { stars: number; comment?: string; tip_micro: number };
+  parties: Array<{ id: string; label: string; role: string; phone?: string; name?: string }>;
+  issues: Array<{ id: string; category: string; status: string; title: string; refund_amount_micro?: number }>;
+  incidents: Array<{ id: string; category: string; status: string; transcript: string; created_at: string }>;
+  gps?: { lat?: number; lng?: number; updated_at?: string };
+  audit_events: Array<{ id: string; event_type: string; time_label: string }>;
+};
+
+export async function getAdminFoodTrack(orderId: string): Promise<AdminFoodTrackProjection> {
+  return request("GET", `/api/admin/food/orders/${encodeURIComponent(orderId)}/track`);
+}
+
+export function getAdminFoodTrackStreamUrl(orderId: string): string {
+  const base = ADMIN_API_BASE?.replace(/\/$/, "") || "";
+  if (typeof window !== "undefined" && !base) {
+    return `/api/admin/food/orders/${encodeURIComponent(orderId)}/events/stream`;
+  }
+  return `${base}/api/admin/food/orders/${encodeURIComponent(orderId)}/events/stream`;
 }
 
 // ============ Marketplace commission (storefront escrow ledger — admin only) ============

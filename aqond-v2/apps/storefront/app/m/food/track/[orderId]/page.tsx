@@ -16,6 +16,8 @@ import { TtRiderChatSheet } from '@/components/mobile/TtRiderChatSheet';
 import { TtOrderReceiptCard } from '@/components/mobile/TtOrderReceiptCard';
 import { TtDeliveryEtaHero } from '@/components/mobile/TtDeliveryEtaHero';
 import { TtDisputeReportSheet } from '@/components/mobile/TtDisputeReportSheet';
+import { TtDeliveryProofGallery } from '@/components/mobile/TtDeliveryProofGallery';
+import { fetchRiderTracking } from '@/lib/foodTracking';
 
 const HANDOFF_PHASES = new Set([
   'arrived', 'rider_calling', 'photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'awaiting_customer_confirm',
@@ -60,9 +62,20 @@ export default function FoodRiderTrackPage() {
     );
     setWsLive(true);
 
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`/api/food/tracking/${encodeURIComponent(orderId)}/stream`);
+      es.onmessage = () => {
+        void fetchRiderTracking(orderId).then(apply).catch(() => null);
+      };
+    } catch {
+      /* SSE optional */
+    }
+
     return () => {
       alive = false;
       disconnect();
+      es?.close();
     };
   }, [orderId]);
 
@@ -94,13 +107,12 @@ export default function FoodRiderTrackPage() {
 
           {tracking.timeline && <TtDeliveryTimeline steps={tracking.timeline} />}
 
-          {tracking.packing_proof_url && (
-            <div className="tt-delivery-photo tt-packing-proof-photo">
-              <p className="tt-delivery-photo-label">📦 รูปแพ็คจากร้าน</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={tracking.packing_proof_url} alt="รูปแพ็คอาหารจากร้าน" />
-            </div>
-          )}
+          <TtDeliveryProofGallery
+            proofs={(tracking as RiderTrackingView & { proofs?: Array<{ kind: string; label: string; url: string }> }).proofs}
+            packingUrl={tracking.packing_proof_url}
+            pickupUrl={tracking.pickup_photo_url}
+            deliveryUrl={tracking.delivery_photo_url}
+          />
 
           <TtRiderLiveMap tracking={tracking} />
 
