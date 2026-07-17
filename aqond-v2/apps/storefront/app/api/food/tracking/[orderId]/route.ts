@@ -5,6 +5,7 @@ import { getUnifiedOrderTimeline } from '@/lib/server/orderTimeline';
 import { getPackingProof } from '@/lib/server/packingProof';
 import { attachPickupFieldsToTrack, getPickupVerification } from '@/lib/server/pickupVerification';
 import { enrichTrackingWithConfirm } from '@/lib/server/foodConfirmReceipt';
+import { buildTrackOsProjection } from '@/lib/server/trackOsProjection';
 
 async function attachProofs(orderId: string, view: Record<string, unknown>) {
   try {
@@ -33,7 +34,19 @@ async function withEventTimeline(orderId: string, view: Record<string, unknown>)
   } catch {
     /* optional */
   }
-  return enrichTrackingWithConfirm(orderId, await attachProofs(orderId, view));
+  return enrichTrackingWithConfirm(orderId, await attachProofs(orderId, view)).then(async (v) => {
+    try {
+      const proj = await buildTrackOsProjection(orderId);
+      if (proj) {
+        v.realtime_seq = proj.realtime_seq;
+        v.proofs = proj.proofs;
+        v.issues = proj.issues;
+      }
+    } catch {
+      /* optional */
+    }
+    return v;
+  });
 }
 
 export async function GET(

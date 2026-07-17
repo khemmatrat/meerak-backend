@@ -32,11 +32,11 @@ S5,M1,S5-3,Update gap matrix M1 rows,docs,gap-matrix-features.csv,M1 all check,d
 S6,M2,S6-1,trackOsProjection module,backend,lib/server/trackOsProjection.ts,Unified shape,unit,done,8
 S6,M2,S6-2,Admin track BFF API,backend,app/api/admin/food/orders/[id]/track/route.ts,200 full payload,api test,done,5
 S6,M2,S6-3,Timeline merge PG+live,backend,lib/server/orderTimeline.ts,No duplicate entries,unit,done,5
-S7,M2,S7-1,Admin TrackOsDetailPanel,frontend,nexus-admin-core/components/TrackOsDetailPanel.tsx,11 sections,manual admin,todo,8
-S7,M2,S7-2,Customer photo gallery,frontend,app/m/food/track/[orderId]/page.tsx,3 proof types,manual,todo,5
-S7,M2,S7-3,Admin chat embed,frontend,FoodMerchantOsView.tsx,Both threads,manual,todo,5
-S8,M2,S8-1,SSE realtime track,backend,app/api/admin/food/orders/[id]/events/stream/route.ts,Events within 5s,load test,todo,8
-S8,M2,S8-2,M2 PV scenarios,docs,docs/platform-validation/track-os/,Scenarios pass,pv checklist,todo,5
+S7,M2,S7-1,Admin TrackOsDetailPanel,frontend,nexus-admin-core/components/TrackOsDetailPanel.tsx,11 sections,manual admin,done,8
+S7,M2,S7-2,Customer photo gallery,frontend,components/mobile/TtDeliveryProofGallery.tsx,3 proof types,manual,done,5
+S7,M2,S7-3,Admin chat embed,frontend,FoodMerchantOsView.tsx,Both threads,manual,done,5
+S8,M2,S8-1,SSE realtime track,backend,app/api/admin/food/orders/[id]/events/stream/route.ts,Events within 5s,load test,done,8
+S8,M2,S8-2,M2 PV scenarios,docs,docs/platform-validation/track-os/,Scenarios pass,pv checklist,done,5
 S9,M3,S9-1,Dispute state machine,backend,lib/server/merchantDisputes.ts,States enforced,unit,todo,8
 S9,M3,S9-2,Case 1-2 categories,backend,lib/disputePolicy.ts,Policy rules,unit,todo,5
 S9,M3,S9-3,Customer dispute UI cases,frontend,TtDisputeReportSheet.tsx,All fields,manual,todo,5

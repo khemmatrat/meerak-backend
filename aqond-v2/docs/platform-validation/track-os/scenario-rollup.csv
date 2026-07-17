@@ -1,0 +1,6 @@
+scenario_id,area,description,expected,status
+TRK-M2-01,admin,Track OS projection returns all sections,200 + parties+proofs+timeline,done
+TRK-M2-02,admin,SSE admin stream emits frames,text/event-stream data frames,done
+TRK-M2-03,customer,SSE track stream emits frames,text/event-stream data frames,done
+TRK-M2-04,customer,Proof gallery shows 3 proof types,packing pickup delivery UI,done
+TRK-M2-05,admin,TrackOsDetailPanel read-only,no mutation actions,done
