@@ -418,6 +418,21 @@ export async function uploadPackingProof(
   return data;
 }
 
+export async function fetchOrderPickupQr(orderId: string, merchantId: string) {
+  const res = await fetch(
+    `/api/merchant/orders/${encodeURIComponent(orderId)}/pickup-qr?merchant_id=${encodeURIComponent(merchantId)}`,
+    { cache: 'no-store' },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'โหลด QR ไม่สำเร็จ');
+  return data as {
+    order_id: string;
+    qr_image_url: string;
+    encoded: string;
+    expires_at: string;
+  };
+}
+
 export async function fetchParcelTrack(trackingNo: string) {
   const res = await fetch(
     `/api/shipping/track?tracking_no=${encodeURIComponent(trackingNo)}`,

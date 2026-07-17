@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { EmptyState, StatusChip } from '@aqond/ui';
 import { useAuth } from '@/lib/auth';
 import { formatCatalogPrice, formatDate } from '@/lib/format';
-import { FULFILLMENT_LABELS, fetchMerchantOrders, runAutoAcceptOrders, updateOrderFulfillment, uploadPackingProof } from '@/lib/merchant';
+import { FULFILLMENT_LABELS, fetchMerchantOrders, fetchOrderPickupQr, runAutoAcceptOrders, updateOrderFulfillment, uploadPackingProof } from '@/lib/merchant';
 import { merchantPollIntervalMs } from '@/lib/merchantPush';
 import { orderAcceptSlaState, MERCHANT_ACCEPT_SLA_MINUTES } from '@/lib/orderSla';
 import { markOrdersSeen } from '@/lib/merchantAlerts';
@@ -14,6 +14,7 @@ import { merchantFulfillmentTone } from '@/components/axs/merchant/merchantStatu
 import { TtKitchenTicket } from '@/components/mobile/TtKitchenTicket';
 import { TtMerchantOrderDetail } from '@/components/mobile/TtMerchantOrderDetail';
 import { MerchantPackingProofSheet } from '@/components/mobile/MerchantPackingProofSheet';
+import { MerchantOrderQrCard } from '@/components/mobile/MerchantOrderQrCard';
 
 export default function MerchantOrdersPage() {
   const { auth } = useAuth();
@@ -26,6 +27,9 @@ export default function MerchantOrdersPage() {
   const [kotOrder, setKotOrder] = useState<any | null>(null);
   const [packingOrder, setPackingOrder] = useState<any | null>(null);
   const [packingBusy, setPackingBusy] = useState(false);
+  const [qrOrder, setQrOrder] = useState<any | null>(null);
+  const [qrData, setQrData] = useState<{ qr_image_url: string; encoded: string } | null>(null);
+  const [qrBusy, setQrBusy] = useState(false);
   const canAccept = permissions?.can_accept_orders !== false;
 
   const reload = useCallback(() => {
@@ -88,6 +92,22 @@ export default function MerchantOrdersPage() {
       setWarning(e.message || 'อัปโหลดรูปแพ็คไม่สำเร็จ');
     } finally {
       setPackingBusy(false);
+    }
+  };
+
+  const openPickupQr = async (o: any) => {
+    const oid = o.order_id || o.id;
+    setQrOrder(o);
+    setQrData(null);
+    setQrBusy(true);
+    try {
+      const data = await fetchOrderPickupQr(oid, merchantId);
+      setQrData({ qr_image_url: data.qr_image_url, encoded: data.encoded });
+    } catch (e: any) {
+      setWarning(e.message || 'โหลด QR ไม่สำเร็จ');
+      setQrOrder(null);
+    } finally {
+      setQrBusy(false);
     }
   };
 
@@ -162,6 +182,16 @@ export default function MerchantOrdersPage() {
                     onClick={() => setKotOrder(o)}
                   >
                     🍳 KOT
+                  </button>
+                )}
+                {isFood && ['preparing', 'ready'].includes(fs) && (
+                  <button
+                    type="button"
+                    className="tt-btn-ghost tt-merchant-btn"
+                    disabled={qrBusy}
+                    onClick={() => void openPickupQr(o)}
+                  >
+                    📱 QR รับออเดอร์
                   </button>
                 )}
                 {!canAccept ? (
@@ -242,6 +272,21 @@ export default function MerchantOrdersPage() {
         onCapture={(url) => void uploadPacking(url)}
         busy={packingBusy}
       />
+      {qrOrder && (
+        <div className="tt-sheet-backdrop" role="presentation" onClick={() => !qrBusy && setQrOrder(null)}>
+          <div className="tt-sheet tt-merchant-qr-sheet" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="tt-sheet-close" aria-label="ปิด" onClick={() => setQrOrder(null)}>×</button>
+            {qrBusy && <p className="tt-hint">กำลังโหลด QR…</p>}
+            {qrData && (
+              <MerchantOrderQrCard
+                orderId={qrOrder.order_id || qrOrder.id}
+                qrImageUrl={qrData.qr_image_url}
+                encoded={qrData.encoded}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

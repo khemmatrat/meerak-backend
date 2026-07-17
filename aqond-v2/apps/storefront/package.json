@@ -28,6 +28,7 @@
     "test:parcel-checkout-handoff": "node scripts/parcel-checkout-handoff.test.mjs",
     "test:rider-vehicle-job-filter": "node scripts/rider-vehicle-job-filter.test.mjs",
     "test:packing-proof": "node scripts/packing-proof.test.mjs",
+    "test:order-pickup-qr": "node scripts/order-pickup-qr.test.mjs",
     "test:return-escrow-jobs": "node scripts/run-return-escrow-jobs.mjs"
   },
   "dependencies": {

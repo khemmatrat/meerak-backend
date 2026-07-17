@@ -6394,6 +6394,27 @@ button.tt-pay-option {
   border-radius: 10px;
   border: 1px solid var(--tt-border);
 }
+.tt-merchant-order-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.tt-merchant-order-qr-label {
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0;
+}
+.tt-merchant-order-qr img {
+  border-radius: 12px;
+  border: 1px solid var(--tt-border);
+  background: #fff;
+}
+.tt-merchant-qr-sheet {
+  max-width: 320px;
+  margin: auto;
+}
 .tt-merchant-btn {
   flex: 1;
   min-width: 120px;
