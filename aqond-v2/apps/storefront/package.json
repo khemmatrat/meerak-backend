@@ -37,6 +37,7 @@
     "test:claim-os": "node scripts/claim-os.test.mjs",
     "test:event-outbox": "node scripts/event-outbox.test.mjs",
     "test:lifecycle-event-types": "node scripts/lifecycle-event-types.test.mjs",
+    "test:release-gate": "node scripts/release-gate.test.mjs",
     "worker:lifecycle-projector": "node workers/lifecycleProjector.mjs",
     "test:return-escrow-jobs": "node scripts/run-return-escrow-jobs.mjs"
   },

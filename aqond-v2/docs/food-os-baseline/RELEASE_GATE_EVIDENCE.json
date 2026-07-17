@@ -1,0 +1,55 @@
+{
+  "version": "1.0.0",
+  "executed_at": "2026-07-17T10:10:35.600Z",
+  "environment": "dev-workstation (not clean VM)",
+  "git_commit": "7e8550ad5bb04f5fe77d5f42ecc6b019158ea0c6",
+  "architecture_hash": "00597b99fd64b0e2714c86597f52036bfa08c9f5f2ecb3d310db86feb1a95572",
+  "gates": {
+    "G1_clean_install": {
+      "status": "PENDING",
+      "reason": "Requires fresh VM/container per 07-DEPLOYMENT-CHECKLIST.md — not executed on isolated host",
+      "evidence": null
+    },
+    "G2_migrations": {
+      "status": "FAIL",
+      "reason": "apply-migrations.ps1 failed: aqond-db container unreachable (Docker Desktop running but compose profile not up)",
+      "evidence": "2026-07-17 apply-migrations.ps1 exit 1"
+    },
+    "G3_integration_tests": {
+      "status": "PASS",
+      "reason": "npm run test:release-gate — 10/10 scripts green",
+      "evidence": "release-gate.test.mjs OK — all integration tests passed"
+    },
+    "G4_feature_rollback": {
+      "status": "PENDING",
+      "reason": "Rollback matrix documented in 09-RELEASE-GATE.md; requires env toggle on clean host (G1)",
+      "evidence": null
+    },
+    "G5_backup_restore": {
+      "status": "PENDING",
+      "reason": "Requires live PostgreSQL with pg_dump/pg_restore — blocked by G2",
+      "evidence": null
+    },
+    "G6_monitoring": {
+      "status": "PARTIAL",
+      "reason": "Metrics endpoint responds; alert routing not configured",
+      "evidence": {
+        "endpoint": "GET /api/admin/events/metrics",
+        "sample": {
+          "ok": true,
+          "outbox": { "total": 123, "counts": { "pending": 117, "done": 6 } },
+          "dlq": { "total": 0, "entries": 0 },
+          "backbone": "json"
+        }
+      }
+    },
+    "G7_performance": {
+      "status": "PENDING",
+      "reason": "Load test (k6/Locust) not executed; SLO targets unfilled",
+      "evidence": null
+    }
+  },
+  "overall": "STOP",
+  "production_ready": false,
+  "fairplay_unblocked": false
+}
