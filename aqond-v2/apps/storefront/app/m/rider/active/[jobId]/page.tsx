@@ -492,6 +492,12 @@ export default function RiderActiveJobPage() {
             <span>แชทร้าน</span>
           </button>
         )}
+        <button type="button" className="tt-rider-contact-chip help" onClick={() => setIssueOpen(true)}>
+          <span className="tt-rider-contact-chip-icon help" aria-hidden>
+            ⚠️
+          </span>
+          <span>แจ้งปัญหา</span>
+        </button>
         <button type="button" className="tt-rider-contact-chip help" onClick={openHelpCenter}>
           <span className="tt-rider-contact-chip-icon help" aria-hidden>
             <RiderContactHelpIcon size={24} />

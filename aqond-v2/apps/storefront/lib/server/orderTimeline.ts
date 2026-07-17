@@ -33,6 +33,8 @@ const DISPLAY_ORDER: AqondEventType[] = [
   'rider.en_route',
   'rider.arrived',
   'order.delivered',
+  'order.customer_confirmed',
+  'order.review_submitted',
 ];
 
 function formatBangkokTime(iso?: string): string | undefined {

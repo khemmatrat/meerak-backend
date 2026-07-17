@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { EmptyState, StatusChip } from '@aqond/ui';
 import { useAuth } from '@/lib/auth';
 import { formatCatalogPrice, formatDate } from '@/lib/format';
@@ -17,6 +18,7 @@ import { MerchantPackingProofSheet } from '@/components/mobile/MerchantPackingPr
 import { MerchantOrderQrCard } from '@/components/mobile/MerchantOrderQrCard';
 
 export default function MerchantOrdersPage() {
+  const router = useRouter();
   const { auth } = useAuth();
   const { merchantId, refreshShops, permissions } = useMerchant();
   const [orders, setOrders] = useState<any[]>([]);
@@ -111,6 +113,28 @@ export default function MerchantOrdersPage() {
     }
   };
 
+  const openRiderChat = async (o: any) => {
+    const oid = o.order_id || o.id;
+    setBusy(oid);
+    setWarning('');
+    try {
+      const res = await fetch(
+        `/api/merchant/orders/${encodeURIComponent(oid)}/rider-chat?merchant_id=${encodeURIComponent(merchantId)}`,
+        { cache: 'no-store' },
+      );
+      const data = await res.json();
+      if (data.available && data.href) {
+        router.push(data.href);
+        return;
+      }
+      router.push('/m/merchant/chat');
+    } catch {
+      setWarning('เปิดแชทไรเดอร์ไม่สำเร็จ');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const active = orders.filter(
     (o) => !['delivered', 'rejected'].includes(o.fulfillment_status || ''),
   );
@@ -192,6 +216,16 @@ export default function MerchantOrdersPage() {
                     onClick={() => void openPickupQr(o)}
                   >
                     📱 QR รับออเดอร์
+                  </button>
+                )}
+                {isFood && ['preparing', 'ready', 'shipped'].includes(fs) && (
+                  <button
+                    type="button"
+                    className="tt-btn-ghost tt-merchant-btn"
+                    disabled={busy === oid}
+                    onClick={() => void openRiderChat(o)}
+                  >
+                    💬 แชทไรเดอร์
                   </button>
                 )}
                 {!canAccept ? (

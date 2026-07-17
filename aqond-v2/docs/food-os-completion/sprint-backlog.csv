@@ -19,13 +19,13 @@ S3,M1,S3-3,verify-pickup API,backend,app/api/rider/jobs/[id]/verify-pickup/route
 S3,M1,S3-4,Pickup photo mandatory,frontend,app/m/rider/active/[jobId]/page.tsx,Block depart,manual rider,todo,5
 S3,M1,S3-5,Phase order guards,backend,app/api/rider/jobs/[id]/phase/route.ts,Skip rejected,integration,todo,3
 S3,M1,S3-6,QR and pickup events,backend,lib/server/aqondEventBus.ts,Events logged,event inspect,todo,2
-S4,M1,S4-1,Customer confirm receipt,backend,lib/server/foodConfirmReceipt.ts,Sets completed,unit,todo,5
-S4,M1,S4-2,confirm API,backend,app/api/food/tracking/[orderId]/confirm/route.ts,200 confirm,api test,todo,3
-S4,M1,S4-3,Track confirm CTA,frontend,app/m/food/track/[orderId]/page.tsx,Button visible post-delivery,manual,todo,3
-S4,M1,S4-4,Review tip after confirm,frontend,components/mobile/TtDeliveryReviewPanel.tsx,Blocked until confirm,manual,todo,3
-S4,M1,S4-5,Wire RiderIssueSheet,frontend,app/m/rider/active/[jobId]/page.tsx,Sheet opens,manual,todo,2
-S4,M1,S4-6,Merchant chat from order,frontend,app/m/merchant/orders/page.tsx,Deep link chat,manual,todo,2
-S4,M1,S4-7,M1 completion events,backend,lib/server/aqondEventBus.ts,review tip confirmed,event trace,todo,2
+S4,M1,S4-1,Customer confirm receipt,backend,lib/server/foodConfirmReceipt.ts,Sets completed,unit,done,5
+S4,M1,S4-2,confirm API,backend,app/api/food/tracking/[orderId]/confirm/route.ts,200 confirm,api test,done,3
+S4,M1,S4-3,Track confirm CTA,frontend,app/m/food/track/[orderId]/page.tsx,Button visible post-delivery,manual,done,3
+S4,M1,S4-4,Review tip after confirm,frontend,components/mobile/TtDeliveryReviewPanel.tsx,Blocked until confirm,manual,done,3
+S4,M1,S4-5,Wire RiderIssueSheet,frontend,app/m/rider/active/[jobId]/page.tsx,Sheet opens,manual,done,2
+S4,M1,S4-6,Merchant chat from order,frontend,app/m/merchant/orders/page.tsx,Deep link chat,manual,done,2
+S4,M1,S4-7,M1 completion events,backend,lib/server/aqondEventBus.ts,review tip confirmed,event trace,done,2
 S5,M1,S5-1,E2E food happy path CI,test,e2e/food-happy-path.spec.ts,Green in CI,e2e,todo,8
 S5,M1,S5-2,Feature flags env docs,docs,.env.example,Flags documented,review,todo,2
 S5,M1,S5-3,Update gap matrix M1 rows,docs,gap-matrix-features.csv,M1 all check,diff review,todo,2

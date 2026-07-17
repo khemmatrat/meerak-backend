@@ -22,6 +22,7 @@ export type DeliveryPhase =
   | 'handoff'
   | 'cod_payment'
   | 'rider_completed'
+  | 'awaiting_customer_confirm'
   | 'review_pending'
   | 'completed';
 
@@ -110,6 +111,11 @@ export type RiderTrackingView = RiderSession & {
   timeline: TimelineStep[];
   active_events: string[];
   can_review: boolean;
+  can_confirm?: boolean;
+  customer_confirmed_at?: string;
+  auto_confirm_at?: string;
+  confirm_method?: 'manual' | 'auto';
+  rider_delivered_at?: string;
   can_chat: boolean;
   order_items: TrackingOrderItem[];
   item_count: number;
@@ -138,6 +144,7 @@ const PHASE_LABEL: Record<DeliveryPhase, string> = {
   handoff: 'ส่งมอบตามนัดหมาย',
   cod_payment: 'ชำระเงินสดเรียบร้อย',
   rider_completed: 'ไรเดอร์ส่งงานสำเร็จ',
+  awaiting_customer_confirm: 'ยืนยันการรับอาหาร',
   review_pending: 'ให้คะแนนและทิปไรเดอร์',
   completed: 'ขอบคุณที่อุดหนุน',
 };
@@ -449,14 +456,14 @@ function buildTimeline(phase: DeliveryPhase): TimelineStep[] {
     { id: 'pickup', label: 'ไรเดอร์รับอาหาร', phases: ['food_ready', 'rider_picked_up'] },
     { id: 'deliver', label: 'นำมาส่ง', phases: ['en_route', 'approaching'] },
     { id: 'arrive', label: 'ถึงที่หมาย', phases: ['arrived', 'rider_calling', 'photo_proof', 'handoff', 'cod_payment'] },
-    { id: 'done', label: 'เสร็จสิ้น', phases: ['rider_completed', 'review_pending', 'completed'] },
+    { id: 'done', label: 'เสร็จสิ้น', phases: ['rider_completed', 'awaiting_customer_confirm', 'review_pending', 'completed'] },
   ];
 
   const phaseIdx = (p: DeliveryPhase) => {
     const all: DeliveryPhase[] = [
       'merchant_pending', 'merchant_accepted', 'merchant_preparing', 'finding_rider', 'rider_assigned',
       'food_ready', 'rider_picked_up', 'en_route', 'approaching', 'arrived', 'rider_calling',
-      'photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'review_pending', 'completed',
+      'photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'awaiting_customer_confirm', 'review_pending', 'completed',
     ];
     return all.indexOf(p);
   };
@@ -523,8 +530,14 @@ export async function startRiderSession(input: {
   restaurant_lng?: number;
   dest_lat?: number;
   dest_lng?: number;
+  started_at?: string;
 }) {
   const store = await readStore();
+  const devStartedAt =
+    input.started_at &&
+    (process.env.AQOND_LOCAL_DEV === '1' || process.env.AQOND_ALLOW_LOCAL_ORDERS === '1')
+      ? input.started_at
+      : undefined;
   const session: RiderSession = {
     order_id: input.order_id,
     buyer_id: input.buyer_id,
@@ -537,7 +550,7 @@ export async function startRiderSession(input: {
     eta_label: input.eta_label,
     payment_method: input.payment_method || 'cod',
     amount_micro: input.amount_micro || 0,
-    started_at: new Date().toISOString(),
+    started_at: devStartedAt || new Date().toISOString(),
     restaurant: {
       lat: input.restaurant_lat ?? 13.7563,
       lng: input.restaurant_lng ?? 100.5018,
@@ -611,6 +624,10 @@ export async function submitDeliveryReview(
   orderId: string,
   input: { stars: number; comment?: string; tip_micro?: number },
 ) {
+  const { assertCustomerConfirmedForReview } = await import('@/lib/server/foodConfirmReceipt');
+  const ok = await assertCustomerConfirmedForReview(orderId);
+  if (!ok) return null;
+
   const store = await readStore();
   const session = store[orderId];
   if (!session) return null;
@@ -625,6 +642,28 @@ export async function submitDeliveryReview(
   };
   session.points_earned = points;
   await writeStore(store);
+
+  const { appendAqondEvent } = await import('@/lib/server/aqondEventBus');
+  await appendAqondEvent({
+    order_id: orderId,
+    event_type: 'order.review_submitted',
+    source: 'storefront',
+    actor: session.buyer_id,
+    payload: {
+      stars: session.review.stars,
+      comment: session.review.comment,
+    },
+  });
+  if (tip > 0) {
+    await appendAqondEvent({
+      order_id: orderId,
+      event_type: 'order.tip_paid',
+      source: 'storefront',
+      actor: session.buyer_id,
+      payload: { tip_micro: tip, rider_name: session.rider?.name },
+    });
+  }
+
   return getRiderTracking(orderId);
 }
 

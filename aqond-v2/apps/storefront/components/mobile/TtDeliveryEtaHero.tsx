@@ -19,6 +19,7 @@ const PHASE_ICON: Record<string, string> = {
   handoff: '🤝',
   cod_payment: '💵',
   rider_completed: '✓',
+  awaiting_customer_confirm: '📋',
   review_pending: '⭐',
   completed: '🎉',
 };
@@ -28,7 +29,10 @@ type Props = {
 };
 
 export function TtDeliveryEtaHero({ tracking }: Props) {
-  const done = tracking.phase === 'completed' || tracking.phase === 'review_pending';
+  const done =
+    tracking.phase === 'completed' ||
+    tracking.phase === 'review_pending' ||
+    tracking.phase === 'awaiting_customer_confirm';
   const showMins =
     !done &&
     tracking.minutes_left > 0 &&

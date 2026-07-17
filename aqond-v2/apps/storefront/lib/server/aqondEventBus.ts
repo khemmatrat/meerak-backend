@@ -24,6 +24,9 @@ export type AqondEventType =
   | 'rider.en_route'
   | 'rider.arrived'
   | 'order.delivered'
+  | 'order.customer_confirmed'
+  | 'order.review_submitted'
+  | 'order.tip_paid'
   | 'order.refunded'
   | 'order.cancelled'
   | 'passenger.trip_completed';
@@ -151,6 +154,9 @@ export const EVENT_LABELS_TH: Record<AqondEventType, string> = {
   'rider.en_route': 'กำลังนำส่ง',
   'rider.arrived': 'ถึงจุดส่ง',
   'order.delivered': 'ส่งสำเร็จ',
+  'order.customer_confirmed': 'ลูกค้ายืนยันรับอาหาร',
+  'order.review_submitted': 'ลูกค้าให้คะแนน',
+  'order.tip_paid': 'ลูกค้าให้ทิป',
   'order.refunded': 'คืนเงินแล้ว',
   'order.cancelled': 'ยกเลิกออเดอร์',
   'passenger.trip_completed': 'จบการเดินทาง',

@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     payment_method: body.payment_method || 'cod',
     amount_micro: body.amount_micro || 0,
     order_items: body.order_items,
+    started_at: body.started_at,
   });
 
   return NextResponse.json(tracking);

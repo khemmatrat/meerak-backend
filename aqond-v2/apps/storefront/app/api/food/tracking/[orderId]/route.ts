@@ -4,6 +4,7 @@ import { getRiderTracking } from '@/lib/server/riderTracking';
 import { getUnifiedOrderTimeline } from '@/lib/server/orderTimeline';
 import { getPackingProof } from '@/lib/server/packingProof';
 import { attachPickupFieldsToTrack, getPickupVerification } from '@/lib/server/pickupVerification';
+import { enrichTrackingWithConfirm } from '@/lib/server/foodConfirmReceipt';
 
 async function attachProofs(orderId: string, view: Record<string, unknown>) {
   try {
@@ -32,7 +33,7 @@ async function withEventTimeline(orderId: string, view: Record<string, unknown>)
   } catch {
     /* optional */
   }
-  return attachProofs(orderId, view);
+  return enrichTrackingWithConfirm(orderId, await attachProofs(orderId, view));
 }
 
 export async function GET(

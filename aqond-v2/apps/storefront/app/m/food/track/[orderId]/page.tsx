@@ -10,13 +10,14 @@ import { TtRiderLiveMap } from '@/components/mobile/TtRiderLiveMap';
 import { TtDeliveryTimeline } from '@/components/mobile/TtDeliveryTimeline';
 import { TtRiderProfileCard } from '@/components/mobile/TtRiderProfileCard';
 import { TtDeliveryReviewPanel } from '@/components/mobile/TtDeliveryReviewPanel';
+import { TtDeliveryConfirmPanel } from '@/components/mobile/TtDeliveryConfirmPanel';
 import { TtRiderChatSheet } from '@/components/mobile/TtRiderChatSheet';
 import { TtOrderReceiptCard } from '@/components/mobile/TtOrderReceiptCard';
 import { TtDeliveryEtaHero } from '@/components/mobile/TtDeliveryEtaHero';
 import { TtDisputeReportSheet } from '@/components/mobile/TtDisputeReportSheet';
 
 const HANDOFF_PHASES = new Set([
-  'arrived', 'rider_calling', 'photo_proof', 'handoff', 'cod_payment', 'rider_completed',
+  'arrived', 'rider_calling', 'photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'awaiting_customer_confirm',
 ]);
 
 export default function FoodRiderTrackPage() {
@@ -66,7 +67,7 @@ export default function FoodRiderTrackPage() {
 
   const showPhoto =
     tracking &&
-    ['photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'review_pending', 'completed'].includes(
+    ['photo_proof', 'handoff', 'cod_payment', 'rider_completed', 'awaiting_customer_confirm', 'review_pending', 'completed'].includes(
       tracking.phase,
     );
 
@@ -144,6 +145,12 @@ export default function FoodRiderTrackPage() {
             </div>
           )}
 
+          <TtDeliveryConfirmPanel
+            orderId={orderId}
+            tracking={tracking}
+            onConfirmed={setTracking}
+          />
+
           <TtDeliveryReviewPanel
             orderId={orderId}
             tracking={tracking}
@@ -168,13 +175,21 @@ export default function FoodRiderTrackPage() {
             </div>
           )}
 
-          {!tracking.delivered && tracking.phase !== 'review_pending' && tracking.phase !== 'completed' && (
+          {!tracking.delivered &&
+            tracking.phase !== 'review_pending' &&
+            tracking.phase !== 'awaiting_customer_confirm' &&
+            tracking.phase !== 'completed' && (
             <p className="tt-rider-poll-hint">
               {wsLive ? '🔴 อัปเดตแบบเรียลไทม์ (WebSocket)' : 'กำลังเชื่อมต่อ…'}
             </p>
           )}
 
-          <button type="button" className="tt-btn-ghost tt-order-dispute-btn" onClick={() => setDisputeOpen(true)}>
+          <button
+            type="button"
+            className="tt-btn-ghost tt-order-dispute-btn"
+            onClick={() => setDisputeOpen(true)}
+            disabled={tracking.phase === 'completed'}
+          >
             🛡️ แจ้งปัญหา (ยกเลิก / ของไม่ครบ)
           </button>
 

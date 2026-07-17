@@ -392,6 +392,8 @@ export async function localAdvanceDispatchPhase(
     });
   }
   if (job.phase === 'rider_completed' || job.phase === 'trip_completed') {
+    const { markRiderDelivered } = await import('@/lib/server/foodConfirmReceipt');
+    await markRiderDelivered(job.order_id, job.buyer_id).catch(() => null);
     await appendAqondEvent({
       order_id: job.order_id,
       event_type: job.job_type === 'passenger' ? 'passenger.trip_completed' : 'order.delivered',

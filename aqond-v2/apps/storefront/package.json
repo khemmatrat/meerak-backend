@@ -30,6 +30,7 @@
     "test:packing-proof": "node scripts/packing-proof.test.mjs",
     "test:order-pickup-qr": "node scripts/order-pickup-qr.test.mjs",
     "test:pickup-verification": "node scripts/pickup-verification.test.mjs",
+    "test:food-delivery-confirm": "node scripts/food-delivery-confirm.test.mjs",
     "test:return-escrow-jobs": "node scripts/run-return-escrow-jobs.mjs"
   },
   "dependencies": {

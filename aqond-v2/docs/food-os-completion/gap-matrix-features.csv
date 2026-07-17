@@ -1,15 +1,15 @@
 feature_id,domain,status,missing_files,missing_apis,missing_ui,missing_db,dependencies,risk,complexity,effort_days,milestone
 HP-C01,customer,✅,,,,,,Low,S,0,M1
 HP-C02,customer,⚠️,,food/tracking enrich,,,,Low,S,2,M1
-HP-C03,customer,❌,lib/server/foodConfirmReceipt.ts,POST food/tracking/:id/confirm,track confirm button,order_lifecycle_events,M4 events,Med,M,3,M1
+HP-C03,customer,✅,lib/server/foodConfirmReceipt.ts,POST food/tracking/:id/confirm,track confirm button,food-delivery-confirms.json,M4 events,Med,M,3,M1
 HP-C04,customer,❌,,shop-chat by orderId,track merchant chat tab,shop_chat_threads,M5 PG,Med,M,5,M2
 HP-M01,merchant,✅,lib/server/packingProof.ts,POST merchant/orders/:id/packing-proof,MerchantPackingProofSheet,order_packing_proofs,object storage,Med,M,5,M1
-HP-M02,merchant,❌,lib/server/merchantOrderQr.ts,GET merchant/orders/:id/pickup-qr,orders QR display,,crypto signing,Med,M,4,M1
-HP-M03,merchant,❌,,,orders chat deep link,,chat exists,Low,S,1,M1
+HP-M02,merchant,✅,lib/server/merchantOrderQr.ts,GET merchant/orders/:id/pickup-qr,orders QR display,,crypto signing,Med,M,4,M1
+HP-M03,merchant,✅,,GET merchant/orders/:id/rider-chat,orders chat deep link,,chat exists,Low,S,1,M1
 HP-R01,rider,✅,lib/riderPhaseFlow.ts extend,verify-pickup + pickup-photo APIs,RiderQrScanner + active job,pickup_verifications,S2 QR,Med,M,5,M1
 HP-R02,rider,✅,RiderQrScanner.tsx,POST rider/orders/:id/verify-pickup,active job scanner,pickup_verifications,HP-R01,Med,M,5,M1
 HP-R03,rider,✅,,POST rider/orders/:id/pickup-photo,active job camera,pickup_proofs,HP-R02,Med,M,3,M1
-HP-R04,rider,⚠️,,,wire RiderIssueSheet,,M3 claim,Low,S,1,M1
+HP-R04,rider,✅,,,wire RiderIssueSheet,,M3 claim,Low,S,1,M1
 TRK-01,track,❌,lib/server/trackOsProjection.ts,GET admin/food/orders/:id/track,FoodMerchantOsView detail,lifecycle PG,M5,M5,High,L,8,M2
 TRK-02,track,❌,,BFF chats aggregate,admin chat panel,027+shop chat,M1+M5,Med,M,4,M2
 TRK-03,track,❌,,BFF photo gallery,admin proofs tab,proof tables,M1,Low,M,3,M2
