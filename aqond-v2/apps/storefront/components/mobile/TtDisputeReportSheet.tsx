@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import {
   FOOD_DISPUTE_TYPES,
   MARKETPLACE_DISPUTE_TYPES,
+  PHOTO_REQUIRED_CLAIMS,
   type DisputeCategory,
 } from '@/lib/disputePolicy';
 import { submitCustomerDispute } from '@/lib/disputesClient';
@@ -66,6 +67,10 @@ export function TtDisputeReportSheet({
   const submit = async () => {
     if (!title.trim()) {
       setErr('กรุณาระบุหัวข้อ');
+      return;
+    }
+    if (PHOTO_REQUIRED_CLAIMS.has(category as any) && !file) {
+      setErr('กรุณาแนบรูปหลักฐานสำหรับเคสนี้');
       return;
     }
     setBusy(true);
@@ -159,7 +164,10 @@ export function TtDisputeReportSheet({
         )}
 
         <label className="tt-menu-field">
-          <span>แนบคลิป / วิดีโอ (ไม่บังคับ, สูงสุด 8MB)</span>
+          <span>
+            แนบคลิป / วิดีโอ / รูป
+            {PHOTO_REQUIRED_CLAIMS.has(category as any) ? ' (จำเป็น)' : ' (ไม่บังคับ, สูงสุด 8MB)'}
+          </span>
           <input
             type="file"
             accept="video/*,image/*"

@@ -9,6 +9,10 @@ export type FoodDisputeCategory =
   | 'cancel_order'
   | 'missing_items'
   | 'wrong_order'
+  | 'wrong_menu'
+  | 'damaged_food'
+  | 'foreign_object'
+  | 'wrong_rider_pickup'
   | 'wrong_order_consumed';
 
 export type DisputeCategory = MarketplaceDisputeCategory | FoodDisputeCategory;
@@ -57,13 +61,33 @@ export const FOOD_DISPUTE_TYPES: {
   },
   {
     id: 'missing_items',
-    label: 'ได้ไม่ครบ',
+    label: 'ได้ไม่ครบ (Case 1)',
     desc: 'ขอตรวจจากคลิปวิดีโอ — คืนเงินเฉพาะรายการที่ไม่ได้รับ',
+  },
+  {
+    id: 'wrong_menu',
+    label: 'เมนูผิด (Case 2)',
+    desc: 'ได้อาหารไม่ตรงเมนูที่สั่ง',
   },
   {
     id: 'wrong_order',
     label: 'ได้ออเดอร์ผิด',
     desc: 'ได้อาหารไม่ตรงที่สั่ง (ยังไม่บริโภค)',
+  },
+  {
+    id: 'damaged_food',
+    label: 'อาหารเสียหาย (Case 3)',
+    desc: 'อาหารหก/เละ/เย็นเกินไป — แนบรูปหลักฐาน',
+  },
+  {
+    id: 'foreign_object',
+    label: 'สิ่งแปลกปลอม (Case 4)',
+    desc: 'พบวัตถุแปลกปลอมในอาหาร — แนบรูปหลักฐาน',
+  },
+  {
+    id: 'wrong_rider_pickup',
+    label: 'ไรเดอร์รับผิด (Case 5)',
+    desc: 'ไรเดอร์รับออเดอร์ผิดจากร้าน / QR ไม่ตรง',
   },
   {
     id: 'wrong_order_consumed',
@@ -89,5 +113,19 @@ export const ESCROW_POLICY =
 export const WRONG_ORDER_CONSUMED_POLICY =
   'หากลูกค้ารับออเดอร์ผิดแต่บริโภคแล้ว ระบบจะเรียกเก็บตามยอดออเดอร์นั้นเป็นค่าเริ่มต้น เว้นแต่ร้านและลูกค้าตกลงยอมความร่วมกัน';
 
+export const CLAIM_CASE_MAP: Record<string, FoodDisputeCategory> = {
+  case_1: 'missing_items',
+  case_2: 'wrong_menu',
+  case_3: 'damaged_food',
+  case_4: 'foreign_object',
+  case_5: 'wrong_rider_pickup',
+};
+
 export const MISSING_ITEMS_POLICY =
   'คืนเงินเฉพาะรายการที่ไม่ได้รับเท่านั้น — ทีมตรวจสอบจากคลิปวิดีโอ/หลักฐานที่แนบ';
+
+export const PHOTO_REQUIRED_CLAIMS = new Set<FoodDisputeCategory>([
+  'damaged_food',
+  'foreign_object',
+  'wrong_rider_pickup',
+]);

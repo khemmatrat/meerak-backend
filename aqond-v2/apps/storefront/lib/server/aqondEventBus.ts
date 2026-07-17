@@ -27,6 +27,12 @@ export type AqondEventType =
   | 'order.customer_confirmed'
   | 'order.review_submitted'
   | 'order.tip_paid'
+  | 'claim.opened'
+  | 'claim.settled'
+  | 'claim.redispatched'
+  | 'claim.replaced'
+  | 'claim.escalated'
+  | 'claim.closed'
   | 'order.refunded'
   | 'order.cancelled'
   | 'passenger.trip_completed';
@@ -157,6 +163,12 @@ export const EVENT_LABELS_TH: Record<AqondEventType, string> = {
   'order.customer_confirmed': 'ลูกค้ายืนยันรับอาหาร',
   'order.review_submitted': 'ลูกค้าให้คะแนน',
   'order.tip_paid': 'ลูกค้าให้ทิป',
+  'claim.opened': 'เปิดเคส Claim',
+  'claim.settled': 'ตัดสิน Claim',
+  'claim.redispatched': 'ส่งงานใหม่ (Re-dispatch)',
+  'claim.replaced': 'สร้างออเดอร์ทดแทน',
+  'claim.escalated': 'Escalate Claim',
+  'claim.closed': 'ปิดเคส Claim',
   'order.refunded': 'คืนเงินแล้ว',
   'order.cancelled': 'ยกเลิกออเดอร์',
   'passenger.trip_completed': 'จบการเดินทาง',

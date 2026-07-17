@@ -40,6 +40,8 @@ export type MerchantDisputeCase = {
   resolution_note?: string;
   mutual_agreement: boolean;
   timeline: DisputeTimelineEvent[];
+  replacement_order_id?: string;
+  redispatch_job_id?: string;
   created_at: string;
   updated_at: string;
 };
@@ -170,6 +172,22 @@ export function computeDefaultResolution(input: {
     };
   }
 
+  if (category === 'wrong_menu' || category === 'damaged_food' || category === 'foreign_object') {
+    return {
+      refund_amount_micro: order_total_micro,
+      charge_amount_micro: 0,
+      note: 'คืนเงินเต็มจำนวน — ตรวจสอบหลักฐานแล้ว',
+    };
+  }
+
+  if (category === 'wrong_rider_pickup') {
+    return {
+      refund_amount_micro: order_total_micro,
+      charge_amount_micro: 0,
+      note: 'คืนเงินเต็มจำนวน — ไรเดอร์รับออเดอร์ผิด',
+    };
+  }
+
   if (category === 'cancel_order') {
     return {
       refund_amount_micro: order_total_micro,
@@ -297,6 +315,21 @@ export async function createDisputeCase(input: {
   };
   store.cases.unshift(c);
   await writeStore(store);
+
+  const { appendAqondEvent } = await import('@/lib/server/aqondEventBus');
+  await appendAqondEvent({
+    order_id: c.order_id,
+    event_type: 'claim.opened',
+    source: 'storefront',
+    actor: input.customer_id,
+    merchant_id: input.merchant_id,
+    payload: {
+      case_id: c.id,
+      category: c.category,
+      title: c.title,
+    },
+  });
+
   return c;
 }
 
@@ -305,6 +338,18 @@ export async function getDisputeSummary(merchantId: string) {
   const open = cases.filter((c) => !['resolved_refund', 'resolved_charge', 'resolved_mutual', 'closed'].includes(c.status));
   const heldTotal = open.reduce((s, c) => s + c.held_amount_micro, 0);
   return { total: cases.length, open_count: open.length, held_total_micro: heldTotal, cases };
+}
+
+export async function updateDisputeCase(
+  caseId: string,
+  patch: Partial<MerchantDisputeCase>,
+): Promise<MerchantDisputeCase | null> {
+  const store = await readStore();
+  const hit = store.cases.find((c) => c.id === caseId);
+  if (!hit) return null;
+  Object.assign(hit, patch, { updated_at: new Date().toISOString() });
+  await writeStore(store);
+  return hit;
 }
 
 export async function listDisputesForOrder(orderId: string): Promise<MerchantDisputeCase[]> {

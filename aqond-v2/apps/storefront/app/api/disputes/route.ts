@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { createDisputeCase } from '@/lib/server/merchantDisputes';
 import type { DisputeCategory, DisputeOrderType } from '@/lib/disputePolicy';
-import { FOOD_DISPUTE_TYPES, MARKETPLACE_DISPUTE_TYPES } from '@/lib/disputePolicy';
+import { FOOD_DISPUTE_TYPES, MARKETPLACE_DISPUTE_TYPES, PHOTO_REQUIRED_CLAIMS } from '@/lib/disputePolicy';
 
 const EVIDENCE_DIR = path.join(process.cwd(), '.data', 'dev', 'dispute-evidence');
 
@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
 
   let evidenceNote = body.evidence_note?.trim() || '';
   const file = body.evidence_file;
+  if (PHOTO_REQUIRED_CLAIMS.has(category as any) && !file && !body.evidence_data_url) {
+    return NextResponse.json({ error: 'photo_evidence_required' }, { status: 400 });
+  }
   if (file && typeof file !== 'string' && file.size > 0) {
     await fs.mkdir(EVIDENCE_DIR, { recursive: true });
     const evidenceId = `ev-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
