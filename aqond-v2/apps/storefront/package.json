@@ -35,6 +35,9 @@
     "test:track-os-projection": "node scripts/track-os-projection.test.mjs",
     "test:track-os-sse": "node scripts/track-os-sse.test.mjs",
     "test:claim-os": "node scripts/claim-os.test.mjs",
+    "test:event-outbox": "node scripts/event-outbox.test.mjs",
+    "test:lifecycle-event-types": "node scripts/lifecycle-event-types.test.mjs",
+    "worker:lifecycle-projector": "node workers/lifecycleProjector.mjs",
     "test:return-escrow-jobs": "node scripts/run-return-escrow-jobs.mjs"
   },
   "dependencies": {

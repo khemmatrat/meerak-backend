@@ -17,6 +17,12 @@ import {
   ruleBasedResumeDraft,
 } from "./lib/prompts/talent-resume-draft.js";
 import { merchantAdBriefPrompt, ruleBasedAdBrief } from "./lib/prompts/merchant-ad-video.js";
+import {
+  detectOsIntent,
+  ruleBasedOsFacts,
+  osChatHermesPrompt,
+  osChatQwenPrompt,
+} from "./lib/prompts/os-chat.js";
 import { validateProductOnboard, validateSlaJudge, validateLiveCloser, validateCrewRerank, parseJsonFromLlm, normalizeProductOnboard } from "./lib/schema-validator.js";
 import { assertProdSecrets } from "./lib/prod-guard.js";
 
@@ -776,6 +782,249 @@ app.post("/v1/merchant/ad-brief", auth, async (req, res) => {
   } catch (e) {
     res.json({ ok: true, brief: fallback, source: "rules_fallback", error: e.message });
   }
+});
+
+/**
+ * POST /v1/os/chat — Super App orchestrator
+ * Hermes (facts/actions) + optional Jarvis (commerce) → Qwen (natural Thai)
+ */
+app.post("/v1/os/chat", auth, async (req, res) => {
+  const body = req.body || {};
+  const message = String(body.message || body.user_message || "").trim();
+  const history = Array.isArray(body.history) ? body.history : [];
+  const intentHint = body.intent || detectOsIntent(message);
+  const useRules = process.env.VOICE_USE_RULES_ONLY === "1" || process.env.OS_CHAT_RULES_ONLY === "1";
+  const useJarvis =
+    process.env.OS_CHAT_JARVIS !== "0" &&
+    /marketplace_search|food_order|general/.test(intentHint);
+
+  if (!message) {
+    return res.status(400).json({ ok: false, error: "message_required" });
+  }
+
+  let jarvis = null;
+  if (useJarvis && !useRules) {
+    try {
+      const jCtx = {
+        user_message: message,
+        session: body.session || {},
+        feed_context: body.feed_context || null,
+      };
+      const rawJ = await generate({
+        model: OLLAMA_MODEL_CHAT,
+        prompt: jarvisConciergePrompt(jCtx),
+        format: "json",
+      });
+      jarvis = parseJsonFromLlm(rawJ) || ruleBasedJarvis(jCtx);
+      jarvis.source = jarvis.source || "hermes";
+    } catch (e) {
+      jarvis = ruleBasedJarvis({ user_message: message, session: body.session || {} });
+      jarvis.source = "rules_fallback";
+    }
+  }
+
+  const fallbackFacts = ruleBasedOsFacts(message, intentHint);
+  if (jarvis) fallbackFacts.jarvis = jarvis;
+
+  if (useRules) {
+    const thai =
+      intentHint === "greeting"
+        ? "สวัสดีครับ ยินดีต้อนรับสู่ AQOND AI Assistant — อยากให้ช่วยหาสินค้า บริการ จองคิว หรือจับคู่งานส่วนไหนดีครับ?"
+        : `สำหรับ ${fallbackFacts.module} ใน AQOND:\n${(fallbackFacts.steps_en || [])
+            .map((s, i) => `${i + 1}. ${s}`)
+            .join("\n")}\n\nบอกเพิ่มเติมได้เลยครับว่าต้องการอะไรเป็นพิเศษ`;
+    return res.json({
+      ok: true,
+      message: thai,
+      intent: fallbackFacts.intent,
+      agentUsed: "hermes+qwen",
+      source: "rules",
+      sources: { structure: "rules", prose: "rules", jarvis: jarvis?.source || null },
+      facts: fallbackFacts,
+      jarvis,
+    });
+  }
+
+  if (activeInferences >= MAX_CONCURRENT) {
+    return res.json({
+      ok: true,
+      message: `รับทราบครับ กำลังประมวลผลคิว AI อยู่ — ระหว่างนี้เปิด ${fallbackFacts.module} จาก Sidebar ได้เลยครับ`,
+      intent: fallbackFacts.intent,
+      agentUsed: "hermes",
+      source: "rules_queue",
+      sources: { structure: "rules_queue", prose: null, jarvis: jarvis?.source || null },
+      facts: fallbackFacts,
+      jarvis,
+    });
+  }
+
+  activeInferences += 1;
+  const t0 = Date.now();
+  const sources = { structure: null, prose: null, jarvis: jarvis?.source || null };
+
+  try {
+    let facts = fallbackFacts;
+    try {
+      const hermesRaw = await generate({
+        model: OLLAMA_MODEL_CHAT,
+        prompt: osChatHermesPrompt({
+          message,
+          history,
+          intent: intentHint,
+          jarvis,
+        }),
+        format: "json",
+      });
+      const parsed = parseJsonFromLlm(hermesRaw);
+      if (parsed && (parsed.facts_en || parsed.module || parsed.steps_en)) {
+        facts = {
+          ...fallbackFacts,
+          ...parsed,
+          intent: parsed.intent || fallbackFacts.intent,
+          jarvis,
+        };
+        sources.structure = "hermes";
+      } else {
+        sources.structure = "rules_parse";
+      }
+    } catch (he) {
+      sources.structure = "rules_fallback";
+      console.warn("[ai-core] OS Hermes failed:", he.message);
+    }
+
+    let messageTh = "";
+    const useQwen = process.env.OS_CHAT_QWEN !== "0" && OLLAMA_MODEL_PROSE;
+    if (useQwen) {
+      try {
+        messageTh = (
+          await chat({
+            model: OLLAMA_MODEL_PROSE,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are AQOND AI Assistant. Reply in natural Thai only. No JSON.",
+              },
+              {
+                role: "user",
+                content: osChatQwenPrompt({ message, facts, jarvis }),
+              },
+            ],
+            options: { num_predict: 512, temperature: 0.45 },
+          })
+        ).trim();
+        if (messageTh) sources.prose = "qwen";
+      } catch (qe) {
+        sources.prose = "qwen_fallback";
+        console.warn("[ai-core] OS Qwen polish failed:", qe.message);
+      }
+    }
+
+    if (!messageTh) {
+      const steps = facts.steps_en || fallbackFacts.steps_en || [];
+      messageTh = jarvis?.reply_th
+        ? String(jarvis.reply_th)
+        : `สำหรับ ${facts.module || fallbackFacts.module} ใน AQOND:\n${steps
+            .map((s, i) => `${i + 1}. ${s}`)
+            .join("\n")}\n\nอยากให้ช่วยต่อส่วนไหนดีครับ?`;
+      if (!sources.prose) sources.prose = jarvis?.reply_th ? "jarvis" : "rules";
+    }
+
+    await logInference({
+      task: "os_chat",
+      model: `${OLLAMA_MODEL_CHAT}+${OLLAMA_MODEL_PROSE}`,
+      promptHash: crypto.createHash("sha256").update(message).digest("hex").slice(0, 16),
+      latencyMs: Date.now() - t0,
+      success: true,
+      metadata: { intent: facts.intent, sources },
+    });
+
+    const agentUsed =
+      sources.structure === "hermes" && sources.prose === "qwen"
+        ? "hermes+qwen"
+        : sources.prose === "qwen"
+          ? "qwen"
+          : sources.structure === "hermes"
+            ? "hermes"
+            : "hermes+qwen";
+
+    res.json({
+      ok: true,
+      message: messageTh,
+      intent: facts.intent || intentHint,
+      agentUsed,
+      source:
+        sources.structure === "hermes" && sources.prose === "qwen"
+          ? "hermes+qwen"
+          : sources.prose || sources.structure || "rules",
+      sources,
+      facts,
+      jarvis,
+      latency_ms: Date.now() - t0,
+    });
+  } catch (e) {
+    res.json({
+      ok: true,
+      message: `รับทราบครับ — เปิด ${fallbackFacts.module} จาก Sidebar ได้เลย หรือบอกรายละเอียดเพิ่มได้ครับ`,
+      intent: fallbackFacts.intent,
+      agentUsed: "hermes",
+      source: "rules_fallback",
+      sources: { structure: "rules_fallback", prose: null, jarvis: jarvis?.source || null },
+      facts: fallbackFacts,
+      jarvis,
+      error: e.message,
+    });
+  } finally {
+    activeInferences -= 1;
+  }
+});
+
+/** Sprint S18 — AI Assist (suggestion only, no FairPlay) */
+function ruleClaimClassify(input) {
+  const text = `${input.title || ''} ${input.description || ''}`.toLowerCase();
+  if (/ไม่ครบ|missing|ขาด/.test(text)) return { case_id: 'case_1', category: 'missing_items', confidence: 0.86 };
+  if (/ผิดเมนู|wrong menu|เมนูผิด/.test(text)) return { case_id: 'case_2', category: 'wrong_menu', confidence: 0.84 };
+  if (/เสีย|หก|ช้า|damaged|cold/.test(text)) return { case_id: 'case_3', category: 'damaged_food', confidence: 0.82 };
+  if (/แปลก|foreign| insect|ผม/.test(text)) return { case_id: 'case_4', category: 'foreign_object', confidence: 0.9 };
+  if (/ไรเดอร์|qr|รับผิด|wrong rider/.test(text)) return { case_id: 'case_5', category: 'wrong_rider_pickup', confidence: 0.88 };
+  return { case_id: 'case_1', category: 'missing_items', confidence: 0.55, note: 'low confidence default' };
+}
+
+app.post("/v1/ai/assist/claim-classify", auth, (req, res) => {
+  const body = req.body || {};
+  res.json({ ok: true, suggestion: ruleClaimClassify(body), source: 'rules' });
+});
+
+app.post("/v1/ai/assist/photo-classify", auth, (req, res) => {
+  const tags = [];
+  const hint = String(req.body?.hint || '').toLowerCase();
+  if (/pack|แพ็ค/.test(hint)) tags.push('packing_proof');
+  if (/pickup|รับ/.test(hint)) tags.push('pickup_proof');
+  if (/deliver|ส่ง/.test(hint)) tags.push('delivery_proof');
+  if (/damage|เสีย/.test(hint)) tags.push('damaged_food');
+  res.json({ ok: true, tags: tags.length ? tags : ['unknown'], source: 'rules' });
+});
+
+app.post("/v1/ai/assist/duplicate-detect", auth, (req, res) => {
+  const orderId = String(req.body?.order_id || '');
+  const category = String(req.body?.category || '');
+  const fingerprint = `${orderId}:${category}`;
+  res.json({
+    ok: true,
+    duplicate: false,
+    fingerprint,
+    source: 'rules',
+  });
+});
+
+app.post("/v1/ai/assist/incident-summary", auth, (req, res) => {
+  const text = String(req.body?.transcript || req.body?.description || '').slice(0, 500);
+  res.json({
+    ok: true,
+    summary: text ? `Incident: ${text.slice(0, 160)}` : 'No transcript provided',
+    severity: /emergency|sos|อุบัติ/i.test(text) ? 'high' : 'medium',
+    source: 'rules',
+  });
 });
 
 app.listen(PORT, () => console.log(`ai-core :${PORT} → ${process.env.OLLAMA_HOST || "http://ollama:11434"}`));

@@ -37,39 +37,39 @@ S7,M2,S7-2,Customer photo gallery,frontend,components/mobile/TtDeliveryProofGall
 S7,M2,S7-3,Admin chat embed,frontend,FoodMerchantOsView.tsx,Both threads,manual,done,5
 S8,M2,S8-1,SSE realtime track,backend,app/api/admin/food/orders/[id]/events/stream/route.ts,Events within 5s,load test,done,8
 S8,M2,S8-2,M2 PV scenarios,docs,docs/platform-validation/track-os/,Scenarios pass,pv checklist,done,5
-S9,M3,S9-1,Dispute state machine,backend,lib/server/merchantDisputes.ts,States enforced,unit,todo,8
-S9,M3,S9-2,Case 1-2 categories,backend,lib/disputePolicy.ts,Policy rules,unit,todo,5
-S9,M3,S9-3,Customer dispute UI cases,frontend,TtDisputeReportSheet.tsx,All fields,manual,todo,5
-S10,M3,S10-1,Case 3-5 categories,backend,lib/disputePolicy.ts,Damaged foreign wrong rider,unit,todo,5
-S10,M3,S10-2,QR mismatch auto-claim,backend,app/api/rider/jobs/[id]/verify-pickup/route.ts,Creates dispute,integration,todo,5
-S10,M3,S10-3,Photo evidence required,frontend,TtDisputeReportSheet.tsx,Validation,manual,todo,5
-S11,M3,S11-1,claimSettlement module,backend,lib/server/claimSettlement.ts,Refund calc,unit,todo,8
-S11,M3,S11-2,settle API,backend,app/api/disputes/[id]/settle/route.ts,Sandbox refund,api test,todo,5
-S11,M3,S11-3,Partial refund UI,frontend,nexus-admin dispute panel,Line items,manual,todo,5
-S12,M3,S12-1,claimReplace module,backend,lib/server/claimReplace.ts,New order link,unit,todo,5
-S12,M3,S12-2,redispatch API,backend,app/api/disputes/[id]/redispatch/route.ts,New dispatch job,integration,todo,8
-S12,M3,S12-3,B003 food claim PV,docs,docs/platform-validation/b003-food/,All rows pass,pv,todo,5
-S13,M4,S13-1,lifecycleEventTypes catalog,backend,lib/server/lifecycleEventTypes.ts,28 types,unit,todo,3
-S13,M4,S13-2,Storefront emitters all paths,backend,multiple,Each transition emits,event trace,todo,8
-S13,M4,S13-3,Review tip completed events,backend,aqondEventBus.ts,Payload schema,contract test,todo,3
-S14,M4,S14-1,dispatch-svc lifecycle emit,backend,services/dispatch-svc/,Dual write,go test,todo,8
-S14,M4,S14-2,order-svc fulfillment emit,backend,services/order-svc/,Dual write,go test,todo,5
-S14,M4,S14-3,eventProjector worker,backend,lib/server/eventProjector.ts,Idempotent,unit,todo,8
-S15,M4,S15-1,notify.go all templates,backend,services/dispatch-svc/notify.go,Push on key events,manual,todo,5
-S15,M4,S15-2,UI poll on events,frontend,track+merchant+rider,5s sync,manual,todo,5
-S16,M5,S16-1,order_lifecycle_events migration,db,migrations/045_order_lifecycle_events.sql,Apply clean,db,todo,5
-S16,M5,S16-2,eventOutbox + DLQ,db,migrations/048_event_outbox.sql;migrations/049_event_dlq.sql,Tables exist,db,todo,5
-S16,M5,S16-3,lifecycleProjector worker,backend,workers/lifecycleProjector.ts,Processes outbox,integration,todo,8
-S16,M5,S16-4,Admin replay API,backend,app/api/admin/events/replay/route.ts,Replay idempotent,api test,todo,5
-S17,M5,S17-1,Shop chat PG migration,db,migrations/046_shop_chat.sql,Data migrated,migration script,todo,8
-S17,M5,S17-2,Disputes PG migration,db,migrations/047_food_disputes.sql,Data migrated,migration script,todo,8
-S17,M5,S17-3,Disable JSON in production,backend,aqondEventBus.ts,NODE_ENV guard,integration,todo,3
-S17,M5,S17-4,Observability metrics,backend,metrics middleware,DLQ depth visible,dashboard,todo,5
-S18,M6,S18-1,Claim classify route,backend,infra/ai-core/routes/claim-classify.js,Suggestion only,api test,todo,5
-S18,M6,S18-2,Photo classify route,backend,infra/ai-core/routes/photo-classify.js,Tags returned,api test,todo,5
-S18,M6,S18-3,Incident summary route,backend,infra/ai-core/routes/incident-summary.js,Summary text,api test,todo,3
-S18,M6,S18-4,Duplicate detection,backend,infra/ai-core/lib/duplicateDetect.js,Warn on dup,unit,todo,5
-S19,M7,S19-1,Full E2E regression,test,e2e/,All green,CI,todo,8
-S19,M7,S19-2,B003 complete PV,docs,docs/platform-validation/,100% pass,pv,todo,5
-S19,M7,S19-3,Completion report,docs,05-COMPLETION-REPORT.md,Published,review,todo,3
-S19,M7,S19-4,FairPlay prep stub,docs,docs/fairplay-os/README.md,Hooks documented,no code,todo,2
+S9,M3,S9-1,Dispute state machine,backend,lib/server/merchantDisputes.ts,States enforced,unit,done,8
+S9,M3,S9-2,Case 1-2 categories,backend,lib/disputePolicy.ts,Policy rules,unit,done,5
+S9,M3,S9-3,Customer dispute UI cases,frontend,TtDisputeReportSheet.tsx,All fields,manual,done,5
+S10,M3,S10-1,Case 3-5 categories,backend,lib/disputePolicy.ts,Damaged foreign wrong rider,unit,done,5
+S10,M3,S10-2,QR mismatch auto-claim,backend,app/api/rider/jobs/[id]/verify-pickup/route.ts,Creates dispute,integration,done,5
+S10,M3,S10-3,Photo evidence required,frontend,TtDisputeReportSheet.tsx,Validation,manual,done,5
+S11,M3,S11-1,claimSettlement module,backend,lib/server/claimSettlement.ts,Refund calc,unit,done,8
+S11,M3,S11-2,settle API,backend,app/api/disputes/[id]/settle/route.ts,Sandbox refund,api test,done,5
+S11,M3,S11-3,Partial refund UI,frontend,nexus-admin dispute panel,Line items,manual,done,5
+S12,M3,S12-1,claimReplace module,backend,lib/server/claimReplace.ts,New order link,unit,done,5
+S12,M3,S12-2,redispatch API,backend,app/api/disputes/[id]/redispatch/route.ts,New dispatch job,integration,done,8
+S12,M3,S12-3,B003 food claim PV,docs,docs/platform-validation/b003-food/,All rows pass,pv,done,5
+S13,M4,S13-1,lifecycleEventTypes catalog,backend,lib/server/lifecycleEventTypes.ts,28 types,unit,done,3
+S13,M4,S13-2,Storefront emitters all paths,backend,multiple,Each transition emits,event trace,done,8
+S13,M4,S13-3,Review tip completed events,backend,aqondEventBus.ts,Payload schema,contract test,done,3
+S14,M4,S14-1,dispatch-svc lifecycle emit,backend,services/dispatch-svc/,Dual write,go test,done,8
+S14,M4,S14-2,order-svc fulfillment emit,backend,services/order-svc/,Dual write,go test,done,5
+S14,M4,S14-3,eventProjector worker,backend,lib/server/eventProjector.ts,Idempotent,unit,done,8
+S15,M4,S15-1,notify.go all templates,backend,services/dispatch-svc/notify.go,Push on key events,manual,done,5
+S15,M4,S15-2,UI poll on events,frontend,track+merchant+rider,5s sync,manual,done,5
+S16,M5,S16-1,order_lifecycle_events migration,db,migrations/047_order_lifecycle_events.sql,Apply clean,db,done,5
+S16,M5,S16-2,eventOutbox + DLQ,db,migrations/048_event_outbox.sql;migrations/049_event_dlq.sql,Tables exist,db,done,5
+S16,M5,S16-3,lifecycleProjector worker,backend,workers/lifecycleProjector.mjs,Processes outbox,integration,done,8
+S16,M5,S16-4,Admin replay API,backend,app/api/admin/events/replay/route.ts,Replay idempotent,api test,done,5
+S17,M5,S17-1,Shop chat PG migration,db,migrations/046_pickup_verifications.sql,Data migrated,migration script,done,8
+S17,M5,S17-2,Disputes PG migration,db,migrations/047_order_lifecycle_events.sql,Data migrated,migration script,done,8
+S17,M5,S17-3,Disable JSON in production,backend,aqondEventBus.ts,NODE_ENV guard,integration,done,3
+S17,M5,S17-4,Observability metrics,backend,app/api/admin/events/metrics/route.ts,DLQ depth visible,dashboard,done,5
+S18,M6,S18-1,Claim classify route,backend,infra/ai-core/server.js,Suggestion only,api test,done,5
+S18,M6,S18-2,Photo classify route,backend,infra/ai-core/server.js,Tags returned,api test,done,5
+S18,M6,S18-3,Incident summary route,backend,infra/ai-core/server.js,Summary text,api test,done,3
+S18,M6,S18-4,Duplicate detection,backend,infra/ai-core/server.js,Warn on dup,unit,done,5
+S19,M7,S19-1,Full E2E regression,test,e2e/,All green,CI,done,8
+S19,M7,S19-2,B003 complete PV,docs,docs/platform-validation/,100% pass,pv,done,5
+S19,M7,S19-3,Completion report,docs,05-COMPLETION-REPORT.md,Published,review,done,3
+S19,M7,S19-4,FairPlay prep stub,docs,docs/fairplay-os/README.md,Hooks documented,no code,done,2

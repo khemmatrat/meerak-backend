@@ -2,6 +2,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 
+function useProductionEventBackbone(): boolean {
+  return process.env.FOOD_EVENT_BACKBONE === 'pg' || process.env.NODE_ENV === 'production';
+}
+
 const EVENTS_FILE = path.join(process.cwd(), '.data', 'dev', 'aqond-order-events.json');
 
 /** Canonical lifecycle + dispatch events — single stream for all surfaces */
@@ -77,15 +81,26 @@ async function writeStore(store: EventStore) {
 export async function appendAqondEvent(
   input: Omit<AqondLifecycleEvent, 'id' | 'at'> & { at?: string },
 ): Promise<AqondLifecycleEvent> {
-  const store = await readStore();
   const evt: AqondLifecycleEvent = {
     id: `evt-${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
     at: input.at || new Date().toISOString(),
     ...input,
   };
-  store.events.unshift(evt);
-  if (store.events.length > 8000) store.events.length = 8000;
-  await writeStore(store);
+
+  if (!useProductionEventBackbone()) {
+    const store = await readStore();
+    store.events.unshift(evt);
+    if (store.events.length > 8000) store.events.length = 8000;
+    await writeStore(store);
+  }
+
+  try {
+    const { enqueueOutboxEvent } = await import('@/lib/server/eventOutbox');
+    await enqueueOutboxEvent(evt);
+  } catch {
+    /* outbox optional in dev */
+  }
+
   return evt;
 }
 
