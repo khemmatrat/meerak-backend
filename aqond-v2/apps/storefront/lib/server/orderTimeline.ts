@@ -108,18 +108,25 @@ export type FoodTimelineEntry = {
 };
 
 export function buildFoodTimelineEntries(events: AqondLifecycleEvent[]): FoodTimelineEntry[] {
-  return events.map((e) => ({
-    id: e.id,
-    event_type: e.event_type,
-    label: EVENT_LABELS_TH[e.event_type] || e.event_type,
-    at: e.at,
-    time_label: formatBangkokTime(e.at) || '—',
-    source: e.source,
-    rider_id: e.rider_id,
-    job_id: e.job_id,
-    payload: e.payload,
-    kind: isDispatchTimelineEvent(e.event_type) ? 'dispatch' : 'lifecycle',
-  }));
+  const byType = new Map<string, FoodTimelineEntry>();
+  for (const e of events) {
+    const entry: FoodTimelineEntry = {
+      id: e.id,
+      event_type: e.event_type,
+      label: EVENT_LABELS_TH[e.event_type] || e.event_type,
+      at: e.at,
+      time_label: formatBangkokTime(e.at) || '—',
+      source: e.source,
+      rider_id: e.rider_id,
+      job_id: e.job_id,
+      payload: e.payload,
+      kind: isDispatchTimelineEvent(e.event_type) ? 'dispatch' : 'lifecycle',
+    };
+    byType.set(`${entry.kind}:${entry.event_type}`, entry);
+  }
+  return Array.from(byType.values()).sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  );
 }
 
 export function buildDispatchTimelineEntries(events: AqondLifecycleEvent[]): FoodTimelineEntry[] {

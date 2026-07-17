@@ -10,7 +10,7 @@ HP-R01,rider,✅,lib/riderPhaseFlow.ts extend,verify-pickup + pickup-photo APIs,
 HP-R02,rider,✅,RiderQrScanner.tsx,POST rider/orders/:id/verify-pickup,active job scanner,pickup_verifications,HP-R01,Med,M,5,M1
 HP-R03,rider,✅,,POST rider/orders/:id/pickup-photo,active job camera,pickup_proofs,HP-R02,Med,M,3,M1
 HP-R04,rider,✅,,,wire RiderIssueSheet,,M3 claim,Low,S,1,M1
-TRK-01,track,❌,lib/server/trackOsProjection.ts,GET admin/food/orders/:id/track,FoodMerchantOsView detail,lifecycle PG,M5,M5,High,L,8,M2
+TRK-01,track,⚠️,lib/server/trackOsProjection.ts,GET admin/food/orders/:id/track,FoodMerchantOsView detail,lifecycle PG,M5,M5,High,L,8,M2
 TRK-02,track,❌,,BFF chats aggregate,admin chat panel,027+shop chat,M1+M5,Med,M,4,M2
 TRK-03,track,❌,,BFF photo gallery,admin proofs tab,proof tables,M1,Low,M,3,M2
 TRK-04,track,❌,,SSE/WS subscribe,admin live feed,,M4,High,L,6,M2
