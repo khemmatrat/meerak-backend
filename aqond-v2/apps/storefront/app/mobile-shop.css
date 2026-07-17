@@ -5349,6 +5349,30 @@ button.tt-pay-option {
   font-family: inherit;
 }
 
+.tt-chat-call-btn.compact {
+  padding: 8px 10px;
+  min-width: 40px;
+}
+
+.tt-chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tt-chat-expand-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--tt-border);
+  border-radius: 10px;
+  background: var(--tt-bg-input);
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .tt-chat-calling {
   margin: 0;
   padding: 8px 16px;
@@ -5490,6 +5514,63 @@ button.tt-pay-option {
   border: 1px solid var(--tt-border);
   background: var(--tt-bg-input);
   color: var(--tt-muted);
+}
+
+.tt-chat-photo-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(14, 203, 129, 0.35);
+  border-radius: 12px;
+  background: rgba(14, 203, 129, 0.1);
+  color: var(--tt-success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tt-chat-photo-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tt-chat-bubble-img {
+  display: block;
+  max-width: min(240px, 72vw);
+  max-height: 200px;
+  border-radius: 10px;
+  object-fit: cover;
+  margin-bottom: 4px;
+}
+
+.tt-chat-bubble-img-cap {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.tt-chat-bubble-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.65rem;
+  opacity: 0.55;
+}
+
+.tt-chat-empty {
+  margin: 24px 0;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--tt-muted);
+}
+
+.tt-shop-chat-msg-img {
+  display: block;
+  max-width: min(240px, 72vw);
+  max-height: 200px;
+  border-radius: 10px;
+  object-fit: cover;
+  margin-bottom: 4px;
 }
 
 .jarvis-food-eta {
@@ -6298,6 +6379,20 @@ button.tt-pay-option {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+.tt-merchant-packing-thumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+.tt-merchant-packing-thumb img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--tt-border);
 }
 .tt-merchant-btn {
   flex: 1;
@@ -13936,6 +14031,80 @@ body.tt-shop-video-page .tt-shell {
 .tt-co-pro-ship-price strong {
   color: #059669;
   font-size: 0.875rem;
+}
+
+.tt-mp-delivery {
+  margin-top: 4px;
+}
+
+.tt-mp-delivery-section-label {
+  margin: 10px 0 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--tt-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tt-mp-delivery-rider-block,
+.tt-mp-delivery-carrier-block {
+  margin-bottom: 4px;
+}
+
+.tt-mp-delivery-rider.active {
+  border-color: #16a34a;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.08) 0%, rgba(34, 197, 94, 0.04) 100%);
+}
+
+.tt-mp-delivery-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tt-mp-delivery-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4338ca;
+}
+
+.tt-mp-delivery-badge.cod {
+  background: rgba(234, 179, 8, 0.15);
+  color: #a16207;
+}
+
+.tt-mp-delivery-badge.eta {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.tt-mp-delivery-badge.inline {
+  margin-top: 4px;
+}
+
+.tt-mp-delivery-gps-retry {
+  display: block;
+  width: 100%;
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(22, 163, 74, 0.45);
+  border-radius: 12px;
+  background: rgba(22, 163, 74, 0.06);
+  color: #15803d;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.tt-mp-delivery-gps-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .tt-co-pro-late {

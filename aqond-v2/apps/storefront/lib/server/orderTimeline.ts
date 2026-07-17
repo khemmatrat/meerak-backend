@@ -23,6 +23,7 @@ const DISPLAY_ORDER: AqondEventType[] = [
   'order.created',
   'merchant.accepted',
   'merchant.cooking_started',
+  'merchant.packing_proof',
   'merchant.ready',
   'rider.assigned',
   'rider.picked_up',

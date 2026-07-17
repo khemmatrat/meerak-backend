@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { EmptyState, StatusChip } from '@aqond/ui';
 import { useAuth } from '@/lib/auth';
 import { formatCatalogPrice, formatDate } from '@/lib/format';
-import { FULFILLMENT_LABELS, fetchMerchantOrders, runAutoAcceptOrders, updateOrderFulfillment } from '@/lib/merchant';
+import { FULFILLMENT_LABELS, fetchMerchantOrders, runAutoAcceptOrders, updateOrderFulfillment, uploadPackingProof } from '@/lib/merchant';
 import { merchantPollIntervalMs } from '@/lib/merchantPush';
 import { orderAcceptSlaState, MERCHANT_ACCEPT_SLA_MINUTES } from '@/lib/orderSla';
 import { markOrdersSeen } from '@/lib/merchantAlerts';
@@ -13,6 +13,7 @@ import { AxsMerchantLoading } from '@/components/axs/merchant/AxsMerchantLoading
 import { merchantFulfillmentTone } from '@/components/axs/merchant/merchantStatusChip';
 import { TtKitchenTicket } from '@/components/mobile/TtKitchenTicket';
 import { TtMerchantOrderDetail } from '@/components/mobile/TtMerchantOrderDetail';
+import { MerchantPackingProofSheet } from '@/components/mobile/MerchantPackingProofSheet';
 
 export default function MerchantOrdersPage() {
   const { auth } = useAuth();
@@ -23,6 +24,8 @@ export default function MerchantOrdersPage() {
   const [warning, setWarning] = useState('');
   const [detailOrder, setDetailOrder] = useState<any | null>(null);
   const [kotOrder, setKotOrder] = useState<any | null>(null);
+  const [packingOrder, setPackingOrder] = useState<any | null>(null);
+  const [packingBusy, setPackingBusy] = useState(false);
   const canAccept = permissions?.can_accept_orders !== false;
 
   const reload = useCallback(() => {
@@ -65,9 +68,26 @@ export default function MerchantOrdersPage() {
       });
       reload();
     } catch (e: any) {
-      setWarning(e.message || 'อัปเดตไม่สำเร็จ');
+      const msg = e.message || 'อัปเดตไม่สำเร็จ';
+      setWarning(msg.includes('packing') || msg.includes('แพ็ค') ? msg : msg);
     } finally {
       setBusy(null);
+    }
+  };
+
+  const uploadPacking = async (dataUrl: string) => {
+    if (!packingOrder) return;
+    const oid = packingOrder.order_id || packingOrder.id;
+    setPackingBusy(true);
+    setWarning('');
+    try {
+      await uploadPackingProof(oid, merchantId, dataUrl, auth?.userId || 'merchant');
+      setPackingOrder(null);
+      reload();
+    } catch (e: any) {
+      setWarning(e.message || 'อัปโหลดรูปแพ็คไม่สำเร็จ');
+    } finally {
+      setPackingBusy(false);
     }
   };
 
@@ -160,9 +180,33 @@ export default function MerchantOrdersPage() {
                     เริ่มเตรียม
                   </button>
                 ) : fs === 'preparing' ? (
-                  <button type="button" className="tt-btn-primary tt-merchant-btn" disabled={busy === oid} onClick={() => void act(oid, 'ready')}>
-                    {isFood ? 'อาหารพร้อม — เรียกไรเดอร์' : isOnDemand ? 'พัสดุพร้อม — เรียกไรเดอร์' : 'พร้อมส่ง'}
-                  </button>
+                  <>
+                    {isFood && o.has_packing_proof && o.packing_proof_url && (
+                      <div className="tt-merchant-packing-thumb">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={o.packing_proof_url} alt="รูปแพ็คอาหาร" />
+                        <span className="tt-hint">✓ แพ็คแล้ว</span>
+                      </div>
+                    )}
+                    {isFood && !o.has_packing_proof && (
+                      <button
+                        type="button"
+                        className="tt-btn-ghost tt-merchant-btn"
+                        disabled={packingBusy}
+                        onClick={() => setPackingOrder(o)}
+                      >
+                        📷 ถ่ายรูปแพ็ค
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="tt-btn-primary tt-merchant-btn"
+                      disabled={busy === oid || (isFood && !o.has_packing_proof)}
+                      onClick={() => void act(oid, 'ready')}
+                    >
+                      {isFood ? 'อาหารพร้อม — เรียกไรเดอร์' : isOnDemand ? 'พัสดุพร้อม — เรียกไรเดอร์' : 'พร้อมส่ง'}
+                    </button>
+                  </>
                 ) : fs === 'ready' && !isOnDemand ? (
                   <button type="button" className="tt-btn-primary tt-merchant-btn" disabled={busy === oid} onClick={() => void act(oid, 'shipped')}>
                     ส่งมอบขนส่ง (สร้างใบปะหน้า)
@@ -191,6 +235,12 @@ export default function MerchantOrdersPage() {
         order={kotOrder}
         open={!!kotOrder}
         onClose={() => setKotOrder(null)}
+      />
+      <MerchantPackingProofSheet
+        open={!!packingOrder}
+        onClose={() => !packingBusy && setPackingOrder(null)}
+        onCapture={(url) => void uploadPacking(url)}
+        busy={packingBusy}
       />
     </>
   );

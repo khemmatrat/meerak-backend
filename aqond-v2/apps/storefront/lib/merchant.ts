@@ -386,7 +386,35 @@ export async function updateOrderFulfillment(
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || data.detail || 'อัปเดตสถานะไม่สำเร็จ');
+  if (!res.ok) {
+    if (res.status === 409 && data.error === 'packing_proof_required') {
+      throw new Error(data.detail || 'อัปโหลดรูปแพ็คอาหารก่อนกดพร้อมส่ง');
+    }
+    throw new Error(data.error || data.detail || 'อัปเดตสถานะไม่สำเร็จ');
+  }
+  return data;
+}
+
+export async function uploadPackingProof(
+  orderId: string,
+  merchantId: string,
+  imageDataUrl: string,
+  actor?: string,
+) {
+  const res = await fetch(
+    `/api/merchant/orders/${encodeURIComponent(orderId)}/packing-proof?merchant_id=${encodeURIComponent(merchantId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merchant_id: merchantId,
+        image_data_url: imageDataUrl,
+        actor: actor || 'merchant',
+      }),
+    },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.detail || 'อัปโหลดรูปแพ็คไม่สำเร็จ');
   return data;
 }
 

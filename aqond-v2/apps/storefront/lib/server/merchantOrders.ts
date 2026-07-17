@@ -11,6 +11,7 @@ import {
   notifyFoodReady,
   notifyMerchantPreparing,
 } from '@/lib/server/notifyEvents';
+import { assertPackingProofForReady, getPackingProof, PackingProofRequiredError } from '@/lib/server/packingProof';
 import { appendAqondEvent, fulfillmentStatusToEvent } from '@/lib/server/aqondEventBus';
 
 const FULFILLMENT_FILE = path.join(process.cwd(), '.data', 'dev', 'merchant-fulfillment.json');
@@ -27,6 +28,16 @@ export type MerchantOrderView = {
   items?: unknown[];
   recipient?: string;
   phone?: string;
+  shipping_address?: string;
+  postal_code?: string;
+  handoff_note?: string;
+  method?: string;
+  cod_amount_micro?: number;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+  weight_grams?: number;
   tracking_no?: string;
   order_type?: string;
   carrier_id?: string;
@@ -34,6 +45,8 @@ export type MerchantOrderView = {
   created_at?: string;
   delivered_at?: string;
   source: string;
+  packing_proof_url?: string;
+  has_packing_proof?: boolean;
 };
 
 type FulfillmentStore = Record<
@@ -134,10 +147,22 @@ export async function listMerchantOrders(merchantId: string) {
     ...local.filter((o) => !seen.has(o.order_id)).map((o) => applyFulfillment(o, fb)),
   ].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 
-  return { merchant_id: merchantId, orders: merged, count: merged.length, warning };
+  const enriched = await Promise.all(
+    merged.map(async (o) => {
+      if (o.order_type !== 'food') return o;
+      const proof = await getPackingProof(o.order_id);
+      return {
+        ...o,
+        has_packing_proof: !!proof,
+        packing_proof_url: proof?.photo_url,
+      };
+    }),
+  );
+
+  return { merchant_id: merchantId, orders: enriched, count: enriched.length, warning };
 }
 
-async function fetchOrderForDispatch(orderId: string): Promise<MerchantOrderView | null> {
+export async function fetchOrderForDispatch(orderId: string): Promise<MerchantOrderView | null> {
   try {
     const res = await fetch(orderApi(`/v1/orders/${orderId}`), {
       headers: { 'X-Aqond-Region': 'TH' },
@@ -218,6 +243,13 @@ export async function updateMerchantFulfillment(
   status: string,
   opts?: { note?: string; tracking_no?: string; actor?: string },
 ) {
+  if (status === 'ready') {
+    const hit = await fetchOrderForDispatch(orderId);
+    if (hit?.order_type === 'food') {
+      await assertPackingProofForReady(orderId, hit.order_type);
+    }
+  }
+
   try {
     const res = await fetch(`${orderApi(`/v1/orders/${orderId}/fulfillment`)}`, {
       method: 'POST',

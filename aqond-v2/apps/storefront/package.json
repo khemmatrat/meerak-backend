@@ -25,6 +25,9 @@
     "test:escrow-cutover-rollback-check": "node scripts/escrow-cutover-rollback-check.mjs",
     "test:escrow-migrate-dry-run": "node scripts/migrate-escrow-sqlite-to-pg.mjs --dry-run",
     "test:platform-commission": "node scripts/platform-commission.test.mjs",
+    "test:parcel-checkout-handoff": "node scripts/parcel-checkout-handoff.test.mjs",
+    "test:rider-vehicle-job-filter": "node scripts/rider-vehicle-job-filter.test.mjs",
+    "test:packing-proof": "node scripts/packing-proof.test.mjs",
     "test:return-escrow-jobs": "node scripts/run-return-escrow-jobs.mjs"
   },
   "dependencies": {

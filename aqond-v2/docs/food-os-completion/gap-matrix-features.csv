@@ -1,0 +1,34 @@
+feature_id,domain,status,missing_files,missing_apis,missing_ui,missing_db,dependencies,risk,complexity,effort_days,milestone
+HP-C01,customer,✅,,,,,,Low,S,0,M1
+HP-C02,customer,⚠️,,food/tracking enrich,,,,Low,S,2,M1
+HP-C03,customer,❌,lib/server/foodConfirmReceipt.ts,POST food/tracking/:id/confirm,track confirm button,order_lifecycle_events,M4 events,Med,M,3,M1
+HP-C04,customer,❌,,shop-chat by orderId,track merchant chat tab,shop_chat_threads,M5 PG,Med,M,5,M2
+HP-M01,merchant,✅,lib/server/packingProof.ts,POST merchant/orders/:id/packing-proof,MerchantPackingProofSheet,order_packing_proofs,object storage,Med,M,5,M1
+HP-M02,merchant,❌,lib/server/merchantOrderQr.ts,GET merchant/orders/:id/pickup-qr,orders QR display,,crypto signing,Med,M,4,M1
+HP-M03,merchant,❌,,,orders chat deep link,,chat exists,Low,S,1,M1
+HP-R01,rider,⚠️,lib/riderPhaseFlow.ts extend,phase API split,active job phases,,,Med,M,5,M1
+HP-R02,rider,❌,components/mobile/RiderQrScanner.tsx,POST rider/jobs/:id/verify-pickup,scanner UI,pickup_verifications,HP-M02,Med,M,5,M1
+HP-R03,rider,❌,,pickup photo upload,active job camera,pickup_proofs,HP-R02,Med,M,3,M1
+HP-R04,rider,⚠️,,,wire RiderIssueSheet,,M3 claim,Low,S,1,M1
+TRK-01,track,❌,lib/server/trackOsProjection.ts,GET admin/food/orders/:id/track,FoodMerchantOsView detail,lifecycle PG,M5,M5,High,L,8,M2
+TRK-02,track,❌,,BFF chats aggregate,admin chat panel,027+shop chat,M1+M5,Med,M,4,M2
+TRK-03,track,❌,,BFF photo gallery,admin proofs tab,proof tables,M1,Low,M,3,M2
+TRK-04,track,❌,,SSE/WS subscribe,admin live feed,,M4,High,L,6,M2
+CLM-01,claim,⚠️,extend merchantDisputes.ts,,TtDisputeReportSheet categories,,,Med,M,4,M3
+CLM-02,claim,❌,,,damaged/foreign UI,,,Med,M,3,M3
+CLM-03,claim,❌,lib/server/claimSettlement.ts,POST disputes/:id/settle,admin settle,refund ledger,payment,High,L,8,M3
+CLM-04,claim,❌,dispatch-svc rematch claim,POST disputes/:id/redispatch,admin,,dispatch,High,L,6,M3
+CLM-05,claim,❌,lib/server/claimReplace.ts,POST disputes/:id/replace,,,order-svc,High,L,6,M3
+CTL-01,control,⚠️,aqondEventBus.ts new types,,,,,Low,S,2,M4
+CTL-02,control,❌,lib/server/eventProjector.ts,outbox worker,,,M5,High,L,10,M4
+CTL-03,control,❌,dispatch-svc event emit,,,,dispatch,High,L,8,M4
+CTL-04,control,❌,notify templates all events,,push/in-app,,,Med,L,6,M4
+BB-01,backbone,❌,migrations/045_order_lifecycle_events.sql,,,order_lifecycle_events,,Med,M,4,M5
+BB-02,backbone,❌,lib/server/eventOutbox.ts,replay admin API,,outbox+dlq,,High,L,10,M5
+BB-03,backbone,❌,migrations/046_shop_chat.sql,,,shop_chat_messages,,Med,M,5,M5
+BB-04,backbone,❌,migrations/047_disputes.sql,,,food_disputes,,Med,M,5,M5
+AI-01,ai,❌,infra/ai-core/claim-classify,,,,,Med,M,4,M6
+AI-02,ai,❌,infra/ai-core/photo-classify,,,,,Med,M,4,M6
+AI-03,ai,❌,infra/ai-core/incident-summary,,,,,Low,S,2,M6
+AI-04,ai,❌,infra/ai-core/duplicate-detect,,,,,Med,M,3,M6
+PV-01,validation,❌,docs/platform-validation/b003-food,,E2E food happy+claim,,all M1-M6,Med,L,10,M7

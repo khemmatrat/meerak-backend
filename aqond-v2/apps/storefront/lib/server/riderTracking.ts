@@ -55,6 +55,8 @@ export type ChatMessage = {
   from: 'rider' | 'customer';
   text: string;
   at: string;
+  image_url?: string;
+  kind?: 'text' | 'image';
 };
 
 export type TrackingOrderItem = {
@@ -111,6 +113,8 @@ export type RiderTrackingView = RiderSession & {
   can_chat: boolean;
   order_items: TrackingOrderItem[];
   item_count: number;
+  packing_proof_url?: string;
+  has_packing_proof?: boolean;
 };
 
 const PHASE_LABEL: Record<DeliveryPhase, string> = {
@@ -636,7 +640,12 @@ export async function submitDeliveryReport(
   return getRiderTracking(orderId);
 }
 
-export async function addChatMessage(orderId: string, text: string, from: 'customer' | 'rider' = 'customer') {
+export async function addChatMessage(
+  orderId: string,
+  text: string,
+  from: 'customer' | 'rider' = 'customer',
+  image_url?: string,
+) {
   const store = await readStore();
   const session = store[orderId];
   if (!session) return null;
@@ -644,7 +653,14 @@ export async function addChatMessage(orderId: string, text: string, from: 'custo
   if (!Array.isArray(session.chat_messages)) {
     session.chat_messages = [];
   }
-  session.chat_messages.push({ from, text, at: new Date().toISOString() });
+  const trimmed = String(text || '').trim();
+  const img = String(image_url || '').trim();
+  session.chat_messages.push({
+    from,
+    text: trimmed || (img ? '📷 ส่งรูปหลักฐาน' : ''),
+    at: new Date().toISOString(),
+    ...(img ? { image_url: img, kind: 'image' as const } : { kind: 'text' as const }),
+  });
   await writeStore(store);
   return getRiderTracking(orderId);
 }

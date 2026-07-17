@@ -92,6 +92,14 @@ export default function FoodRiderTrackPage() {
 
           {tracking.timeline && <TtDeliveryTimeline steps={tracking.timeline} />}
 
+          {tracking.packing_proof_url && (
+            <div className="tt-delivery-photo tt-packing-proof-photo">
+              <p className="tt-delivery-photo-label">📦 รูปแพ็คจากร้าน</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={tracking.packing_proof_url} alt="รูปแพ็คอาหารจากร้าน" />
+            </div>
+          )}
+
           <TtRiderLiveMap tracking={tracking} />
 
           <TtOrderReceiptCard

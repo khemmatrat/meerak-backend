@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDispatchTracking, shouldUseDispatchFallback } from '@/lib/server/dispatchSvc';
 import { getRiderTracking } from '@/lib/server/riderTracking';
 import { getUnifiedOrderTimeline } from '@/lib/server/orderTimeline';
+import { getPackingProof } from '@/lib/server/packingProof';
+
+async function attachPackingProof(orderId: string, view: Record<string, unknown>) {
+  try {
+    const proof = await getPackingProof(orderId);
+    if (proof) {
+      view.packing_proof_url = proof.photo_url;
+      view.has_packing_proof = true;
+    }
+  } catch {
+    /* optional */
+  }
+  return view;
+}
 
 async function withEventTimeline(orderId: string, view: Record<string, unknown>) {
   try {
@@ -11,7 +25,7 @@ async function withEventTimeline(orderId: string, view: Record<string, unknown>)
   } catch {
     /* optional */
   }
-  return view;
+  return attachPackingProof(orderId, view);
 }
 
 export async function GET(

@@ -9,6 +9,7 @@ export type AqondEventType =
   | 'order.created'
   | 'merchant.accepted'
   | 'merchant.cooking_started'
+  | 'merchant.packing_proof'
   | 'merchant.ready'
   | 'dispatch.search_started'
   | 'dispatch.rider_offered'
@@ -21,7 +22,8 @@ export type AqondEventType =
   | 'rider.arrived'
   | 'order.delivered'
   | 'order.refunded'
-  | 'order.cancelled';
+  | 'order.cancelled'
+  | 'passenger.trip_completed';
 
 export type AqondEventSource =
   | 'order-svc'
@@ -131,6 +133,7 @@ export const EVENT_LABELS_TH: Record<AqondEventType, string> = {
   'order.created': 'ลูกค้าสั่งอาหาร',
   'merchant.accepted': 'ร้านรับออเดอร์',
   'merchant.cooking_started': 'เริ่มทำอาหาร',
+  'merchant.packing_proof': 'ถ่ายรูปแพ็คอาหาร',
   'merchant.ready': 'อาหารพร้อมส่ง',
   'dispatch.search_started': 'ค้นหาไรเดอร์',
   'dispatch.rider_offered': 'เสนองานให้ไรเดอร์',
@@ -144,6 +147,7 @@ export const EVENT_LABELS_TH: Record<AqondEventType, string> = {
   'order.delivered': 'ส่งสำเร็จ',
   'order.refunded': 'คืนเงินแล้ว',
   'order.cancelled': 'ยกเลิกออเดอร์',
+  'passenger.trip_completed': 'จบการเดินทาง',
 };
 
 export const DISPATCH_EVENT_TYPES: AqondEventType[] = [
