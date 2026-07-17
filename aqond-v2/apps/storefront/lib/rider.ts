@@ -1,4 +1,5 @@
 import type { RiderTrackingView } from '@/lib/server/riderTracking';
+import { nextRiderAction as resolveRiderAction } from '@/lib/riderPhaseFlow';
 
 export const RIDER_KEY = 'aqond_rider_id';
 
@@ -189,20 +190,38 @@ export async function sendRiderTelemetry(
   });
 }
 
-export async function fetchOpenRiderJobs() {
-  const res = await fetch('/api/rider/jobs?status=open', { cache: 'no-store' });
+export async function fetchOpenRiderJobs(
+  vehicle?: string,
+  geo?: { lat: number; lng: number; radius_km?: number },
+) {
+  const q = new URLSearchParams({ status: 'open' });
+  if (vehicle) q.set('vehicle', vehicle);
+  if (geo?.lat != null && geo?.lng != null) {
+    q.set('lat', String(geo.lat));
+    q.set('lng', String(geo.lng));
+    q.set('radius_km', String(geo.radius_km ?? 8));
+  }
+  const res = await fetch(`/api/rider/jobs?${q}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'โหลดงานไม่สำเร็จ');
   return data as { jobs: RiderJob[]; source?: string };
 }
 
-export async function fetchRiderJobs(riderId: string, mode: 'open' | 'mine' = 'mine') {
-  if (mode === 'open') return fetchOpenRiderJobs();
+export async function fetchRiderJobs(riderId: string, mode: 'open' | 'mine' = 'mine', vehicle?: string) {
+  if (mode === 'open') return fetchOpenRiderJobs(vehicle);
   const q = `rider_id=${encodeURIComponent(riderId)}`;
   const res = await fetch(`/api/rider/jobs?${q}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'โหลดงานไม่สำเร็จ');
   return data as { jobs: RiderJob[] };
+}
+
+export async function fetchRiderJobById(jobId: string): Promise<RiderJob | null> {
+  const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'โหลดงานไม่สำเร็จ');
+  return (data.job as RiderJob) || null;
 }
 
 export async function rejectRiderJob(jobId: string, riderId: string, reason: string) {
@@ -228,6 +247,7 @@ export async function acceptRiderJob(
     payment_method?: string;
     amount_micro?: number;
     user_id?: string;
+    vehicle?: string;
   },
 ) {
   const res = await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/accept`, {
@@ -246,7 +266,11 @@ export async function acceptRiderJob(
             ? 'ครบรอบตรวจเข้มงวด — สแกนหน้าอีกครั้ง'
             : data.code === 'face_daily_required'
               ? 'ต้องสแกนหน้าเช้านี้ (ตอกบัตรเข้างาน)'
-              : data.message || data.error || data.code || 'รับงานไม่สำเร็จ';
+              : data.error === 'vehicle_job_type_mismatch'
+                ? 'ยานพาหนะของคุณไม่รองรับงานประเภทนี้'
+                : data.error === 'cod_limit_exceeded'
+                  ? 'วงเงิน COD ไม่พอรับงานนี้'
+                  : data.message || data.error || data.code || 'รับงานไม่สำเร็จ';
     throw new Error(msg);
   }
   return data;
@@ -266,17 +290,81 @@ export async function advanceRiderJob(
   return data as { job: RiderJob; tracking?: RiderTrackingView };
 }
 
-export async function sendRiderGps(jobId: string, lat: number, lng: number) {
-  await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/location`, {
+export async function verifyRiderPickup(
+  orderId: string,
+  body: {
+    qr_payload: string;
+    rider_id?: string;
+    job_id?: string;
+    merchant_id?: string;
+    gps_lat?: number;
+    gps_lng?: number;
+    accuracy?: number;
+    device_id?: string;
+  },
+) {
+  const res = await fetch(`/api/rider/orders/${encodeURIComponent(orderId)}/verify-pickup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lat, lng }),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.result || data.error || 'ยืนยัน QR ไม่สำเร็จ');
+  }
+  return data as { result: string; record?: Record<string, unknown> };
+}
+
+export async function uploadRiderPickupPhoto(
+  orderId: string,
+  body: {
+    image_data_url: string;
+    rider_id?: string;
+    job_id?: string;
+    gps_lat?: number;
+    gps_lng?: number;
+    accuracy?: number;
+    device_id?: string;
+  },
+) {
+  const res = await fetch(`/api/rider/orders/${encodeURIComponent(orderId)}/pickup-photo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'อัปโหลดรูปรับอาหารไม่สำเร็จ');
+  return data;
+}
+
+export async function sendRiderGps(
+  jobId: string,
+  lat: number,
+  lng: number,
+  riderId?: string,
+) {
+  await fetch(`/api/rider/jobs/${encodeURIComponent(jobId)}/location`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(riderId ? { 'X-Rider-Id': riderId } : {}),
+    },
+    body: JSON.stringify({ lat, lng, ...(riderId ? { rider_id: riderId } : {}) }),
   });
 }
 
+const SHARED_PHASE_LABELS: Record<string, string> = {
+  finding_rider: 'กำลังออกเดินทางรับงาน',
+  food_ready: 'ร้านจัดเตรียมแล้ว — ไปรับที่ร้าน',
+  pending_accept: 'รอยืนยันรับงาน',
+};
+
 export const RIDER_PHASE_LABELS: Record<string, string> = {
-  pending_accept: 'รอยืนยันรับงาน (auto-match)',
-  rider_assigned: 'ไปรับที่ร้าน',
+  ...SHARED_PHASE_LABELS,
+  rider_assigned: 'กำลังไปรับที่ร้าน',
+  arrived_merchant: 'ถึงร้านแล้ว — สแกน QR',
+  qr_verified: 'QR ถูกต้อง — ถ่ายรูปรับอาหาร',
+  pickup_photo: 'รับอาหารแล้ว — ออกเดินทาง',
   rider_picked_up: 'รับของแล้ว — ออกเดินทาง',
   en_route: 'กำลังนำไปส่ง',
   arrived: 'ถึงที่หมาย',
@@ -286,6 +374,36 @@ export const RIDER_PHASE_LABELS: Record<string, string> = {
   cod_payment: 'เก็บเงินปลายทาง',
   rider_completed: 'ส่งสำเร็จ',
 };
+
+/**
+ * Passenger trip phase flow (ADR_PASSENGER_INTEGRATION.md §6) — no
+ * photo_proof/handoff/cod_payment: a ride has no items and no COD cash.
+ * Mirrors aqond-v2/services/dispatch-svc's passengerPhaseFlow.
+ */
+export const PASSENGER_PHASE_LABELS: Record<string, string> = {
+  ...SHARED_PHASE_LABELS,
+  rider_assigned: 'กำลังไปรับผู้โดยสาร',
+  en_route_pickup: 'กำลังไปรับผู้โดยสาร',
+  arrived_pickup: 'ถึงจุดรับแล้ว',
+  passenger_aboard: 'ผู้โดยสารขึ้นรถแล้ว — ออกเดินทาง',
+  en_route_dropoff: 'กำลังเดินทางไปจุดส่ง',
+  arrived_dropoff: 'ถึงจุดหมายแล้ว',
+  trip_completed: 'จบการเดินทาง',
+};
+
+function phaseLabelsFor(jobType?: string): Record<string, string> {
+  return jobType === 'passenger' ? PASSENGER_PHASE_LABELS : RIDER_PHASE_LABELS;
+}
+
+export function riderPhaseLabel(phase: string, jobType?: string): string {
+  const normalized = phase.replace(/-/g, '_');
+  const hit = phaseLabelsFor(jobType)[normalized];
+  if (hit) return hit;
+  if (normalized.includes('finding') && normalized.includes('rider')) {
+    return 'กำลังออกเดินทางรับงาน';
+  }
+  return normalized.replace(/_/g, ' ');
+}
 
 export async function sendRiderJobChat(orderId: string, text: string) {
   const res = await fetch(`/api/food/tracking/${encodeURIComponent(orderId)}/chat`, {
@@ -298,19 +416,10 @@ export async function sendRiderJobChat(orderId: string, text: string) {
   return data as { chat_messages?: Array<{ from: string; text: string; at?: string }> };
 }
 
-export function nextRiderAction(phase: string): { phase: string; label: string; needsPhoto?: boolean } | null {
-  const flow = Object.keys(RIDER_PHASE_LABELS);
-  const i = flow.indexOf(phase);
-  if (i < 0 && (phase === 'food_ready' || phase === 'finding_rider')) {
-    return { phase: 'rider_assigned', label: 'ยืนยันรับงานแล้ว — ไปรับที่ร้าน' };
-  }
-  if (i >= 0 && i + 1 < flow.length) {
-    const next = flow[i + 1];
-    return {
-      phase: next,
-      label: RIDER_PHASE_LABELS[next],
-      needsPhoto: next === 'photo_proof',
-    };
-  }
-  return null;
+export function nextRiderAction(
+  phase: string,
+  jobType?: string,
+  opts?: { paymentMethod?: string },
+): { phase: string; label: string; needsPhoto?: boolean; leg?: string; stepLabel?: string } | null {
+  return resolveRiderAction(phase, jobType, opts);
 }

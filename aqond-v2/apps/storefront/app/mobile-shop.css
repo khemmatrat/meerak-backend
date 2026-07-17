@@ -6415,6 +6415,38 @@ button.tt-pay-option {
   max-width: 320px;
   margin: auto;
 }
+.tt-rider-qr-sheet {
+  max-width: 360px;
+  margin: auto;
+}
+.tt-rider-qr-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.tt-rider-qr-video-wrap {
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: #111;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tt-rider-qr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tt-rider-qr-manual {
+  width: 100%;
+  margin-top: 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--tt-border);
+  padding: 8px;
+}
 .tt-merchant-btn {
   flex: 1;
   min-width: 120px;

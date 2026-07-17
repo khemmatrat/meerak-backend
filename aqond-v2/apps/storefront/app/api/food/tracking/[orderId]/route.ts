@@ -3,14 +3,21 @@ import { getDispatchTracking, shouldUseDispatchFallback } from '@/lib/server/dis
 import { getRiderTracking } from '@/lib/server/riderTracking';
 import { getUnifiedOrderTimeline } from '@/lib/server/orderTimeline';
 import { getPackingProof } from '@/lib/server/packingProof';
+import { attachPickupFieldsToTrack, getPickupVerification } from '@/lib/server/pickupVerification';
 
-async function attachPackingProof(orderId: string, view: Record<string, unknown>) {
+async function attachProofs(orderId: string, view: Record<string, unknown>) {
   try {
-    const proof = await getPackingProof(orderId);
-    if (proof) {
-      view.packing_proof_url = proof.photo_url;
+    const packing = await getPackingProof(orderId);
+    if (packing) {
+      view.packing_proof_url = packing.photo_url;
       view.has_packing_proof = true;
     }
+  } catch {
+    /* optional */
+  }
+  try {
+    const pickup = await getPickupVerification(orderId);
+    attachPickupFieldsToTrack(view, pickup);
   } catch {
     /* optional */
   }
@@ -25,7 +32,7 @@ async function withEventTimeline(orderId: string, view: Record<string, unknown>)
   } catch {
     /* optional */
   }
-  return attachPackingProof(orderId, view);
+  return attachProofs(orderId, view);
 }
 
 export async function GET(

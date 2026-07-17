@@ -17,6 +17,9 @@ export type AqondEventType =
   | 'dispatch.rider_timeout'
   | 'dispatch.rider_accepted'
   | 'rider.assigned'
+  | 'rider.qr_verified'
+  | 'rider.pickup_photo'
+  | 'rider.pickup_completed'
   | 'rider.picked_up'
   | 'rider.en_route'
   | 'rider.arrived'
@@ -141,7 +144,10 @@ export const EVENT_LABELS_TH: Record<AqondEventType, string> = {
   'dispatch.rider_timeout': 'ไรเดอร์ไม่ตอบ (timeout)',
   'dispatch.rider_accepted': 'ไรเดอร์รับงาน',
   'rider.assigned': 'มอบหมายไรเดอร์',
-  'rider.picked_up': 'รับอาหารแล้ว',
+  'rider.qr_verified': 'สแกน QR รับออเดอร์',
+  'rider.pickup_photo': 'ถ่ายรูปรับจากร้าน',
+  'rider.pickup_completed': 'รับอาหารจากร้านแล้ว',
+  'rider.picked_up': 'ออกเดินทางไปลูกค้า',
   'rider.en_route': 'กำลังนำส่ง',
   'rider.arrived': 'ถึงจุดส่ง',
   'order.delivered': 'ส่งสำเร็จ',

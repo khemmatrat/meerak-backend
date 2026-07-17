@@ -115,6 +115,11 @@ export type RiderTrackingView = RiderSession & {
   item_count: number;
   packing_proof_url?: string;
   has_packing_proof?: boolean;
+  pickup_photo_url?: string;
+  pickup_verified_at?: string;
+  pickup_verified_by?: string;
+  verification_method?: string;
+  pickup_completed_at?: string;
 };
 
 const PHASE_LABEL: Record<DeliveryPhase, string> = {

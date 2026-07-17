@@ -4,12 +4,14 @@ import crypto from 'crypto';
 import { listNearbyRestaurants } from '@/lib/server/localFood';
 import { appendAqondEvent, dispatchPhaseToEvent } from '@/lib/server/aqondEventBus';
 import type { DispatchJob } from '@/lib/server/dispatchSvc';
+import { vehicleAllowsJobType } from '@/lib/riderVehicleTypes';
+import { filterJobsByRadius } from '@/lib/server/geoFilter';
 
 const JOBS_FILE = path.join(process.cwd(), '.data', 'dev', 'dispatch-jobs.json');
 
 export type LocalDispatchJob = DispatchJob & {
   buyer_id?: string;
-  job_type?: 'food' | 'parcel';
+  job_type?: 'food' | 'parcel' | 'passenger';
   pickup_lat?: number;
   pickup_lng?: number;
   dropoff_lat?: number;
@@ -19,7 +21,12 @@ export type LocalDispatchJob = DispatchJob & {
   delivery_proof_at?: string;
   delivery_proof_lat?: number;
   delivery_proof_lng?: number;
+  pickup_photo_url?: string;
+  pickup_verified_at?: string;
   updated_at?: string;
+  // Passenger-only (ADR_PASSENGER_INTEGRATION.md) — empty for food/parcel.
+  passenger_user_id?: string;
+  transport_contract?: Record<string, unknown>;
 };
 
 type JobStore = { jobs: LocalDispatchJob[] };
@@ -63,14 +70,45 @@ export async function localCreateDispatchJob(input: {
   amount_micro?: number;
   payment_method?: string;
   fulfillment_phase?: string;
-  job_type?: 'food' | 'parcel';
+  job_type?: 'food' | 'parcel' | 'passenger';
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+  handoff_note?: string;
+  eta_label?: string;
+  recipient_name?: string;
+  customer_phone?: string;
+  passenger_user_id?: string;
+  transport_contract?: Record<string, unknown>;
 }): Promise<{ job: LocalDispatchJob; created: boolean }> {
   const store = await readJobs();
   const existing = store.jobs.find((j) => j.order_id === input.order_id && j.status !== 'cancelled');
   if (existing) return { job: existing, created: false };
 
-  const pickup = await coordsForMerchant(input.merchant_id);
-  const dropoff = dropoffNearPickup(pickup);
+  const hasPickup = input.pickup_lat != null && input.pickup_lng != null && input.pickup_lat !== 0;
+  const hasDropoff = input.dropoff_lat != null && input.dropoff_lng != null && input.dropoff_lat !== 0;
+
+  // Passenger rides always carry real pickup/dropoff coords from the rider
+  // (no merchant to derive coords from) — see ADR_PASSENGER_INTEGRATION.md.
+  if (input.job_type === 'passenger' && (!hasPickup || !hasDropoff)) {
+    throw new Error('pickup_and_dropoff_location_required');
+  }
+
+  const pickup: { lat: number; lng: number } = hasPickup
+    ? { lat: input.pickup_lat as number, lng: input.pickup_lng as number }
+    : await coordsForMerchant(input.merchant_id);
+
+  let dropoff: { lat: number; lng: number };
+  if (hasDropoff) {
+    dropoff = { lat: input.dropoff_lat as number, lng: input.dropoff_lng as number };
+  } else {
+    if (input.job_type === 'parcel') {
+      throw new Error('parcel_dropoff_location_required');
+    }
+    dropoff = dropoffNearPickup(pickup);
+  }
+
   const job: LocalDispatchJob = {
     id: `job-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`,
     order_id: input.order_id,
@@ -82,12 +120,14 @@ export async function localCreateDispatchJob(input: {
     items_summary: input.items_summary,
     address: input.address,
     amount_micro: input.amount_micro,
-    payment_method: input.payment_method || 'cod',
+    payment_method: input.payment_method || (input.job_type === 'passenger' ? 'cash' : 'cod'),
     job_type: input.job_type || 'food',
     pickup_lat: pickup.lat,
     pickup_lng: pickup.lng,
     dropoff_lat: dropoff.lat,
     dropoff_lng: dropoff.lng,
+    passenger_user_id: input.passenger_user_id,
+    transport_contract: input.transport_contract,
     updated_at: new Date().toISOString(),
   };
   store.jobs.unshift(job);
@@ -132,7 +172,30 @@ export async function localCreateDispatchJob(input: {
   return { job, created: true };
 }
 
-export async function localListDispatchJobs(opts: { rider_id?: string; status?: string }) {
+export async function localGetDispatchJob(jobId: string): Promise<LocalDispatchJob | null> {
+  const store = await readJobs();
+  return store.jobs.find((j) => j.id === jobId) || null;
+}
+
+export async function localUpdateJobLocation(jobId: string, lat: number, lng: number) {
+  const store = await readJobs();
+  const job = store.jobs.find((j) => j.id === jobId);
+  if (!job) return null;
+  (job as LocalDispatchJob & { rider_lat?: number; rider_lng?: number }).rider_lat = lat;
+  (job as LocalDispatchJob & { rider_lat?: number; rider_lng?: number }).rider_lng = lng;
+  job.updated_at = new Date().toISOString();
+  await writeJobs(store);
+  return job;
+}
+
+export async function localListDispatchJobs(opts: {
+  rider_id?: string;
+  status?: string;
+  vehicle?: string;
+  lat?: number;
+  lng?: number;
+  radius_km?: number;
+}) {
   const store = await readJobs();
   let jobs = store.jobs;
   if (opts.status === 'open') {
@@ -140,13 +203,28 @@ export async function localListDispatchJobs(opts: { rider_id?: string; status?: 
   } else if (opts.rider_id) {
     jobs = jobs.filter((j) => j.rider_id === opts.rider_id && j.status !== 'completed');
   }
+  if (opts.vehicle) {
+    jobs = jobs.filter((j) => vehicleAllowsJobType(opts.vehicle!, j.job_type));
+  }
+  if (opts.lat != null && opts.lng != null && Number.isFinite(opts.lat) && Number.isFinite(opts.lng)) {
+    jobs = filterJobsByRadius(jobs, opts.lat, opts.lng, opts.radius_km);
+  }
   return { jobs, source: 'local-dispatch' };
 }
 
-export async function localAcceptDispatchJob(jobId: string, riderId: string) {
+export async function localAcceptDispatchJob(jobId: string, riderId: string, riderVehicle?: string) {
   const store = await readJobs();
   const job = store.jobs.find((j) => j.id === jobId);
   if (!job || job.status !== 'open') return null;
+
+  if (riderVehicle && !vehicleAllowsJobType(riderVehicle, job.job_type)) {
+    return {
+      error: 'vehicle_job_type_mismatch',
+      message: 'ยานพาหนะของคุณไม่รองรับงานประเภทนี้',
+      vehicle: riderVehicle,
+      job_type: job.job_type,
+    } as const;
+  }
 
   try {
     const { consumeRiderCreditForJob } = await import('@/lib/server/riderCreditLine');
@@ -219,14 +297,10 @@ export async function localRejectDispatchJob(
   return { ok: true, job };
 }
 
-const PHASE_FLOW = [
-  'rider_assigned',
-  'rider_picked_up',
-  'en_route',
-  'arrived',
-  'handoff',
-  'rider_completed',
-];
+import {
+  phaseFlowForJobType,
+  isValidPhaseAdvance,
+} from '@/lib/riderPhaseFlow';
 
 export async function localAdvanceDispatchPhase(
   jobId: string,
@@ -242,12 +316,17 @@ export async function localAdvanceDispatchPhase(
   const job = store.jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
+  const flow = phaseFlowForJobType(job.job_type);
+  const requested = body.phase;
   const nextPhase =
-    body.phase ||
-    (() => {
-      const idx = PHASE_FLOW.indexOf(job.phase);
-      return PHASE_FLOW[Math.min(idx + 1, PHASE_FLOW.length - 1)] || job.phase;
-    })();
+    requested && isValidPhaseAdvance(job.phase, requested, job.job_type, {
+      paymentMethod: job.payment_method,
+    })
+      ? requested
+      : (() => {
+          const idx = flow.indexOf(job.phase);
+          return flow[Math.min(idx + 1, flow.length - 1)] || job.phase;
+        })();
 
   const { validateRiderPhaseAdvance } = await import('@/lib/riderDeliveryProof');
   const check = validateRiderPhaseAdvance({
@@ -261,6 +340,21 @@ export async function localAdvanceDispatchPhase(
     return { error: check.code, message: check.message } as const;
   }
 
+  if (
+    nextPhase === 'rider_picked_up' &&
+    (job.job_type || 'food') === 'food'
+  ) {
+    const { assertCanDepartMerchant } = await import('@/lib/server/pickupVerification');
+    const depart = await assertCanDepartMerchant(job.order_id, job.job_type);
+    if (!depart.ok) {
+      return { error: depart.code, message: depart.message } as const;
+    }
+  }
+
+  if (nextPhase === 'pickup_photo' && body.photo_url) {
+    job.pickup_photo_url = body.photo_url;
+  }
+
   if (nextPhase === 'photo_proof' && body.photo_url) {
     job.delivery_proof_url = body.photo_url;
     job.delivery_proof_at = new Date().toISOString();
@@ -272,8 +366,15 @@ export async function localAdvanceDispatchPhase(
 
   job.phase = nextPhase;
   job.updated_at = new Date().toISOString();
-  if (job.phase === 'rider_picked_up' || job.phase === 'en_route') job.status = 'active';
-  if (job.phase === 'rider_completed') job.status = 'completed';
+  if (
+    job.phase === 'rider_picked_up' ||
+    job.phase === 'en_route' ||
+    job.phase === 'en_route_pickup' ||
+    job.phase === 'passenger_aboard'
+  ) {
+    job.status = 'active';
+  }
+  if (job.phase === 'rider_completed' || job.phase === 'trip_completed') job.status = 'completed';
 
   await writeJobs(store);
 
@@ -290,10 +391,10 @@ export async function localAdvanceDispatchPhase(
       payload: { local: true },
     });
   }
-  if (job.phase === 'rider_completed') {
+  if (job.phase === 'rider_completed' || job.phase === 'trip_completed') {
     await appendAqondEvent({
       order_id: job.order_id,
-      event_type: 'order.delivered',
+      event_type: job.job_type === 'passenger' ? 'passenger.trip_completed' : 'order.delivered',
       source: 'dispatch-svc',
       phase: job.phase,
       job_id: job.id,
@@ -317,4 +418,34 @@ export async function localAdvanceDispatchPhase(
   }
 
   return { job };
+}
+
+/** When rider GPS updates while online, log offer events for nearby open jobs (local auto-match). */
+export async function localOnRiderTelemetry(
+  riderId: string,
+  lat: number,
+  lng: number,
+  online: boolean,
+) {
+  if (!online) return;
+  const store = await readJobs();
+  const openJobs = store.jobs.filter(
+    (j) => j.status === 'open' && (j.phase === 'finding_rider' || j.phase === 'food_ready'),
+  );
+  for (const job of openJobs) {
+    if (job.pickup_lat == null || job.pickup_lng == null) continue;
+    const { haversineKm, DEFAULT_JOB_RADIUS_KM } = await import('@/lib/server/geoFilter');
+    const dist = haversineKm({ lat, lng }, { lat: job.pickup_lat, lng: job.pickup_lng });
+    if (dist > DEFAULT_JOB_RADIUS_KM) continue;
+    await appendAqondEvent({
+      order_id: job.order_id,
+      event_type: 'dispatch.rider_offered',
+      source: 'dispatch-svc',
+      job_id: job.id,
+      rider_id: riderId,
+      merchant_id: job.merchant_id,
+      payload: { local: true, distance_km: Math.round(dist * 10) / 10, trigger: 'rider_telemetry' },
+    });
+    break;
+  }
 }
