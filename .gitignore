@@ -94,6 +94,7 @@ docs/aqond-os/*
 !**/readme.md
 !docs/aqond-os/AGENT_BOOTSTRAP.md
 !aqond-v2/docs/rider-os/IMPLEMENTATION_MAP.md
+!aqond-v2/docs/PROJECT_STATUS_CHECKLIST.md
 !STATUS_INDEX.md
 !CURRENT_STATUS.md
 !AGENT_BOOTSTRAP.md
