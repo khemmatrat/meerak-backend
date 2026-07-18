@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { acceptDispatchJob } from '@/lib/server/dispatchSvc';
+import { acceptDispatchJob, rejectDispatchJob } from '@/lib/server/dispatchSvc';
 import { checkRiderFaceActionServer } from '@/lib/server/riderFaceGate';
+import { shouldSkipRiderFaceVerify } from '@/lib/server/riderDevLab';
 import { proxyRiderCodReserve } from '@/lib/server/riderCodProxy';
 import { upstreamAuthFromRequest } from '@/lib/server/upstreamAuth';
 
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   const auth = upstreamAuthFromRequest(req);
   const userId = auth.userId || body.user_id || '';
-  if (userId) {
+  if (userId && !shouldSkipRiderFaceVerify()) {
     const faceCheck = await checkRiderFaceActionServer(
       {
         rider_id: riderId,
@@ -36,12 +37,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
   }
 
-  const data = await acceptDispatchJob(id, riderId, upstreamAuthFromRequest(req));
+  const riderVehicle = body.vehicle || body.rider_vehicle || req.headers.get('x-rider-vehicle') || undefined;
+  const data = await acceptDispatchJob(id, riderId, upstreamAuthFromRequest(req), riderVehicle);
   if (!data) {
     return NextResponse.json({ error: 'dispatch_unavailable' }, { status: 503 });
   }
   if ('error' in data && data.error === 'insufficient_credit') {
     return NextResponse.json(data, { status: 402 });
+  }
+  if ('error' in data && data.error === 'vehicle_job_type_mismatch') {
+    return NextResponse.json(
+      { ...data, message: (data as { message?: string }).message || 'ยานพาหนะของคุณไม่รองรับงานประเภทนี้' },
+      { status: 409 },
+    );
+  }
+  if ('error' in data && data.error === 'cod_limit_exceeded') {
+    return NextResponse.json(data, { status: 409 });
   }
 
   // COD tier-cap reservation (PROVISIONAL) — storefront accepts via dispatch-svc;
@@ -57,7 +68,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       payment_method: pm || 'cod',
       order_id: (data as { job?: { order_id?: string } }).job?.order_id,
     });
-    if (!cod.ok) codWarning = cod.data as Record<string, unknown>;
+    if (!cod.ok) {
+      const codData = cod.data as Record<string, unknown>;
+      if (codData?.code === 'cod_limit_exceeded') {
+        await rejectDispatchJob(id, riderId, 'cod_limit_exceeded', auth);
+        return NextResponse.json(
+          {
+            error: 'cod_limit_exceeded',
+            message: 'เกินเพดาน COD ที่รับได้ — ยกเลิกการรับงานแล้ว',
+            ...codData,
+          },
+          { status: 409 },
+        );
+      }
+      codWarning = codData;
+    }
   }
 
   return NextResponse.json({ ...data, ...(codWarning ? { cod_warning: codWarning } : {}) });

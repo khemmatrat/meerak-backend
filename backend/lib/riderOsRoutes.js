@@ -39,7 +39,15 @@ import {
   markCodCollected,
   markCodDeposited,
   getRiderCodStatus,
+  getRiderCodSummary,
+  startRiderCodReconcileCron,
 } from './riderCodLedger.js';
+import {
+  getRiderOsMetrics,
+  refreshRiderOsMetrics,
+  startRiderOsMetricsCron,
+} from './riderOsMetrics.js';
+import { requestPassengerRide } from './riderOsPassenger.js';
 
 function dispatchBase() {
   return (process.env.DISPATCH_SVC_URL || process.env.DISPATCH_API_URL || '').replace(/\/$/, '');
@@ -67,6 +75,44 @@ async function dispatchFetch(path, { method = 'GET', body, token, userId } = {})
     return { ok: res.ok, status: res.status, data };
   } catch (e) {
     return { ok: false, reason: e?.message || 'dispatch_error', status: 502, data: {} };
+  }
+}
+
+/** P1: reverse dispatch accept when ledger reserve hits cod_limit_exceeded (Opus release verdict). */
+async function revertDispatchAcceptAfterCodCap(pool, { jobId, riderId, token, userId, reason = 'cod_limit_exceeded' }) {
+  const rej = await dispatchFetch(`/v1/dispatch/jobs/${encodeURIComponent(jobId)}/reject`, {
+    method: 'POST',
+    token,
+    userId,
+    body: { rider_id: riderId, reason },
+  });
+  if (rej.ok) return { ok: true, via: 'reject' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE commerce.dispatch_riders SET load_count = GREATEST(0, load_count - 1) WHERE id=$1`,
+      [riderId],
+    );
+    const tag = await client.query(
+      `UPDATE commerce.dispatch_jobs
+         SET rider_id=NULL, status='open', phase='finding_rider', updated_at=NOW()
+       WHERE id=$1 AND rider_id=$2
+         AND status IN ('assigned', 'active')
+         AND phase IN ('rider_assigned', 'pending_accept')`,
+      [jobId, riderId],
+    );
+    await client.query('COMMIT');
+    if ((tag.rowCount || 0) === 0) {
+      return { ok: false, via: 'unassign', error: 'job_not_reverted' };
+    }
+    return { ok: true, via: 'unassign' };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    return { ok: false, via: 'unassign', error: e?.message || 'unassign_failed' };
+  } finally {
+    client.release();
   }
 }
 
@@ -151,6 +197,8 @@ function riderDispatchMode() {
 
 export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthMiddleware }) {
   startRiderCreditTopupReconcileCron(pool);
+  startRiderCodReconcileCron(pool);
+  startRiderOsMetricsCron(pool);
 
   /** Technical readiness — schema, PaySo, dispatch mode */
   app.get('/api/rider-os/ready', async (_req, res) => {
@@ -403,9 +451,7 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
         });
       }
 
-      // COD reservation (PROVISIONAL) — best-effort. Reserves the COD amount
-      // against the rider tier cap; does not reverse the dispatch accept on cap
-      // failure (returns a warning instead) to avoid orphaned dispatch state.
+      // COD reservation (PROVISIONAL) — ledger cap is authoritative after accept.
       let codWarning = null;
       try {
         const job = r.data?.job || r.data || {};
@@ -424,6 +470,19 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
             amountMicro: amtMicro,
             grade: rider?.grade,
           });
+          if (!cod.ok && cod.code === 'cod_limit_exceeded') {
+            await revertDispatchAcceptAfterCodCap(pool, {
+              jobId,
+              riderId: String(riderId),
+              token,
+              userId,
+            });
+            return res.status(409).json({
+              error: 'cod_limit_exceeded',
+              message: 'เกินเพดาน COD ที่รับได้ — ยกเลิกการรับงานแล้ว',
+              ...cod,
+            });
+          }
           if (!cod.ok) codWarning = cod;
         }
       } catch (codErr) {
@@ -437,7 +496,50 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
     }
   });
 
+  // ---- Passenger transport (Rider OS Phase 3.2) ----
+  // Bridge for TransportHub's on-demand ("Request Now") ride request — see
+  // ADR_PASSENGER_INTEGRATION.md. Scheduled/intercity job-board flows are
+  // out of scope and keep using the legacy /api/jobs job board.
+  app.post('/api/rider-os/passenger/request', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const result = await requestPassengerRide(
+        pool,
+        { ...req.body, passenger_user_id: req.body?.passenger_user_id || userId },
+        { token },
+      );
+      if (!result.ok) {
+        return res.status(result.status || 400).json({
+          error: result.error || 'passenger_request_failed',
+          message: 'ขอเรียกรถไม่สำเร็จ',
+        });
+      }
+      res.json({ success: true, job: result.job, dispatch_mode: result.source });
+    } catch (e) {
+      console.error('POST /api/rider-os/passenger/request', e);
+      res.status(500).json({ error: 'passenger_request_failed' });
+    }
+  });
+
   // ---- COD (cash on delivery) — PROVISIONAL (awaiting business sign-off) ----
+
+  async function riderCodSummaryHandler(req, res) {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+      const summary = await getRiderCodSummary(pool, String(riderId), { grade: rider?.grade });
+      res.json(summary);
+    } catch (e) {
+      console.error('GET /api/rider-os/cod/summary', e);
+      res.status(500).json({ error: 'cod_summary_failed' });
+    }
+  }
+
+  app.get('/api/rider-os/cod/summary', authenticateToken, riderCodSummaryHandler);
 
   app.get('/api/rider-os/cod/status', authenticateToken, async (req, res) => {
     try {
@@ -446,11 +548,55 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
       const rider = await riderForUser(pool, userId, token);
       const riderId = rider?.rider_id;
       if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
-      const status = await getRiderCodStatus(pool, String(riderId));
+      const status = await getRiderCodStatus(pool, String(riderId), { grade: rider?.grade });
       res.json(status);
     } catch (e) {
       console.error('GET /api/rider-os/cod/status', e);
       res.status(500).json({ error: 'cod_status_failed' });
+    }
+  });
+
+  app.post('/api/rider-os/jobs/:id/cod/reserve', authenticateToken, async (req, res) => {
+    try {
+      const userId = String(req.user?.id || '').trim();
+      const token = authHeader(req);
+      const rider = await riderForUser(pool, userId, token);
+      const riderId = rider?.rider_id;
+      if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
+
+      const jobId = String(req.params.id || '').trim();
+      const pm = String(req.body?.payment_method || req.body?.paymentMethod || 'cod').toLowerCase();
+      const amtMicro = Number(req.body?.amount_micro ?? req.body?.amountMicro ?? 0);
+      if (pm !== 'cod' || amtMicro <= 0) {
+        return res.status(400).json({ error: 'cod_reserve_invalid' });
+      }
+
+      const cod = await assignCodHold(pool, {
+        riderId: String(riderId),
+        userId,
+        jobId,
+        orderId: req.body?.order_id || req.body?.orderId || null,
+        amountMicro: amtMicro,
+        grade: rider?.grade,
+      });
+      if (!cod.ok && cod.code === 'cod_limit_exceeded') {
+        await revertDispatchAcceptAfterCodCap(pool, {
+          jobId,
+          riderId: String(riderId),
+          token,
+          userId,
+        });
+        return res.status(409).json({
+          error: 'cod_limit_exceeded',
+          message: 'เกินเพดาน COD ที่รับได้ — ยกเลิกการรับงานแล้ว',
+          ...cod,
+        });
+      }
+      if (!cod.ok) return res.status(409).json(cod);
+      res.json({ ok: true, hold: cod.hold, account: cod.account, idempotent: cod.idempotent || false });
+    } catch (e) {
+      console.error('POST /api/rider-os/jobs/:id/cod/reserve', e);
+      res.status(500).json({ error: 'cod_reserve_failed' });
     }
   });
 
@@ -462,7 +608,15 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
       const riderId = rider?.rider_id;
       if (!riderId) return res.status(404).json({ error: 'rider_not_registered' });
       const jobId = String(req.params.id || '').trim();
-      const result = await markCodCollected(pool, { jobId });
+      const reportedAmountMicro =
+        req.body?.amount_micro != null
+          ? Number(req.body.amount_micro)
+          : req.body?.amountMicro != null
+            ? Number(req.body.amountMicro)
+            : null;
+      const method = req.body?.method ? String(req.body.method) : null;
+      const photoUrl = req.body?.photo_url || req.body?.photoUrl ? String(req.body.photo_url || req.body.photoUrl) : null;
+      const result = await markCodCollected(pool, { jobId, reportedAmountMicro, method, photoUrl });
       if (!result.ok) return res.status(409).json(result);
       res.json(result);
     } catch (e) {
@@ -678,6 +832,43 @@ export function registerRiderOsRoutes(app, pool, { authenticateToken, adminAuthM
   });
 
   /** Admin — rider ops snapshot for User Management */
+  app.get('/api/admin/rider-os/metrics', adminAuthMiddleware, async (req, res) => {
+    try {
+      const refresh = ['1', 'true'].includes(String(req.query.refresh || '').toLowerCase());
+      const data = await getRiderOsMetrics(pool, {
+        from: req.query.from,
+        to: req.query.to,
+        refresh,
+      });
+      if (!data.ok) return res.status(400).json(data);
+      res.json(data);
+    } catch (e) {
+      console.error('GET /api/admin/rider-os/metrics', e);
+      res.status(503).json({
+        error: 'rider_os_metrics_unavailable',
+        hint: 'Apply migration 043_rider_os_metrics_daily.sql before requesting metrics.',
+      });
+    }
+  });
+
+  /** Admin — explicit bounded backfill/recompute for Rider OS metrics. */
+  app.post('/api/admin/rider-os/metrics/refresh', adminAuthMiddleware, async (req, res) => {
+    try {
+      const data = await refreshRiderOsMetrics(pool, {
+        from: req.body?.from,
+        to: req.body?.to,
+      });
+      if (!data.ok) return res.status(400).json(data);
+      res.json(data);
+    } catch (e) {
+      console.error('POST /api/admin/rider-os/metrics/refresh', e);
+      res.status(503).json({
+        error: 'rider_os_metrics_refresh_failed',
+        hint: 'Apply migration 043_rider_os_metrics_daily.sql before refreshing metrics.',
+      });
+    }
+  });
+
   app.get('/api/admin/rider-os/users/:userId', adminAuthMiddleware, async (req, res) => {
     try {
       const userId = String(req.params.userId || '').trim();
