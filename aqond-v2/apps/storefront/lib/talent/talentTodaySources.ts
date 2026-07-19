@@ -106,7 +106,16 @@ export async function fetchTalentWorkerReviews(auth: AuthState, limit = 5): Prom
 }
 
 /** Parallel read from existing Services + legacy endpoints — no new API contracts */
-export async function loadTalentTodayRaw(auth: AuthState | null, userId: string | undefined): Promise<TalentTodayRaw> {
+export type TalentFetchLimits = {
+  notifications?: number;
+  reviews?: number;
+};
+
+export async function loadTalentTodayRaw(
+  auth: AuthState | null,
+  userId: string | undefined,
+  limits: TalentFetchLimits = {},
+): Promise<TalentTodayRaw> {
   const empty: TalentTodayRaw = {
     matchJobs: [],
     boardApplications: [],
@@ -127,9 +136,9 @@ export async function loadTalentTodayRaw(auth: AuthState | null, userId: string 
       safeFetch('board', () => fetchMyBoardApplications(auth), errors, []),
       safeFetch('booking', () => fetchIncomingBookings(auth), errors, []),
       safeFetch('booking', () => fetchMyBookingRequests(auth), errors, []),
-      safeFetch('notifications', () => fetchTalentNotifications(auth), errors, []),
+      safeFetch('notifications', () => fetchTalentNotifications(auth, limits.notifications ?? 8), errors, []),
       safeFetch('wallet', () => fetchTalentWalletSummary(auth), errors, null),
-      safeFetch('reviews', () => fetchTalentWorkerReviews(auth), errors, []),
+      safeFetch('reviews', () => fetchTalentWorkerReviews(auth, limits.reviews ?? 5), errors, []),
     ]);
 
   return {

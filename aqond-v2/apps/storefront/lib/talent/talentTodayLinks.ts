@@ -63,4 +63,5 @@ export const TALENT_TODAY_LINKS = {
   trust: '/m/talent/trust',
   calendar: '/m/talent/calendar',
   notifications: '/m/talent/notifications',
+  search: '/m/talent/search',
 } as const;

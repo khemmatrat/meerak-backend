@@ -47,9 +47,14 @@ export function TalentShell({ children }: { children: ReactNode }) {
           <div className="tt-talent-header-context">
             <TalentRoleBadge compact />
           </div>
-          <Link href="/m/account" className="tt-talent-gear" aria-label="บัญชี">
-            👤
-          </Link>
+          <div className="tt-talent-header-actions">
+            <Link href="/m/talent/search" className="tt-talent-gear" aria-label="ค้นหา">
+              🔍
+            </Link>
+            <Link href="/m/account" className="tt-talent-gear" aria-label="บัญชี">
+              👤
+            </Link>
+          </div>
         </header>
 
         <div className="tt-talent-mobile-role-bar">
