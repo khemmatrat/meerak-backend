@@ -194,13 +194,13 @@ export function CommerceIntelligenceDashboard() {
             )}
           </CommerceSection>
 
-          <CommerceSection title="Wallet" href="/m/account/wallet">
+          <CommerceSection title="Wallet (AqondPay)" href="/m/account/wallet">
             {!composed.wallet ? (
-              <EmptyState title="ยังโหลด wallet ไม่ได้" description="GET /api/wallet/:userId/summary" />
+              <EmptyState title="ยังโหลด wallet ไม่ได้" description="BFF GET /v1/wallet — ตรงกับ /m/account/wallet" />
             ) : (
               <Link href="/m/account/wallet" className="tt-talent-today-wallet">
                 <div>
-                  <span>ใช้ได้</span>
+                  <span>ใช้ได้ (SSOT)</span>
                   <strong>{formatThbCompact(composed.wallet.available)}</strong>
                 </div>
                 <div>

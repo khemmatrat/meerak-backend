@@ -230,11 +230,11 @@ export function TalentTodayView() {
       <section className="tt-talent-today-section">
         <SectionHead title="กระเป๋าเงิน" href={TALENT_TODAY_LINKS.wallet} />
         {!composed.wallet ? (
-          <EmptyState title="ยังโหลด wallet ไม่ได้" description="GET /api/wallet/:userId/summary — ตรวจ backend URL" />
+          <EmptyState title="ยังโหลด wallet ไม่ได้" description="BFF GET /v1/wallet — ตรวจการเชื่อมต่อ Account wallet" />
         ) : (
           <Link href={TALENT_TODAY_LINKS.wallet} className="tt-talent-today-wallet">
             <div>
-              <span>ใช้ได้</span>
+              <span>ใช้ได้ (AqondPay)</span>
               <strong>{formatThb(composed.wallet.available)}</strong>
             </div>
             <div>

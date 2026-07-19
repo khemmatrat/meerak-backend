@@ -6,6 +6,11 @@ import type { BoardJobApplication } from '@/lib/services/boardJobTypes';
 import { fetchMyMatchJobs } from '@/lib/services/matchJobApi';
 import type { MatchJob } from '@/lib/services/matchJobTypes';
 import { meerakLegacyUrl, talentAuthHeaders } from '@/lib/talent/talentClient';
+import { fetchTalentWalletSummary } from '@/lib/talent/wallet/talentWalletAdapter';
+import type { TalentWalletSummary } from '@/lib/talent/wallet/talentWalletTypes';
+
+export type { TalentWalletSummary } from '@/lib/talent/wallet/talentWalletTypes';
+export { fetchTalentWalletSummary };
 
 export type TalentNotificationRow = {
   id?: string;
@@ -21,13 +26,6 @@ export type TalentNotificationRow = {
   is_read?: boolean;
   read?: boolean;
   read_at?: string | null;
-};
-
-export type TalentWalletSummary = {
-  available: number;
-  pending: number;
-  total: number;
-  wallet_frozen?: boolean;
 };
 
 export type TalentWorkerReview = {
@@ -74,23 +72,6 @@ export async function fetchTalentNotifications(auth: AuthState, limit = 8): Prom
   if (!res.ok) throw new Error('notifications_unavailable');
   const data = await res.json().catch(() => ({}));
   return Array.isArray(data?.notifications) ? data.notifications : [];
-}
-
-export async function fetchTalentWalletSummary(auth: AuthState): Promise<TalentWalletSummary | null> {
-  const res = await fetch(meerakLegacyUrl(`/api/wallet/${encodeURIComponent(auth.userId)}/summary`), {
-    cache: 'no-store',
-    headers: talentAuthHeaders(auth),
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('wallet_unavailable');
-  const data = await res.json().catch(() => null);
-  if (!data || typeof data !== 'object') return null;
-  return {
-    available: Number(data.available ?? 0),
-    pending: Number(data.pending ?? 0),
-    total: Number(data.total ?? 0),
-    wallet_frozen: !!data.wallet_frozen,
-  };
 }
 
 export async function fetchTalentWorkerReviews(auth: AuthState, limit = 5): Promise<TalentWorkerReview[]> {
