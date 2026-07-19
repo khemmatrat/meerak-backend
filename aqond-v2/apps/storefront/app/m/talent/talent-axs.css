@@ -224,6 +224,7 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+  width: 100%;
 }
 
 .axs-talent .tt-talent-page-icon {
@@ -333,4 +334,156 @@
     visibility: hidden;
     pointer-events: none;
   }
+}
+
+/* —— Today (TOS-2) —— */
+.axs-talent .tt-talent-today-login {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  background: rgba(184, 134, 11, 0.08);
+  border: 1px solid rgba(184, 134, 11, 0.25);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-today-refresh {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.axs-talent .tt-talent-today-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 640px) {
+  .axs-talent .tt-talent-today-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.axs-talent .tt-talent-today-chip {
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-today-chip strong {
+  font-size: 1.05rem;
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-today-section {
+  margin-bottom: 18px;
+}
+
+.axs-talent .tt-talent-today-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.axs-talent .tt-talent-today-section-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-today-see-all {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--axs-primary);
+  text-decoration: none;
+}
+
+.axs-talent .tt-talent-today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-today-card {
+  display: block;
+  padding: 12px 14px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-today-card strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.axs-talent .tt-talent-today-card p {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-today-card time,
+.axs-talent .tt-talent-today-card .tt-hint {
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-today-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.axs-talent .tt-talent-today-wallet {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  background: linear-gradient(135deg, rgba(184, 134, 11, 0.12), var(--axs-surface));
+  border: 1px solid rgba(184, 134, 11, 0.25);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-today-wallet span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-today-wallet strong {
+  font-size: 1rem;
+}
+
+.axs-talent .tt-talent-today-stars {
+  color: var(--axs-primary);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
 }
