@@ -17,6 +17,10 @@ export type TalentNotificationRow = {
   jobId?: string | null;
   data?: Record<string, unknown> | null;
   source?: string;
+  /** When present from `/api/notifications/latest` — read-only display */
+  is_read?: boolean;
+  read?: boolean;
+  read_at?: string | null;
 };
 
 export type TalentWalletSummary = {

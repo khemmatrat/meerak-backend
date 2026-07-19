@@ -2,6 +2,7 @@ import type { BookingItem } from '@/lib/services/bookingTypes';
 import type { BoardJobApplication } from '@/lib/services/boardJobTypes';
 import type { MatchJob } from '@/lib/services/matchJobTypes';
 import { filterMyMatchJobs } from '@/lib/services/myMatchJobsFilter';
+import { isTalentNotificationUnread } from '@/lib/talent/talentNotificationPresentation';
 import type { TalentNotificationRow, TalentTodayRaw, TalentWalletSummary, TalentWorkerReview } from '@/lib/talent/talentTodaySources';
 
 const RECENT_LIMIT = 3;
@@ -81,7 +82,7 @@ export function composeTalentToday(raw: TalentTodayRaw, userId: string): TalentT
       pendingIncoming,
       activeMatch: workingMatch.length,
       boardApplications: raw.boardApplications.length,
-      unreadNotifications: notifications.length,
+      unreadNotifications: notifications.filter(isTalentNotificationUnread).length,
       walletTotal: raw.wallet?.total ?? null,
     },
     notifications: {

@@ -885,3 +885,171 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* —— TOS-5 Notification Center —— */
+.axs-talent .tt-talent-notif-center .tt-talent-page-head {
+  position: relative;
+}
+
+.axs-talent .tt-talent-notif-back {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--axs-radius-card);
+  text-decoration: none;
+  color: var(--axs-text);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.axs-talent .tt-talent-notif-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 14px;
+  margin-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.axs-talent .tt-talent-notif-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.axs-talent .tt-talent-notif-filters button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.axs-talent .tt-talent-notif-filters button.active {
+  background: rgba(184, 134, 11, 0.14);
+  border-color: var(--axs-primary);
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-notif-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.axs-talent .tt-talent-notif-group-title {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--axs-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.axs-talent .tt-talent-notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-notif-item-link {
+  display: block;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-notif-item-link--static {
+  cursor: default;
+}
+
+.axs-talent .tt-talent-notif-item-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.axs-talent .tt-talent-notif-item-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.axs-talent .tt-talent-notif-item-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.axs-talent .tt-talent-notif-item-head strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.axs-talent .tt-talent-notif-item-head strong.is-unread {
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-notif-item-cat {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-notif-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--axs-primary);
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.axs-talent .tt-talent-notif-item-msg {
+  margin: 8px 0 6px;
+  font-size: 0.84rem;
+  color: var(--axs-text-secondary);
+  line-height: 1.45;
+}
+
+.axs-talent .tt-talent-notif-item-time {
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-notif-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-notif-filter-skeleton {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.axs-talent .tt-talent-notif-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
