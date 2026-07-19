@@ -16,6 +16,7 @@ export type TalentPermission =
   | 'nav:work'
   | 'nav:money'
   | 'nav:grow'
+  | 'nav:ai'
   | 'nav:trust'
   | 'nav:calendar'
   | 'nav:profile'

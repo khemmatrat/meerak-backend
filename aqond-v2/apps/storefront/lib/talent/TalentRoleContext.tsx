@@ -12,7 +12,6 @@ import {
 import { useAuth } from '@/lib/auth';
 import {
   TALENT_ROLE_STORAGE_KEY,
-  TALENT_ROLE_META,
   type TalentRoleId,
   type TalentRoleSignals,
 } from '@/lib/talent/talentRoleTypes';

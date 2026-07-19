@@ -618,3 +618,270 @@
   color: var(--axs-text-muted);
   font-weight: 500;
 }
+
+/* —— AI Workspace (TOS-4) —— */
+.axs-talent .tt-talent-ai-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-ai-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+
+.axs-talent .tt-talent-ai-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.axs-talent .tt-talent-ai-tabs button {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 72px;
+  padding: 8px 10px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-ai-tabs button.active {
+  border-color: rgba(184, 134, 11, 0.45);
+  background: rgba(184, 134, 11, 0.08);
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-ai-panel {
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-ai-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.axs-talent .tt-talent-ai-panel-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-ai-hint {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: var(--axs-text-muted);
+  line-height: 1.45;
+}
+
+.axs-talent .tt-talent-ai-hint code {
+  font-size: 0.72rem;
+  background: var(--axs-surface-2);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.axs-talent .tt-talent-ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-ai-field span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--axs-text-secondary);
+}
+
+.axs-talent .tt-talent-ai-field input,
+.axs-talent .tt-talent-ai-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--axs-text);
+  resize: vertical;
+}
+
+.axs-talent .tt-talent-ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.axs-talent .tt-talent-ai-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(184, 134, 11, 0.1);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.axs-talent .tt-talent-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.axs-talent .tt-talent-ai-btn {
+  padding: 10px 14px;
+  border-radius: var(--axs-radius-card);
+  border: none;
+  background: var(--axs-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.axs-talent .tt-talent-ai-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.axs-talent .tt-talent-ai-btn--ghost {
+  background: var(--axs-surface-2);
+  color: var(--axs-text);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-ai-suggest-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-ai-suggest-card {
+  display: block;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-ai-suggest-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.axs-talent .tt-talent-ai-suggest-link {
+  font-size: 0.72rem;
+  color: var(--axs-primary);
+  font-weight: 600;
+}
+
+.axs-talent .tt-talent-ai-inline-link {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-ai-brief-card {
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px dashed var(--axs-border);
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-ai-brief-card h4 {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-ai-brief-card section {
+  margin-bottom: 10px;
+}
+
+.axs-talent .tt-talent-ai-brief-week {
+  margin: 0 0 10px;
+  font-weight: 800;
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-ai-brief-script {
+  font-style: italic;
+}
+
+.axs-talent .tt-talent-ai-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-ai-history-item {
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-ai-history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.axs-talent .tt-talent-ai-history-meta {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-ai-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-ai-template-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
