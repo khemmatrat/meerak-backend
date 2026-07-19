@@ -3,10 +3,14 @@
 import Link from 'next/link';
 import { EmptyState, StatusChip } from '@aqond/ui';
 import { TalentLoadingSkeleton } from '@/components/talent/TalentLoadingSkeleton';
+import { TalentRoleBadge } from '@/components/talent/TalentRoleBadge';
 import { useTalentToday } from '@/hooks/talent/useTalentToday';
+import { useTalentRole } from '@/lib/talent/TalentRoleContext';
 import { formatDate } from '@/lib/format';
 import { bookingStatusTone } from '@/lib/services/bookingApi';
 import type { TalentTodayComposed } from '@/lib/talent/talentTodayCompose';
+import { isTalentSummaryChipVisible, isTalentTodaySectionVisible } from '@/lib/talent/talentRolePermissions';
+import type { TalentRoleId } from '@/lib/talent/talentRoleTypes';
 import { TALENT_TODAY_LINKS, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
 
 function formatDateTime(iso?: string): string {
@@ -45,37 +49,38 @@ function SectionHead({
   );
 }
 
-function SummaryStrip({ summary }: { summary: TalentTodayComposed['summary'] }) {
+function SummaryStrip({ summary, role }: { summary: TalentTodayComposed['summary']; role: TalentRoleId }) {
+  const chips: { key: keyof TalentTodayComposed['summary']; label: string; icon: string; format?: (v: number) => string }[] = [
+    { key: 'pendingIncoming', label: 'จองรอตอบ', icon: '📅' },
+    { key: 'activeMatch', label: 'Match กำลังทำ', icon: '⚡' },
+    { key: 'boardApplications', label: 'Board สมัคร', icon: '💼' },
+    { key: 'unreadNotifications', label: 'แจ้งเตือน', icon: '🔔' },
+    { key: 'walletTotal', label: 'กระเป๋า', icon: '💰', format: formatThb },
+  ];
+
   return (
     <div className="tt-talent-today-summary" aria-label="สรุปวันนี้">
-      <div className="tt-talent-today-chip">
-        <span>📅 จองรอตอบ</span>
-        <strong>{summary.pendingIncoming}</strong>
-      </div>
-      <div className="tt-talent-today-chip">
-        <span>⚡ Match กำลังทำ</span>
-        <strong>{summary.activeMatch}</strong>
-      </div>
-      <div className="tt-talent-today-chip">
-        <span>💼 Board สมัคร</span>
-        <strong>{summary.boardApplications}</strong>
-      </div>
-      <div className="tt-talent-today-chip">
-        <span>🔔 แจ้งเตือน</span>
-        <strong>{summary.unreadNotifications}</strong>
-      </div>
-      {summary.walletTotal != null && (
-        <div className="tt-talent-today-chip">
-          <span>💰 กระเป๋า</span>
-          <strong>{formatThb(summary.walletTotal)}</strong>
-        </div>
-      )}
+      {chips.map(({ key, label, icon, format }) => {
+        if (!isTalentSummaryChipVisible(role, key)) return null;
+        const raw = summary[key];
+        if (key === 'walletTotal' && raw == null) return null;
+        const value = key === 'walletTotal' && typeof raw === 'number' ? format!(raw) : String(raw ?? 0);
+        return (
+          <div key={key} className="tt-talent-today-chip">
+            <span>
+              {icon} {label}
+            </span>
+            <strong>{value}</strong>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 export function TalentTodayView() {
   const { loading, composed, loggedIn, reload } = useTalentToday();
+  const { activeRole } = useTalentRole();
 
   if (loading) return <TalentLoadingSkeleton label="กำลังโหลด Today" />;
 
@@ -111,16 +116,18 @@ export function TalentTodayView() {
           ☀️
         </span>
         <div>
-          <p className="tt-talent-page-module">Today · TOS-2</p>
+          <p className="tt-talent-page-module">Today · TOS-2 · TOS-3</p>
           <h2 className="tt-talent-page-title">สรุปวันนี้</h2>
+          <TalentRoleBadge compact />
         </div>
         <button type="button" className="tt-talent-today-refresh" onClick={() => void reload()} aria-label="รีเฟรช">
           ↻
         </button>
       </header>
 
-      <SummaryStrip summary={composed.summary} />
+      <SummaryStrip summary={composed.summary} role={activeRole} />
 
+      {isTalentTodaySectionVisible(activeRole, 'notifications') && (
       <section className="tt-talent-today-section">
         <SectionHead title="แจ้งเตือน" href={TALENT_TODAY_LINKS.notifications} count={composed.notifications.total} />
         {composed.notifications.items.length === 0 ? (
@@ -152,7 +159,9 @@ export function TalentTodayView() {
           </ul>
         )}
       </section>
+      )}
 
+      {isTalentTodaySectionVisible(activeRole, 'bookings') && (
       <section className="tt-talent-today-section">
         <SectionHead title="การจองที่กำลังจะถึง" href={TALENT_TODAY_LINKS.bookingIncoming} count={composed.upcomingBookings.total} />
         {composed.upcomingBookings.items.length === 0 ? (
@@ -173,7 +182,9 @@ export function TalentTodayView() {
           </ul>
         )}
       </section>
+      )}
 
+      {isTalentTodaySectionVisible(activeRole, 'match') && (
       <section className="tt-talent-today-section">
         <SectionHead title="Match ที่กำลังทำ" href={TALENT_TODAY_LINKS.matchMine} count={composed.recentMatch.total} />
         {composed.recentMatch.items.length === 0 ? (
@@ -192,7 +203,9 @@ export function TalentTodayView() {
           </ul>
         )}
       </section>
+      )}
 
+      {isTalentTodaySectionVisible(activeRole, 'board') && (
       <section className="tt-talent-today-section">
         <SectionHead title="Board ที่สมัคร" href={TALENT_TODAY_LINKS.boardList} count={composed.recentBoard.total} />
         {composed.recentBoard.items.length === 0 ? (
@@ -211,7 +224,9 @@ export function TalentTodayView() {
           </ul>
         )}
       </section>
+      )}
 
+      {isTalentTodaySectionVisible(activeRole, 'wallet') && (
       <section className="tt-talent-today-section">
         <SectionHead title="กระเป๋าเงิน" href={TALENT_TODAY_LINKS.wallet} />
         {!composed.wallet ? (
@@ -234,7 +249,9 @@ export function TalentTodayView() {
           </Link>
         )}
       </section>
+      )}
 
+      {isTalentTodaySectionVisible(activeRole, 'reviews') && (
       <section className="tt-talent-today-section">
         <SectionHead title="รีวิวล่าสุด" href={TALENT_TODAY_LINKS.trust} count={composed.recentReviews.total} />
         {composed.recentReviews.items.length === 0 ? (
@@ -256,6 +273,7 @@ export function TalentTodayView() {
           </ul>
         )}
       </section>
+      )}
     </div>
   );
 }

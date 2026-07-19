@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { TalentNav } from '@/components/talent/TalentNav';
+import { TalentRoleBadge } from '@/components/talent/TalentRoleBadge';
+import { TalentRoleSwitcher } from '@/components/talent/TalentRoleSwitcher';
 
 export function TalentShell({ children }: { children: ReactNode }) {
   return (
@@ -17,6 +19,10 @@ export function TalentShell({ children }: { children: ReactNode }) {
             <strong>Talent OS</strong>
             <small>Unified Experience</small>
           </div>
+        </div>
+        <div className="tt-talent-sidebar-role">
+          <TalentRoleBadge />
+          <TalentRoleSwitcher />
         </div>
         <TalentNav variant="sidebar" />
         <Link href="/m/services" className="tt-talent-sidebar-back">
@@ -38,10 +44,17 @@ export function TalentShell({ children }: { children: ReactNode }) {
             </svg>
             <h1>Talent OS</h1>
           </div>
+          <div className="tt-talent-header-context">
+            <TalentRoleBadge compact />
+          </div>
           <Link href="/m/account" className="tt-talent-gear" aria-label="บัญชี">
             👤
           </Link>
         </header>
+
+        <div className="tt-talent-mobile-role-bar">
+          <TalentRoleSwitcher />
+        </div>
 
         <div className="tt-talent-body">{children}</div>
 

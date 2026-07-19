@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TALENT_NAV, isTalentNavActive } from '@/lib/talent/talentNavConfig';
+import { useTalentRole } from '@/lib/talent/TalentRoleContext';
+import { isTalentNavActive } from '@/lib/talent/talentNavConfig';
 
 type Props = {
   variant: 'sidebar' | 'bottom';
@@ -10,11 +11,12 @@ type Props = {
 
 export function TalentNav({ variant }: Props) {
   const pathname = usePathname();
+  const { navItems } = useTalentRole();
   const className = variant === 'sidebar' ? 'tt-talent-sidebar-nav' : 'tt-talent-os-nav';
 
   return (
     <nav className={className} aria-label={variant === 'sidebar' ? 'Talent OS sidebar' : 'Talent OS tabs'}>
-      {TALENT_NAV.map((item) => {
+      {navItems.map((item) => {
         const active = isTalentNavActive(pathname, item.href, item.exact);
         return (
           <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
