@@ -1303,3 +1303,160 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* —— TOS-7 Activity Timeline —— */
+.axs-talent .tt-talent-timeline-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.axs-talent .tt-talent-timeline-filters button {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.axs-talent .tt-talent-timeline-filters button.active {
+  background: rgba(184, 134, 11, 0.14);
+  border-color: var(--axs-primary);
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-timeline-summary {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-timeline-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.axs-talent .tt-talent-timeline-group-title {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--axs-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.axs-talent .tt-talent-timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.axs-talent .tt-talent-timeline-item {
+  position: relative;
+  padding-left: 22px;
+  padding-bottom: 14px;
+}
+
+.axs-talent .tt-talent-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.axs-talent .tt-talent-timeline-rail {
+  position: absolute;
+  left: 7px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--axs-border);
+}
+
+.axs-talent .tt-talent-timeline-item:last-child .tt-talent-timeline-rail {
+  display: none;
+}
+
+.axs-talent .tt-talent-timeline-dot {
+  position: absolute;
+  left: 2px;
+  top: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--axs-primary);
+  border: 2px solid var(--axs-surface);
+  box-shadow: 0 0 0 1px var(--axs-border);
+}
+
+.axs-talent .tt-talent-timeline-card {
+  display: block;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-timeline-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.axs-talent .tt-talent-timeline-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.axs-talent .tt-talent-timeline-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.axs-talent .tt-talent-timeline-head strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.axs-talent .tt-talent-timeline-source {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-timeline-sub {
+  margin: 8px 0 6px;
+  font-size: 0.84rem;
+  color: var(--axs-text-secondary);
+  line-height: 1.45;
+}
+
+.axs-talent .tt-talent-timeline-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-timeline-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-timeline-filter-skeleton {
+  display: flex;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-timeline-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
