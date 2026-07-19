@@ -1,0 +1,35 @@
+{
+  "execution_id": "G3-G4-2026-07-17",
+  "executed_at": "2026-07-17T12:15:00Z",
+  "g3_verdict": "PASS",
+  "g4_verdict": "PASS",
+  "root_cause": "fetchOrderForDispatch returned null on order-svc 404 without local fallback; packing gate skipped when hit?.order_type undefined. Secondary: FOOD_EVENT_BACKBONE=pg skipped JSON writes but listOrderEvents read JSON only.",
+  "fixes": [
+    "merchantOrders.ts: local fallback on order-svc !res.ok when allowLocalOrders()",
+    "aqondEventBus.ts: mirrorEventsToJsonStore for local dev + pg backbone",
+    "metrics/route.ts: food_flags in admin metrics"
+  ],
+  "env_verified": {
+    "FOOD_PACKING_GATE": "true",
+    "FOOD_PICKUP_QR_REQUIRED": "true",
+    "FOOD_CUSTOMER_CONFIRM": "true",
+    "FOOD_EVENT_BACKBONE": "pg",
+    "next_loads_env_local": true
+  },
+  "trace": {
+    "checkout_source": "local",
+    "kong_get_order": "404",
+    "ready_without_proof_before": 200,
+    "ready_without_proof_after": 409
+  },
+  "g3_tests": {
+    "test:release-gate": "PASS",
+    "scripts_passed": 10
+  },
+  "g4_matrix": {
+    "FOOD_PACKING_GATE_on": { "pass": true, "observed": "409 packing_proof_required" },
+    "FOOD_PACKING_GATE_off": { "pass": true, "observed": "200 ready bypass" },
+    "FOOD_EVENT_BACKBONE_pg": { "pass": true, "outbox_visible": true }
+  },
+  "regression_risk": "low — fallback gated by allowLocalOrders(); no packing gate logic change"
+}

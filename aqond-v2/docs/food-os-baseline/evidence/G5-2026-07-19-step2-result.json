@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "bytes": 338258,
+  "dump_host": "E:/aqond-data/tmp/g5-commerce-20260719.dump",
+  "step": 2,
+  "log": "g:\\meerak\\aqond-v2\\docs\\food-os-baseline\\evidence\\G5-2026-07-19-step2-pg_dump-commerce.log"
+}

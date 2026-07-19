@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS commerce.table_shard_class (
   distribution_column TEXT,
   colocate_with TEXT,
   residency_tag TEXT NOT NULL DEFAULT 'regional',
-  notes TEXT NOT NULL DEFAULT '',
+  notes TEXT DEFAULT '',
   PRIMARY KEY (schema_name, table_name)
 );
 

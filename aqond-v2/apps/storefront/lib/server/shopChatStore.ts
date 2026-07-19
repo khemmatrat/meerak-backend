@@ -47,6 +47,27 @@ export type ShopChatThreadSummary = {
   last_at: string;
 };
 
+export type ShopInboxThread = ShopChatThreadSummary & { kind: 'rider' | 'buyer' };
+
+export async function listShopChatThreadsForShop(shopId: string): Promise<ShopInboxThread[]> {
+  const store = await readStore();
+  const suffix = `::${shopId}`;
+  const threads: ShopInboxThread[] = [];
+  for (const [key, msgs] of Object.entries(store.threads)) {
+    if (!key.endsWith(suffix) || msgs.length === 0) continue;
+    const buyerId = key.slice(0, -suffix.length);
+    const last = msgs[msgs.length - 1];
+    threads.push({
+      shop_id: shopId,
+      buyer_id: buyerId,
+      last_message: last.text,
+      last_at: last.created_at,
+      kind: buyerId.startsWith('rider:') ? 'rider' : 'buyer',
+    });
+  }
+  return threads.sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
+}
+
 export async function listBuyerChatThreads(buyerId: string): Promise<ShopChatThreadSummary[]> {
   const store = await readStore();
   const prefix = `${buyerId}::`;

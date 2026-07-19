@@ -475,6 +475,39 @@ export function IconLuxPin({ className, size = 24 }: LuxuryIconProps) {
   );
 }
 
+export function IconLuxNavGps({ className, size = 24 }: LuxuryIconProps) {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <LuxSvg size={size} className={className}>
+      <LuxGradients uid={uid} />
+      <circle cx="12" cy="12" r="8" fill={`url(#${uid}-champagne)`} stroke={`url(#${uid}-gold)`} strokeWidth="1.2" />
+      <path d="M12 6v2M12 16v2M6 12h2M16 12h2" stroke={`url(#${uid}-gold)`} strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="2.2" fill={`url(#${uid}-gold)`} />
+    </LuxSvg>
+  );
+}
+
+export function IconLuxClothBag({ className, size = 24 }: LuxuryIconProps) {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <LuxSvg size={size} className={className}>
+      <LuxGradients uid={uid} />
+      <path
+        d="M7 9h10l-1 11H8L7 9z"
+        fill={`url(#${uid}-champagne)`}
+        stroke={`url(#${uid}-gold)`}
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+      <path d="M9 9V7a3 3 0 0 1 6 0v2" fill="none" stroke={`url(#${uid}-gold)`} strokeWidth="1.2" />
+    </LuxSvg>
+  );
+}
+
+export function IconLuxDropoffPin({ className, size = 24 }: LuxuryIconProps) {
+  return <IconLuxPin className={className} size={size} />;
+}
+
 export function IconLuxAqondStore({ className, size = 24 }: LuxuryIconProps) {
   const uid = useId().replace(/:/g, '');
   return (

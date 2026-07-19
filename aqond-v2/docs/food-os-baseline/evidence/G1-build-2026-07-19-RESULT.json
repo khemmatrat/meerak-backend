@@ -1,0 +1,26 @@
+{
+  "execution_id": "G1-build-fix-2026-07-19",
+  "executed_at": "2026-07-19T18:12:00Z",
+  "command": "npm run build",
+  "cwd": "aqond-v2/apps/storefront",
+  "exit_code": 0,
+  "status": "PASS",
+  "prior_error": "ENOENT / prerender failures (RR2: /api/ai/user-preferences ENOENT; missing module exports blocking static generation)",
+  "fixes_applied": [
+    "app/api/ai/user-preferences/route.ts — force-dynamic + nodejs runtime",
+    "lib/shopChat.ts — merchant/rider chat href helpers + riderPeerLabel",
+    "lib/riderNavExternal.ts — isNavToPickup, navLabelForPhase, isRiderNavFullscreen",
+    "lib/server/dispatchSvc.ts — getDispatchJob",
+    "lib/server/shopChatStore.ts — listShopChatThreadsForShop",
+    "lib/server/localFood.ts — getFoodItemBySku",
+    "lib/riderVehicleTypes.ts — vehicleAllowsJobType",
+    "components/axs/merchant/AxsMerchantLoading.tsx — AxsMerchantDashboardLoading alias",
+    "components/mobile/TtLuxuryIcons.tsx — IconLuxNavGps, IconLuxClothBag, IconLuxDropoffPin"
+  ],
+  "build_log": "evidence/G1-build-2026-07-19.log",
+  "routes_verified": [
+    "/api/ai/user-preferences (ƒ dynamic)",
+    "/m/merchant/chat (○ static prerender OK)"
+  ],
+  "remaining_g1_process_blocker": "Clean Linux VM install + npm start sign-off (07-DEPLOYMENT-CHECKLIST) — not required for this code build fix"
+}

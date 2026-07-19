@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { readChatImageFile } from '@/lib/foodTracking';
 import { IconLuxCamera } from '@/components/mobile/TtLuxuryIcons';
-import { riderIdFromBuyerId } from '@/lib/shopChat';
+import { riderIdFromBuyerId, riderPeerLabel } from '@/lib/shopChat';
+
+export { riderPeerLabel };
 
 type ShopChatMsg = {
   id: string;
@@ -272,11 +274,5 @@ export function FoodMerchantChatOverlay({
       {body}
     </div>
   );
-}
-
-export function riderPeerLabel(buyerId: string): string {
-  if (!buyerId.startsWith('rider:')) return buyerId.slice(0, 12);
-  const id = riderIdFromBuyerId(buyerId);
-  return `ไรเดอร์ · ${id.slice(0, 8)}`;
 }
 

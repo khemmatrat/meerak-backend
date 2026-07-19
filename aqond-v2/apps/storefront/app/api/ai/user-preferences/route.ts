@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserAiPreferences, saveUserAiPreferences } from '@/lib/server/aiTier3Store';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('user_id')
     || req.headers.get('x-user-id')

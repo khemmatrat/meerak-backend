@@ -51,3 +51,13 @@ export function normalizeRiderVehicleId(raw?: string | null): RiderVehicleId {
   const hit = RIDER_VEHICLE_OPTIONS.find((v) => v.id === s);
   return hit?.id || 'motorcycle';
 }
+
+/** Whether a rider vehicle may accept a dispatch job_type (aligned with dispatch-svc). */
+export function vehicleAllowsJobType(vehicle: string, jobType: string): boolean {
+  const jt = String(jobType || '').toLowerCase().trim();
+  if (!jt) return true;
+  const vid = normalizeRiderVehicleId(vehicle);
+  const opt = RIDER_VEHICLE_OPTIONS.find((v) => v.id === vid);
+  if (!opt) return true;
+  return opt.jobTypes.includes(jt as 'food' | 'parcel' | 'passenger');
+}

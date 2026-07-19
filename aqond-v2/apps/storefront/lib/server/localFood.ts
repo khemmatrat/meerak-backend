@@ -338,6 +338,30 @@ export async function getRestaurantById(merchantId: string) {
   };
 }
 
+export async function getFoodItemBySku(sku: string) {
+  const id = String(sku || '').trim();
+  if (!id) return null;
+
+  for (const r of await listNearbyRestaurants()) {
+    const menu = await getRestaurantMenu(r.id);
+    const item = menu?.menu.find((m) => m.id === id);
+    if (item && menu?.restaurant) {
+      return { item, merchant_id: r.id, restaurant: menu.restaurant };
+    }
+  }
+
+  if (shouldUseLocalFoodFallback()) {
+    const data = await loadFoodData();
+    const item = data.menu.find((m) => m.id === id);
+    if (!item) return null;
+    const restaurant = data.restaurants.find((r) => r.id === item.merchant_id);
+    if (!restaurant) return null;
+    return { item, merchant_id: item.merchant_id, restaurant };
+  }
+
+  return null;
+}
+
 export async function buildFoodSeedPayload() {
   const data = await loadFoodData();
   return {

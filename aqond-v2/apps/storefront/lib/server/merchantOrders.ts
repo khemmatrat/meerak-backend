@@ -168,49 +168,58 @@ export async function fetchOrderForDispatch(orderId: string): Promise<MerchantOr
       headers: { 'X-Aqond-Region': 'TH' },
       cache: 'no-store',
     });
-    const o = await res.json().catch(() => ({}));
-    if (!res.ok) return null;
-    const order = (o.order || o) as Record<string, unknown>;
-    return {
-      order_id: String(order.order_id || order.id || orderId),
-      id: String(order.order_id || order.id || orderId),
-      buyer_id: order.buyer_id as string | undefined,
-      merchant_id: String(order.merchant_id || ''),
-      status: String(order.status || 'confirmed'),
-      fulfillment_status: String(order.fulfillment_status || ''),
-      amount_micro: Number(order.amount_micro || order.total_micro || 0),
-      total_micro: Number(order.total_micro || order.amount_micro || 0),
-      items: (order.items as unknown[]) || [],
-      recipient: order.recipient as string | undefined,
-      phone: order.phone as string | undefined,
-      order_type: order.order_type as string | undefined,
-      carrier_id: order.carrier_id as string | undefined,
-      merchant_name: order.merchant_name as string | undefined,
-      source: 'order-svc',
-    };
+    if (res.ok) {
+      const o = await res.json().catch(() => ({}));
+      const order = (o.order || o) as Record<string, unknown>;
+      if (order && (order.order_id || order.id)) {
+        return {
+          order_id: String(order.order_id || order.id || orderId),
+          id: String(order.order_id || order.id || orderId),
+          buyer_id: order.buyer_id as string | undefined,
+          merchant_id: String(order.merchant_id || ''),
+          status: String(order.status || 'confirmed'),
+          fulfillment_status: String(order.fulfillment_status || ''),
+          amount_micro: Number(order.amount_micro || order.total_micro || 0),
+          total_micro: Number(order.total_micro || order.amount_micro || 0),
+          items: (order.items as unknown[]) || [],
+          recipient: order.recipient as string | undefined,
+          phone: order.phone as string | undefined,
+          order_type: order.order_type as string | undefined,
+          carrier_id: order.carrier_id as string | undefined,
+          merchant_name: order.merchant_name as string | undefined,
+          source: 'order-svc',
+        };
+      }
+    }
+    // order-svc reachable but has no such order (e.g. 404, or empty body).
+    // Fall through to the local store: dev checkout/place saves orders locally
+    // when the checkout-svc is unavailable, so the dispatch read path must be
+    // symmetric with that write path.
   } catch {
-    if (!allowLocalOrders()) return null;
-    const { getOrderById } = await import('@/lib/server/orderStore');
-    const o = await getOrderById(orderId);
-    if (!o) return null;
-    return {
-      order_id: o.order_id,
-      id: o.order_id,
-      buyer_id: o.buyer_id,
-      merchant_id: o.merchant_id,
-      status: o.status,
-      fulfillment_status: o.fulfillment_status || 'pending_accept',
-      amount_micro: o.amount_micro,
-      total_micro: o.amount_micro,
-      items: o.items,
-      recipient: o.recipient,
-      phone: o.phone,
-      order_type: o.order_type,
-      carrier_id: o.carrier_id,
-      merchant_name: o.merchant_name,
-      source: 'local',
-    };
+    /* order-svc unreachable — fall through to local store below */
   }
+
+  if (!allowLocalOrders()) return null;
+  const { getOrderById } = await import('@/lib/server/orderStore');
+  const o = await getOrderById(orderId);
+  if (!o) return null;
+  return {
+    order_id: o.order_id,
+    id: o.order_id,
+    buyer_id: o.buyer_id,
+    merchant_id: o.merchant_id,
+    status: o.status,
+    fulfillment_status: o.fulfillment_status || 'pending_accept',
+    amount_micro: o.amount_micro,
+    total_micro: o.amount_micro,
+    items: o.items,
+    recipient: o.recipient,
+    phone: o.phone,
+    order_type: o.order_type,
+    carrier_id: o.carrier_id,
+    merchant_name: o.merchant_name,
+    source: 'local',
+  };
 }
 
 async function emitFulfillmentEvent(

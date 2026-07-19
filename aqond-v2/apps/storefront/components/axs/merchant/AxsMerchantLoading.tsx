@@ -37,3 +37,6 @@ export function AxsMerchantSalesLoading() {
     </div>
   );
 }
+
+/** Alias used by merchant chat inbox and dashboard shells. */
+export const AxsMerchantDashboardLoading = AxsMerchantLoading;

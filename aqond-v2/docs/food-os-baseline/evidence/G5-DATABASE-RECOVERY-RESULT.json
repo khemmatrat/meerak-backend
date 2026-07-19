@@ -1,0 +1,49 @@
+{
+  "execution_id": "G5-RECOVERY-2026-07-17",
+  "executed_at": "2026-07-17T11:38:00Z",
+  "container": "aqond-v2-db",
+  "image": "postgres:15-alpine",
+  "pg_version": "15.18",
+  "volume": "E:/aqond-data/postgres -> /var/lib/postgresql/data",
+  "file_3593": {
+    "path": "global/3593",
+    "oid": 3593,
+    "relation": "pg_catalog.pg_shseclabel_object_index",
+    "kind": "global_catalog_index",
+    "size_bytes_on_disk": 0,
+    "created": "2026-06-20T18:40:32Z"
+  },
+  "corruption_class": "docker_volume_filesystem_pg_catalog",
+  "zero_byte_files": {
+    "global": 18,
+    "base_total": 1134,
+    "base_template1": 75
+  },
+  "recovery_actions": [
+    "REINDEX INDEX pg_catalog.pg_shseclabel_object_index",
+    "REINDEX INDEX pg_catalog.pg_replication_origin_roiident_index",
+    "REINDEX INDEX pg_catalog.pg_replication_origin_roname_index",
+    "REINDEX INDEX pg_toast.pg_toast_37476_index",
+    "REINDEX TABLE commerce.wellbeing_settings",
+    "REINDEX DATABASE template1",
+    "REINDEX INDEX pg_catalog.pg_language_oid_index"
+  ],
+  "pg_amcheck": {
+    "commerce": "PASS",
+    "all_databases": "FAIL_template1_pg_language_oid_index"
+  },
+  "pg_dump": {
+    "commerce": { "status": "PASS", "bytes": 338258, "toc_entries": 700 },
+    "postgres": { "status": "PASS", "bytes": 1040 },
+    "template1": { "status": "FAIL", "error": "pg_operator broken: text = unknown" },
+    "pg_dumpall": { "status": "FAIL", "blocked_by": "template1" }
+  },
+  "host_dump_copy": "E:/aqond-data/tmp/g5-commerce-recovery-test.dump",
+  "verdict": {
+    "g5_commerce_backup": "PASS",
+    "cluster_backup": "FAIL"
+  },
+  "root_cause": "Zero-byte relation files on Windows Docker bind-mounted PGDATA from cluster init; global catalog index global/3593 truncated",
+  "risk": "template1 catalog corruption remains; bind mount may not persist REINDEX pages; pg_dumpall blocked",
+  "next_step": "Re-run G5 with commerce pg_dump; PO approve template1 repair or migrate to named Docker volume"
+}

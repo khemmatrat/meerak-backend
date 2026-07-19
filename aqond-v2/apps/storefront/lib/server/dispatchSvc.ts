@@ -6,6 +6,7 @@ import {
   localAcceptDispatchJob,
   localAdvanceDispatchPhase,
   localCreateDispatchJob,
+  localGetDispatchJob,
   localListDispatchJobs,
   localRejectDispatchJob,
   type LocalDispatchJob,
@@ -84,6 +85,17 @@ export async function createDispatchJob(input: {
 
 export async function getDispatchTracking(orderId: string) {
   return dispatchFetch<RiderTrackingView>(`/v1/dispatch/track/${encodeURIComponent(orderId)}`);
+}
+
+export async function getDispatchJob(jobId: string, auth?: UpstreamAuth): Promise<DispatchJob | null> {
+  const upstream = await dispatchFetch<{ job: DispatchJob }>(
+    `/v1/dispatch/jobs/${encodeURIComponent(jobId)}`,
+    undefined,
+    auth,
+  );
+  if (upstream?.job) return upstream.job;
+  if (!shouldUseDispatchFallback()) return null;
+  return localGetDispatchJob(jobId);
 }
 
 export async function listDispatchJobs(opts: { rider_id?: string; status?: string }) {

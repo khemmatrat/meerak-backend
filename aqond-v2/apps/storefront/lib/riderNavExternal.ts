@@ -25,16 +25,52 @@ export function openExternalNav(app: 'google' | 'waze' | 'apple', target: NavTar
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/** Pickup vs dropoff based on active job phase */
+const PICKUP_PHASES = new Set([
+  'rider_assigned',
+  'finding_rider',
+  'food_ready',
+  'pending_accept',
+  'arrived_merchant',
+  'en_route_pickup',
+  'pickup',
+  'at_pickup',
+]);
+
+/** Whether navigation target is pickup (vs dropoff). */
+export function isNavToPickup(phase?: string, jobType?: string): boolean {
+  const p = String(phase || '').toLowerCase();
+  if (jobType === 'passenger' && (p === 'passenger_pickup' || p === 'at_pickup')) return true;
+  if (PICKUP_PHASES.has(p)) return true;
+  return p.includes('pickup') || p.includes('merchant');
+}
+
+export function navLabelForPhase(phase?: string, jobType?: string): string {
+  if (isNavToPickup(phase, jobType)) {
+    return jobType === 'passenger' ? 'ไปจุดรับ' : 'ไปร้าน';
+  }
+  return 'ไปจุดส่ง';
+}
+
 export function navTargetForPhase(
   phase: string | undefined,
   pickup: NavTarget,
   dropoff: NavTarget,
+  jobType?: string,
 ): NavTarget {
-  const toPickup =
-    phase === 'rider_assigned' ||
-    phase === 'finding_rider' ||
-    phase === 'food_ready' ||
-    phase === 'pending_accept';
-  return toPickup ? pickup : dropoff;
+  return isNavToPickup(phase, jobType) ? pickup : dropoff;
+}
+
+/** Immersive map chrome while actively navigating. */
+export function isRiderNavFullscreen(phase?: string, status?: string): boolean {
+  const st = String(status || '').toLowerCase();
+  if (st === 'completed' || st === 'cancelled') return false;
+  const p = String(phase || '').toLowerCase();
+  return (
+    p === 'en_route_pickup' ||
+    p === 'en_route_dropoff' ||
+    p === 'navigating' ||
+    p === 'handoff' ||
+    p === 'cod_payment' ||
+    p === 'arrived_merchant'
+  );
 }

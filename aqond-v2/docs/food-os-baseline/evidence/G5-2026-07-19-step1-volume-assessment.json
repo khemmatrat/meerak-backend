@@ -1,0 +1,13 @@
+{
+  "step": 1,
+  "mount_type": "bind",
+  "is_named_docker_volume": false,
+  "title": "template1_corruption_volume_assessment",
+  "executed_at": "2026-07-19T18:09:33Z",
+  "action_taken": "assessment_only_no_volume_migration",
+  "recommendation": "Migrate PGDATA from Windows bind mount (E:/aqond-data/postgres) to a named Docker volume to reduce zero-byte catalog file risk; requires planned downtime + pg_dump/restore or pg_upgrade migration — PO approval before infra change",
+  "container": "aqond-v2-db",
+  "is_bind_mount": true,
+  "prior_evidence": "G5-DATABASE-RECOVERY-RESULT.json",
+  "mount_source": "E:/aqond-data/postgres"
+}
