@@ -227,7 +227,7 @@ export function CommerceIntelligenceDashboard() {
             }
           >
             {composed.reviews.items.length === 0 ? (
-              <EmptyState title="ยังไม่มีรีวิว" description="GET /api/reviews/worker/:userId" />
+              <EmptyState title="ยังไม่มีรีวิว" description="GET /api/talent/read/reviews/worker/:userId" />
             ) : (
               <ul className="tt-talent-today-list">
                 {composed.reviews.items.map((r) => (

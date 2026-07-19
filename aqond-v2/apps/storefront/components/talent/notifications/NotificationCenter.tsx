@@ -84,7 +84,7 @@ export function NotificationCenter() {
       )}
 
       <p className="tt-talent-shell-badge">
-        Talent OS Notification Center · GET /api/notifications/latest · TOS-5
+        Talent OS Notification Center · /api/talent/read/notifications/latest · TOS-5
       </p>
     </div>
   );

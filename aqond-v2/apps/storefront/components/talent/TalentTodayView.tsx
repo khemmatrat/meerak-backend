@@ -131,7 +131,7 @@ export function TalentTodayView() {
       <section className="tt-talent-today-section">
         <SectionHead title="แจ้งเตือน" href={TALENT_TODAY_LINKS.notifications} count={composed.notifications.total} />
         {composed.notifications.items.length === 0 ? (
-          <EmptyState title="ไม่มีแจ้งเตือนใหม่" description="อ่านจาก /api/notifications/latest" />
+          <EmptyState title="ไม่มีแจ้งเตือนใหม่" description="อ่านผ่าน /api/talent/read/notifications/latest" />
         ) : (
           <ul className="tt-talent-today-list">
             {composed.notifications.items.map((n, i) => {
@@ -255,7 +255,7 @@ export function TalentTodayView() {
       <section className="tt-talent-today-section">
         <SectionHead title="รีวิวล่าสุด" href={TALENT_TODAY_LINKS.trust} count={composed.recentReviews.total} />
         {composed.recentReviews.items.length === 0 ? (
-          <EmptyState title="ยังไม่มีรีวิว" description="GET /api/reviews/worker/:userId" />
+          <EmptyState title="ยังไม่มีรีวิว" description="GET /api/talent/read/reviews/worker/:userId" />
         ) : (
           <ul className="tt-talent-today-list">
             {composed.recentReviews.items.map((r) => (

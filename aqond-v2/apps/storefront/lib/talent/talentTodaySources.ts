@@ -5,37 +5,17 @@ import { fetchMyBoardApplications } from '@/lib/services/boardJobApi';
 import type { BoardJobApplication } from '@/lib/services/boardJobTypes';
 import { fetchMyMatchJobs } from '@/lib/services/matchJobApi';
 import type { MatchJob } from '@/lib/services/matchJobTypes';
-import { meerakLegacyUrl, talentAuthHeaders } from '@/lib/talent/talentClient';
+import type { TalentNotificationRow } from '@/lib/talent/notifications/talentNotificationsTypes';
+import type { TalentWorkerReview } from '@/lib/talent/reviews/talentReviewsTypes';
+import { fetchTalentNotifications } from '@/lib/talent/notifications/talentNotificationsAdapter';
+import { fetchTalentWorkerReviews } from '@/lib/talent/reviews/talentReviewsAdapter';
 import { fetchTalentWalletSummary } from '@/lib/talent/wallet/talentWalletAdapter';
 import type { TalentWalletSummary } from '@/lib/talent/wallet/talentWalletTypes';
 
+export type { TalentNotificationRow } from '@/lib/talent/notifications/talentNotificationsTypes';
+export type { TalentWorkerReview } from '@/lib/talent/reviews/talentReviewsTypes';
 export type { TalentWalletSummary } from '@/lib/talent/wallet/talentWalletTypes';
-export { fetchTalentWalletSummary };
-
-export type TalentNotificationRow = {
-  id?: string;
-  title?: string;
-  message?: string;
-  sentAt?: string;
-  created_at?: string;
-  notificationType?: string;
-  jobId?: string | null;
-  data?: Record<string, unknown> | null;
-  source?: string;
-  /** When present from `/api/notifications/latest` — read-only display */
-  is_read?: boolean;
-  read?: boolean;
-  read_at?: string | null;
-};
-
-export type TalentWorkerReview = {
-  id: string;
-  rating_overall?: number;
-  comment?: string;
-  created_at?: string;
-  reviewer_name?: string;
-  job_id?: string;
-};
+export { fetchTalentNotifications, fetchTalentWorkerReviews, fetchTalentWalletSummary };
 
 export type TalentTodayRaw = {
   matchJobs: MatchJob[];
@@ -62,31 +42,7 @@ async function safeFetch<T>(
   }
 }
 
-export async function fetchTalentNotifications(auth: AuthState, limit = 8): Promise<TalentNotificationRow[]> {
-  const q = new URLSearchParams({ userId: auth.userId, limit: String(limit) });
-  const res = await fetch(meerakLegacyUrl(`/api/notifications/latest?${q}`), {
-    cache: 'no-store',
-    headers: talentAuthHeaders(auth),
-  });
-  if (res.status === 404 || res.status === 401) return [];
-  if (!res.ok) throw new Error('notifications_unavailable');
-  const data = await res.json().catch(() => ({}));
-  return Array.isArray(data?.notifications) ? data.notifications : [];
-}
-
-export async function fetchTalentWorkerReviews(auth: AuthState, limit = 5): Promise<TalentWorkerReview[]> {
-  const q = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(meerakLegacyUrl(`/api/reviews/worker/${encodeURIComponent(auth.userId)}?${q}`), {
-    cache: 'no-store',
-    headers: talentAuthHeaders(auth),
-  });
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error('reviews_unavailable');
-  const data = await res.json().catch(() => ({}));
-  return Array.isArray(data?.reviews) ? data.reviews : [];
-}
-
-/** Parallel read from existing Services + legacy endpoints — no new API contracts */
+/** Parallel read — Services APIs + storefront read proxy (no direct legacy transport) */
 export type TalentFetchLimits = {
   notifications?: number;
   reviews?: number;

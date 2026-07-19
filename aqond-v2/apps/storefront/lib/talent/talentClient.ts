@@ -1,6 +1,6 @@
 import type { AuthState } from '@/lib/bff';
 
-/** Same auth headers as Services client APIs */
+/** Auth headers for Talent read proxy + Services client APIs */
 export function talentAuthHeaders(auth?: AuthState | null): HeadersInit {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth?.token) h.Authorization = `Bearer ${auth.token}`;
@@ -9,7 +9,7 @@ export function talentAuthHeaders(auth?: AuthState | null): HeadersInit {
   return h;
 }
 
-/** Legacy meerak backend — same contract as mobile `api` instance */
+/** @deprecated Talent reads use `/api/talent/read` or `/api/bff` — do not call from client */
 export function meerakLegacyApiBase(): string {
   const env = process.env.NEXT_PUBLIC_MEERAK_BACKEND_URL;
   if (env) return env.replace(/\/$/, '');

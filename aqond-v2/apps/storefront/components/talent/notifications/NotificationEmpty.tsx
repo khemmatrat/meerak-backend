@@ -14,7 +14,7 @@ export function NotificationEmpty({ filter, loggedIn = true, error }: Props) {
       <EmptyState
         icon={<span className="tt-talent-empty-icon">🔔</span>}
         title="เข้าสู่ระบบเพื่อดูแจ้งเตือน"
-        description="อ่านจาก /api/notifications/latest · ไม่มีการบันทึกสถานะอ่าน"
+        description="อ่านผ่าน /api/talent/read/notifications/latest · ไม่มีการบันทึกสถานะอ่าน"
       />
     );
   }
@@ -37,7 +37,7 @@ export function NotificationEmpty({ filter, loggedIn = true, error }: Props) {
       title="ไม่มีแจ้งเตือน"
       description={
         filter === 'all'
-          ? 'ยังไม่มีรายการจาก /api/notifications/latest'
+          ? 'ยังไม่มีรายการจาก /api/talent/read/notifications/latest'
           : `ไม่มีแจ้งเตือนในหมวด “${filterLabel}”`
       }
     />
