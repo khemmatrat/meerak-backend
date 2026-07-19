@@ -1,54 +1,34 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useTalentRawData } from '@/hooks/talent/useTalentRawData';
 import { composeTalentSearchIndex, filterTalentSearchResults } from '@/lib/talent/talentSearchCompose';
 import { clearTalentSearchRecent, persistTalentSearchRecent, readTalentSearchRecent } from '@/lib/talent/talentSearchRecent';
-import { loadTalentSearchRaw } from '@/lib/talent/talentSearchSources';
 import type { TalentSearchFilterId } from '@/lib/talent/talentSearchTypes';
-import type { TalentTodayRaw } from '@/lib/talent/talentTodaySources';
 
 export function useTalentSearch() {
-  const { auth, user } = useAuth();
-  const userId = user?.id || auth?.userId;
-  const [raw, setRaw] = useState<TalentTodayRaw | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { raw, loading, error: loadError, loggedIn, reload } = useTalentRawData('search');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<TalentSearchFilterId>('all');
   const [recent, setRecent] = useState<string[]>([]);
+  const [partialError, setPartialError] = useState<string | null>(null);
 
   useEffect(() => {
     setRecent(readTalentSearchRecent());
   }, []);
 
-  const reload = useCallback(async () => {
-    if (!auth?.userId || !userId) {
-      setRaw(null);
-      setError(null);
-      setLoading(false);
+  useEffect(() => {
+    if (!raw) {
+      setPartialError(null);
       return;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await loadTalentSearchRaw(auth, userId);
-      setRaw(next);
-      const errKeys = Object.keys(next.errors);
-      if (errKeys.length > 0 && errKeys.every((k) => next.errors[k as keyof typeof next.errors])) {
-        setError('search_sources_partial');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'search_unavailable');
-      setRaw(null);
-    } finally {
-      setLoading(false);
+    const errKeys = Object.keys(raw.errors);
+    if (errKeys.length > 0 && errKeys.every((k) => raw.errors[k as keyof typeof raw.errors])) {
+      setPartialError('search_sources_partial');
+    } else {
+      setPartialError(null);
     }
-  }, [auth, userId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  }, [raw]);
 
   const index = useMemo(() => (raw ? composeTalentSearchIndex(raw) : []), [raw]);
 
@@ -78,7 +58,7 @@ export function useTalentSearch() {
 
   return {
     loading,
-    error,
+    error: loadError ?? partialError,
     query,
     filter,
     setFilter,
@@ -89,7 +69,7 @@ export function useTalentSearch() {
     index,
     recent,
     clearRecent,
-    loggedIn: !!auth?.userId,
+    loggedIn,
     reload,
   };
 }
