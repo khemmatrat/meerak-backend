@@ -1460,3 +1460,213 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* —— TOS-8 Unified Chat —— */
+.axs-talent .tt-talent-chat-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  margin-bottom: 10px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-talent .tt-talent-chat-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 12px 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--axs-text);
+  min-width: 0;
+}
+
+.axs-talent .tt-talent-chat-search input:focus {
+  outline: none;
+}
+
+.axs-talent .tt-talent-chat-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  margin-bottom: 8px;
+  scrollbar-width: none;
+}
+
+.axs-talent .tt-talent-chat-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.axs-talent .tt-talent-chat-filters button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.axs-talent .tt-talent-chat-filters button.active {
+  background: rgba(184, 134, 11, 0.14);
+  border-color: var(--axs-primary);
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-chat-summary {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-chat-section {
+  margin-bottom: 18px;
+}
+
+.axs-talent .tt-talent-chat-section-title {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--axs-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.axs-talent .tt-talent-chat-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .axs-talent .tt-talent-chat-hub-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.axs-talent .tt-talent-chat-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  text-decoration: none;
+  color: inherit;
+  min-height: 88px;
+}
+
+.axs-talent .tt-talent-chat-hub-icon {
+  font-size: 1.2rem;
+}
+
+.axs-talent .tt-talent-chat-hub-card strong {
+  font-size: 0.82rem;
+}
+
+.axs-talent .tt-talent-chat-hub-card small {
+  font-size: 0.68rem;
+  color: var(--axs-text-muted);
+  line-height: 1.35;
+}
+
+.axs-talent .tt-talent-chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-chat-item-link {
+  display: block;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  border: 1px solid var(--axs-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-chat-item-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.axs-talent .tt-talent-chat-item-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.axs-talent .tt-talent-chat-item-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.axs-talent .tt-talent-chat-item-head strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.axs-talent .tt-talent-chat-item-head strong.is-unread {
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-chat-item-lane {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-chat-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--axs-primary);
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.axs-talent .tt-talent-chat-item-preview {
+  margin: 8px 0 4px;
+  font-size: 0.84rem;
+  color: var(--axs-text-secondary);
+  line-height: 1.45;
+}
+
+.axs-talent .tt-talent-chat-item-time {
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-chat-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-chat-hub-skeleton {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-chat-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
