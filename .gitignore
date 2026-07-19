@@ -111,6 +111,12 @@ docs/aqond-os/*
 !aqond-v2/docs/talent-os/H4-REPORT.md
 !aqond-v2/docs/talent-os/H5-REPORT.md
 !aqond-v2/docs/talent-os/H6-REPORT.md
+!aqond-v2/docs/talent-os/H7-REPORT.md
+!aqond-v2/docs/talent-os/TALENT-OS-RELEASE-NOTES.md
+!aqond-v2/docs/talent-os/TALENT-OS-PRODUCTION-CHECKLIST.md
+!aqond-v2/docs/talent-os/TALENT-OS-DEVELOPER-NOTES.md
+!aqond-v2/docs/talent-os/TALENT-OS-ARCHITECTURE-DEBT.md
+!aqond-v2/docs/talent-os/TALENT-SSOT-LINK-REGISTRY.md
 !STATUS_INDEX.md
 !CURRENT_STATUS.md
 !AGENT_BOOTSTRAP.md

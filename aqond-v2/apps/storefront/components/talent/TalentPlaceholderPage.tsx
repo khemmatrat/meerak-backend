@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { EmptyState } from '@aqond/ui';
+import { TALENT_GOVERNANCE_COPY } from '@/lib/talent/talentReleaseGovernance';
 
 export type TalentDeepLink = {
   href: string;
@@ -31,8 +32,8 @@ export function TalentPlaceholderPage({ title, module, description, icon, deepLi
 
       <EmptyState
         icon={<span className="tt-talent-empty-icon">{icon}</span>}
-        title="พื้นที่เตรียมพร้อม — TOS-1 Shell"
-        description={`${description} เนื้อหาจริงจะมาใน ${module} (read-only aggregation จากระบบเดิม)`}
+        title={TALENT_GOVERNANCE_COPY.placeholderTitle}
+        description={`${description} ${TALENT_GOVERNANCE_COPY.placeholderDescription}`}
       />
 
       {deepLinks && deepLinks.length > 0 && (
@@ -51,7 +52,7 @@ export function TalentPlaceholderPage({ title, module, description, icon, deepLi
         </section>
       )}
 
-      <p className="tt-talent-shell-badge">Talent OS · Unified Experience Layer · TOS-1</p>
+      <p className="tt-talent-shell-badge">Talent OS · Experience Layer · opens in Services</p>
     </div>
   );
 }

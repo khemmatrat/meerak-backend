@@ -82,10 +82,10 @@ export const TALENT_ROLE_META: Record<TalentRoleId, TalentRoleMeta> = {
   },
   enterprise: {
     id: 'enterprise',
-    label: 'Enterprise',
+    label: 'Enterprise (Preview)',
     shortLabel: 'Enterprise',
     icon: '🏢',
-    description: 'PRO 1299 · ทีม · multi-seat',
+    description: 'Preview workspace · org/multi-seat ยังไม่พร้อม',
     tone: 'premium',
   },
 };

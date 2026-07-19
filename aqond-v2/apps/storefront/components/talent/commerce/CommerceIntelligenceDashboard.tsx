@@ -10,7 +10,9 @@ import { CommerceMetricGrid } from '@/components/talent/commerce/CommerceMetricG
 import { CommercePeriodFilter } from '@/components/talent/commerce/CommercePeriodFilter';
 import { CommerceSection } from '@/components/talent/commerce/CommerceSection';
 import { CommerceSkeleton } from '@/components/talent/commerce/CommerceSkeleton';
+import { TalentGovernanceNotice } from '@/components/talent/TalentGovernanceNotice';
 import { useTalentCommerce } from '@/hooks/talent/useTalentCommerce';
+import { TALENT_GOVERNANCE_COPY } from '@/lib/talent/talentReleaseGovernance';
 import { bookingStatusTone } from '@/lib/services/bookingApi';
 import { formatThbCompact } from '@/lib/talent/commerce/talentCommerceCompose';
 import {
@@ -69,6 +71,8 @@ export function CommerceIntelligenceDashboard() {
 
       <CommercePeriodFilter active={period} onChange={setPeriod} />
 
+      <TalentGovernanceNotice message={TALENT_GOVERNANCE_COPY.commerceDisclaimer} tone="warn" />
+
       {loading ? (
         <CommerceSkeleton />
       ) : !loggedIn ? (
@@ -78,7 +82,7 @@ export function CommerceIntelligenceDashboard() {
             <span>🔑</span>
             <div>
               <strong>เข้าสู่ระบบ</strong>
-              <p className="tt-hint">ดู dashboard จาก API เดิม</p>
+              <p className="tt-hint">ดู dashboard จากข้อมูลบัญชีของคุณ</p>
             </div>
           </Link>
         </>
@@ -103,7 +107,7 @@ export function CommerceIntelligenceDashboard() {
             meta={`รอ ${composed.bookings.pending} · ยืนยัน ${composed.bookings.confirmed} · สำเร็จ ${composed.bookings.completed}`}
           >
             {composed.bookings.items.length === 0 ? (
-              <EmptyState title="ยังไม่มีการจอง" description="fetchIncomingBookings + fetchMyBookingRequests" />
+              <EmptyState title="ยังไม่มีการจอง" description="เมื่อมีการจองใหม่ จะแสดงรายการที่นี่" />
             ) : (
               <ul className="tt-talent-today-list">
                 {composed.bookings.items.map((b) => (
@@ -151,7 +155,7 @@ export function CommerceIntelligenceDashboard() {
             meta={`กำลังทำ ${composed.match.working} · pipeline ${formatThbCompact(composed.match.pipelineValue)}`}
           >
             {composed.match.items.length === 0 ? (
-              <EmptyState title="ยังไม่มี Match" description="fetchMyMatchJobs (includeExpired)" />
+              <EmptyState title="ยังไม่มี Match" description="งาน Match ที่กำลังทำจะแสดงที่นี่" />
             ) : (
               <ul className="tt-talent-today-list">
                 {composed.match.items.map((j) => (
@@ -176,7 +180,7 @@ export function CommerceIntelligenceDashboard() {
             meta={`สมัคร ${composed.board.active} · จ้างแล้ว ${composed.board.hired}`}
           >
             {composed.board.items.length === 0 ? (
-              <EmptyState title="ยังไม่มี Board" description="fetchMyBoardApplications" />
+              <EmptyState title="ยังไม่มี Board" description="ใบสมัคร Board จะแสดงที่นี่" />
             ) : (
               <ul className="tt-talent-today-list">
                 {composed.board.items.map((a) => (
@@ -227,7 +231,7 @@ export function CommerceIntelligenceDashboard() {
             }
           >
             {composed.reviews.items.length === 0 ? (
-              <EmptyState title="ยังไม่มีรีวิว" description="GET /api/talent/read/reviews/worker/:userId" />
+              <EmptyState title="ยังไม่มีรีวิว" description="รีวิวจากลูกค้าจะแสดงที่นี่เมื่อมีข้อมูล" />
             ) : (
               <ul className="tt-talent-today-list">
                 {composed.reviews.items.map((r) => (

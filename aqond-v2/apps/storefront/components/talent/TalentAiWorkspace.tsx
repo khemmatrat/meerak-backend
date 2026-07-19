@@ -8,7 +8,9 @@ import { TalentAiJobSuggestionPanel } from '@/components/talent/ai/TalentAiJobSu
 import { TalentAiPromptComposer } from '@/components/talent/ai/TalentAiPromptComposer';
 import { TalentAiResumeDraftPanel } from '@/components/talent/ai/TalentAiResumeDraftPanel';
 import { useTalentAiWorkspace } from '@/hooks/talent/useTalentAiWorkspace';
+import { TalentGovernanceNotice } from '@/components/talent/TalentGovernanceNotice';
 import { TalentAiProvider, useTalentAi } from '@/lib/talent/ai/TalentAiContext';
+import { isTalentAiMockMode, TALENT_GOVERNANCE_COPY } from '@/lib/talent/talentReleaseGovernance';
 import type { TalentAiPanelId } from '@/lib/talent/talentAiTypes';
 
 function PanelBody({ id }: { id: TalentAiPanelId }) {
@@ -44,6 +46,10 @@ function TalentAiWorkspaceInner() {
           <StatusChip tone="active">{providerId} provider · no LLM</StatusChip>
         </div>
       </header>
+
+      {isTalentAiMockMode() ? (
+        <TalentGovernanceNotice message={TALENT_GOVERNANCE_COPY.mockAiBanner} tone="mock" />
+      ) : null}
 
       <nav className="tt-talent-ai-tabs" aria-label="AI workspace panels">
         {panels.map((p) => (

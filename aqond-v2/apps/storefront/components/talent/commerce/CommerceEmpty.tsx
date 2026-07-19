@@ -11,7 +11,7 @@ export function CommerceEmpty({ loggedIn, error }: Props) {
       <EmptyState
         icon={<span className="tt-talent-empty-icon">💰</span>}
         title="เข้าสู่ระบบเพื่อดู Commerce Intelligence"
-        description="รวม Bookings · Income · Match · Board · Wallet · Reviews จาก API เดิม"
+        description="รวม Bookings · Income · Match · Board · Wallet · Reviews จากข้อมูลบัญชีของคุณ"
       />
     );
   }

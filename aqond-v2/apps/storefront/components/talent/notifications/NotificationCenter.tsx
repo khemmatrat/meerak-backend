@@ -7,7 +7,9 @@ import { NotificationEmpty } from '@/components/talent/notifications/Notificatio
 import { NotificationFilter } from '@/components/talent/notifications/NotificationFilter';
 import { NotificationItem } from '@/components/talent/notifications/NotificationItem';
 import { NotificationSkeleton } from '@/components/talent/notifications/NotificationSkeleton';
+import { TalentGovernanceNotice } from '@/components/talent/TalentGovernanceNotice';
 import { useTalentNotifications } from '@/hooks/talent/useTalentNotifications';
+import { TALENT_GOVERNANCE_COPY } from '@/lib/talent/talentReleaseGovernance';
 import {
   TALENT_NOTIFICATION_GROUP_LABELS,
   type TalentNotificationFilterId,
@@ -49,6 +51,8 @@ export function NotificationCenter() {
 
       <NotificationFilter active={filter} onChange={setFilter} />
 
+      <TalentGovernanceNotice message={TALENT_GOVERNANCE_COPY.notificationInboxNote} tone="info" compact />
+
       {loading ? (
         <NotificationSkeleton />
       ) : !loggedIn ? (
@@ -58,7 +62,7 @@ export function NotificationCenter() {
             <span>🔑</span>
             <div>
               <strong>เข้าสู่ระบบ</strong>
-              <p className="tt-hint">ดูแจ้งเตือนจาก API เดิม</p>
+              <p className="tt-hint">ดูแจ้งเตือนล่าสุดจากบัญชีของคุณ</p>
             </div>
           </Link>
         </>

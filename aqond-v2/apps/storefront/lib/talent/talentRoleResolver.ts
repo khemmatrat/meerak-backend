@@ -1,4 +1,5 @@
 import type { MeerakUser } from '@/lib/meerakAuth';
+import { isTalentRoleHintsEnabled } from '@/lib/talent/talentReleaseGovernance';
 import {
   TALENT_ROLES,
   type TalentRoleId,
@@ -10,7 +11,9 @@ const PROVIDER_STATUS_KEY = 'aqond_talent_provider_status_v1';
 
 /** Read optional client hints — keys shared with mobile where applicable */
 export function readTalentRoleHints(): Pick<TalentRoleSignals, 'proTier' | 'providerStatus'> {
-  if (typeof window === 'undefined') return { proTier: null, providerStatus: null };
+  if (typeof window === 'undefined' || !isTalentRoleHintsEnabled()) {
+    return { proTier: null, providerStatus: null };
+  }
   try {
     const proTier = localStorage.getItem(PRO_TIER_KEY);
     const providerStatus = localStorage.getItem(PROVIDER_STATUS_KEY);

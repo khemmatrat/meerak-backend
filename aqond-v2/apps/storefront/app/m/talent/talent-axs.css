@@ -2085,3 +2085,55 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* ─── H7 Governance notices ─── */
+
+.axs-talent .tt-talent-governance-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 var(--axs-space-3) var(--axs-space-2);
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.axs-talent .tt-talent-governance-banner--beta {
+  background: color-mix(in srgb, var(--axs-warn, #f39c12) 12%, var(--axs-surface));
+  border: 1px solid color-mix(in srgb, var(--axs-warn, #f39c12) 35%, var(--axs-border));
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-governance-version {
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-governance-notice {
+  margin: 0 var(--axs-space-3) var(--axs-space-2);
+  padding: 8px 10px;
+  border-radius: var(--axs-radius-card);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-governance-notice--compact {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 0.62rem;
+}
+
+.axs-talent .tt-talent-governance-notice--warn {
+  border-color: color-mix(in srgb, var(--axs-warn, #f39c12) 40%, var(--axs-border));
+}
+
+.axs-talent .tt-talent-governance-notice--mock {
+  border-color: color-mix(in srgb, var(--axs-primary, #6366f1) 35%, var(--axs-border));
+}
+
+.axs-talent .tt-talent-sidebar-role .tt-talent-governance-notice--compact {
+  margin-top: 8px;
+}

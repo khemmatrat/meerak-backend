@@ -2,9 +2,12 @@
 
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { TalentBetaBanner } from '@/components/talent/TalentBetaBanner';
+import { TalentGovernanceNotice } from '@/components/talent/TalentGovernanceNotice';
 import { TalentNav } from '@/components/talent/TalentNav';
 import { TalentRoleBadge } from '@/components/talent/TalentRoleBadge';
 import { TalentRoleSwitcher } from '@/components/talent/TalentRoleSwitcher';
+import { TALENT_GOVERNANCE_COPY } from '@/lib/talent/talentReleaseGovernance';
 
 export function TalentShell({ children }: { children: ReactNode }) {
   return (
@@ -23,6 +26,7 @@ export function TalentShell({ children }: { children: ReactNode }) {
         <div className="tt-talent-sidebar-role">
           <TalentRoleBadge />
           <TalentRoleSwitcher />
+          <TalentGovernanceNotice message={TALENT_GOVERNANCE_COPY.roleDisclaimer} tone="warn" compact />
         </div>
         <TalentNav variant="sidebar" />
         <Link href="/m/services" className="tt-talent-sidebar-back">
@@ -61,6 +65,7 @@ export function TalentShell({ children }: { children: ReactNode }) {
           <TalentRoleSwitcher />
         </div>
 
+        <TalentBetaBanner />
         <div className="tt-talent-body">{children}</div>
 
         <TalentNav variant="bottom" />

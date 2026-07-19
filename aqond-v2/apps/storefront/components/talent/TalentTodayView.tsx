@@ -215,7 +215,7 @@ export function TalentTodayView() {
       <section className="tt-talent-today-section">
         <SectionHead title="Board ที่สมัคร" href={TALENT_TODAY_LINKS.boardList} count={composed.recentBoard.total} />
         {composed.recentBoard.items.length === 0 ? (
-          <EmptyState title="ยังไม่มีใบสมัคร Board" description="จาก fetchMyBoardApplications" />
+          <EmptyState title="ยังไม่มีใบสมัคร Board" description="สมัครงาน Board แล้วสถานะจะแสดงที่นี่" />
         ) : (
           <ul className="tt-talent-today-list">
             {composed.recentBoard.items.map((a) => (
@@ -261,7 +261,7 @@ export function TalentTodayView() {
       <section className="tt-talent-today-section">
         <SectionHead title="รีวิวล่าสุด" href={TALENT_TODAY_LINKS.trust} count={composed.recentReviews.total} />
         {composed.recentReviews.items.length === 0 ? (
-          <EmptyState title="ยังไม่มีรีวิว" description="GET /api/talent/read/reviews/worker/:userId" />
+          <EmptyState title="ยังไม่มีรีวิว" description="รีวิวจากลูกค้าจะแสดงที่นี่เมื่อมีข้อมูล" />
         ) : (
           <ul className="tt-talent-today-list">
             {composed.recentReviews.items.map((r) => (
