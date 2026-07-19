@@ -697,6 +697,12 @@
   border-radius: 4px;
 }
 
+.axs-talent .tt-talent-ai-error {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--axs-danger);
+}
+
 .axs-talent .tt-talent-ai-field {
   display: flex;
   flex-direction: column;

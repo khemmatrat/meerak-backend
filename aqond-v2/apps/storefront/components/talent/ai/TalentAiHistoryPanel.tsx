@@ -1,7 +1,7 @@
 'use client';
 
 import { StatusChip } from '@aqond/ui';
-import { PLACEHOLDER_AI_HISTORY } from '@/lib/talent/talentAiPlaceholders';
+import { useTalentAi } from '@/lib/talent/ai/TalentAiContext';
 import { TALENT_AI_PANELS } from '@/lib/talent/talentAiTypes';
 
 function formatWhen(iso: string): string {
@@ -17,28 +17,46 @@ function panelLabel(id: string): string {
 }
 
 export function TalentAiHistoryPanel() {
+  const { history, historyLoading, refreshHistory, providerId, lastError } = useTalentAi();
+
   return (
     <div className="tt-talent-ai-panel">
       <div className="tt-talent-ai-panel-head">
         <h3>AI History</h3>
-        <StatusChip tone="default">Local placeholder</StatusChip>
+        <StatusChip tone="active">{providerId} · localStorage</StatusChip>
       </div>
-      <p className="tt-talent-ai-hint">Future: session list from TOS-5 — ไม่มี vector store ใน TOS-4</p>
+      <p className="tt-talent-ai-hint">
+        Adapter: <code>listHistory</code> — UI session store only · no vector DB
+      </p>
 
-      <ul className="tt-talent-ai-history-list">
-        {PLACEHOLDER_AI_HISTORY.map((entry) => (
-          <li key={entry.id} className="tt-talent-ai-history-item" data-talent-ai-history={entry.id}>
-            <div className="tt-talent-ai-history-top">
-              <strong>{entry.title}</strong>
-              <StatusChip tone="pending">{entry.status}</StatusChip>
-            </div>
-            <p className="tt-talent-ai-history-meta">
-              {panelLabel(entry.panel)} · {formatWhen(entry.createdAt)}
-            </p>
-            <p>{entry.preview}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="tt-talent-ai-actions">
+        <button type="button" className="tt-talent-ai-btn tt-talent-ai-btn--ghost" disabled={historyLoading} onClick={() => void refreshHistory()}>
+          {historyLoading ? 'Loading…' : 'Reload history'}
+        </button>
+      </div>
+
+      {lastError ? <p className="tt-talent-ai-error">{lastError}</p> : null}
+
+      {historyLoading ? (
+        <p className="tt-hint" aria-busy>
+          กำลังโหลดประวัติ…
+        </p>
+      ) : (
+        <ul className="tt-talent-ai-history-list">
+          {history.map((entry) => (
+            <li key={entry.id} className="tt-talent-ai-history-item" data-talent-ai-history={entry.id}>
+              <div className="tt-talent-ai-history-top">
+                <strong>{entry.title}</strong>
+                <StatusChip tone={entry.status === 'completed' ? 'active' : 'pending'}>{entry.status}</StatusChip>
+              </div>
+              <p className="tt-talent-ai-history-meta">
+                {panelLabel(entry.panel)} · {formatWhen(entry.createdAt)}
+              </p>
+              <p>{entry.preview}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

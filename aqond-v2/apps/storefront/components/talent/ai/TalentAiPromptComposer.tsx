@@ -2,18 +2,38 @@
 
 import { useState } from 'react';
 import { StatusChip } from '@aqond/ui';
+import { useTalentAi } from '@/lib/talent/ai/TalentAiContext';
 import { PLACEHOLDER_PROMPT_TEMPLATES } from '@/lib/talent/talentAiPlaceholders';
+import { useTalentAiWorkspace } from '@/hooks/talent/useTalentAiWorkspace';
 
 export function TalentAiPromptComposer() {
+  const { adapter, refreshHistory, lastError, clearError } = useTalentAi();
+  const { activePanel } = useTalentAiWorkspace();
   const [prompt, setPrompt] = useState(PLACEHOLDER_PROMPT_TEMPLATES[0]?.prompt ?? '');
+  const [loading, setLoading] = useState(false);
+  const [lastSubmitId, setLastSubmitId] = useState<string | null>(null);
+
+  const onSubmit = async () => {
+    setLoading(true);
+    clearError();
+    try {
+      const res = await adapter.submitPrompt({ prompt, panel: activePanel });
+      setLastSubmitId(res.id);
+      await refreshHistory();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="tt-talent-ai-panel">
       <div className="tt-talent-ai-panel-head">
         <h3>Prompt Composer</h3>
-        <StatusChip tone="pending">No LLM · TOS-4</StatusChip>
+        <StatusChip tone="active">Mock queue · TOS-9</StatusChip>
       </div>
-      <p className="tt-talent-ai-hint">Future: ส่งไป ai-core หลัง RFC — ตอนนี้เก็บ prompt ใน UI เท่านั้น</p>
+      <p className="tt-talent-ai-hint">
+        Adapter: <code>submitPrompt</code> — queues mock session · no ai-core route
+      </p>
 
       <div className="tt-talent-ai-templates" role="group" aria-label="Prompt templates">
         {PLACEHOLDER_PROMPT_TEMPLATES.map((tpl) => (
@@ -39,15 +59,16 @@ export function TalentAiPromptComposer() {
         />
       </label>
 
+      {lastError ? <p className="tt-talent-ai-error">{lastError}</p> : null}
+      {lastSubmitId ? (
+        <p className="tt-hint">Mock queued: <code>{lastSubmitId}</code></p>
+      ) : null}
+
       <div className="tt-talent-ai-actions">
-        <button type="button" className="tt-talent-ai-btn" disabled title="TOS-5 RFC required — no LLM route">
-          Send prompt
+        <button type="button" className="tt-talent-ai-btn" disabled={loading} onClick={() => void onSubmit()}>
+          {loading ? 'Queuing…' : 'Send prompt (mock)'}
         </button>
-        <button
-          type="button"
-          className="tt-talent-ai-btn tt-talent-ai-btn--ghost"
-          onClick={() => setPrompt('')}
-        >
+        <button type="button" className="tt-talent-ai-btn tt-talent-ai-btn--ghost" onClick={() => setPrompt('')}>
           Clear
         </button>
       </div>

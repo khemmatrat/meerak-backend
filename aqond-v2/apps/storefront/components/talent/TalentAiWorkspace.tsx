@@ -8,6 +8,7 @@ import { TalentAiJobSuggestionPanel } from '@/components/talent/ai/TalentAiJobSu
 import { TalentAiPromptComposer } from '@/components/talent/ai/TalentAiPromptComposer';
 import { TalentAiResumeDraftPanel } from '@/components/talent/ai/TalentAiResumeDraftPanel';
 import { useTalentAiWorkspace } from '@/hooks/talent/useTalentAiWorkspace';
+import { TalentAiProvider, useTalentAi } from '@/lib/talent/ai/TalentAiContext';
 import type { TalentAiPanelId } from '@/lib/talent/talentAiTypes';
 
 function PanelBody({ id }: { id: TalentAiPanelId }) {
@@ -29,6 +30,7 @@ function PanelBody({ id }: { id: TalentAiPanelId }) {
 
 function TalentAiWorkspaceInner() {
   const { activePanel, setActivePanel, panels } = useTalentAiWorkspace();
+  const { providerId } = useTalentAi();
 
   return (
     <div className="tt-talent-page tt-talent-ai-workspace">
@@ -37,9 +39,9 @@ function TalentAiWorkspaceInner() {
           🤖
         </span>
         <div>
-          <p className="tt-talent-page-module">AI · TOS-4</p>
+          <p className="tt-talent-page-module">AI Integration · TOS-9</p>
           <h2 className="tt-talent-page-title">AI Workspace</h2>
-          <StatusChip tone="pending">UI only · integration ready</StatusChip>
+          <StatusChip tone="active">{providerId} provider · no LLM</StatusChip>
         </div>
       </header>
 
@@ -60,7 +62,7 @@ function TalentAiWorkspaceInner() {
 
       <PanelBody id={activePanel} />
 
-      <p className="tt-talent-shell-badge">Talent OS AI Layer · No LLM · No backend · TOS-4</p>
+      <p className="tt-talent-shell-badge">Talent OS AI · TalentAiAdapter · mock only · TOS-9</p>
     </div>
   );
 }
@@ -68,7 +70,9 @@ function TalentAiWorkspaceInner() {
 export function TalentAiWorkspace() {
   return (
     <Suspense fallback={<div className="tt-talent-loading" aria-busy>กำลังโหลด AI Workspace…</div>}>
-      <TalentAiWorkspaceInner />
+      <TalentAiProvider>
+        <TalentAiWorkspaceInner />
+      </TalentAiProvider>
     </Suspense>
   );
 }

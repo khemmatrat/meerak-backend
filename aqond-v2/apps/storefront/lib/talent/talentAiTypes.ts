@@ -85,7 +85,7 @@ export type TalentAiPromptTemplate = {
   prompt: string;
 };
 
-/** Future hook surface — implement in TOS-5+ */
+/** Integration port — implemented by mock adapter in TOS-9 */
 export type TalentAiIntegrationPort = {
   generateResumeDraft: (input: { notes: string }) => Promise<TalentAiResumeDraftPlaceholder>;
   suggestJobs: (input: { profession: string }) => Promise<TalentAiJobSuggestionPlaceholder[]>;
