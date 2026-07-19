@@ -200,6 +200,25 @@
   color: var(--axs-primary);
 }
 
+.axs-services .tt-services-hub-card--talent {
+  display: block;
+  margin-bottom: 12px;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid rgba(184, 134, 11, 0.35);
+  background: linear-gradient(135deg, rgba(184, 134, 11, 0.08), rgba(184, 134, 11, 0.02));
+}
+
+.axs-services .tt-services-hub-badge--talent {
+  color: var(--axs-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.axs-services .tt-mp-service-icon--talent {
+  background: rgba(184, 134, 11, 0.12);
+}
+
 /* —— CTAs —— */
 .axs-services .tt-btn-primary {
   background: var(--axs-gradient-gold) !important;

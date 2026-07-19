@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { formatMicro } from '@/lib/format';
 import type { MeerakUser } from '@/lib/meerakAuth';
+import { TALENT_HUB_TILE } from '@/lib/talent/talentDiscoverability';
 import { IconLuxBellRed, IconLuxCreatorStudio, IconLuxPin, LuxuryHubIcon } from '@/components/mobile/TtLuxuryIcons';
 
 type WalletProps = {
@@ -30,6 +31,16 @@ export function MpEmailBanner({ user }: { user: MeerakUser | null }) {
 export function MpServiceRows() {
   return (
     <div className="tt-mp-service-rows">
+      <Link href={TALENT_HUB_TILE.href} className="tt-mp-service-row">
+        <span className="tt-mp-service-icon tt-mp-lux-tile-icon tt-mp-service-icon--talent">
+          {TALENT_HUB_TILE.icon}
+        </span>
+        <div>
+          <strong>{TALENT_HUB_TILE.title}</strong>
+          <p>{TALENT_HUB_TILE.description}</p>
+        </div>
+        <span className="tt-mp-service-arrow">›</span>
+      </Link>
       <Link href="/m/food" className="tt-mp-service-row">
         <span className="tt-mp-service-icon tt-mp-lux-tile-icon tt-mp-service-icon--food">
           <LuxuryHubIcon id="food" size={22} />
@@ -151,6 +162,7 @@ export function MpFinanceSection() {
 
 export function MpAccountMenu() {
   const items = [
+    { href: TALENT_HUB_TILE.href, icon: 'talent' as const, label: TALENT_HUB_TILE.title, useTalent: true },
     { href: '/m/account/addresses', icon: 'pin' as const, label: 'ที่อยู่จัดส่ง', usePin: true },
     { href: '/m/account/notifications', icon: 'bell' as const, label: 'การแจ้งเตือน', useBell: true },
     { href: '/m/account/reviews', icon: 'reviews', label: 'รีวิวของฉัน' },
@@ -167,7 +179,9 @@ export function MpAccountMenu() {
           className={`tt-mp-account-menu-item${item.icon === 'studio' ? ' tt-mp-menu-item-studio' : ''}`}
         >
           <span className="tt-mp-menu-icon" aria-hidden>
-            {'usePin' in item && item.usePin ? (
+            {'useTalent' in item && item.useTalent ? (
+              <span style={{ fontSize: 20 }}>{TALENT_HUB_TILE.icon}</span>
+            ) : 'usePin' in item && item.usePin ? (
               <IconLuxPin size={20} />
             ) : 'useBell' in item && item.useBell ? (
               <IconLuxBellRed size={20} />

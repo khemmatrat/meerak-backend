@@ -98,6 +98,10 @@ export default function MobileAccountPage() {
             {AUTH_LOGIN.noAccount}{' '}
             <Link href="/m/register">{AUTH_LOGIN.register}</Link>
           </p>
+          <p className="tt-hint" style={{ marginTop: 12, textAlign: 'center' }}>
+            <Link href="/m/talent">Talent OS Workspace</Link> ·{' '}
+            <Link href="/m/services">Services</Link>
+          </p>
         </div>
       )}
 

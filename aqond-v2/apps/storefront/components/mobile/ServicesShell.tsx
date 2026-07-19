@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
+import { TALENT_HUB_TILE } from '@/lib/talent/talentDiscoverability';
 
 const SERVICES_NAV = [
   { href: '/m/services', label: 'ศูนย์รวม', icon: '✨', exact: true },
@@ -46,6 +47,9 @@ export function ServicesShell({ children }: { children: ReactNode }) {
         </div>
         <Link href="/m/account" className="tt-services-gear" aria-label="บัญชี">
           👤
+        </Link>
+        <Link href={TALENT_HUB_TILE.href} className="tt-services-gear" aria-label={TALENT_HUB_TILE.title}>
+          {TALENT_HUB_TILE.icon}
         </Link>
       </header>
 

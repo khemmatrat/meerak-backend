@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { TALENT_HUB_TILE } from '@/lib/talent/talentDiscoverability';
 
 const SURFACES = [
   {
@@ -45,6 +46,16 @@ export default function ServicesHubPage() {
         ศูนย์รวมงานบริการ AQOND — Theme V2 (AXS) · Business logic เดิมจาก mobile · presentation
         migration เท่านั้น
       </p>
+      <Link href={TALENT_HUB_TILE.href} className="tt-services-hub-card tt-services-hub-card--talent">
+        <div className="tt-services-hub-card-head">
+          <span className="tt-services-hub-card-icon" aria-hidden>
+            {TALENT_HUB_TILE.icon}
+          </span>
+          <h2>{TALENT_HUB_TILE.title}</h2>
+        </div>
+        <p>{TALENT_HUB_TILE.description}</p>
+        <span className="tt-services-hub-badge tt-services-hub-badge--talent">{TALENT_HUB_TILE.cta}</span>
+      </Link>
       <div className="tt-services-hub-grid">
         {SURFACES.map((s) => (
           <Link key={s.href} href={s.href} className="tt-services-hub-card">

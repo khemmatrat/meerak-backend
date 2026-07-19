@@ -347,6 +347,75 @@
   border: 1px solid rgba(184, 134, 11, 0.25);
   text-decoration: none;
   color: inherit;
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-satellite-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.axs-talent .tt-talent-satellite-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.axs-talent .tt-talent-discover-guide {
+  margin-top: 16px;
+}
+
+.axs-talent .tt-talent-discover-guide h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.axs-talent .tt-talent-discover-guide-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-discover-guide-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  text-decoration: none;
+  color: inherit;
+}
+
+.axs-talent .tt-talent-discover-guide-card strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.axs-talent .tt-talent-discover-guide-card small {
+  display: block;
+  color: var(--axs-text-muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.axs-talent .tt-talent-discover-guide-icon {
+  font-size: 1.25rem;
+  width: 36px;
+  text-align: center;
 }
 
 .axs-talent .tt-talent-today-refresh {

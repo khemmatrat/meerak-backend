@@ -13,6 +13,7 @@ type FtxWelcomeOverlayProps = {
 const DISCOVER_LINKS = [
   { href: '/m/food', label: 'สั่งอาหาร', emoji: '🍜' },
   { href: '/m/services', label: 'จ้างงาน / บริการ', emoji: '💼' },
+  { href: '/m/talent', label: 'Talent OS', emoji: '✨' },
   { href: '/m/merchant', label: 'เปิดร้านค้า', emoji: '🏪' },
   { href: '/m/feed', label: 'ดูวิดีโอ', emoji: '🎬' },
 ];

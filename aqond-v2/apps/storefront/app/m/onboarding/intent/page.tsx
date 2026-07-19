@@ -34,6 +34,13 @@ const INTENTS = [
     desc: 'เริ่มช้อปบน Marketplace',
     href: '/m/home',
   },
+  {
+    id: 'talent',
+    icon: '✨',
+    title: 'Talent OS',
+    desc: 'ศูนย์รวมงาน — Match · Money · AI',
+    href: '/m/talent',
+  },
 ] as const;
 
 const STORAGE_KEY = 'aqond_onboarding_intent_v1';

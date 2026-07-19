@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { EmptyState, StatusChip } from '@aqond/ui';
+import { TalentDiscoverGuide } from '@/components/talent/TalentDiscoverGuide';
 import { TalentLoadingSkeleton } from '@/components/talent/TalentLoadingSkeleton';
 import { TalentRoleBadge } from '@/components/talent/TalentRoleBadge';
+import { TalentSatelliteShortcuts } from '@/components/talent/TalentSatelliteShortcuts';
 import { useTalentToday } from '@/hooks/talent/useTalentToday';
 import { useTalentRole } from '@/lib/talent/TalentRoleContext';
 import { formatDate } from '@/lib/format';
@@ -11,6 +13,7 @@ import { bookingStatusTone } from '@/lib/services/bookingApi';
 import type { TalentTodayComposed } from '@/lib/talent/talentTodayCompose';
 import { isTalentSummaryChipVisible, isTalentTodaySectionVisible } from '@/lib/talent/talentRolePermissions';
 import type { TalentRoleId } from '@/lib/talent/talentRoleTypes';
+import { TALENT_WORKSPACE_LOGIN } from '@/lib/talent/talentDiscoverability';
 import { TALENT_TODAY_LINKS, talentBoardJobHref, talentMatchJobHref, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
 
 function formatDateTime(iso?: string): string {
@@ -96,13 +99,14 @@ export function TalentTodayView() {
             <h2 className="tt-talent-page-title">สรุปวันนี้</h2>
           </div>
         </header>
-        <Link href="/m/login?next=/m/talent" className="tt-talent-today-login">
+        <Link href={TALENT_WORKSPACE_LOGIN} className="tt-talent-today-login">
           <span>🔔</span>
           <div>
             <strong>เข้าสู่ระบบเพื่อดู Today</strong>
             <p className="tt-hint">รวม Match · Board · Booking · Wallet · แจ้งเตือน</p>
           </div>
         </Link>
+        <TalentDiscoverGuide />
       </div>
     );
   }
@@ -126,6 +130,8 @@ export function TalentTodayView() {
       </header>
 
       <SummaryStrip summary={composed.summary} role={activeRole} />
+
+      <TalentSatelliteShortcuts />
 
       {isTalentTodaySectionVisible(activeRole, 'notifications') && (
       <section className="tt-talent-today-section">
