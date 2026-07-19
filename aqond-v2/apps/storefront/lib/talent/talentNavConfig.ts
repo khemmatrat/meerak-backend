@@ -10,7 +10,7 @@ export type TalentNavItem = {
 export const TALENT_NAV: TalentNavItem[] = [
   { href: '/m/talent', label: 'Today', icon: '☀️', exact: true, phase: 'TOS-2' },
   { href: '/m/talent/work', label: 'Work', icon: '💼', phase: 'TOS-2' },
-  { href: '/m/talent/money', label: 'Money', icon: '💰', phase: 'TOS-2' },
+  { href: '/m/talent/money', label: 'Money', icon: '💰', phase: 'TOS-10' },
   { href: '/m/talent/grow', label: 'Grow', icon: '🌱', phase: 'TOS-2' },
   { href: '/m/talent/ai', label: 'AI', icon: '🤖', phase: 'TOS-4' },
   { href: '/m/talent/trust', label: 'Trust', icon: '🛡️', phase: 'TOS-2' },

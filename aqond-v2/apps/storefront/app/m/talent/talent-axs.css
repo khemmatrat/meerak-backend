@@ -1676,3 +1676,343 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* —— TOS-10 Commerce Intelligence —— */
+.axs-talent .tt-talent-commerce-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-commerce-filters button {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  color: var(--axs-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.axs-talent .tt-talent-commerce-filters button.active {
+  background: rgba(184, 134, 11, 0.14);
+  border-color: var(--axs-primary);
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-commerce-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 640px) {
+  .axs-talent .tt-talent-commerce-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.axs-talent .tt-talent-commerce-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+  text-decoration: none;
+  color: inherit;
+  min-height: 96px;
+  position: relative;
+}
+
+.axs-talent .tt-talent-commerce-metric-icon {
+  font-size: 1.1rem;
+}
+
+.axs-talent .tt-talent-commerce-metric-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-commerce-metric-body strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.axs-talent .tt-talent-commerce-metric-body small {
+  font-size: 0.68rem;
+  color: var(--axs-text-muted);
+  line-height: 1.35;
+}
+
+.axs-talent .tt-talent-commerce-trend {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-commerce-trend.is-up {
+  color: #15803d;
+}
+
+.axs-talent .tt-talent-commerce-trend.is-down {
+  color: #b91c1c;
+}
+
+.axs-talent .tt-talent-commerce-trend.is-flat {
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-commerce-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.axs-talent .tt-talent-commerce-chart-block {
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-talent .tt-talent-commerce-chart-block h3 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.axs-talent .tt-talent-commerce-chart-empty {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-commerce-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  margin-top: 12px;
+  padding-top: 4px;
+}
+
+.axs-talent .tt-talent-commerce-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+
+.axs-talent .tt-talent-commerce-bar-fill {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, rgba(184, 134, 11, 0.85), rgba(184, 134, 11, 0.35));
+  min-height: 4px;
+}
+
+.axs-talent .tt-talent-commerce-bar-label {
+  font-size: 0.62rem;
+  color: var(--axs-text-muted);
+  text-align: center;
+}
+
+.axs-talent .tt-talent-commerce-bar-value {
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.axs-talent .tt-talent-commerce-income-bars {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.axs-talent .tt-talent-commerce-income-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+.axs-talent .tt-talent-commerce-income-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--axs-surface);
+  overflow: hidden;
+}
+
+.axs-talent .tt-talent-commerce-income-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(184, 134, 11, 0.55);
+  min-width: 4px;
+}
+
+.axs-talent .tt-talent-commerce-growth {
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-talent .tt-talent-commerce-growth h3 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+
+.axs-talent .tt-talent-commerce-growth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-commerce-growth-card {
+  padding: 10px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+}
+
+.axs-talent .tt-talent-commerce-growth-card strong {
+  font-size: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.axs-talent .tt-talent-commerce-growth-card strong small {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-commerce-completion {
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-talent .tt-talent-commerce-completion-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--axs-surface);
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.axs-talent .tt-talent-commerce-completion-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.65);
+  min-width: 0;
+}
+
+.axs-talent .tt-talent-commerce-completion-sources {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-commerce-completion-sources li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+  padding: 8px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-commerce-section {
+  margin-bottom: 18px;
+}
+
+.axs-talent .tt-talent-commerce-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.axs-talent .tt-talent-commerce-section-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.axs-talent .tt-talent-commerce-section-meta {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-commerce-income-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-commerce-income-summary > div {
+  padding: 12px;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+  background: var(--axs-surface-2);
+}
+
+.axs-talent .tt-talent-commerce-income-summary span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+  margin-bottom: 4px;
+}
+
+.axs-talent .tt-talent-commerce-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-commerce-filter-skeleton,
+.axs-talent .tt-talent-commerce-metrics-skeleton {
+  display: flex;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-commerce-metrics-skeleton {
+  flex-wrap: wrap;
+}
+
+.axs-talent .tt-talent-commerce-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
