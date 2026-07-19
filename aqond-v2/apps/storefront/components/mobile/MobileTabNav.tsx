@@ -61,7 +61,7 @@ export function MobileTabNav() {
 
   const embed = params.get('embed') === '1' || inIframe;
 
-  if (path.startsWith('/m/rider') || path.startsWith('/m/services') || path.startsWith('/m/live') || path.startsWith('/m/product') || path.startsWith('/m/shop') || path.startsWith('/m/checkout') || path.startsWith('/m/chat')) return null;
+  if (path.startsWith('/m/rider') || path.startsWith('/m/services') || path.startsWith('/m/talent') || path.startsWith('/m/live') || path.startsWith('/m/product') || path.startsWith('/m/shop') || path.startsWith('/m/checkout') || path.startsWith('/m/chat')) return null;
 
   const hrefFor = (base: string, isCart?: boolean) => {
     const target = isCart ? cartHref : base;

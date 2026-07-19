@@ -1,0 +1,336 @@
+/**
+ * AQOND Talent OS — TOS-1 Workspace Shell (presentation only)
+ * Scoped to .axs-talent
+ */
+@import '@aqond/ui/tokens.css';
+
+.axs-talent {
+  --tt-bg: var(--axs-bg);
+  --tt-bg-elevated: var(--axs-surface);
+  --tt-surface: var(--axs-surface-2);
+  --tt-border: var(--axs-border);
+  --tt-text: var(--axs-text);
+  --tt-muted: var(--axs-text-muted);
+  --tt-accent: var(--axs-primary);
+  --tt-accent-dark: var(--axs-primary-hover);
+  --tt-success: var(--axs-success);
+  --tt-danger: var(--axs-danger);
+  --tt-font: var(--axs-font-sans);
+  --tt-talent-sidebar-w: 240px;
+  min-height: 100vh;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+  font-family: var(--axs-font-sans);
+}
+
+/* —— Shell layout —— */
+.axs-talent .tt-talent-shell {
+  min-height: 100vh;
+  display: flex;
+  background: var(--axs-bg);
+  color: var(--axs-text);
+}
+
+.axs-talent .tt-talent-sidebar {
+  display: none;
+  flex-direction: column;
+  width: var(--tt-talent-sidebar-w);
+  min-height: 100vh;
+  padding: 20px 12px;
+  background: var(--axs-surface);
+  border-right: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-talent .tt-talent-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 20px;
+  border-bottom: 1px solid var(--axs-border);
+  margin-bottom: 12px;
+}
+
+.axs-talent .tt-talent-sidebar-brand svg {
+  width: 28px;
+  height: 28px;
+  color: var(--axs-primary);
+  flex-shrink: 0;
+}
+
+.axs-talent .tt-talent-sidebar-brand strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-sidebar-brand small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+.axs-talent .tt-talent-sidebar-back {
+  margin-top: auto;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--axs-text-muted);
+  text-decoration: none;
+  border-radius: var(--axs-radius-card);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-sidebar-back:hover {
+  color: var(--axs-primary);
+  border-color: rgba(184, 134, 11, 0.35);
+}
+
+.axs-talent .tt-talent-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.axs-talent .tt-talent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  background: var(--axs-surface);
+  border-bottom: 1px solid var(--axs-border);
+  box-shadow: var(--axs-shadow-sm);
+}
+
+.axs-talent .tt-talent-back,
+.axs-talent .tt-talent-gear {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--axs-surface-2);
+  color: var(--axs-text-secondary);
+  text-decoration: none;
+  font-size: 1.1rem;
+}
+
+.axs-talent .tt-talent-back svg {
+  width: 20px;
+  height: 20px;
+}
+
+.axs-talent .tt-talent-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-title h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-title-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-body {
+  flex: 1;
+  padding: 12px 16px calc(72px + env(safe-area-inset-bottom));
+}
+
+/* —— Navigation —— */
+.axs-talent .tt-talent-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.axs-talent .tt-talent-sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--axs-text-muted);
+  text-decoration: none;
+}
+
+.axs-talent .tt-talent-sidebar-nav a.active,
+.axs-talent .tt-talent-sidebar-nav a:hover {
+  background: rgba(184, 134, 11, 0.08);
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-os-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  background: var(--axs-surface);
+  border-top: 1px solid var(--axs-border);
+  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.06);
+}
+
+.axs-talent .tt-talent-os-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.axs-talent .tt-talent-os-nav a {
+  flex: 0 0 auto;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--axs-text-muted);
+  text-decoration: none;
+}
+
+.axs-talent .tt-talent-os-nav a.active {
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-nav-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.axs-talent .tt-talent-nav-label {
+  white-space: nowrap;
+}
+
+/* —— Page placeholders —— */
+.axs-talent .tt-talent-page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.axs-talent .tt-talent-page-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.axs-talent .tt-talent-page-module {
+  margin: 0 0 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--axs-primary);
+}
+
+.axs-talent .tt-talent-page-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.axs-talent .tt-talent-empty-icon {
+  font-size: 2rem;
+}
+
+.axs-talent .tt-talent-deeplinks {
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface);
+  border: 1px solid var(--axs-border);
+}
+
+.axs-talent .tt-talent-deeplinks h3 {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--axs-text-secondary);
+}
+
+.axs-talent .tt-talent-deeplinks ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.axs-talent .tt-talent-deeplink {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--axs-radius-card);
+  background: var(--axs-surface-2);
+  text-decoration: none;
+  color: var(--axs-text);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.axs-talent .tt-talent-deeplink small {
+  font-weight: 500;
+  color: var(--axs-text-muted);
+  font-size: 0.75rem;
+}
+
+.axs-talent .tt-talent-shell-badge {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--axs-text-muted);
+}
+
+/* —— Loading —— */
+.axs-talent .tt-talent-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.axs-talent .tt-talent-loading-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* —— Desktop —— */
+@media (min-width: 900px) {
+  .axs-talent .tt-talent-sidebar {
+    display: flex;
+  }
+
+  .axs-talent .tt-talent-os-nav {
+    display: none;
+  }
+
+  .axs-talent .tt-talent-body {
+    padding-bottom: 24px;
+    max-width: 960px;
+  }
+
+  .axs-talent .tt-talent-header .tt-talent-back {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
