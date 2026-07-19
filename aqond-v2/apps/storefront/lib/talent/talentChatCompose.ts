@@ -58,7 +58,7 @@ function matchConversations(jobs: MatchJob[], userId: string): TalentChatConvers
       lane: 'match',
       title: j.title,
       preview: j.category,
-      href: TALENT_CHAT_LINKS.matchJob(j.id, true),
+      href: TALENT_CHAT_LINKS.matchJob(j.id),
       icon: '⚡',
       updatedAt: j.datetime || j.created_at,
       updatedAtMs: parseTime(j.datetime || j.created_at) || Date.now(),

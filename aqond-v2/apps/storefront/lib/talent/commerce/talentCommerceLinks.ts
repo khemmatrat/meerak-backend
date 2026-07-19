@@ -1,7 +1,7 @@
 import type { BookingItem } from '@/lib/services/bookingTypes';
 import type { BoardJobApplication } from '@/lib/services/boardJobTypes';
 import type { MatchJob } from '@/lib/services/matchJobTypes';
-import { TALENT_TODAY_LINKS } from '@/lib/talent/talentTodayLinks';
+import { TALENT_TODAY_LINKS, talentBoardJobHref, talentMatchJobHref } from '@/lib/talent/talentTodayLinks';
 
 export const TALENT_COMMERCE_LINKS = {
   dashboard: TALENT_TODAY_LINKS.wallet,
@@ -23,10 +23,10 @@ export function talentCommerceBookingHref(booking: BookingItem): string {
 
 export function talentCommerceMatchHref(job: MatchJob): string {
   if (!job.id) return TALENT_COMMERCE_LINKS.matchMine;
-  return `/m/services/match/${encodeURIComponent(job.id)}`;
+  return talentMatchJobHref(job.id);
 }
 
 export function talentCommerceBoardHref(app: BoardJobApplication): string {
   if (!app.job_id) return TALENT_COMMERCE_LINKS.boardList;
-  return `/m/services/board/${encodeURIComponent(app.job_id)}`;
+  return talentBoardJobHref(app.job_id);
 }

@@ -2,7 +2,7 @@ import type { BookingItem } from '@/lib/services/bookingTypes';
 import type { BoardJobApplication } from '@/lib/services/boardJobTypes';
 import type { MatchJob } from '@/lib/services/matchJobTypes';
 import { talentNotificationCategoryMeta } from '@/lib/talent/talentNotificationPresentation';
-import { TALENT_TODAY_LINKS, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
+import { TALENT_TODAY_LINKS, talentBoardJobHref, talentMatchJobHref, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
 import type {
   TalentTimelineDayGroupId,
   TalentTimelineEvent,
@@ -107,7 +107,7 @@ function matchEvents(jobs: MatchJob[]): TalentTimelineEvent[] {
         title: j.title,
         subtitle: j.category,
         meta: String(j.status || ''),
-        href: `/m/services/match/${encodeURIComponent(j.id)}`,
+        href: talentMatchJobHref(j.id),
         icon: '⚡',
         timeCandidates: [j.datetime, j.created_at],
       }),
@@ -124,7 +124,7 @@ function boardEvents(apps: BoardJobApplication[]): TalentTimelineEvent[] {
         title: a.title,
         subtitle: a.employer_name,
         meta: a.status,
-        href: `/m/services/board/${encodeURIComponent(a.job_id)}`,
+        href: talentBoardJobHref(a.job_id),
         icon: '💼',
         timeCandidates: [a.created_at],
       }),

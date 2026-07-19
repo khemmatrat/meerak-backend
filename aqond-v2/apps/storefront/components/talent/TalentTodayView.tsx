@@ -11,7 +11,7 @@ import { bookingStatusTone } from '@/lib/services/bookingApi';
 import type { TalentTodayComposed } from '@/lib/talent/talentTodayCompose';
 import { isTalentSummaryChipVisible, isTalentTodaySectionVisible } from '@/lib/talent/talentRolePermissions';
 import type { TalentRoleId } from '@/lib/talent/talentRoleTypes';
-import { TALENT_TODAY_LINKS, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
+import { TALENT_TODAY_LINKS, talentBoardJobHref, talentMatchJobHref, talentNotificationHref } from '@/lib/talent/talentTodayLinks';
 
 function formatDateTime(iso?: string): string {
   if (!iso) return '—';
@@ -193,7 +193,7 @@ export function TalentTodayView() {
           <ul className="tt-talent-today-list">
             {composed.recentMatch.items.map((j) => (
               <li key={j.id}>
-                <Link href={`/m/services/match/${encodeURIComponent(j.id)}`} className="tt-talent-today-card">
+                <Link href={talentMatchJobHref(j.id)} className="tt-talent-today-card">
                   <strong>{j.title}</strong>
                   <p>{j.category} · {formatDateTime(j.datetime || j.created_at)}</p>
                   <StatusChip tone="active">{String(j.status)}</StatusChip>
@@ -214,7 +214,7 @@ export function TalentTodayView() {
           <ul className="tt-talent-today-list">
             {composed.recentBoard.items.map((a) => (
               <li key={a.id}>
-                <Link href={`/m/services/board/${encodeURIComponent(a.job_id)}`} className="tt-talent-today-card">
+                <Link href={talentBoardJobHref(a.job_id)} className="tt-talent-today-card">
                   <strong>{a.title}</strong>
                   <p>{a.employer_name} · {formatDate(a.created_at)}</p>
                   <StatusChip tone="pending">{a.status}</StatusChip>
