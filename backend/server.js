@@ -12,6 +12,7 @@ import express from 'express';
 import multer from 'multer';
 import { registerBuildMetaRoute } from './lib/buildMeta.js';
 import { registerAppBootstrapRoute } from './lib/appBootstrap.js';
+import { registerAuthPhoneOtpRoutes } from './lib/authPhoneOtpRoutes.js';
 import { uploadToS3, deleteFromS3, listS3Files, checkS3Health, tryDeleteS3ObjectFromPublicUrl } from './lib/s3-client.js';
 import { toggleVideoSave, recordVideoView } from './lib/videoEngagement.js';
 import {
@@ -2926,6 +2927,7 @@ const RATE_LIMIT_LOGIN_PHONE = { max: IS_DEV ? 10000 : parseInt(process.env.LOGI
 const RATE_LIMIT_LOGIN_IP = { max: IS_DEV ? 10000 : parseInt(process.env.LOGIN_LIMIT_IP || '2000', 10), windowSec: 15 * 60 };     // Prod: 2000/15min ต่อ IP (เดิม 1000)
 const RATE_LIMIT_ADMIN_LOGIN_IP = { max: IS_DEV ? 10000 : parseInt(process.env.ADMIN_LOGIN_LIMIT_IP || '1000', 10), windowSec: 60 };    // Prod: 1000/min
 const RATE_LIMIT_OTP_PHONE = { max: IS_DEV ? 10000 : parseInt(process.env.OTP_LIMIT_PHONE || '30', 10), windowSec: 60 * 60 };      // Prod: 30/hour ต่อเบอร์ (เดิม 10)
+const RATE_LIMIT_OTP_REQUEST_IP = { max: 150, windowSec: 15 * 60 };  // auth phone-otp per IP (SRP-W1-01)
 
 // In-memory fallback when Redis is down — กันโดนยิงไม่ล่ม (Phase 1 Security Hardening)
 const rateLimitMemory = new Map();
@@ -10847,6 +10849,20 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.error('Forgot password error:', error);
     res.status(500).json({ error: 'Request failed' });
   }
+});
+
+registerAuthPhoneOtpRoutes(app, {
+  authLimiter,
+  normalizePhoneForStorage,
+  getClientIp,
+  isLocalhost,
+  isRateLimitUnlocked,
+  checkRateLimit,
+  sendRateLimitResponse,
+  RATE_LIMIT_OTP_PHONE,
+  RATE_LIMIT_OTP_REQUEST_IP,
+  getRedisClient: () => redisClient,
+  getPool: () => pool,
 });
 
 // Helper: Normalize phone for comparison (+66812345678 ↔ 0812345678)
