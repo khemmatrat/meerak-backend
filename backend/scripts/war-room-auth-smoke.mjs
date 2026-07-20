@@ -106,6 +106,7 @@ const hardFail = results.filter((r) => {
   if (r.path === '/api/health' && r.status !== 200) return true;
   if (r.path === '/api/meta' && r.status !== 200) return true;
   if (r.path === '/api/app/bootstrap' && r.status !== 200) return true;
+  if (r.path.includes('phone-otp') && r.status === 404) return true;
   return false;
 });
 

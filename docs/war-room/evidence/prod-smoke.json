@@ -1,91 +1,16 @@
 {
   "base": "https://api.aqond.com",
-  "at": "2026-07-20T05:12:22.294Z",
+  "at": "2026-07-20T05:20:24.561Z",
+  "note": "Pre-deploy baseline — meta/bootstrap/phone-otp 404 until Render manual deploy of current master",
   "expect401Protected": true,
-  "results": [
-    {
-      "path": "/api/health",
-      "method": "GET",
-      "status": 200,
-      "ms": 243,
-      "body": {
-        "status": "OK",
-        "service": "MEERAK Backend",
-        "version": "1.0.0",
-        "timestamp": "2026-07-20T05:12:22.548Z",
-        "database": "PostgreSQL",
-        "endpoints": {
-          "user": "/api/users/profile/:id",
-          "jobs": "/api/users/jobs/:userId",
-          "payments": "/api/payments/*",
-          "kyc": "/api/kyc/*",
-          "upload": "/api/upload/*"
-        }
-      }
-    },
-    {
-      "path": "/api/meta",
-      "method": "GET",
-      "status": 404,
-      "ms": 23,
-      "body": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/meta</pre>\n</body>\n</html>\n"
-    },
-    {
-      "path": "/api/app/bootstrap",
-      "method": "GET",
-      "status": 404,
-      "ms": 20,
-      "body": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/app/bootstrap</pre>\n</body>\n</html>\n"
-    },
-    {
-      "path": "/api/auth/login",
-      "method": "POST",
-      "status": 400,
-      "ms": 25,
-      "body": {
-        "error": "Phone and password required"
-      }
-    },
-    {
-      "path": "/api/auth/register",
-      "method": "POST",
-      "status": 400,
-      "ms": 54,
-      "body": {
-        "error": "Phone, password, and name required"
-      }
-    },
-    {
-      "path": "/api/auth/forgot-password",
-      "method": "POST",
-      "status": 400,
-      "ms": 51,
-      "body": {
-        "error": "Phone number required"
-      }
-    },
-    {
-      "path": "/api/auth/phone-otp/send",
-      "method": "POST",
-      "status": 404,
-      "ms": 47,
-      "body": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot POST /api/auth/phone-otp/send</pre>\n</body>\n</html>\n"
-    },
-    {
-      "path": "/api/auth/phone-otp/verify",
-      "method": "POST",
-      "status": 404,
-      "ms": 24,
-      "body": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot POST /api/auth/phone-otp/verify</pre>\n</body>\n</html>\n"
-    },
-    {
-      "path": "/api/videos/my",
-      "method": "GET",
-      "status": 401,
-      "ms": 17,
-      "body": {
-        "error": "เธเธฃเธธเธ“เธฒเน€เธเนเธฒเธชเธนเนเธฃเธฐเธเธเธเนเธญเธ"
-      }
-    }
-  ]
+  "expect401InvalidJwt": true,
+  "exitCodeExpectedAfterDeploy": 0,
+  "resultsSummary": {
+    "/api/health": 200,
+    "/api/meta": 404,
+    "/api/app/bootstrap": 404,
+    "/api/auth/phone-otp/send": 404,
+    "/api/auth/phone-otp/verify": 404,
+    "/api/videos/my": 401
+  }
 }
