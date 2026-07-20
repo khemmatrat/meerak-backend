@@ -2,7 +2,8 @@ services:
   - type: web
     name: meerak-backend
     env: node
-    buildCommand: npm install
+    # WAR-P0-01: backend deps live under backend/ — root-only npm install breaks production start
+    buildCommand: npm ci --prefix backend
     startCommand: node backend/server.js
     envVars:
       - key: NODE_ENV
