@@ -3,7 +3,7 @@
 **Updated:** 2026-07-20  
 **Git:** `master` (post WAR-P1-01 runbook commit)  
 **Auth acceptance:** **NOT COMPLETE** (production deploy pending)  
-**Runbook:** [DEPLOY_AND_AUTH_QA_RUNBOOK.md](./DEPLOY_AND_AUTH_QA_RUNBOOK.md)
+**Runbook:** [DEPLOY_AND_AUTH_QA_RUNBOOK.md](./DEPLOY_AND_AUTH_QA_RUNBOOK.md) · **W2 Load:** [W2_LOAD_STRESS_RUNBOOK.md](./W2_LOAD_STRESS_RUNBOOK.md)
 
 ---
 
@@ -24,7 +24,20 @@ Marketing traffic hits **stale production** without IRP bootstrap/meta and witho
 | --- | --- | --- |
 | WAR-P0-01 | `7007ff71` | Render `buildCommand: npm ci --prefix backend` |
 | WAR-P0-02 | `797bdf5e` | `npm run war-room:auth-smoke` + prod evidence JSON |
-| WAR-P1-01 | (this commit) | Deploy & auth QA runbook + OTP 404 smoke gate |
+| WAR-P1-01 | `eef27dd0` | Deploy & auth QA runbook + OTP 404 smoke gate |
+| WAR-W2-01 | (this commit) | k6 load/stress scripts + W2 runbook |
+
+---
+
+## W2 load test
+
+**Blocked** until smoke preflight passes on target URL:
+
+`npm run war-room:w2-preflight -- https://<staging-api>`
+
+Then: `npm run war-room:w2-load -- https://<staging-api>` (requires [k6](https://k6.io) on PATH)
+
+Report template: [`evidence/w2-load-test-report.md`](./evidence/w2-load-test-report.md)
 
 ---
 
