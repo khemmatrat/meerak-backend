@@ -10,7 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "node --test __tests__/buildMeta.test.js __tests__/verifyFirebaseIdTokenPublic.node.test.js __tests__/homeBannersPlacement.test.js __tests__/walletManualDeposit.mapping.test.js __tests__/taxDocumentService.test.js __tests__/payoutWithdrawalFee.test.js __tests__/antiBypassTextFilter.test.js __tests__/jobChatMessagesRoute.test.js __tests__/chatImageAntiBypass.test.js",
+    "test": "node --test __tests__/buildMeta.test.js __tests__/appBootstrap.test.js __tests__/verifyFirebaseIdTokenPublic.node.test.js __tests__/homeBannersPlacement.test.js __tests__/walletManualDeposit.mapping.test.js __tests__/taxDocumentService.test.js __tests__/payoutWithdrawalFee.test.js __tests__/antiBypassTextFilter.test.js __tests__/jobChatMessagesRoute.test.js __tests__/chatImageAntiBypass.test.js",
     "test:integration": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js",
     "lint": "eslint src/**/*.ts",
     "docker:build": "docker build -t kyc-backend .",

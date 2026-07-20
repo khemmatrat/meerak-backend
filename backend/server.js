@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import express from 'express';
 import multer from 'multer';
 import { registerBuildMetaRoute } from './lib/buildMeta.js';
+import { registerAppBootstrapRoute } from './lib/appBootstrap.js';
 import { uploadToS3, deleteFromS3, listS3Files, checkS3Health, tryDeleteS3ObjectFromPublicUrl } from './lib/s3-client.js';
 import { toggleVideoSave, recordVideoView } from './lib/videoEngagement.js';
 import {
@@ -13903,6 +13904,12 @@ app.get('/api/app/config', async (req, res) => {
     } catch (_) { }
     res.json({ config: cfg, updatedAt: null });
   }
+});
+
+registerAppBootstrapRoute(app, {
+  pool,
+  normalizeStoredMobileAppConfig,
+  augmentMobileConfigForPublicClients,
 });
 
 // POST /api/app/presence — อัปเดต last_active_at สำหรับผู้ล็อกอิน (นับเข้ากลุ่มออนไลน์ ~15 นาที); throttle เล็กน้อยลดภาระ DB
