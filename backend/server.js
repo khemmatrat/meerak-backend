@@ -31281,7 +31281,7 @@ app.post('/api/jobs/:id/verify-proof-image', async (req, res) => {
 // Rate limit: OTP request — แยกตาม user, job, IP (Apple-friendly: จำกัดต่อคน ไม่ใช่ภาพรวม)
 const RATE_LIMIT_OTP_REQUEST_USER = { max: 5, windowSec: 15 * 60 };   // 5 per 15 min ต่อ user
 const RATE_LIMIT_OTP_REQUEST_JOB = { max: 10, windowSec: 15 * 60 };  // 10 per 15 min ต่อ job
-const RATE_LIMIT_OTP_REQUEST_IP = { max: 150, windowSec: 15 * 60 };  // 150 per 15 min ต่อ IP (รองรับ shared IP)
+// RATE_LIMIT_OTP_REQUEST_IP — ใช้ตัวเดียวกับ auth phone-otp (ประกาศด้านบน ~2930)
 
 // Request OTP for job completion (provider หรือ employer เรียก — เก็บใน Redis, แจ้ง employer พร้อมรหัส)
 app.post('/api/jobs/:id/request-completion-otp', optionalAuth, async (req, res) => {
