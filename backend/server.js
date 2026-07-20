@@ -10,6 +10,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import express from 'express';
 import multer from 'multer';
+import { registerBuildMetaRoute } from './lib/buildMeta.js';
 import { uploadToS3, deleteFromS3, listS3Files, checkS3Health, tryDeleteS3ObjectFromPublicUrl } from './lib/s3-client.js';
 import { toggleVideoSave, recordVideoView } from './lib/videoEngagement.js';
 import {
@@ -10260,6 +10261,8 @@ app.get('/api/health', (req, res) => {
     }
   });
 });
+
+registerBuildMetaRoute(app);
 
 // ✅ Auth diagnostic — ตรวจสอบ DB schema + user existence สำหรับ debug production
 app.get('/api/debug/auth-check', async (req, res) => {
